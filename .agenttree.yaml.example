@@ -1,0 +1,33 @@
+# AgentTree Configuration Example
+# Copy to .agenttree.yaml in your project root
+
+# Project name (used for tmux session naming)
+project: myapp
+
+# Directory where agent worktrees are created
+# Can be absolute path or use ~ for home directory
+worktrees_dir: ~/Projects/worktrees
+
+# Port range for agents (each agent gets one port)
+# Agent 1 gets 8001, Agent 2 gets 8002, etc.
+port_range: 8001-8009
+
+# Default AI tool to use when not specified
+default_tool: claude
+
+# Tool configurations
+tools:
+  # Claude Code configuration
+  claude:
+    command: claude
+    startup_prompt: "Check TASK.md and start working on it."
+
+  # Aider configuration
+  aider:
+    command: aider --model sonnet
+    startup_prompt: "/read TASK.md"
+
+  # Example: Custom tool
+  # custom_tool:
+  #   command: my-ai-tool --config config.json
+  #   startup_prompt: "Begin task"
