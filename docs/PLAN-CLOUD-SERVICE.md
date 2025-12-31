@@ -442,22 +442,39 @@ def dispatch(agent: str, task: str, model: str):
 
 ## Pricing Model
 
+**Two-part pricing:** Container hours + AI model usage
+
+### What are "cloud agent-hours"?
+
+An **agent-hour** is 1 hour of container compute time where an agent runs. This includes:
+- ✅ Container CPU/RAM (4 CPU, 8GB RAM)
+- ✅ Playwright browser
+- ✅ Git, tmux, dev tools
+- ✅ File system and isolation
+
+**AI model usage is billed separately** based on actual token consumption.
+
+---
+
 ### Free Tier
-- ✅ Unlimited local agents (runs on your machine)
-- ✅ 10 cloud agent-hours/month
-- ✅ All AI models
-- ✅ Dangerous mode
+- ✅ Unlimited local agents (runs on your machine, $0 forever)
+- ✅ 10 cloud agent-hours/month (container time)
+- ✅ $5/month free AI credits (covers ~2.5M Claude Sonnet tokens)
+- ✅ All AI models available
+- ✅ Dangerous mode enabled
 - ✅ Community support
 
 ### Pro Tier ($29/month)
-- ✅ 100 cloud agent-hours/month
+- ✅ 100 cloud agent-hours/month (container time)
+- ✅ $10/month included AI credits
 - ✅ Priority execution (faster container start)
 - ✅ Team sharing (5 seats)
 - ✅ Advanced analytics
 - ✅ Email support
 
 ### Team Tier ($99/month)
-- ✅ 500 cloud agent-hours/month
+- ✅ 500 cloud agent-hours/month (container time)
+- ✅ $50/month included AI credits
 - ✅ Dedicated containers (always hot)
 - ✅ Unlimited team members
 - ✅ SSO
@@ -465,12 +482,15 @@ def dispatch(agent: str, task: str, model: str):
 
 ### Enterprise (Custom)
 - ✅ Unlimited hours
+- ✅ Custom AI credit packages
 - ✅ Self-hosted option
-- ✅ Custom models
+- ✅ Custom models (BYO API keys)
 - ✅ SLA
 - ✅ Dedicated support
 
-**Overage:** $0.25/hour beyond quota
+**Overage pricing:**
+- Container hours: $0.25/hour beyond quota
+- AI credits: Pay as you go at rates below
 
 ---
 
@@ -478,22 +498,96 @@ def dispatch(agent: str, task: str, model: str):
 
 We act as a proxy for different AI providers:
 
-| Model | Our Cost/1M tokens | User Cost/1M tokens | Markup |
-|-------|-------------------|---------------------|--------|
+| Model | Our Cost/1M tokens | User Cost/1M tokens | Our Markup |
+|-------|-------------------|---------------------|------------|
 | Claude Sonnet 4 | $3 / $15 | $4 / $20 | 33% |
 | Claude Opus 4 | $15 / $75 | $20 / $100 | 33% |
 | GPT-4 Turbo | $10 / $30 | $13 / $39 | 30% |
 | GPT-4o | $5 / $15 | $7 / $20 | 40% |
 | Gemini 2.0 Flash | $0.075 / $0.30 | $0.10 / $0.40 | 33% |
 
-**Included in cloud hours:**
-- Container compute: $0.10/hour
-- Model usage: Billed separately at table rates above
+**Example bill for Pro user ($29/mo):**
+- 100 hours of agent work
+- Used 50 hours actual container time
+- Agent made 10M tokens of Claude Sonnet API calls
+  - Input: 7M tokens × $4/1M = $28
+  - Output: 3M tokens × $20/1M = $60
+  - Total AI: $88
 
-**Why this works:**
-- Users want **one bill** instead of managing multiple API keys
-- We provide **easy switching** between models
-- We add **usage tracking** and **budget alerts**
+**Total bill: $29 (base) + $88 (AI) = $117**
+
+**Our costs:**
+- Container: 50 hours × $0.10 = $5
+- AI: 10M tokens @ our cost = $66
+- Total costs: $71
+
+**Our profit: $46 (39% margin)**
+
+---
+
+## Margin Breakdown
+
+### Container Hours
+
+| Tier | Monthly Price | Hours Included | Our Cost | Margin |
+|------|--------------|----------------|----------|--------|
+| Free | $0 | 10 | $1 | Loss leader |
+| Pro | $29 | 100 | $10 | **65% ($19)** |
+| Team | $99 | 500 | $50 | **49% ($49)** |
+
+Modal Labs charges us ~$0.10/hour for 4 CPU + 8GB RAM containers.
+
+### AI Model Usage
+
+- 30-40% markup on all AI providers
+- Pure pass-through with margin
+- No infrastructure cost (just API calls)
+
+**Blended margins:** Assuming average user uses 50% of container quota and $50-100 in AI:
+- Container margin: 49-65%
+- AI margin: 30-40%
+- **Overall margin: ~45%**
+
+This is healthy for a SaaS business (typical is 30-50%).
+
+---
+
+## Why Two-Part Pricing?
+
+**Alternative considered:** Bundle everything into one price (e.g., "$99/mo unlimited")
+
+**Why we don't:**
+1. **AI costs vary wildly** - GPT-4 vs Gemini Flash is 100x difference
+2. **Usage unpredictable** - Some tasks take 10M tokens, some take 100K
+3. **Unit economics break** - Heavy users would destroy margins
+4. **No alignment** - We want users to use efficient models when appropriate
+
+**Two-part pricing benefits:**
+1. **Transparent costs** - Users see exactly what they're paying for
+2. **Flexibility** - Choose expensive models when needed, cheap when not
+3. **Sustainable** - We don't subsidize heavy AI users
+4. **Predictable** - Container hours are fixed, AI scales with usage
+
+**User psychology:**
+- $29/mo feels affordable for the base
+- AI costs are "usage-based" and expected for API services
+- Similar to AWS model (EC2 + API calls)
+
+---
+
+## Why This Works
+
+**For users:**
+- Pay $0 forever for local use (vs Cursor/Copilot subscriptions)
+- Only pay for cloud when they need isolation/dangerous mode
+- One bill for all AI providers (vs managing multiple API keys)
+- Usage tracking and budget alerts included
+
+**For us:**
+- Container costs are fixed and predictable
+- AI markup provides steady margin
+- Free tier drives adoption (local is free!)
+- Upsell path clear (local → cloud → team)
 
 ---
 
