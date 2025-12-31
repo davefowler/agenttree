@@ -1,0 +1,258 @@
+"""Tmux session management for AgentTree."""
+
+import subprocess
+from pathlib import Path
+from typing import List, Optional
+from dataclasses import dataclass
+
+from agenttree.config import Config
+
+
+@dataclass
+class TmuxSession:
+    """Information about a tmux session."""
+
+    name: str
+    windows: int
+    attached: bool
+
+
+def session_exists(session_name: str) -> bool:
+    """Check if a tmux session exists.
+
+    Args:
+        session_name: Name of the session
+
+    Returns:
+        True if session exists
+    """
+    try:
+        subprocess.run(
+            ["tmux", "has-session", "-t", session_name],
+            check=True,
+            capture_output=True,
+        )
+        return True
+    except subprocess.CalledProcessError:
+        return False
+
+
+def create_session(
+    session_name: str, working_dir: Path, start_command: Optional[str] = None
+) -> None:
+    """Create a new tmux session.
+
+    Args:
+        session_name: Name for the new session
+        working_dir: Working directory for the session
+        start_command: Optional command to run in the session
+    """
+    cmd = [
+        "tmux",
+        "new-session",
+        "-d",
+        "-s",
+        session_name,
+        "-c",
+        str(working_dir),
+    ]
+    subprocess.run(cmd, check=True)
+
+    if start_command:
+        send_keys(session_name, start_command)
+
+
+def kill_session(session_name: str) -> None:
+    """Kill a tmux session.
+
+    Args:
+        session_name: Name of the session to kill
+    """
+    try:
+        subprocess.run(
+            ["tmux", "kill-session", "-t", session_name],
+            check=True,
+            capture_output=True,
+        )
+    except subprocess.CalledProcessError:
+        # Session doesn't exist or already killed
+        pass
+
+
+def send_keys(session_name: str, keys: str) -> None:
+    """Send keystrokes to a tmux session.
+
+    Args:
+        session_name: Name of the session
+        keys: Keys to send
+    """
+    subprocess.run(
+        ["tmux", "send-keys", "-t", session_name, keys, "Enter"],
+        check=True,
+    )
+
+
+def attach_session(session_name: str) -> None:
+    """Attach to a tmux session (interactive).
+
+    Args:
+        session_name: Name of the session to attach to
+    """
+    subprocess.run(["tmux", "attach", "-t", session_name])
+
+
+def list_sessions() -> List[TmuxSession]:
+    """List all tmux sessions.
+
+    Returns:
+        List of TmuxSession objects
+    """
+    try:
+        result = subprocess.run(
+            ["tmux", "list-sessions"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+
+        sessions = []
+        for line in result.stdout.strip().split("\n"):
+            if not line:
+                continue
+
+            # Parse: session_name: 1 windows (created ...) (attached)
+            parts = line.split(":")
+            if len(parts) >= 2:
+                name = parts[0].strip()
+                info = parts[1].strip()
+
+                # Extract number of windows
+                windows = 1
+                if "windows" in info:
+                    try:
+                        windows = int(info.split()[0])
+                    except (ValueError, IndexError):
+                        pass
+
+                # Check if attached
+                attached = "(attached)" in line
+
+                sessions.append(
+                    TmuxSession(name=name, windows=windows, attached=attached)
+                )
+
+        return sessions
+    except subprocess.CalledProcessError:
+        return []
+
+
+class TmuxManager:
+    """Manages tmux sessions for agents."""
+
+    def __init__(self, config: Config):
+        """Initialize the tmux manager.
+
+        Args:
+            config: AgentTree configuration
+        """
+        self.config = config
+
+    def get_session_name(self, agent_num: int) -> str:
+        """Get tmux session name for an agent.
+
+        Args:
+            agent_num: Agent number
+
+        Returns:
+            Session name
+        """
+        return self.config.get_tmux_session_name(agent_num)
+
+    def start_agent(
+        self,
+        agent_num: int,
+        worktree_path: Path,
+        tool_name: str,
+        startup_script: Optional[Path] = None,
+    ) -> None:
+        """Start an agent in a tmux session.
+
+        Args:
+            agent_num: Agent number
+            worktree_path: Path to the agent's worktree
+            tool_name: Name of the AI tool to use
+            startup_script: Optional path to startup script
+        """
+        session_name = self.get_session_name(agent_num)
+
+        # Kill existing session if it exists
+        if session_exists(session_name):
+            kill_session(session_name)
+
+        # Get tool config
+        tool_config = self.config.get_tool_config(tool_name)
+
+        # Create session
+        if startup_script and startup_script.exists():
+            create_session(session_name, worktree_path, f"./{startup_script.name}")
+        else:
+            create_session(session_name, worktree_path, tool_config.command)
+
+        # Send startup prompt after a brief delay
+        import time
+
+        time.sleep(1)
+        send_keys(session_name, tool_config.startup_prompt)
+
+    def stop_agent(self, agent_num: int) -> None:
+        """Stop an agent's tmux session.
+
+        Args:
+            agent_num: Agent number
+        """
+        session_name = self.get_session_name(agent_num)
+        kill_session(session_name)
+
+    def send_message(self, agent_num: int, message: str) -> None:
+        """Send a message to an agent.
+
+        Args:
+            agent_num: Agent number
+            message: Message to send
+        """
+        session_name = self.get_session_name(agent_num)
+        send_keys(session_name, message)
+
+    def attach(self, agent_num: int) -> None:
+        """Attach to an agent's tmux session.
+
+        Args:
+            agent_num: Agent number
+        """
+        session_name = self.get_session_name(agent_num)
+        if not session_exists(session_name):
+            raise RuntimeError(f"Agent {agent_num} session does not exist")
+        attach_session(session_name)
+
+    def is_running(self, agent_num: int) -> bool:
+        """Check if an agent's tmux session is running.
+
+        Args:
+            agent_num: Agent number
+
+        Returns:
+            True if session is running
+        """
+        session_name = self.get_session_name(agent_num)
+        return session_exists(session_name)
+
+    def list_agent_sessions(self) -> List[TmuxSession]:
+        """List all agent tmux sessions.
+
+        Returns:
+            List of agent sessions
+        """
+        all_sessions = list_sessions()
+        project_prefix = f"{self.config.project}-agent-"
+
+        return [s for s in all_sessions if s.name.startswith(project_prefix)]
