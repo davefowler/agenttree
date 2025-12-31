@@ -12,6 +12,7 @@ from agenttree.worktree import WorktreeManager
 from agenttree.tmux import TmuxManager
 from agenttree.github import GitHubManager, get_issue
 from agenttree.container import get_container_runtime
+from agenttree.notes import NotesManager
 
 console = Console()
 
@@ -180,6 +181,7 @@ def dispatch(
     wt_manager = WorktreeManager(repo_path, config)
     tmux_manager = TmuxManager(config)
     gh_manager = GitHubManager()
+    notes_manager = NotesManager(repo_path)
 
     # Dispatch worktree (reset to main)
     try:
@@ -196,6 +198,12 @@ def dispatch(
             issue = get_issue(issue_number)
             gh_manager.create_task_file(issue, task_file)
             gh_manager.assign_issue_to_agent(issue_number, agent_num)
+
+            # Also create spec in .agentree/
+            notes_manager.add_spec_from_issue(
+                issue_number, issue.title, issue.body, issue.url
+            )
+
             console.print(f"[green]✓ Created task for issue #{issue_number}[/green]")
         except Exception as e:
             console.print(f"[red]Error fetching issue: {e}[/red]")
