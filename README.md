@@ -87,6 +87,43 @@ Each agent has:
 - Own database (if applicable)
 - Own PORT number (8001, 8002, etc.)
 
+### Agents Repository
+AgentTree automatically creates a separate GitHub repository (`{project}-agents`) to track:
+
+```
+myproject-agents/
+├── templates/          # Templates for agents to use
+│   ├── feature-spec.md
+│   ├── rfc.md
+│   ├── task-log.md
+│   └── investigation.md
+├── specs/              # Living documentation
+│   └── features/       # Feature specs from issues
+├── tasks/              # Agent task execution logs
+│   ├── agent-1/        # Per-agent task logs
+│   ├── agent-2/
+│   └── archive/        # Completed tasks (auto-archived)
+├── rfcs/               # Architecture proposals
+├── plans/              # Active planning documents
+└── knowledge/          # Accumulated learnings
+    ├── gotchas.md      # Known issues and workarounds
+    ├── decisions.md    # Architecture Decision Records
+    └── onboarding.md   # What new agents/humans should know
+```
+
+**Why separate?**
+- Keeps main repo clean (no AI-generated documentation clutter)
+- Provides persistent memory across agent sessions
+- Enables agent collaboration through shared specs
+- Automatic archival of completed tasks
+
+**Commands:**
+```bash
+agenttree notes show 1           # Show agent-1's task logs
+agenttree notes search "auth"    # Search across all notes
+agenttree notes archive 1        # Archive completed task
+```
+
 ## Installation
 
 ```bash
@@ -187,6 +224,19 @@ agenttree send 1 "focus on tests"
 
 # Kill agent session
 agenttree kill 1
+```
+
+### Manage Notes
+
+```bash
+# Show task logs for an agent
+agenttree notes show 1
+
+# Search across all notes and docs
+agenttree notes search "authentication"
+
+# Archive completed task
+agenttree notes archive 1
 ```
 
 ## Container Mode (Isolated & Autonomous)
@@ -311,11 +361,11 @@ agenttree dispatch 1 42 --tool my_custom_tool
 ## Roadmap
 
 - [x] **Phase 1**: Core package (Python CLI, config, worktree, tmux)
-- [x] **Phase 2**: Agent adapters (Claude, Aider)
+- [x] **Phase 2**: Agents repository, documentation management, GitHub integration
 - [ ] **Phase 3**: Enhanced GitHub integration (auto PR review, auto merge)
 - [ ] **Phase 4**: Remote agents (SSH, Tailscale)
 - [ ] **Phase 5**: Web dashboard (terminal access, real-time status)
-- [ ] **Phase 6**: Agent memory (shared context, learnings)
+- [ ] **Phase 6**: Agent memory (shared context, cross-agent learnings)
 
 ## Contributing
 

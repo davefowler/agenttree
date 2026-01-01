@@ -1,6 +1,7 @@
 """GitHub integration for AgentTree."""
 
 import json
+import shutil
 import subprocess
 import time
 from typing import Dict, List, Optional
@@ -35,6 +36,36 @@ class CheckStatus:
     name: str
     state: str  # SUCCESS, FAILURE, PENDING
     conclusion: Optional[str] = None
+
+
+def ensure_gh_cli() -> None:
+    """Ensure gh CLI is installed and authenticated.
+
+    Raises:
+        RuntimeError: If gh not found or not authenticated
+    """
+    if not shutil.which("gh"):
+        raise RuntimeError(
+            "GitHub CLI (gh) not found.\n\n"
+            "Install: https://cli.github.com/\n"
+            "  macOS:   brew install gh\n"
+            "  Linux:   See https://github.com/cli/cli#installation\n"
+            "  Windows: See https://github.com/cli/cli#installation\n"
+        )
+
+    # Check if authenticated
+    result = subprocess.run(
+        ["gh", "auth", "status"],
+        capture_output=True,
+        text=True
+    )
+
+    if result.returncode != 0:
+        raise RuntimeError(
+            "Not authenticated with GitHub.\n\n"
+            "Run: gh auth login\n\n"
+            "This will open your browser to authenticate.\n"
+        )
 
 
 def gh_command(args: List[str]) -> str:
