@@ -258,6 +258,147 @@ def close_issue(issue_number: int) -> None:
     gh_command(["issue", "close", str(issue_number)])
 
 
+def is_pr_approved(pr_number: int) -> bool:
+    """Check if a PR has been approved.
+
+    Args:
+        pr_number: PR number
+
+    Returns:
+        True if PR is approved
+    """
+    output = gh_command([
+        "api",
+        f"repos/{{owner}}/{{repo}}/pulls/{pr_number}/reviews",
+        "--jq",
+        '[.[] | select(.state == "APPROVED")] | length'
+    ])
+
+    approvals = int(output.strip())
+    return approvals > 0
+
+
+def merge_pr(pr_number: int, method: str = "squash") -> None:
+    """Merge a pull request.
+
+    Args:
+        pr_number: PR number
+        method: Merge method (squash, merge, rebase)
+    """
+    gh_command([
+        "pr",
+        "merge",
+        str(pr_number),
+        f"--{method}",
+        "--delete-branch"
+    ])
+
+
+def auto_merge_if_ready(pr_number: int, require_approval: bool = True) -> bool:
+    """Auto-merge PR if CI passes and (optionally) approved.
+
+    Args:
+        pr_number: PR number
+        require_approval: Whether to require approval before merging
+
+    Returns:
+        True if PR was merged, False otherwise
+    """
+    # Check if CI is passing
+    ci_passed = wait_for_ci(pr_number, timeout=0)  # Just check current state
+
+    if not ci_passed:
+        return False
+
+    # Check approval if required
+    if require_approval and not is_pr_approved(pr_number):
+        return False
+
+    # All checks passed, merge it
+    try:
+        merge_pr(pr_number)
+        return True
+    except RuntimeError:
+        return False
+
+
+def link_pr_to_issue(pr_number: int, issue_number: int) -> None:
+    """Link a PR to an issue (adds closing keyword).
+
+    Args:
+        pr_number: PR number
+        issue_number: Issue number
+    """
+    # Get current PR body
+    output = gh_command([
+        "pr",
+        "view",
+        str(pr_number),
+        "--json",
+        "body",
+        "--jq",
+        ".body"
+    ])
+
+    current_body = output.strip()
+
+    # Add closing keyword if not already present
+    closing_text = f"\n\nCloses #{issue_number}"
+    if f"#{issue_number}" not in current_body:
+        new_body = current_body + closing_text
+        gh_command([
+            "pr",
+            "edit",
+            str(pr_number),
+            "--body",
+            new_body
+        ])
+
+
+def monitor_pr_and_auto_merge(
+    pr_number: int,
+    issue_number: Optional[int] = None,
+    check_interval: int = 60,
+    max_wait: int = 3600,
+    require_approval: bool = True
+) -> bool:
+    """Monitor a PR and auto-merge when ready.
+
+    This function will:
+    1. Wait for CI to pass
+    2. Check for approval (if required)
+    3. Auto-merge when ready
+    4. Close linked issue (if provided)
+
+    Args:
+        pr_number: PR number
+        issue_number: Optional issue number to close on merge
+        check_interval: Seconds between checks
+        max_wait: Maximum seconds to wait
+        require_approval: Whether to require approval
+
+    Returns:
+        True if PR was merged, False if timeout or failure
+    """
+    import time
+
+    start_time = time.time()
+
+    while time.time() - start_time < max_wait:
+        # Try to auto-merge
+        if auto_merge_if_ready(pr_number, require_approval):
+            # PR merged successfully!
+            if issue_number:
+                # Close the linked issue
+                close_issue(issue_number)
+            return True
+
+        # Not ready yet, wait and try again
+        time.sleep(check_interval)
+
+    return False
+
+
 class GitHubManager:
     """Manages GitHub integration for AgentTree."""
 

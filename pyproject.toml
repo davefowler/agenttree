@@ -39,6 +39,21 @@ dev = [
     "ruff>=0.1.0",
     "mypy>=1.0.0",
 ]
+web = [
+    "fastapi>=0.109.0",
+    "uvicorn[standard]>=0.27.0",
+    "websockets>=12.0",
+    "jinja2>=3.1.0",
+]
+ml = [
+    # Phase 6: ML-based learning system
+    "chromadb>=0.4.0",
+    "sentence-transformers>=2.3.0",
+    "torch>=2.1.0",
+]
+all = [
+    "agenttree[dev,web,ml]",
+]
 
 [project.scripts]
 agenttree = "agenttree.cli:main"
