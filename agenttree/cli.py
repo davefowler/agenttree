@@ -87,8 +87,15 @@ def init(worktrees_dir: Optional[str], project: Optional[str]) -> None:
     setup_script = agenttree_dir / "worktree-setup.sh"
     setup_template = """#!/bin/bash
 # AgentTree Worktree Setup Script
-# This script runs for each agent worktree during 'agenttree setup'
-# Customize this for your project's specific needs
+#
+# 🤖 AI AGENT: This script runs when setting up your worktree.
+# If you encounter errors on your first task, this script likely needs customization.
+# Feel free to modify it based on errors you see - future agents will benefit!
+#
+# This script receives three arguments:
+#   $1 = WORKTREE_PATH (e.g., ~/Projects/worktrees/myapp/agent-1)
+#   $2 = AGENT_NUM (e.g., 1, 2, 3)
+#   $3 = AGENT_PORT (e.g., 8001, 8002, 8003)
 
 set -e  # Exit on error
 
@@ -100,55 +107,89 @@ echo "🔧 Setting up agent-$AGENT_NUM at $WORKTREE_PATH"
 cd "$WORKTREE_PATH"
 
 # ============================================================================
-# CUSTOMIZE BELOW FOR YOUR PROJECT
+# ENVIRONMENT FILES - Customize based on your project's needs
 # ============================================================================
 
-# 1. Copy environment files
+# Basic .env copy (works for most projects)
 if [ -f "../.env" ]; then
     cp ../.env .env
     echo "✓ Copied .env"
 fi
 
-# If you have multiple env files:
+# 🤖 AI: If you need multiple env files, add them here:
 # cp ../.env.local .env.local
 # cp ../.env.test .env.test
 
-# 2. Set agent-specific PORT in .env
+# Set agent-specific PORT to avoid conflicts
 if [ -f ".env" ]; then
-    # Remove existing PORT line and add new one
     sed -i.bak '/^PORT=/d' .env
     echo "PORT=$AGENT_PORT" >> .env
     rm .env.bak 2>/dev/null || true
     echo "✓ Set PORT=$AGENT_PORT in .env"
 fi
 
-# 3. Install dependencies (uncomment what you need)
+# ============================================================================
+# DEPENDENCIES - Uncomment what your project uses
+# ============================================================================
+
+# 🤖 AI: If you see "command not found" or import errors, uncomment these:
+
+# Node.js projects:
 # npm install
+
+# Python projects:
 # pip install -r requirements.txt
 # poetry install
+# pipenv install
+
+# Ruby projects:
 # bundle install
 
-# 4. Database setup (if needed)
-# python manage.py migrate
-# rails db:migrate
-# npm run db:migrate
+# ============================================================================
+# DATABASE - Only if your project needs it
+# ============================================================================
 
-# 5. Build steps (if needed)
+# 🤖 AI: If you see database connection errors, uncomment these:
+
+# Django:
+# python manage.py migrate
+
+# Rails:
+# rails db:migrate
+
+# Node.js:
+# npm run db:migrate
+# npx prisma migrate deploy
+
+# ============================================================================
+# BUILD STEPS - Only if your project needs compilation
+# ============================================================================
+
+# 🤖 AI: If you see "module not found" or build errors, uncomment these:
+
 # npm run build
 # make build
+# cargo build
 
-# 6. Copy config files
-# cp ../config/database.yml config/database.yml
-# cp ../config/settings.json config/settings.json
+# ============================================================================
+# AGENT-SPECIFIC CONFIG - For multi-agent isolation
+# ============================================================================
 
-# 7. Create agent-specific directories
-# mkdir -p logs tmp uploads
+# 🤖 AI: If agents interfere with each other, set unique values:
 
-# 8. Set agent-specific environment variables
+# Unique Redis instance per agent:
 # echo "REDIS_URL=redis://localhost:600$AGENT_NUM" >> .env
+
+# Unique database per agent:
 # echo "DATABASE_NAME=myapp_agent_$AGENT_NUM" >> .env
 
+# Unique directories:
+# mkdir -p logs tmp uploads
+
 echo "✅ Agent-$AGENT_NUM setup complete!"
+echo ""
+echo "🤖 AI NOTE: If this setup didn't work for you, please improve this script"
+echo "and push the changes so future agents can benefit!"
 """
 
     with open(setup_script, "w") as f:
@@ -173,9 +214,19 @@ echo "✅ Agent-$AGENT_NUM setup complete!"
         console.print(f"  {e}")
         console.print("\n[yellow]You can create it later by running 'agenttree init' again[/yellow]")
 
-    console.print("\nNext steps:")
-    console.print("  1. agenttree setup 1 2 3    # Set up agent worktrees")
-    console.print("  2. agenttree dispatch 1 42  # Dispatch issue #42 to agent-1")
+    console.print("\n[bold cyan]Next steps:[/bold cyan]")
+    console.print("\n[bold]1. Set up agent-1 and let it configure the environment:[/bold]")
+    console.print("   agenttree setup 1")
+    console.print("   agenttree dispatch 1 --task 'Test the worktree setup. Run the app, fix any errors in .agenttree/worktree-setup.sh, and commit your fixes.'")
+    console.print("")
+    console.print("[bold]2. Once agent-1 has the setup working, set up the rest:[/bold]")
+    console.print("   agenttree setup 2 3  # They'll use agent-1's fixes!")
+    console.print("")
+    console.print("[bold]3. Start dispatching real work:[/bold]")
+    console.print("   agenttree dispatch 2 42  # GitHub issue")
+    console.print("   agenttree web            # Or use the dashboard")
+    console.print("")
+    console.print("[dim]💡 Tip: Agent-1 becomes your sysadmin - it fixes the setup script for everyone![/dim]")
 
 
 @main.command()
