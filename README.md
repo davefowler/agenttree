@@ -273,6 +273,20 @@ agenttree/
     └── aider.py        # Aider adapter
 ```
 
+## Documentation
+
+Comprehensive documentation is available in the [`docs/`](docs/) directory:
+
+- **[Roadmap](docs/ROADMAP.md)** - Current status (Phase 2 ✅) and future plans
+- **[Agents Repository Architecture](docs/architecture/agents-repository.md)** - How the documentation system works
+- **[Testing Strategy](docs/development/testing.md)** - Test coverage and approaches (current: 25%, target: 60-70%)
+- **[Planning Materials](docs/planning/)** - Historical planning and research documents
+
+**Quick Links:**
+- Current Phase: **Phase 2 Complete** ✅
+- Next Phase: **Phase 3 - Enhanced GitHub Integration** 🎯
+- Test Coverage: **25%** (48 tests passing)
+
 ## Development
 
 ```bash
@@ -298,6 +312,19 @@ mypy agenttree
 # Lint
 ruff agenttree
 ```
+
+**For beta testing AgentTree with your projects:**
+```bash
+# Install in development mode (live updates)
+cd ~/my-project
+python -m venv venv
+source venv/bin/activate
+pip install -e /path/to/agenttree
+
+# Now any changes to AgentTree code immediately affect this project
+```
+
+See [Testing Strategy](docs/development/testing.md) for more details.
 
 ## Examples
 
