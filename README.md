@@ -21,11 +21,91 @@ agenttree setup 1 2 3
 agenttree dispatch 1 42           # Send GitHub issue #42 to agent-1
 agenttree dispatch 2 --task "Fix login bug"  # Ad-hoc task to agent-2
 
-# Monitor
-agenttree status                   # View all agents
+# Monitor agents
+agenttree status                   # View all agents (CLI)
+agenttree web                      # Launch web dashboard at http://127.0.0.1:8080
 agenttree attach 1                 # Attach to agent-1 (Ctrl+B, D to detach)
 agenttree send 1 "focus on tests" # Send message to agent-1
+
+# Auto-merge PRs when CI passes
+agenttree auto-merge 123           # Merge PR #123 if ready
+agenttree auto-merge 123 --monitor # Wait for CI + approval, then merge
+
+# Remote agents (via Tailscale)
+agenttree remote list              # List available hosts
+agenttree remote dispatch my-pc 1  # Dispatch to remote agent
 ```
+
+## New Features ✨
+
+### Web Dashboard
+Launch a real-time web interface to monitor all agents:
+
+```bash
+agenttree web
+# Open http://127.0.0.1:8080
+```
+
+**Features:**
+- Live agent status updates
+- Real-time tmux streaming via WebSocket
+- Send commands directly from browser
+- Dispatch tasks via web UI
+- Optional HTTP Basic Auth for public exposure
+
+See [docs/web-dashboard.md](docs/web-dashboard.md) for details.
+
+### Auto-Merge
+Automatically merge PRs when CI passes and approved:
+
+```bash
+# Check once and merge if ready
+agenttree auto-merge 123
+
+# Monitor PR continuously until ready, then merge
+agenttree auto-merge 123 --monitor
+
+# Skip approval requirement (merge on CI pass only)
+agenttree auto-merge 123 --no-approval
+```
+
+Perfect for letting agents create PRs and having them auto-merge when tests pass.
+
+### Remote Agents
+Use idle computers as additional agent capacity via Tailscale:
+
+```bash
+# List available hosts
+agenttree remote list
+
+# Dispatch task to remote agent
+agenttree remote dispatch my-home-pc 1
+```
+
+**Setup:**
+1. Install Tailscale on remote machine
+2. Start agent tmux session on remote
+3. Dispatch tasks from anywhere
+
+### Multi-CLI Support
+Use any AI coding CLI with your agents:
+
+```python
+# .agenttree.yaml
+agents:
+  - id: 1
+    tool: claude     # Claude Code (default)
+  - id: 2
+    tool: aider      # Aider
+    model: opus
+  - id: 3
+    tool: gemini     # Google Gemini Code Assist
+    model: gemini-2.0-flash-exp
+  - id: 4
+    tool: cursor     # Or any custom CLI
+    command: cursor-cli
+```
+
 
 ## Why AgentTree?
 

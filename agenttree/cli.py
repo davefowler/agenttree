@@ -426,5 +426,138 @@ def notes_archive(agent_num: int) -> None:
     console.print(f"[green]✓ Archived completed task for agent-{agent_num}[/green]")
 
 
+@main.command()
+@click.option("--host", default="127.0.0.1", help="Host to bind to")
+@click.option("--port", default=8080, type=int, help="Port to bind to")
+@click.option("--config", type=click.Path(exists=True), help="Path to config file")
+def web(host: str, port: int, config: Optional[str]) -> None:
+    """Start the web dashboard for monitoring agents.
+
+    The dashboard provides:
+    - Real-time agent status monitoring
+    - Live tmux output streaming
+    - Task dispatch via web UI
+    - Command execution for agents
+    """
+    from agenttree.web.app import run_server
+
+    console.print(f"[cyan]Starting AgentTree dashboard at http://{host}:{port}[/cyan]")
+    console.print("[dim]Press Ctrl+C to stop[/dim]\n")
+
+    config_path = Path(config) if config else None
+    run_server(host=host, port=port, config_path=config_path)
+
+
+@main.command()
+@click.argument("pr_number", type=int)
+@click.option("--no-approval", is_flag=True, help="Skip approval requirement")
+@click.option("--monitor", is_flag=True, help="Monitor PR until ready to merge")
+@click.option("--timeout", default=3600, type=int, help="Max wait time in seconds (for --monitor)")
+def auto_merge(pr_number: int, no_approval: bool, monitor: bool, timeout: int) -> None:
+    """Auto-merge a PR when CI passes and approved.
+
+    Examples:
+        agenttree auto-merge 123                    # Check once, merge if ready
+        agenttree auto-merge 123 --monitor          # Wait for CI + approval
+        agenttree auto-merge 123 --no-approval      # Merge when CI passes (skip approval check)
+    """
+    from agenttree.github import auto_merge_if_ready, monitor_pr_and_auto_merge
+
+    ensure_gh_cli()
+
+    if monitor:
+        console.print(f"[cyan]Monitoring PR #{pr_number}...[/cyan]")
+        console.print(f"[dim]Will auto-merge when CI passes{'  and approved' if not no_approval else ''}[/dim]\n")
+
+        success = monitor_pr_and_auto_merge(
+            pr_number,
+            require_approval=not no_approval,
+            max_wait=timeout
+        )
+
+        if success:
+            console.print(f"[green]✓ PR #{pr_number} auto-merged successfully![/green]")
+        else:
+            console.print(f"[yellow]⚠ PR #{pr_number} not ready or timed out[/yellow]")
+            sys.exit(1)
+    else:
+        console.print(f"[cyan]Checking PR #{pr_number}...[/cyan]")
+
+        if auto_merge_if_ready(pr_number, require_approval=not no_approval):
+            console.print(f"[green]✓ PR #{pr_number} merged![/green]")
+        else:
+            console.print(f"[yellow]⚠ PR #{pr_number} not ready to merge[/yellow]")
+            console.print("[dim]Use --monitor to wait for CI + approval[/dim]")
+            sys.exit(1)
+
+
+@main.group()
+def remote() -> None:
+    """Manage remote agents via Tailscale + SSH."""
+    pass
+
+
+@remote.command("list")
+def remote_list() -> None:
+    """List available remote hosts on Tailscale network."""
+    from agenttree.remote import is_tailscale_available, get_tailscale_hosts
+
+    if not is_tailscale_available():
+        console.print("[red]Error: Tailscale CLI not found[/red]")
+        console.print("[dim]Install: https://tailscale.com/download[/dim]")
+        sys.exit(1)
+
+    hosts = get_tailscale_hosts()
+
+    if not hosts:
+        console.print("[yellow]No Tailscale hosts found[/yellow]")
+        return
+
+    table = Table(title="Tailscale Hosts")
+    table.add_column("Hostname", style="cyan")
+    table.add_column("IP Address", style="green")
+
+    for host in hosts:
+        table.add_row(host.get("name", "unknown"), host.get("ip", "unknown"))
+
+    console.print(table)
+
+
+@remote.command("dispatch")
+@click.argument("hostname")
+@click.argument("agent_num", type=int)
+@click.option("--user", default="agent", help="SSH user")
+@click.option("--agents-repo", default="~/agents", help="Path to agents repo on remote")
+def remote_dispatch(hostname: str, agent_num: int, user: str, agents_repo: str) -> None:
+    """Dispatch a task to a remote agent.
+
+    This will:
+    1. SSH into the remote host
+    2. Pull latest from agents/ repo
+    3. Notify the agent's tmux session
+
+    Example:
+        agenttree remote dispatch my-home-pc 1
+    """
+    from agenttree.remote import RemoteHost, dispatch_task_to_remote_agent
+
+    host = RemoteHost(name=hostname, host=hostname, user=user, is_tailscale=True)
+
+    console.print(f"[cyan]Dispatching task to {hostname} agent-{agent_num}...[/cyan]")
+
+    success = dispatch_task_to_remote_agent(
+        host,
+        agent_num,
+        project_name="agenttree",  # Could be made configurable
+        agents_repo_path=agents_repo
+    )
+
+    if success:
+        console.print(f"[green]✓ Task dispatched to {hostname}[/green]")
+    else:
+        console.print(f"[red]✗ Failed to dispatch task[/red]")
+        sys.exit(1)
+
+
 if __name__ == "__main__":
     main()
