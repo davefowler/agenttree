@@ -146,6 +146,29 @@ class TestLoadConfig:
         found = find_config_file(tmp_path)
         assert found is None
 
+    def test_load_config_with_none_path(self, tmp_path: Path) -> None:
+        """Test loading config with None path (uses current directory)."""
+        # This test ensures line 123 is covered: path = Path.cwd()
+        import os
+        original_cwd = os.getcwd()
+        try:
+            os.chdir(tmp_path)
+            config = load_config(None)
+            # Should use defaults when no config file exists
+            assert config.project == "myapp"
+        finally:
+            os.chdir(original_cwd)
+
+    def test_load_config_with_empty_yaml(self, tmp_path: Path) -> None:
+        """Test loading config from empty YAML file."""
+        # This test ensures line 134 is covered: return Config() when data is None
+        config_file = tmp_path / ".agenttree.yaml"
+        config_file.write_text("")  # Empty YAML file
+
+        config = load_config(tmp_path)
+        # Should use defaults when YAML is empty
+        assert config.project == "myapp"
+
 
 class TestToolConfig:
     """Tests for ToolConfig model."""

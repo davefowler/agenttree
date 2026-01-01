@@ -295,3 +295,208 @@ class TestWorktreeManager:
         assert status.agent_num == 1
         assert status.is_busy is True
         assert status.has_task is True
+
+    def test_worktree_status_repr(self) -> None:
+        """Test WorktreeStatus string representation."""
+        # Test __repr__ method (lines 49-50 in coverage report)
+        status = WorktreeStatus(
+            agent_num=1,
+            path=Path("/tmp/agent-1"),
+            branch="agent-1-work",
+            has_task=True,
+            has_uncommitted=False,
+            is_busy=True,
+        )
+        repr_str = repr(status)
+        assert "WorktreeStatus" in repr_str
+        assert "agent_num=1" in repr_str
+
+    @patch("agenttree.worktree.subprocess.run")
+    def test_is_busy_error_handling(self, mock_run: Mock, tmp_path: Path) -> None:
+        """Test is_busy handles subprocess errors gracefully."""
+        # Test error handling in is_busy (lines 49-50: except block)
+        # Simulate subprocess error
+        mock_run.side_effect = FileNotFoundError("git not found")
+
+        # Should return False on error, not raise
+        result = is_busy(tmp_path)
+        assert result is False
+
+    @patch("agenttree.worktree.subprocess.run")
+    def test_is_busy_subprocess_error(self, mock_run: Mock, tmp_path: Path) -> None:
+        """Test is_busy handles CalledProcessError."""
+        # Another test for the except block coverage
+        mock_run.side_effect = subprocess.CalledProcessError(1, "git")
+
+        # Should return False on error
+        result = is_busy(tmp_path)
+        assert result is False
+
+
+class TestCreateWorktreeErrors:
+    """Tests for create_worktree error handling."""
+
+    @patch("agenttree.worktree.subprocess.run")
+    def test_create_worktree_when_worktree_add_fails(
+        self, mock_run: Mock, tmp_path: Path
+    ) -> None:
+        """Test create_worktree when git worktree add fails (line 172)."""
+        # First call (branch creation) succeeds
+        # Second call (worktree add) fails
+        mock_run.side_effect = [
+            Mock(returncode=0),  # git branch succeeds
+            subprocess.CalledProcessError(1, "git"),  # git worktree add fails
+        ]
+
+        worktree_path = tmp_path / "agent-1"
+
+        # Should raise the error from git worktree add
+        with pytest.raises(subprocess.CalledProcessError):
+            create_worktree(tmp_path, worktree_path, "agent-1")
+
+
+class TestRemoveWorktreeErrors:
+    """Tests for remove_worktree error handling."""
+
+    @patch("agenttree.worktree.subprocess.run")
+    def test_remove_worktree_already_removed(
+        self, mock_run: Mock, tmp_path: Path
+    ) -> None:
+        """Test remove_worktree when worktree doesn't exist (line 261)."""
+        # Simulate worktree doesn't exist
+        mock_run.side_effect = subprocess.CalledProcessError(1, "git")
+
+        worktree_path = tmp_path / "agent-1"
+
+        # Should not raise error, just silently succeed
+        remove_worktree(tmp_path, worktree_path)  # Should not raise
+
+
+class TestResetWorktreeErrors:
+    """Tests for reset_worktree error handling."""
+
+    @patch("agenttree.worktree.subprocess.run")
+    def test_reset_worktree_checkout_fails_creates_branch(
+        self, mock_run: Mock, tmp_path: Path
+    ) -> None:
+        """Test reset_worktree when checkout fails and creates branch from origin (lines 124-126)."""
+        # git fetch succeeds, git checkout fails (branch doesn't exist locally),
+        # then creates from origin
+        mock_run.side_effect = [
+            Mock(returncode=0),  # git fetch succeeds
+            subprocess.CalledProcessError(1, "git checkout"),  # checkout fails
+            Mock(returncode=0),  # git checkout -b from origin succeeds
+            Mock(returncode=0),  # git reset succeeds
+            Mock(returncode=0),  # git clean succeeds
+        ]
+
+        worktree_path = tmp_path / "agent-1"
+
+        # Should not raise, creates branch from origin
+        reset_worktree(worktree_path, "main")
+
+        # Verify it tried to create branch from origin
+        calls = [str(c) for c in mock_run.call_args_list]
+        assert any("origin/main" in str(c) for c in calls)
+
+    @patch("agenttree.worktree.subprocess.run")
+    def test_reset_worktree_git_fetch_fails(
+        self, mock_run: Mock, tmp_path: Path
+    ) -> None:
+        """Test reset_worktree when git fetch fails (lines 278-279)."""
+        # git fetch fails
+        mock_run.side_effect = subprocess.CalledProcessError(1, "git fetch")
+
+        worktree_path = tmp_path / "agent-1"
+
+        # Should raise the error
+        with pytest.raises(subprocess.CalledProcessError):
+            reset_worktree(worktree_path, "main")
+
+    @patch("agenttree.worktree.subprocess.run")
+    def test_reset_worktree_git_reset_fails(
+        self, mock_run: Mock, tmp_path: Path
+    ) -> None:
+        """Test reset_worktree when git reset fails (lines 278-279)."""
+        # git fetch succeeds, git reset fails
+        mock_run.side_effect = [
+            Mock(returncode=0),  # git fetch succeeds
+            Mock(returncode=0),  # git checkout succeeds
+            subprocess.CalledProcessError(1, "git reset"),  # git reset fails
+        ]
+
+        worktree_path = tmp_path / "agent-1"
+
+        # Should raise the error from git reset
+        with pytest.raises(subprocess.CalledProcessError):
+            reset_worktree(worktree_path, "main")
+
+
+class TestListWorktreesErrors:
+    """Tests for list_worktrees error handling."""
+
+    @patch("agenttree.worktree.subprocess.run")
+    def test_list_worktrees_parsing_error(
+        self, mock_run: Mock, tmp_path: Path
+    ) -> None:
+        """Test list_worktrees when parsing fails (line 299)."""
+        # Return invalid output that can't be parsed
+        mock_run.return_value = Mock(
+            returncode=0,
+            stdout="invalid output without proper format",
+        )
+
+        # Should handle parsing errors gracefully
+        worktrees = list_worktrees(tmp_path)
+        # Should return empty list or handle gracefully
+        assert isinstance(worktrees, list)
+
+
+class TestGetAgentStatusEdgeCases:
+    """Tests for get_agent_status edge cases."""
+
+    @patch("agenttree.worktree.list_worktrees")
+    @patch("agenttree.worktree.is_busy")
+    def test_get_status_worktree_not_found(
+        self, mock_is_busy: Mock, mock_list: Mock, tmp_path: Path
+    ) -> None:
+        """Test get_status when worktree doesn't exist (lines 307-308)."""
+        # No worktrees exist
+        mock_list.return_value = []
+        mock_is_busy.return_value = False
+
+        config = Config(worktrees_dir=tmp_path)
+        manager = WorktreeManager(tmp_path, config)
+
+        # Worktree doesn't exist, but we still create a status
+        status = manager.get_status(1)
+
+        # Should still return a status object
+        assert status.agent_num == 1
+        assert status.has_task is False  # No TASK.md
+        assert status.has_uncommitted is False
+        assert status.is_busy is False
+
+    @patch("agenttree.worktree.is_busy")
+    def test_get_status_with_branch_info(
+        self, mock_is_busy: Mock, tmp_path: Path
+    ) -> None:
+        """Test get_status extracts branch information (lines 307-308)."""
+        # Test when worktree exists with branch info
+        mock_is_busy.return_value = False
+
+        config = Config(worktrees_dir=tmp_path)
+        manager = WorktreeManager(tmp_path, config)
+
+        worktree_path = tmp_path / "agent-1"
+        worktree_path.mkdir(parents=True)
+
+        # Create a .git file (worktree pointer)
+        git_file = worktree_path / ".git"
+        git_file.write_text("gitdir: /main/.git/worktrees/agent-1")
+
+        status = manager.get_status(1)
+
+        # Should have path set correctly
+        assert status.path == worktree_path
+        assert status.has_uncommitted is False
