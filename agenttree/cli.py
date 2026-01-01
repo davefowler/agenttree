@@ -10,9 +10,9 @@ from rich.table import Table
 from agenttree.config import load_config
 from agenttree.worktree import WorktreeManager
 from agenttree.tmux import TmuxManager
-from agenttree.github import GitHubManager, get_issue
+from agenttree.github import GitHubManager, get_issue, ensure_gh_cli
 from agenttree.container import get_container_runtime
-from agenttree.notes import NotesManager
+from agenttree.agents_repo import AgentsRepository
 
 console = Console()
 
@@ -78,6 +78,19 @@ def init(worktrees_dir: Optional[str], project: Optional[str]) -> None:
         yaml.dump(config_data, f, default_flow_style=False)
 
     console.print(f"[green]✓ Created {config_file}[/green]")
+
+    # Initialize agents repository
+    console.print("\n[cyan]Initializing agents repository...[/cyan]")
+    try:
+        ensure_gh_cli()
+        agents_repo = AgentsRepository(repo_path)
+        agents_repo.ensure_repo()
+        console.print("[green]✓ Agents repository created[/green]")
+    except RuntimeError as e:
+        console.print(f"[yellow]Warning: Could not create agents repository:[/yellow]")
+        console.print(f"  {e}")
+        console.print("\n[yellow]You can create it later by running 'agenttree init' again[/yellow]")
+
     console.print("\nNext steps:")
     console.print("  1. agenttree setup 1 2 3    # Set up agent worktrees")
     console.print("  2. agenttree dispatch 1 42  # Dispatch issue #42 to agent-1")
@@ -181,7 +194,10 @@ def dispatch(
     wt_manager = WorktreeManager(repo_path, config)
     tmux_manager = TmuxManager(config)
     gh_manager = GitHubManager()
-    notes_manager = NotesManager(repo_path)
+    agents_repo = AgentsRepository(repo_path)
+
+    # Ensure agents repo exists
+    agents_repo.ensure_repo()
 
     # Dispatch worktree (reset to main)
     try:
@@ -199,12 +215,16 @@ def dispatch(
             gh_manager.create_task_file(issue, task_file)
             gh_manager.assign_issue_to_agent(issue_number, agent_num)
 
-            # Also create spec in .agentree/
-            notes_manager.add_spec_from_issue(
+            # Create spec and task log in agents/ repo
+            agents_repo.create_spec_file(
                 issue_number, issue.title, issue.body, issue.url
+            )
+            agents_repo.create_task_file(
+                agent_num, issue_number, issue.title, issue.body, issue.url
             )
 
             console.print(f"[green]✓ Created task for issue #{issue_number}[/green]")
+            console.print(f"[green]✓ Created spec and task log in agents/ repo[/green]")
         except Exception as e:
             console.print(f"[red]Error fetching issue: {e}[/red]")
             sys.exit(1)
@@ -322,6 +342,88 @@ def kill(agent_num: int) -> None:
 
     tmux_manager.stop_agent(agent_num)
     console.print(f"[green]✓ Killed agent-{agent_num}[/green]")
+
+
+@main.group()
+def notes() -> None:
+    """Manage agents repository notes and documentation."""
+    pass
+
+
+@notes.command("show")
+@click.argument("agent_num", type=int)
+def notes_show(agent_num: int) -> None:
+    """Show task logs for an agent."""
+    repo_path = Path.cwd()
+    agents_repo = AgentsRepository(repo_path)
+
+    agent_dir = agents_repo.agents_path / "tasks" / f"agent-{agent_num}"
+
+    if not agent_dir.exists():
+        console.print(f"[yellow]No tasks found for agent-{agent_num}[/yellow]")
+        return
+
+    task_files = sorted(agent_dir.glob("*.md"), reverse=True)
+
+    if not task_files:
+        console.print(f"[yellow]No tasks found for agent-{agent_num}[/yellow]")
+        return
+
+    console.print(f"\n[cyan]Tasks for agent-{agent_num}:[/cyan]\n")
+    for task_file in task_files:
+        console.print(f"  • {task_file.name}")
+
+    console.print(f"\n[dim]View task: cat agents/tasks/agent-{agent_num}/<filename>[/dim]")
+
+
+@notes.command("search")
+@click.argument("query")
+def notes_search(query: str) -> None:
+    """Search all notes for a query."""
+    repo_path = Path.cwd()
+    agents_repo = AgentsRepository(repo_path)
+
+    if not agents_repo.agents_path.exists():
+        console.print("[yellow]Agents repository not initialized[/yellow]")
+        return
+
+    console.print(f"\n[cyan]Searching for '{query}'...[/cyan]\n")
+
+    import subprocess
+
+    # Use ripgrep or grep to search
+    try:
+        result = subprocess.run(
+            ["rg", "-i", query, str(agents_repo.agents_path)],
+            capture_output=True,
+            text=True,
+        )
+        if result.stdout:
+            console.print(result.stdout)
+        else:
+            console.print("[yellow]No results found[/yellow]")
+    except FileNotFoundError:
+        # Fallback to grep
+        result = subprocess.run(
+            ["grep", "-ri", query, str(agents_repo.agents_path)],
+            capture_output=True,
+            text=True,
+        )
+        if result.stdout:
+            console.print(result.stdout)
+        else:
+            console.print("[yellow]No results found[/yellow]")
+
+
+@notes.command("archive")
+@click.argument("agent_num", type=int)
+def notes_archive(agent_num: int) -> None:
+    """Archive completed tasks for an agent."""
+    repo_path = Path.cwd()
+    agents_repo = AgentsRepository(repo_path)
+
+    agents_repo.archive_task(agent_num)
+    console.print(f"[green]✓ Archived completed task for agent-{agent_num}[/green]")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,731 @@
+"""Agents repository management for AgentTree.
+
+Manages the agents/ git repository (separate from main project).
+"""
+
+import os
+import shutil
+import subprocess
+from pathlib import Path
+from datetime import datetime
+from typing import Optional
+import re
+
+
+def slugify(text: str) -> str:
+    """Convert text to a slug.
+
+    Args:
+        text: Text to slugify
+
+    Returns:
+        Slugified text
+    """
+    text = text.lower()
+    text = re.sub(r'[^\w\s-]', '', text)
+    text = re.sub(r'[-\s]+', '-', text)
+    return text.strip('-')
+
+
+class AgentsRepository:
+    """Manages the agents/ git repository."""
+
+    def __init__(self, project_path: Path):
+        """Initialize agents repository manager.
+
+        Args:
+            project_path: Path to the main project repository
+        """
+        self.project_path = project_path
+        self.agents_path = project_path / "agents"
+        self.project_name = project_path.name
+
+    def ensure_repo(self) -> None:
+        """Ensure agents/ repo exists, create if needed."""
+        # Check if agents/.git exists
+        if (self.agents_path / ".git").exists():
+            return
+
+        # Ensure gh CLI is authenticated
+        self._ensure_gh_cli()
+
+        # Create GitHub repo
+        self._create_github_repo()
+
+        # Clone it locally
+        self._clone_repo()
+
+        # Add to parent .gitignore
+        self._add_to_gitignore()
+
+    def _ensure_gh_cli(self) -> None:
+        """Check gh CLI is installed and authenticated."""
+        if not shutil.which("gh"):
+            raise RuntimeError(
+                "GitHub CLI (gh) not found.\n\n"
+                "Install: https://cli.github.com/\n"
+                "  macOS:   brew install gh\n"
+                "  Linux:   See https://github.com/cli/cli#installation\n"
+                "  Windows: See https://github.com/cli/cli#installation\n"
+            )
+
+        # Check auth status
+        result = subprocess.run(
+            ["gh", "auth", "status"], capture_output=True, text=True
+        )
+
+        if result.returncode != 0:
+            raise RuntimeError(
+                "Not authenticated with GitHub.\n\n"
+                "Run: gh auth login\n\n"
+                "This will open your browser to authenticate.\n"
+                "AgentTree needs GitHub access to:\n"
+                "  - Create agent notes repository\n"
+                "  - Fetch issues\n"
+                "  - Create pull requests\n"
+                "  - Monitor CI status\n"
+            )
+
+    def _create_github_repo(self) -> None:
+        """Create GitHub repo for agents."""
+        repo_name = f"{self.project_name}-agents"
+
+        # Check if repo already exists
+        result = subprocess.run(
+            ["gh", "repo", "view", repo_name],
+            capture_output=True,
+            text=True,
+        )
+
+        if result.returncode == 0:
+            # Repo exists
+            print(f"GitHub repo {repo_name} already exists")
+            return
+
+        # Create new private repo
+        print(f"Creating GitHub repo: {repo_name}")
+        subprocess.run(
+            [
+                "gh",
+                "repo",
+                "create",
+                repo_name,
+                "--private",
+                "--description",
+                f"AI agent notes for {self.project_name}",
+            ],
+            check=True,
+        )
+
+    def _clone_repo(self) -> None:
+        """Clone agents repo locally."""
+        repo_name = f"{self.project_name}-agents"
+
+        # Get current GitHub user
+        result = subprocess.run(
+            ["gh", "api", "user", "-q", ".login"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        username = result.stdout.strip()
+
+        print(f"Cloning {repo_name} to agents/")
+
+        # Clone
+        subprocess.run(
+            ["gh", "repo", "clone", f"{username}/{repo_name}", str(self.agents_path)],
+            check=True,
+        )
+
+        # Initialize structure
+        self._initialize_structure()
+
+    def _initialize_structure(self) -> None:
+        """Create initial folder structure and templates."""
+        print("Initializing agents/ structure...")
+
+        # Create directories
+        (self.agents_path / "templates").mkdir(exist_ok=True)
+        (self.agents_path / "specs" / "architecture").mkdir(parents=True, exist_ok=True)
+        (self.agents_path / "specs" / "features").mkdir(parents=True, exist_ok=True)
+        (self.agents_path / "specs" / "patterns").mkdir(parents=True, exist_ok=True)
+        (self.agents_path / "tasks").mkdir(exist_ok=True)
+        (self.agents_path / "tasks" / "archive").mkdir(parents=True, exist_ok=True)
+        (self.agents_path / "rfcs").mkdir(exist_ok=True)
+        (self.agents_path / "rfcs" / "archive").mkdir(parents=True, exist_ok=True)
+        (self.agents_path / "plans").mkdir(exist_ok=True)
+        (self.agents_path / "plans" / "archive").mkdir(parents=True, exist_ok=True)
+        (self.agents_path / "knowledge").mkdir(exist_ok=True)
+
+        # Create README
+        self._create_readme()
+
+        # Create templates
+        self._create_templates()
+
+        # Create knowledge files
+        self._create_knowledge_files()
+
+        # Create AGENTS.md instructions
+        self._create_agents_instructions()
+
+        # Commit
+        subprocess.run(["git", "add", "."], cwd=self.agents_path, check=True)
+        subprocess.run(
+            ["git", "commit", "-m", "Initialize agents repository"],
+            cwd=self.agents_path,
+            check=True,
+        )
+        subprocess.run(["git", "push"], cwd=self.agents_path, check=True)
+
+        print("✓ Agents repository initialized")
+
+    def _create_readme(self) -> None:
+        """Create main README."""
+        readme = self.agents_path / "README.md"
+        readme.write_text(
+            f"""# AI Notes for {self.project_name}
+
+This repository contains AI-generated content managed by AgentTree.
+
+## Structure
+
+- `templates/` - Templates for consistency (feature specs, RFCs, task logs)
+- `specs/` - Living documentation (architecture, features, patterns)
+- `tasks/` - Task execution logs by agent
+- `rfcs/` - Design proposals (Request for Comments)
+- `plans/` - Planning documents
+- `knowledge/` - Accumulated wisdom (gotchas, decisions, onboarding)
+
+## Quick Links
+
+- [Architecture](specs/architecture/)
+- [Features](specs/features/)
+- [Knowledge Base](knowledge/)
+- [Recent Tasks](tasks/)
+
+## For Agents
+
+See [AGENTS.md](AGENTS.md) for instructions on maintaining this repository.
+
+---
+
+*Auto-managed by AgentTree*
+"""
+        )
+
+    def _create_templates(self) -> None:
+        """Create template files."""
+        templates_dir = self.agents_path / "templates"
+
+        # Feature spec template
+        (templates_dir / "feature-spec.md").write_text(
+            """# Feature: {Name}
+
+**Issue:** #{number}
+**Status:** Planning | In Progress | Complete
+
+## Overview
+
+[What this feature does - user perspective]
+
+## User Stories
+
+- As a {user type}, I want to {action} so that {benefit}
+
+## Technical Approach
+
+[High-level how it works - link to RFC if applicable]
+
+**Related RFC:** [RFC-XXX](../rfcs/XXX-name.md) (if applicable)
+
+## API/Interface
+
+[Endpoints, functions, UI components]
+
+## Implementation Notes
+
+[Things to know while building]
+
+## Testing
+
+[How to verify it works]
+
+## Related
+
+- Issue: #{number}
+- PR: #{number}
+- Specs: [link]
+"""
+        )
+
+        # RFC template
+        (templates_dir / "rfc.md").write_text(
+            """# RFC-{number}: {Title}
+
+**Author:** {agent-name}
+**Date:** {YYYY-MM-DD}
+**Status:** Proposed | Accepted | Rejected
+
+## Summary
+
+[2-3 sentences: what you're proposing]
+
+## Motivation
+
+**Current State:**
+[What exists now]
+
+**Problem:**
+[What's wrong with current state]
+
+**Proposed Solution:**
+[High-level approach]
+
+## Detailed Design
+
+[How it works - diagrams, pseudocode, API designs]
+
+## Drawbacks
+
+[Why we might NOT do this]
+
+## Alternatives Considered
+
+### Option 1: {Name}
+- **Pros:**
+- **Cons:**
+- **Why not chosen:**
+
+### Option 2: {Name}
+- **Pros:**
+- **Cons:**
+- **Why not chosen:**
+
+## Unresolved Questions
+
+- [ ] Question 1
+- [ ] Question 2
+
+## Implementation Plan
+
+[If accepted, how we'll build it]
+
+## Timeline
+
+[Estimated timeline if applicable]
+"""
+        )
+
+        # Task log template
+        (templates_dir / "task-log.md").write_text(
+            """# Task: {title}
+
+**Date:** {date}
+**Agent:** {agent}
+**Issue:** #{issue_num}
+**Status:** 🔄 In Progress
+
+## Context
+
+{description}
+
+## Work Log
+
+### {timestamp}
+
+[Log what you're doing, decisions made, blockers encountered]
+
+## Learnings
+
+[Any gotchas discovered, patterns learned]
+
+## Related
+
+- Issue: {issue_url}
+- Spec: [link to relevant spec]
+"""
+        )
+
+        # Investigation template
+        (templates_dir / "investigation.md").write_text(
+            """# Investigation: {Title}
+
+**Date:** {YYYY-MM-DD}
+**Investigator:** {agent-name}
+**Issue:** #{number} (if applicable)
+
+## Problem
+
+[What's broken or unclear]
+
+## Hypothesis
+
+[What you think is causing it]
+
+## Investigation Steps
+
+### Step 1: {Description}
+**What:** [What you did]
+**Result:** [What you found]
+
+### Step 2: {Description}
+**What:** [What you did]
+**Result:** [What you found]
+
+## Root Cause
+
+[What actually caused the issue]
+
+## Solution
+
+[How to fix it]
+
+## Prevention
+
+[How to prevent this in the future]
+"""
+        )
+
+    def _create_knowledge_files(self) -> None:
+        """Create initial knowledge base files."""
+        knowledge_dir = self.agents_path / "knowledge"
+
+        # gotchas.md
+        (knowledge_dir / "gotchas.md").write_text(
+            """# Known Gotchas
+
+This file contains known issues, workarounds, and "gotchas" discovered by agents.
+
+## Format
+
+```markdown
+## {Title}
+
+**Problem:** [What goes wrong]
+**Solution:** [How to fix/avoid it]
+**Discovered:** {YYYY-MM-DD} by {agent-name} (#{issue})
+**Related:** [link to task log or spec]
+```
+
+---
+
+*Agents: Add your discoveries here as you find them!*
+"""
+        )
+
+        # decisions.md (Architecture Decision Records)
+        (knowledge_dir / "decisions.md").write_text(
+            """# Architecture Decision Records (ADRs)
+
+This file documents key architectural decisions and their rationale.
+
+## Format
+
+```markdown
+## ADR-{number}: {Title}
+
+**Date:** {YYYY-MM-DD}
+**Decided by:** {agent/human}
+**Status:** Accepted | Superseded | Deprecated
+
+**Context:**
+[Why we needed to make this decision]
+
+**Decision:**
+[What we decided]
+
+**Consequences:**
+- ✅ Positive consequence
+- ❌ Negative consequence
+```
+
+---
+
+*Agents: Document major decisions here!*
+"""
+        )
+
+        # onboarding.md
+        (knowledge_dir / "onboarding.md").write_text(
+            f"""# Onboarding Guide for {self.project_name}
+
+*This file is auto-generated and maintained by agents.*
+
+## Quick Start
+
+1. **Architecture Overview:** See [specs/architecture/](../specs/architecture/)
+2. **Key Patterns:** See [specs/patterns/](../specs/patterns/)
+3. **Common Gotchas:** See [gotchas.md](gotchas.md)
+4. **Decisions Made:** See [decisions.md](decisions.md)
+
+## Project Structure
+
+[Agents: Describe the codebase structure]
+
+## Development Workflow
+
+[Agents: Document how to develop locally]
+
+## Common Tasks
+
+[Agents: Document common development tasks]
+
+## Testing
+
+[Agents: Document testing approach]
+
+## Deployment
+
+[Agents: Document deployment process]
+
+---
+
+*Updated: {datetime.now().strftime("%Y-%m-%d")}*
+"""
+        )
+
+    def _create_agents_instructions(self) -> None:
+        """Create AGENTS.md with instructions for AI agents."""
+        (self.agents_path / "AGENTS.md").write_text(
+            """# Agent Instructions
+
+## 📋 If you have a TASK.md file, read it first!
+
+## Documentation Structure
+
+Your work is tracked in this `agents/` repository (separate from main code).
+
+### During Development
+
+**Update your task log:**
+
+File: `tasks/agent-{N}/YYYY-MM-DD-task.md`
+
+```markdown
+## Work Log
+
+### 2025-01-15 14:30
+Started investigating the timeout issue. Found it's in session.go...
+
+### 2025-01-15 15:45
+Fixed race condition by adding mutex. Added test.
+```
+
+**Found a gotcha?** Add to `knowledge/gotchas.md`:
+
+```markdown
+## Session Store Race Condition
+**Problem:** Default session store isn't thread-safe
+**Solution:** Use sync.Mutex or Redis
+**Discovered:** 2025-01-15 (agent-1, #42)
+```
+
+**Changed architecture?** Update relevant file in `specs/architecture/`
+
+**Added a pattern?** Document in `specs/patterns/`
+
+### Templates
+
+Use templates in `templates/` for consistency:
+- `feature-spec.md` - For documenting features
+- `rfc.md` - For design proposals
+- `task-log.md` - Format for your task logs
+- `investigation.md` - For bug investigations
+
+### On Completion
+
+Run `./scripts/submit.sh` which will:
+✓ Create PR
+✓ Mark task as complete
+✓ Archive task log automatically
+
+## File Organization
+
+- `specs/` - **Living docs** (keep updated as code changes)
+- `tasks/` - **Historical logs** (archive after completion)
+- `rfcs/` - **Design proposals** (for major decisions)
+- `plans/` - **Planning docs** (for complex projects)
+- `knowledge/` - **Shared wisdom** (gotchas, decisions, onboarding)
+
+## Questions?
+
+See [README.md](README.md) for structure overview.
+"""
+        )
+
+    def _add_to_gitignore(self) -> None:
+        """Add agents/ to parent .gitignore."""
+        gitignore = self.project_path / ".gitignore"
+
+        if gitignore.exists():
+            content = gitignore.read_text()
+            if "agents/" in content:
+                return
+
+            with open(gitignore, "a") as f:
+                f.write("\n# AgentTree AI notes (separate git repo)\n")
+                f.write("agents/\n")
+        else:
+            gitignore.write_text("# AgentTree AI notes\nagents/\n")
+
+        print("✓ Added agents/ to .gitignore")
+
+    def create_task_file(
+        self, agent_num: int, issue_num: int, issue_title: str, issue_body: str, issue_url: str
+    ) -> Path:
+        """Create task file from template.
+
+        Args:
+            agent_num: Agent number
+            issue_num: Issue number
+            issue_title: Issue title
+            issue_body: Issue description
+            issue_url: Issue URL
+
+        Returns:
+            Path to created task file
+        """
+        date = datetime.now().strftime("%Y-%m-%d")
+        slug = slugify(issue_title)
+        agent_dir = self.agents_path / "tasks" / f"agent-{agent_num}"
+        agent_dir.mkdir(exist_ok=True)
+
+        task_file = agent_dir / f"{date}-{slug}.md"
+
+        # Fill in template
+        template = (self.agents_path / "templates" / "task-log.md").read_text()
+        content = template.format(
+            title=issue_title,
+            date=date,
+            agent=f"agent-{agent_num}",
+            issue_num=issue_num,
+            description=issue_body,
+            timestamp=datetime.now().strftime("%Y-%m-%d %H:%M"),
+            issue_url=issue_url,
+        )
+
+        task_file.write_text(content)
+
+        # Commit
+        self._commit(f"Start task: {issue_title}")
+
+        return task_file
+
+    def create_spec_file(
+        self, issue_num: int, issue_title: str, issue_body: str, issue_url: str
+    ) -> None:
+        """Create spec file from issue if it doesn't exist.
+
+        Args:
+            issue_num: Issue number
+            issue_title: Issue title
+            issue_body: Issue description
+            issue_url: Issue URL
+        """
+        spec_file = self.agents_path / "specs" / "features" / f"issue-{issue_num}.md"
+
+        if spec_file.exists():
+            return  # Already exists
+
+        content = f"""# {issue_title}
+
+**Issue:** [#{issue_num}]({issue_url})
+**Created:** {datetime.now().strftime("%Y-%m-%d")}
+**Status:** In Progress
+
+## Description
+
+{issue_body}
+
+## Implementation Notes
+
+(Agents will add notes here as work progresses)
+
+## Related
+
+- Issue: #{issue_num}
+"""
+
+        spec_file.write_text(content)
+        self._commit(f"Add spec for issue #{issue_num}")
+
+    def mark_task_complete(self, agent_num: int, pr_num: int) -> None:
+        """Mark task as complete and prepare for archival.
+
+        Args:
+            agent_num: Agent number
+            pr_num: Pull request number
+        """
+        # Find most recent task file for this agent
+        agent_dir = self.agents_path / "tasks" / f"agent-{agent_num}"
+        if not agent_dir.exists():
+            return
+
+        task_files = sorted(agent_dir.glob("*.md"), reverse=True)
+        if not task_files:
+            return
+
+        task_file = task_files[0]  # Most recent
+
+        # Append completion info
+        with open(task_file, "a") as f:
+            f.write(f"\n\n## Status: ✅ Completed\n\n")
+            f.write(f"**PR:** #{pr_num}\n")
+            f.write(f"**Completed:** {datetime.now().strftime('%Y-%m-%d %H:%M')}\n")
+
+        self._commit(f"Mark task complete: {task_file.name}")
+
+    def archive_task(self, agent_num: int) -> None:
+        """Archive most recent completed task.
+
+        Args:
+            agent_num: Agent number
+        """
+        agent_dir = self.agents_path / "tasks" / f"agent-{agent_num}"
+        if not agent_dir.exists():
+            return
+
+        # Find most recent task
+        task_files = sorted(agent_dir.glob("*.md"), reverse=True)
+        if not task_files:
+            return
+
+        task_file = task_files[0]
+
+        # Extract year-month from filename
+        year_month = task_file.name[:7]  # YYYY-MM
+
+        # Create archive directory
+        archive_dir = self.agents_path / "tasks" / "archive" / year_month
+        archive_dir.mkdir(parents=True, exist_ok=True)
+
+        # Move to archive
+        new_name = f"agent-{agent_num}-{task_file.name[11:]}"  # Skip YYYY-MM-DD-
+        archive_path = archive_dir / new_name
+
+        shutil.move(task_file, archive_path)
+
+        self._commit(f"Archive task: {new_name}")
+
+    def _commit(self, message: str) -> None:
+        """Commit changes to agents/ repo.
+
+        Args:
+            message: Commit message
+        """
+        try:
+            subprocess.run(["git", "add", "."], cwd=self.agents_path, check=True)
+            subprocess.run(
+                ["git", "commit", "-m", message],
+                cwd=self.agents_path,
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                ["git", "push"], cwd=self.agents_path, check=True, capture_output=True
+            )
+        except subprocess.CalledProcessError:
+            # Nothing to commit or push failed - that's okay
+            pass

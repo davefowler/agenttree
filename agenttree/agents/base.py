@@ -160,24 +160,143 @@ class AiderAgent(BaseAgent):
         return None
 
 
+class GeminiAgent(BaseAgent):
+    """Agent adapter for Google Gemini Code Assist."""
+
+    def __init__(self, model: str = "gemini-2.0-flash-exp"):
+        """Initialize Gemini agent.
+
+        Args:
+            model: Model to use (default: gemini-2.0-flash-exp)
+        """
+        super().__init__(
+            name="gemini",
+            command=f"gemini --model {model}",
+            startup_prompt="Read TASK.md and start working on the task described.",
+        )
+        self.model = model
+
+    def get_start_command(self, worktree_path: Path) -> str:
+        """Get the command to start Gemini.
+
+        Args:
+            worktree_path: Path to the worktree
+
+        Returns:
+            Command string
+        """
+        return self.command
+
+    def format_task_prompt(self, task_file: Path) -> str:
+        """Format the initial task prompt for Gemini.
+
+        Args:
+            task_file: Path to TASK.md
+
+        Returns:
+            Formatted prompt
+        """
+        return self.startup_prompt
+
+    def prepare_environment(self, worktree_path: Path) -> Optional[str]:
+        """Prepare environment for Gemini.
+
+        Args:
+            worktree_path: Path to the worktree
+
+        Returns:
+            Shell commands to activate venv and set API key
+        """
+        commands = []
+
+        venv_activate = worktree_path / ".venv" / "bin" / "activate"
+        if venv_activate.exists():
+            commands.append(f"source {venv_activate}")
+
+        # Gemini needs API key
+        env_file = worktree_path / ".env"
+        if env_file.exists():
+            commands.append("set -a")
+            commands.append(f"source {env_file}")
+            commands.append("set +a")
+
+        return " && ".join(commands) if commands else None
+
+
+class CustomAgent(BaseAgent):
+    """Agent adapter for custom CLI tools."""
+
+    def __init__(self, name: str, command: str, startup_prompt: str = ""):
+        """Initialize custom agent.
+
+        Args:
+            name: Tool name
+            command: Command to start the tool
+            startup_prompt: Initial prompt (optional)
+        """
+        super().__init__(
+            name=name,
+            command=command,
+            startup_prompt=startup_prompt or "Check TASK.md and start working.",
+        )
+
+    def get_start_command(self, worktree_path: Path) -> str:
+        """Get the command to start custom agent.
+
+        Args:
+            worktree_path: Path to the worktree
+
+        Returns:
+            Command string
+        """
+        return self.command
+
+    def format_task_prompt(self, task_file: Path) -> str:
+        """Format the initial task prompt.
+
+        Args:
+            task_file: Path to TASK.md
+
+        Returns:
+            Formatted prompt
+        """
+        return self.startup_prompt
+
+
 def get_agent(tool_name: str, **kwargs) -> BaseAgent:
     """Get an agent instance by name.
 
     Args:
         tool_name: Name of the tool
         **kwargs: Additional arguments for the agent
+            - model: Model name (for aider, gemini)
+            - command: Custom command (for custom agents)
+            - startup_prompt: Custom startup prompt
 
     Returns:
         Agent instance
 
-    Raises:
-        ValueError: If tool is not recognized
+    Examples:
+        >>> get_agent("claude")
+        >>> get_agent("aider", model="opus")
+        >>> get_agent("gemini", model="gemini-2.0-flash-exp")
+        >>> get_agent("cursor", command="cursor", startup_prompt="Start coding")
     """
     if tool_name == "claude":
         return ClaudeAgent()
     elif tool_name == "aider":
         model = kwargs.get("model", "sonnet")
         return AiderAgent(model=model)
+    elif tool_name == "gemini":
+        model = kwargs.get("model", "gemini-2.0-flash-exp")
+        return GeminiAgent(model=model)
     else:
-        # Return a generic agent for custom tools
-        return BaseAgent.__new__(BaseAgent)
+        # Custom agent
+        command = kwargs.get("command", tool_name)
+        startup_prompt = kwargs.get("startup_prompt", "")
+        return CustomAgent(
+            name=tool_name,
+            command=command,
+            startup_prompt=startup_prompt,
+        )
+
