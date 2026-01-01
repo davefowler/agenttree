@@ -13,6 +13,10 @@ import os
 from typing import List, Dict, Optional
 from datetime import datetime
 
+from agenttree.config import load_config
+from agenttree.worktree import WorktreeManager
+from agenttree.github import get_issue
+
 # Get the directory where this file is located
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -69,27 +73,59 @@ def get_current_user(username: Optional[str] = Depends(verify_credentials)) -> O
 class AgentManager:
     """Manages agent state for the dashboard."""
 
-    def __init__(self):
+    def __init__(self, worktree_manager: Optional[WorktreeManager] = None):
+        self.worktree_manager = worktree_manager
         self.agents: Dict[int, dict] = {}
+
+    def _check_tmux_session(self, agent_num: int) -> bool:
+        """Check if tmux session exists for agent."""
+        try:
+            result = subprocess.run(
+                ["tmux", "has-session", "-t", f"agent-{agent_num}"],
+                capture_output=True,
+                timeout=1
+            )
+            return result.returncode == 0
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            return False
 
     def get_agent_status(self, agent_num: int) -> dict:
         """Get status of an agent."""
-        # This would integrate with actual worktree manager
-        # For now, mock it
+        if self.worktree_manager:
+            try:
+                status = self.worktree_manager.get_status(agent_num)
+                return {
+                    "agent_num": agent_num,
+                    "status": "working" if status.is_busy else "idle",
+                    "current_task": "Active" if status.has_task else None,
+                    "tmux_active": self._check_tmux_session(agent_num),
+                    "last_activity": datetime.now().isoformat()
+                }
+            except Exception:
+                # Agent not set up yet
+                pass
+
+        # Fallback to basic check
         return {
             "agent_num": agent_num,
             "status": "idle",
             "current_task": None,
-            "tmux_active": True,
-            "last_activity": datetime.now().isoformat()
+            "tmux_active": self._check_tmux_session(agent_num),
+            "last_activity": "Unknown"
         }
 
     def get_all_agents(self) -> List[dict]:
         """Get all configured agents."""
-        # Mock for now
+        if self.worktree_manager:
+            # Get configured agent count from config
+            num_agents = self.worktree_manager.config.num_agents
+            return [self.get_agent_status(i) for i in range(1, num_agents + 1)]
+
+        # Fallback to default
         return [self.get_agent_status(i) for i in range(1, 4)]
 
 
+# Global agent manager - will be initialized in startup
 agent_manager = AgentManager()
 
 
@@ -173,14 +209,39 @@ async def dispatch_task(
     user: Optional[str] = Depends(get_current_user)
 ):
     """Dispatch a task to an agent."""
-    # This would integrate with actual dispatch logic
-    # For now, just show success
+    try:
+        if agent_manager.worktree_manager:
+            worktree_path = agent_manager.worktree_manager.config.get_worktree_path(agent_num)
+            task_file = worktree_path / "TASK.md"
+
+            # Create task content
+            if issue_number:
+                try:
+                    issue = get_issue(issue_number)
+                    task_content = f"# Task: {issue.title}\n\n"
+                    task_content += f"Issue: #{issue_number}\n\n"
+                    task_content += f"{issue.body}\n"
+                except Exception as e:
+                    task_content = f"# Task from Issue #{issue_number}\n\n"
+                    task_content += f"Error fetching issue: {e}\n"
+            else:
+                task_content = f"# Ad-hoc Task\n\n{task_description or 'No description provided'}\n"
+
+            # Write TASK.md
+            task_file.write_text(task_content)
+            status = f"Task dispatched to agent-{agent_num}"
+        else:
+            status = "Dashboard running in mock mode - task not actually dispatched"
+
+    except Exception as e:
+        status = f"Error: {str(e)}"
+
     return templates.TemplateResponse(
         "partials/dispatch_status.html",
         {
             "request": request,
             "agent_num": agent_num,
-            "status": f"Task dispatched to agent-{agent_num}"
+            "status": status
         }
     )
 
@@ -221,13 +282,32 @@ async def health_check():
     return {"status": "healthy", "service": "agenttree-web"}
 
 
-def run_server(host: str = "127.0.0.1", port: int = 8080):
+def run_server(
+    host: str = "127.0.0.1",
+    port: int = 8080,
+    config_path: Optional[Path] = None
+):
     """Run the FastAPI server.
 
     Args:
         host: Host to bind to
         port: Port to bind to
+        config_path: Path to agenttree config file (optional)
     """
+    global agent_manager
+
+    # Try to load config and initialize real agent manager
+    if config_path or Path(".agenttree/config.yaml").exists():
+        try:
+            config = load_config(config_path)
+            repo_path = Path.cwd()  # Assume current directory is the repo
+            worktree_manager = WorktreeManager(repo_path, config)
+            agent_manager = AgentManager(worktree_manager)
+            print(f"✓ Loaded config with {config.num_agents} agents")
+        except Exception as e:
+            print(f"⚠ Could not load config: {e}")
+            print("  Running with mock data")
+
     import uvicorn
     uvicorn.run(app, host=host, port=port)
 
