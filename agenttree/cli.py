@@ -79,6 +79,88 @@ def init(worktrees_dir: Optional[str], project: Optional[str]) -> None:
 
     console.print(f"[green]✓ Created {config_file}[/green]")
 
+    # Create .agenttree directory
+    agenttree_dir = repo_path / ".agenttree"
+    agenttree_dir.mkdir(exist_ok=True)
+
+    # Create worktree-setup.sh template
+    setup_script = agenttree_dir / "worktree-setup.sh"
+    setup_template = """#!/bin/bash
+# AgentTree Worktree Setup Script
+# This script runs for each agent worktree during 'agenttree setup'
+# Customize this for your project's specific needs
+
+set -e  # Exit on error
+
+WORKTREE_PATH="$1"
+AGENT_NUM="$2"
+AGENT_PORT="$3"
+
+echo "🔧 Setting up agent-$AGENT_NUM at $WORKTREE_PATH"
+cd "$WORKTREE_PATH"
+
+# ============================================================================
+# CUSTOMIZE BELOW FOR YOUR PROJECT
+# ============================================================================
+
+# 1. Copy environment files
+if [ -f "../.env" ]; then
+    cp ../.env .env
+    echo "✓ Copied .env"
+fi
+
+# If you have multiple env files:
+# cp ../.env.local .env.local
+# cp ../.env.test .env.test
+
+# 2. Set agent-specific PORT in .env
+if [ -f ".env" ]; then
+    # Remove existing PORT line and add new one
+    sed -i.bak '/^PORT=/d' .env
+    echo "PORT=$AGENT_PORT" >> .env
+    rm .env.bak 2>/dev/null || true
+    echo "✓ Set PORT=$AGENT_PORT in .env"
+fi
+
+# 3. Install dependencies (uncomment what you need)
+# npm install
+# pip install -r requirements.txt
+# poetry install
+# bundle install
+
+# 4. Database setup (if needed)
+# python manage.py migrate
+# rails db:migrate
+# npm run db:migrate
+
+# 5. Build steps (if needed)
+# npm run build
+# make build
+
+# 6. Copy config files
+# cp ../config/database.yml config/database.yml
+# cp ../config/settings.json config/settings.json
+
+# 7. Create agent-specific directories
+# mkdir -p logs tmp uploads
+
+# 8. Set agent-specific environment variables
+# echo "REDIS_URL=redis://localhost:600$AGENT_NUM" >> .env
+# echo "DATABASE_NAME=myapp_agent_$AGENT_NUM" >> .env
+
+echo "✅ Agent-$AGENT_NUM setup complete!"
+"""
+
+    with open(setup_script, "w") as f:
+        f.write(setup_template)
+
+    # Make it executable
+    import stat
+    setup_script.chmod(setup_script.stat().st_mode | stat.S_IEXEC)
+
+    console.print(f"[green]✓ Created {setup_script}[/green]")
+    console.print(f"[dim]  → Customize this script for your project's setup needs[/dim]")
+
     # Initialize agents repository
     console.print("\n[cyan]Initializing agents repository...[/cyan]")
     try:
@@ -105,39 +187,63 @@ def setup(agent_numbers: tuple) -> None:
 
     manager = WorktreeManager(repo_path, config)
 
+    # Check if custom setup script exists
+    setup_script = repo_path / ".agenttree" / "worktree-setup.sh"
+    has_custom_setup = setup_script.exists()
+
+    if has_custom_setup:
+        console.print(f"[cyan]Using custom setup script: {setup_script}[/cyan]\n")
+
     for agent_num in agent_numbers:
         try:
-            console.print(f"Setting up agent-{agent_num}...")
+            console.print(f"[bold]Setting up agent-{agent_num}...[/bold]")
             worktree_path = manager.setup_agent(agent_num)
-
-            # Create .env file with agent-specific PORT
-            env_file = worktree_path / ".env"
             port = config.get_port_for_agent(agent_num)
 
-            if (repo_path / ".env").exists():
-                import shutil
+            # Run custom setup script if it exists
+            if has_custom_setup:
+                console.print(f"[dim]Running worktree-setup.sh...[/dim]")
+                result = subprocess.run(
+                    [str(setup_script), str(worktree_path), str(agent_num), str(port)],
+                    cwd=repo_path,
+                    capture_output=True,
+                    text=True
+                )
 
-                shutil.copy(repo_path / ".env", env_file)
-
-            # Update or add PORT
-            if env_file.exists():
-                with open(env_file, "r") as f:
-                    lines = f.readlines()
-
-                with open(env_file, "w") as f:
-                    port_written = False
-                    for line in lines:
-                        if line.startswith("PORT="):
-                            f.write(f"PORT={port}\n")
-                            port_written = True
-                        else:
-                            f.write(line)
-
-                    if not port_written:
-                        f.write(f"PORT={port}\n")
+                if result.returncode == 0:
+                    if result.stdout:
+                        console.print(result.stdout.strip())
+                else:
+                    console.print(f"[yellow]Warning: Setup script failed:[/yellow]")
+                    console.print(result.stderr)
             else:
-                with open(env_file, "w") as f:
-                    f.write(f"PORT={port}\n")
+                # Fallback: basic .env copy (legacy behavior)
+                console.print("[dim]No custom setup script found, using default behavior[/dim]")
+                env_file = worktree_path / ".env"
+
+                if (repo_path / ".env").exists():
+                    import shutil
+                    shutil.copy(repo_path / ".env", env_file)
+
+                # Update or add PORT
+                if env_file.exists():
+                    with open(env_file, "r") as f:
+                        lines = f.readlines()
+
+                    with open(env_file, "w") as f:
+                        port_written = False
+                        for line in lines:
+                            if line.startswith("PORT="):
+                                f.write(f"PORT={port}\n")
+                                port_written = True
+                            else:
+                                f.write(line)
+
+                        if not port_written:
+                            f.write(f"PORT={port}\n")
+                else:
+                    with open(env_file, "w") as f:
+                        f.write(f"PORT={port}\n")
 
             console.print(f"[green]✓ Agent {agent_num} ready at {worktree_path}[/green]")
         except Exception as e:
