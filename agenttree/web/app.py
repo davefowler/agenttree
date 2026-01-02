@@ -102,10 +102,19 @@ class AgentManager:
         if self.worktree_manager:
             try:
                 status = self.worktree_manager.get_status(agent_num)
+                
+                # Build task description
+                task_desc = None
+                if status.has_task and status.current_task:
+                    task_desc = status.current_task
+                    if status.task_count > 1:
+                        task_desc += f" (+{status.task_count - 1} queued)"
+                
                 return {
                     "agent_num": agent_num,
                     "status": "working" if status.is_busy else "idle",
-                    "current_task": "Active" if status.has_task else None,
+                    "current_task": task_desc,
+                    "task_count": status.task_count,
                     "tmux_active": self._check_tmux_session(agent_num),
                     "last_activity": datetime.now().isoformat()
                 }
@@ -118,19 +127,25 @@ class AgentManager:
             "agent_num": agent_num,
             "status": "idle",
             "current_task": None,
+            "task_count": 0,
             "tmux_active": self._check_tmux_session(agent_num),
             "last_activity": "Unknown"
         }
 
     def get_all_agents(self) -> List[dict]:
-        """Get all configured agents."""
+        """Get all configured agents by scanning for existing worktrees."""
+        agents = []
         if self.worktree_manager:
-            # Get configured agent count from config
-            num_agents = self.worktree_manager.config.num_agents
-            return [self.get_agent_status(i) for i in range(1, num_agents + 1)]
-
-        # Fallback to default
-        return [self.get_agent_status(i) for i in range(1, 4)]
+            config = self.worktree_manager.config
+            worktrees_dir = Path(config.worktrees_dir).expanduser()
+            
+            # Scan for existing agent directories matching project namespace
+            for agent_num in range(1, 10):
+                agent_path = worktrees_dir / f"{config.project}-agent-{agent_num}"
+                if agent_path.exists():
+                    agents.append(self.get_agent_status(agent_num))
+        
+        return agents
 
 
 # Global agent manager - will be initialized in startup
@@ -216,30 +231,43 @@ async def dispatch_task(
     task_description: str = Form(default=None),
     user: Optional[str] = Depends(get_current_user)
 ):
-    """Dispatch a task to an agent."""
+    """Dispatch a task to an agent (adds to queue)."""
+    from agenttree.worktree import create_task_file
+    
     try:
         if agent_manager.worktree_manager:
             worktree_path = agent_manager.worktree_manager.config.get_worktree_path(agent_num)
-            task_file = worktree_path / "TASK.md"
 
             # Create task content
             if issue_number:
                 try:
                     issue = get_issue(issue_number)
-                    task_content = f"# Task: {issue.title}\n\n"
-                    task_content += f"Issue: #{issue_number}\n\n"
-                    task_content += f"{issue.body}\n"
-                except Exception as e:
-                    task_content = f"# Task from Issue #{issue_number}\n\n"
-                    task_content += f"Error fetching issue: {e}\n"
-            else:
-                task_content = f"# Ad-hoc Task\n\n{task_description or 'No description provided'}\n"
+                    task_content = f"""# Task: {issue.title}
 
-            # Write TASK.md
-            task_file.write_text(task_content)
-            status = f"Task dispatched to agent-{agent_num}"
+**Issue:** [#{issue.number}]({issue.url})
+
+## Description
+
+{issue.body}
+"""
+                    task_path = create_task_file(
+                        worktree_path, issue.title, task_content, issue_number
+                    )
+                    status = f"Task queued: {task_path.name}"
+                except Exception as e:
+                    status = f"Error fetching issue: {e}"
+            else:
+                task_title = task_description[:50] if task_description else "Ad-hoc Task"
+                task_content = f"""# Task: {task_title}
+
+## Description
+
+{task_description or 'No description provided.'}
+"""
+                task_path = create_task_file(worktree_path, task_title, task_content)
+                status = f"Task queued: {task_path.name}"
         else:
-            status = "Dashboard running in mock mode - task not actually dispatched"
+            status = "Error: No worktree manager configured"
 
     except Exception as e:
         status = f"Error: {str(e)}"
@@ -304,17 +332,16 @@ def run_server(
     """
     global agent_manager
 
-    # Try to load config and initialize real agent manager
-    if config_path or Path(".agenttree/config.yaml").exists():
-        try:
-            config = load_config(config_path)
-            repo_path = Path.cwd()  # Assume current directory is the repo
-            worktree_manager = WorktreeManager(repo_path, config)
-            agent_manager = AgentManager(worktree_manager)
-            print(f"✓ Loaded config with {config.num_agents} agents")
-        except Exception as e:
-            print(f"⚠ Could not load config: {e}")
-            print("  Running with mock data")
+    # Load config - find_config_file walks up directory tree to find .agenttree.yaml
+    try:
+        config = load_config(config_path)
+        repo_path = Path.cwd()
+        worktree_manager = WorktreeManager(repo_path, config)
+        agent_manager = AgentManager(worktree_manager)
+        print(f"✓ Loaded config for project: {config.project}")
+    except Exception as e:
+        print(f"⚠ Could not load config: {e}")
+        print("  Run 'agenttree init' to create a config file")
 
     import uvicorn
     uvicorn.run(app, host=host, port=port)

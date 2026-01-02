@@ -2,7 +2,9 @@
 
 **Orchestrate multiple AI coding agents across git worktrees**
 
-AgentTree lets you run multiple AI coding agents (Claude Code, Aider, etc.) in parallel on the same codebase. Each agent gets its own git worktree, tmux session, and isolated environment.
+AgentTree lets you run multiple AI coding agents (Claude Code, Aider, etc.) in parallel on the same codebase.  It's like claude or cursor cloud code agents but on your machine with a lot more capabilities.  Each agent gets its own git worktree, tmux session, and isolated environment.
+
+AgentTree also attempts to organize the many planning, task and spec.md files that accumulate naturally in AI assisted development.  To remove this noise (and the noise of the agents assigning/sharing tasks to each other) it creates an /agents folder with a sister git repo that organizes these files and all their commits in your working directory but out of your main code base.
 
 ## Quick Start
 

@@ -55,7 +55,8 @@ class Config(BaseModel):
         Returns:
             Path to the agent's worktree
         """
-        return self.worktrees_dir / f"agent-{agent_num}"
+        expanded_dir = Path(self.worktrees_dir).expanduser()
+        return expanded_dir / f"{self.project}-agent-{agent_num}"
 
     def get_tmux_session_name(self, agent_num: int) -> str:
         """Get tmux session name for a specific agent.

@@ -206,13 +206,37 @@ def dispatch(
         console.print(f"[red]Error: {e}[/red]")
         sys.exit(1)
 
-    # Create TASK.md
-    task_file = worktree_path / "TASK.md"
+    # Import task creation function
+    from agenttree.worktree import create_task_file
 
     if issue_number:
         try:
             issue = get_issue(issue_number)
-            gh_manager.create_task_file(issue, task_file)
+            
+            # Create task content
+            task_content = f"""# Task: {issue.title}
+
+**Issue:** [#{issue.number}]({issue.url})
+
+## Description
+
+{issue.body}
+
+## Workflow
+
+```bash
+git checkout -b issue-{issue.number}
+# ... implement changes ...
+git commit -m "Your message (Fixes #{issue.number})"
+git push -u origin issue-{issue.number}
+gh pr create --fill
+```
+"""
+            # Create dated task file in tasks/ folder
+            task_path = create_task_file(
+                worktree_path, issue.title, task_content, issue_number
+            )
+            
             gh_manager.assign_issue_to_agent(issue_number, agent_num)
 
             # Create spec and task log in agents/ repo
@@ -223,14 +247,32 @@ def dispatch(
                 agent_num, issue_number, issue.title, issue.body, issue.url
             )
 
-            console.print(f"[green]✓ Created task for issue #{issue_number}[/green]")
+            console.print(f"[green]✓ Created task: {task_path.name}[/green]")
             console.print(f"[green]✓ Created spec and task log in agents/ repo[/green]")
         except Exception as e:
             console.print(f"[red]Error fetching issue: {e}[/red]")
             sys.exit(1)
     else:
-        gh_manager.create_adhoc_task_file(task or "", task_file)
-        console.print("[green]✓ Created ad-hoc task[/green]")
+        # Ad-hoc task
+        task_content = f"""# Task: {task or 'Ad-hoc Task'}
+
+## Description
+
+{task or 'No description provided.'}
+
+## Workflow
+
+```bash
+git checkout -b feature/your-feature-name
+# ... implement changes ...
+git commit -m "Your message"
+git push -u origin feature/your-feature-name
+gh pr create --fill
+```
+"""
+        task_title = task[:50] if task else "ad-hoc-task"
+        task_path = create_task_file(worktree_path, task_title, task_content)
+        console.print(f"[green]✓ Created task: {task_path.name}[/green]")
 
     # Start agent in tmux
     tool_name = tool or config.default_tool
@@ -289,13 +331,12 @@ def status() -> None:
         else:
             status_str = "⚪ Available"
 
-        # Get task description
+        # Get task description from WorktreeStatus
         task_desc = ""
-        if status.has_task:
-            task_file = worktree_path / "TASK.md"
-            with open(task_file) as f:
-                first_line = f.readline().strip()
-                task_desc = first_line.replace("# Task: ", "").replace("# Task", "")[:50]
+        if status.has_task and status.current_task:
+            task_desc = status.current_task[:40]
+            if status.task_count > 1:
+                task_desc += f" (+{status.task_count - 1} more)"
 
         table.add_row(f"Agent {agent_num}", status_str, task_desc, status.branch)
 
