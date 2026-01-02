@@ -125,8 +125,12 @@ def init(worktrees_dir: Optional[str], project: Optional[str]) -> None:
 #
 # This script receives three arguments:
 #   $1 = WORKTREE_PATH (e.g., ~/Projects/worktrees/myapp/agent-1)
-#   $2 = AGENT_NUM (e.g., 1, 2, 3)
+#   $2 = AGENT_NUM (e.g., 1, 2, 3)  ← YOUR AGENT IDENTITY
 #   $3 = AGENT_PORT (e.g., 8001, 8002, 8003)
+#
+# After setup, you can access your identity via:
+#   - Environment variable: $AGENT_NUM
+#   - .env file: AGENT_NUM=1
 
 set -e  # Exit on error
 
@@ -151,12 +155,19 @@ fi
 # cp ../.env.local .env.local
 # cp ../.env.test .env.test
 
-# Set agent-specific PORT to avoid conflicts
+# Set agent-specific PORT and AGENT_NUM to avoid conflicts
 if [ -f ".env" ]; then
+    # Remove existing lines and add new ones
     sed -i.bak '/^PORT=/d' .env
+    sed -i.bak '/^AGENT_NUM=/d' .env
     echo "PORT=$AGENT_PORT" >> .env
+    echo "AGENT_NUM=$AGENT_NUM" >> .env
     rm .env.bak 2>/dev/null || true
-    echo "✓ Set PORT=$AGENT_PORT in .env"
+    echo "✓ Set PORT=$AGENT_PORT and AGENT_NUM=$AGENT_NUM in .env"
+else
+    echo "PORT=$AGENT_PORT" > .env
+    echo "AGENT_NUM=$AGENT_NUM" >> .env
+    echo "✓ Created .env with PORT=$AGENT_PORT and AGENT_NUM=$AGENT_NUM"
 fi
 
 # ============================================================================
@@ -217,7 +228,21 @@ fi
 # Unique directories:
 # mkdir -p logs tmp uploads
 
+# ============================================================================
+# AGENT IDENTITY - Know yourself!
+# ============================================================================
+
+echo ""
 echo "✅ Agent-$AGENT_NUM setup complete!"
+echo ""
+echo "📝 Your identity:"
+echo "   AGENT_NUM: $AGENT_NUM"
+echo "   PORT: $AGENT_PORT"
+echo "   Your notes: .agenttree/agents/agent-$AGENT_NUM/"
+echo ""
+echo "🤖 To check your agent number at any time:"
+echo "   echo \$AGENT_NUM"
+echo "   cat .env | grep AGENT_NUM"
 echo ""
 echo "🤖 AI NOTE: If this setup didn't work for you, please improve this script"
 echo "and push the changes so future agents can benefit!"
