@@ -58,7 +58,7 @@ def init(worktrees_dir: Optional[str], project: Optional[str]) -> None:
     config_data = {
         "project": project,
         "worktrees_dir": worktrees_dir or "~/Projects/worktrees",
-        "port_range": "8001-8009",
+        "port_range": "9001-9099",  # Less conflicting range (9000 + agent number)
         "default_tool": "claude",
         "tools": {
             "claude": {
@@ -95,7 +95,7 @@ def init(worktrees_dir: Optional[str], project: Optional[str]) -> None:
 # This script receives three arguments:
 #   $1 = WORKTREE_PATH (e.g., ~/Projects/worktrees/myapp/agent-1)
 #   $2 = AGENT_NUM (e.g., 1, 2, 3)  ← YOUR AGENT IDENTITY
-#   $3 = AGENT_PORT (e.g., 8001, 8002, 8003)
+#   $3 = AGENT_PORT (e.g., 9001, 9002, 9003)
 #
 # After setup, you can access your identity via:
 #   - Environment variable: $AGENT_NUM

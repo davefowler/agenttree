@@ -9,8 +9,9 @@ project: myapp
 worktrees_dir: ~/Projects/worktrees
 
 # Port range for agents (each agent gets one port)
-# Agent 1 gets 8001, Agent 2 gets 8002, etc.
-port_range: 8001-8009
+# Agent 1 gets 9001, Agent 2 gets 9002, etc.
+# Using 9001-9099 to avoid conflicts with common dev servers
+port_range: 9001-9099
 
 # Default AI tool to use when not specified
 default_tool: claude
