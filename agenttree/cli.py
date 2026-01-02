@@ -537,6 +537,84 @@ Good luck, Agent-${AGENT_NUM}! 🚀
     console.print(f"[green]✓ Created {agent_guide}[/green]")
     console.print(f"[dim]  → This guide will be copied to each agent's worktree[/dim]")
 
+    # Create CLAUDE.md for Claude Code agents
+    claude_md = repo_path / "CLAUDE.md"
+    claude_md_content = f"""# {project} - Claude Instructions
+
+## Quick Start
+
+If you have a task file in `tasks/`, read the oldest one first and start working on it.
+
+## Documentation Structure
+
+**All documentation goes in `agents/` repository, NOT in the main codebase.**
+
+| Type | Location |
+|------|----------|
+| Plans & Proposals | `agents/plans/` |
+| Feature Specs | `agents/specs/` |
+| RFCs & Decisions | `agents/rfcs/` |
+| Gotchas & Patterns | `agents/knowledge/` |
+| Task Logs | `agents/tasks/` |
+
+See `agents/AGENTS.md` for full conventions.
+
+## Task Workflow
+
+1. Check `tasks/` directory for pending work
+2. Work on the **oldest** task first (by filename date)
+3. When complete, task moves to `tasks/archive/`
+4. Run `./scripts/submit.sh` to create PR
+
+## Container Security
+
+All agents run in containers. There is no non-container mode.
+
+## Key Files
+
+- `.agenttree.yaml` - Project configuration
+- `agents/AGENTS.md` - Full agent instructions
+"""
+    with open(claude_md, "w") as f:
+        f.write(claude_md_content)
+    console.print(f"[green]✓ Created {claude_md}[/green]")
+
+    # Create .cursorrules for Cursor IDE
+    cursorrules = repo_path / ".cursorrules"
+    cursorrules_content = f"""# {project} - Cursor Rules
+
+## Documentation Structure
+
+**All documentation goes in `agents/` repository, NOT in the main codebase.**
+
+When creating plans, specs, proposals, or documentation:
+- `agents/plans/` - Planning docs, proposals, design discussions
+- `agents/specs/` - Feature specifications, architecture docs
+- `agents/rfcs/` - Request for comments, major decisions
+- `agents/knowledge/` - Gotchas, patterns, onboarding info
+- `agents/tasks/` - Task logs and work history
+
+**DO NOT create:**
+- `docs/` directories in main repo for AI documentation
+- Proposal files outside of agents/
+
+See `agents/AGENTS.md` for full documentation conventions.
+
+## Container Security
+
+AgentTree REQUIRES containers for agent execution. There is no non-container mode.
+
+## Task System
+
+Tasks are stored in `tasks/` directory within agent worktrees:
+- Files named: `YYYY-MM-DD-task-title.md`
+- Oldest task is worked on first (FIFO)
+- Completed tasks move to `tasks/archive/`
+"""
+    with open(cursorrules, "w") as f:
+        f.write(cursorrules_content)
+    console.print(f"[green]✓ Created {cursorrules}[/green]")
+
     # Initialize agents repository
     console.print("\n[cyan]Initializing agents repository...[/cyan]")
     try:
