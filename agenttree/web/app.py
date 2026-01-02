@@ -26,8 +26,8 @@ app = FastAPI(title="AgentTree Dashboard")
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
-# Optional authentication
-security = HTTPBasic()
+# Optional authentication (auto_error=False allows requests without credentials)
+security = HTTPBasic(auto_error=False)
 
 # Auth configuration from environment variables
 AUTH_ENABLED = os.getenv("AGENTTREE_WEB_AUTH", "false").lower() == "true"
@@ -35,7 +35,7 @@ AUTH_USERNAME = os.getenv("AGENTTREE_WEB_USERNAME", "admin")
 AUTH_PASSWORD = os.getenv("AGENTTREE_WEB_PASSWORD", "changeme")
 
 
-def verify_credentials(credentials: HTTPBasicCredentials = Depends(security)) -> Optional[str]:
+def verify_credentials(credentials: Optional[HTTPBasicCredentials] = Depends(security)) -> Optional[str]:
     """Verify HTTP Basic Auth credentials.
 
     Returns username if valid, raises HTTPException if invalid.
@@ -43,6 +43,14 @@ def verify_credentials(credentials: HTTPBasicCredentials = Depends(security)) ->
     """
     if not AUTH_ENABLED:
         return None
+
+    # If auth is enabled but no credentials provided
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+            headers={"WWW-Authenticate": "Basic"},
+        )
 
     # Constant-time comparison to prevent timing attacks
     username_correct = secrets.compare_digest(
