@@ -52,7 +52,7 @@ class ContainerRuntime:
         worktree_path: Path,
         ai_tool: str = "claude",
         dangerous: bool = False,
-        image: str = "ghcr.io/agenttree/agent-runtime:latest",
+        image: str = "agenttree-agent:latest",
         additional_args: Optional[List[str]] = None,
     ) -> List[str]:
         """Build the container run command.
@@ -103,7 +103,7 @@ class ContainerRuntime:
         worktree_path: Path,
         ai_tool: str = "claude",
         dangerous: bool = False,
-        image: str = "ghcr.io/agenttree/agent-runtime:latest",
+        image: str = "agenttree-agent:latest",
         additional_args: Optional[List[str]] = None,
     ) -> subprocess.Popen:
         """Run AI tool in a container.
