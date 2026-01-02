@@ -144,7 +144,7 @@ class ContainerRuntime:
         system = platform.system()
 
         if system == "Darwin":
-            return "Install Docker: brew install docker\nOr upgrade to macOS 26+ for Apple Container"
+            return "Upgrade to macOS 26+ for Apple Container (recommended)\nOr install Docker: brew install docker"
         elif system == "Linux":
             return "Install Docker: sudo apt install docker.io\nOr install Podman: sudo apt install podman"
         elif system == "Windows":

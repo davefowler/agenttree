@@ -151,12 +151,14 @@ def setup(agent_numbers: tuple) -> None:
 @click.option("--tool", help="AI tool to use (default: from config)")
 @click.option("--force", is_flag=True, help="Force dispatch even if agent is busy")
 @click.option(
-    "--container", is_flag=True, help="Run agent in container (isolated mode)"
+    "--no-container",
+    is_flag=True,
+    help="⚠️  UNSAFE: Run without container isolation (NOT RECOMMENDED)",
 )
 @click.option(
-    "--dangerous",
+    "--i-accept-the-risk",
     is_flag=True,
-    help="Run in dangerous mode (skip permissions, requires --container)",
+    help="Confirm you accept the risk of running without container",
 )
 def dispatch(
     agent_num: int,
@@ -164,18 +166,52 @@ def dispatch(
     task: Optional[str],
     tool: Optional[str],
     force: bool,
-    container: bool,
-    dangerous: bool,
+    no_container: bool,
+    i_accept_the_risk: bool,
 ) -> None:
-    """Dispatch a task to an agent."""
+    """Dispatch a task to an agent.
+    
+    By default, agents run in containers for security isolation.
+    """
     repo_path = Path.cwd()
     config = load_config(repo_path)
-
-    if dangerous and not container:
-        console.print(
-            "[red]Error: --dangerous requires --container for safety[/red]"
-        )
-        sys.exit(1)
+    
+    # Check container runtime
+    runtime = get_container_runtime()
+    
+    if no_container:
+        if not i_accept_the_risk:
+            console.print("[red]" + "=" * 60 + "[/red]")
+            console.print("[red]⚠️  WARNING: RUNNING WITHOUT CONTAINER ISOLATION ⚠️[/red]")
+            console.print("[red]" + "=" * 60 + "[/red]")
+            console.print()
+            console.print("[yellow]Running agents without containers means:[/yellow]")
+            console.print("  • The agent has FULL ACCESS to your filesystem")
+            console.print("  • The agent can run ANY shell commands")
+            console.print("  • The agent could modify/delete files outside the worktree")
+            console.print("  • The agent could access your credentials, SSH keys, etc.")
+            console.print()
+            console.print("[red]To proceed, add: --i-accept-the-risk[/red]")
+            console.print()
+            console.print("[green]Better option: Install Docker and run safely![/green]")
+            console.print(f"  {runtime.get_recommended_action()}")
+            sys.exit(1)
+        else:
+            console.print("[yellow]⚠️  Running WITHOUT container isolation (you accepted the risk)[/yellow]")
+    else:
+        # Container mode (default) - verify runtime available
+        if not runtime.is_available():
+            console.print("[red]Error: No container runtime available![/red]")
+            console.print()
+            console.print("[yellow]AgentTree requires containers for safe agent execution.[/yellow]")
+            console.print()
+            console.print(f"[green]Install a container runtime:[/green]")
+            console.print(f"  {runtime.get_recommended_action()}")
+            console.print()
+            console.print("[dim]Or use --no-container --i-accept-the-risk (NOT RECOMMENDED)[/dim]")
+            sys.exit(1)
+        
+        console.print(f"[green]✓ Using container runtime: {runtime.get_runtime_name()}[/green]")
 
     if not issue_number and not task:
         console.print("[red]Error: Provide either issue number or --task[/red]")
@@ -277,19 +313,16 @@ gh pr create --fill
     # Start agent in tmux
     tool_name = tool or config.default_tool
 
-    if container:
-        runtime = get_container_runtime()
-        if not runtime.is_available():
-            console.print(f"[red]Error: No container runtime available[/red]")
-            console.print(f"Recommendation: {runtime.get_recommended_action()}")
-            sys.exit(1)
-
-        console.print(f"[yellow]Running in container ({runtime.get_runtime_name()})[/yellow]")
-        # TODO: Integrate container mode with tmux
-        console.print("[yellow]Container mode integration coming soon[/yellow]")
-    else:
+    if no_container:
+        # Unsafe mode - run directly on host
         tmux_manager.start_agent(agent_num, worktree_path, tool_name)
-        console.print(f"[green]✓ Started {tool_name} in tmux session[/green]")
+        console.print(f"[yellow]⚠️  Started {tool_name} in tmux (NO CONTAINER)[/yellow]")
+    else:
+        # Container mode (default) - run in container via tmux
+        tmux_manager.start_agent_in_container(
+            agent_num, worktree_path, tool_name, runtime
+        )
+        console.print(f"[green]✓ Started {tool_name} in container via tmux[/green]")
 
     console.print(f"\nCommands:")
     console.print(f"  agenttree attach {agent_num}  # Attach to session")

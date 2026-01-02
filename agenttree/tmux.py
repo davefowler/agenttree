@@ -1,11 +1,16 @@
 """Tmux session management for AgentTree."""
 
+from __future__ import annotations
+
 import subprocess
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, TYPE_CHECKING
 from dataclasses import dataclass
 
 from agenttree.config import Config
+
+if TYPE_CHECKING:
+    from agenttree.container import ContainerRuntime
 
 
 @dataclass
@@ -202,6 +207,50 @@ class TmuxManager:
         import time
 
         time.sleep(1)
+        send_keys(session_name, tool_config.startup_prompt)
+
+    def start_agent_in_container(
+        self,
+        agent_num: int,
+        worktree_path: Path,
+        tool_name: str,
+        container_runtime: "ContainerRuntime",
+    ) -> None:
+        """Start an agent in a container within a tmux session.
+
+        Args:
+            agent_num: Agent number
+            worktree_path: Path to the agent's worktree
+            tool_name: Name of the AI tool to use
+            container_runtime: Container runtime instance
+        """
+        session_name = self.get_session_name(agent_num)
+
+        # Kill existing session if it exists
+        if session_exists(session_name):
+            kill_session(session_name)
+
+        # Get tool config
+        tool_config = self.config.get_tool_config(tool_name)
+
+        # Build container command
+        # The container runs the AI tool with --dangerously-skip-permissions
+        # since it's already isolated in a container
+        container_cmd = container_runtime.build_run_command(
+            worktree_path=worktree_path,
+            ai_tool=tool_name,
+            dangerous=True,  # Safe because we're in a container
+        )
+        
+        # Join command for shell execution
+        container_cmd_str = " ".join(container_cmd)
+
+        # Create tmux session running the container
+        create_session(session_name, worktree_path, container_cmd_str)
+
+        # Send startup prompt after container starts
+        import time
+        time.sleep(2)  # Container startup takes a bit longer
         send_keys(session_name, tool_config.startup_prompt)
 
     def stop_agent(self, agent_num: int) -> None:
