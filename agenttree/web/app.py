@@ -38,8 +38,7 @@ AUTH_PASSWORD = os.getenv("AGENTTREE_WEB_PASSWORD", "changeme")
 def verify_credentials(credentials: Optional[HTTPBasicCredentials] = Depends(security)) -> Optional[str]:
     """Verify HTTP Basic Auth credentials.
 
-    Returns username if valid, raises HTTPException if invalid.
-    Only enforced if AUTH_ENABLED=true.
+    This dependency is optional - only enforces auth if AUTH_ENABLED=true.
     """
     if not AUTH_ENABLED:
         return None
@@ -153,8 +152,9 @@ agent_manager = AgentManager()
 
 
 @app.get("/", response_class=HTMLResponse)
-async def dashboard(request: Request, user: Optional[str] = Depends(get_current_user)):
+async def dashboard(request: Request):
     """Main dashboard page."""
+    user = get_current_user()  # Check auth if enabled
     agents = agent_manager.get_all_agents()
     return templates.TemplateResponse(
         "dashboard.html",
@@ -163,8 +163,9 @@ async def dashboard(request: Request, user: Optional[str] = Depends(get_current_
 
 
 @app.get("/agents", response_class=HTMLResponse)
-async def agents_list(request: Request, user: Optional[str] = Depends(get_current_user)):
+async def agents_list(request: Request):
     """Get agents list (HTMX endpoint)."""
+    get_current_user()  # Check auth if enabled
     agents = agent_manager.get_all_agents()
     return templates.TemplateResponse(
         "partials/agents_list.html",
@@ -173,12 +174,9 @@ async def agents_list(request: Request, user: Optional[str] = Depends(get_curren
 
 
 @app.get("/agent/{agent_num}/tmux", response_class=HTMLResponse)
-async def agent_tmux(
-    request: Request,
-    agent_num: int,
-    user: Optional[str] = Depends(get_current_user)
-):
+async def agent_tmux(request: Request, agent_num: int):
     """Get tmux output for an agent (HTMX endpoint)."""
+    get_current_user()  # Check auth if enabled
     # Capture tmux output
     try:
         result = subprocess.run(
@@ -202,10 +200,10 @@ async def agent_tmux(
 async def send_to_agent(
     request: Request,
     agent_num: int,
-    message: str = Form(...),
-    user: Optional[str] = Depends(get_current_user)
+    message: str = Form(...)
 ):
     """Send a message to an agent via tmux."""
+    get_current_user()  # Check auth if enabled
     try:
         subprocess.run(
             ["tmux", "send-keys", "-t", f"agent-{agent_num}", message, "Enter"],
@@ -233,7 +231,7 @@ async def dispatch_task(
 ):
     """Dispatch a task to an agent (adds to queue)."""
     from agenttree.worktree import create_task_file
-    
+
     try:
         if agent_manager.worktree_manager:
             worktree_path = agent_manager.worktree_manager.config.get_worktree_path(agent_num)
