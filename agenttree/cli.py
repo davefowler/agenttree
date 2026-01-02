@@ -201,6 +201,12 @@ fi
 # AGENT IDENTITY - Know yourself!
 # ============================================================================
 
+# Copy AGENT_GUIDE.md to worktree (with AGENT_NUM substitution)
+if [ -f "../.agenttree/AGENT_GUIDE.md" ]; then
+    sed "s/\${AGENT_NUM}/$AGENT_NUM/g; s/\${PORT}/$AGENT_PORT/g" ../.agenttree/AGENT_GUIDE.md > AGENT_GUIDE.md
+    echo "✓ Created personalized AGENT_GUIDE.md"
+fi
+
 echo ""
 echo "✅ Agent-$AGENT_NUM setup complete!"
 echo ""
@@ -208,6 +214,11 @@ echo "📝 Your identity:"
 echo "   AGENT_NUM: $AGENT_NUM"
 echo "   PORT: $AGENT_PORT"
 echo "   Your notes: .agenttree/agents/agent-$AGENT_NUM/"
+echo ""
+echo "📖 IMPORTANT: Read AGENT_GUIDE.md in your worktree to learn:"
+echo "   - How to collaborate with other agents"
+echo "   - Where to find task files and documentation"
+echo "   - Best practices and troubleshooting"
 echo ""
 echo "🤖 To check your agent number at any time:"
 echo "   echo \$AGENT_NUM"
@@ -226,6 +237,265 @@ echo "and push the changes so future agents can benefit!"
 
     console.print(f"[green]✓ Created {setup_script}[/green]")
     console.print(f"[dim]  → Customize this script for your project's setup needs[/dim]")
+
+    # Create AGENT_GUIDE.md template
+    agent_guide = agenttree_dir / "AGENT_GUIDE.md"
+    agent_guide_template = """# AgentTree Agent Guide
+
+Welcome, Agent! 👋
+
+This guide helps you understand the AgentTree system and collaborate with other agents.
+
+## Who Am I?
+
+You can find your identity in the following ways:
+
+```bash
+# Your agent number
+echo $AGENT_NUM
+
+# Check your .env file
+cat .env | grep AGENT_NUM
+
+# Your assigned port
+echo $PORT
+```
+
+**Your agent number is:** Agent-${AGENT_NUM}
+
+## Project Structure
+
+```
+<project-root>/
+├── .agenttree/
+│   ├── AGENT_GUIDE.md          ← You are here!
+│   ├── worktree-setup.sh       ← Setup script you ran
+│   └── knowledge/              ← Shared knowledge base (Phase 6)
+├── agents/                     ← Shared notes repository (git submodule)
+│   ├── specs/                  ← Task specifications
+│   │   └── issue-<num>.md
+│   ├── tasks/                  ← Agent task logs
+│   │   ├── agent-1/
+│   │   ├── agent-2/
+│   │   └── agent-<N>/
+│   │       └── <timestamp>-issue-<num>.md
+│   └── notes/                  ← Agent notes and findings
+│       ├── agent-1/
+│       └── agent-<N>/
+│           └── <topic>.md
+├── TASK.md                     ← Your current task (created by dispatch)
+└── <project files>
+```
+
+## Workflow
+
+### 1. You Receive a Task
+
+When dispatched, you'll find:
+- **TASK.md** in your worktree root
+- **agents/specs/issue-<num>.md** with the full specification
+- **agents/tasks/agent-${AGENT_NUM}/<timestamp>-issue-<num>.md** your task log
+
+### 2. You Work on It
+
+- Read TASK.md first
+- Check agents/specs/ for detailed requirements
+- Look at agents/notes/ to see what other agents have learned
+- Write code, run tests, fix bugs
+- Commit your changes regularly
+
+### 3. You Document Your Work
+
+Create notes for other agents:
+
+```bash
+# Create a note about your findings
+cat > agents/notes/agent-${AGENT_NUM}/api-authentication.md <<EOF
+# API Authentication Pattern
+
+I discovered that our API uses JWT tokens stored in localStorage.
+
+## Key Files
+- src/auth/jwt.ts - Token management
+- src/api/client.ts - API client with auth headers
+
+## Common Issues
+- Tokens expire after 1 hour
+- Refresh tokens are in cookies (not localStorage)
+
+## Solution Pattern
+Always check token expiry before API calls.
+EOF
+
+git -C agents add .
+git -C agents commit -m "agent-${AGENT_NUM}: Document API auth pattern"
+git -C agents push
+```
+
+### 4. You Collaborate
+
+**Reading other agents' work:**
+```bash
+# See what agent-1 is working on
+cat agents/tasks/agent-1/*.md
+
+# Read agent-2's notes on the database
+cat agents/notes/agent-2/database-schema.md
+```
+
+**Asking for help (async):**
+```bash
+# Create a question for agent-2
+cat > agents/notes/agent-${AGENT_NUM}/question-for-agent-2.md <<EOF
+# Question: Database Migration Issue
+
+@agent-2, I noticed you worked on the database schema.
+
+I'm seeing this error when running migrations:
+\`\`\`
+Error: Column 'user_id' already exists
+\`\`\`
+
+Did you encounter this? How did you fix it?
+
+-- Agent-${AGENT_NUM}
+EOF
+
+git -C agents add .
+git -C agents commit -m "agent-${AGENT_NUM}: Ask agent-2 about migration issue"
+git -C agents push
+```
+
+### 5. You Create a PR
+
+When done:
+```bash
+# Commit your changes
+git add .
+git commit -m "Fix authentication bug (Issue #42)"
+
+# Push to your branch
+git push -u origin agent-${AGENT_NUM}/fix-auth-bug
+
+# Create PR (if gh CLI available)
+gh pr create --title "Fix authentication bug" --body "Resolves #42"
+```
+
+## Common Tasks
+
+### Check if Other Agents are Working
+```bash
+# View all agent status
+cd ..  # Go to main repo
+agenttree status
+```
+
+### Update Your Task Log
+```bash
+# Update your current task log
+TASK_LOG=$(ls -t agents/tasks/agent-${AGENT_NUM}/*.md | head -1)
+cat >> "$TASK_LOG" <<EOF
+
+## Progress Update - $(date)
+
+- ✅ Fixed authentication header issue
+- ✅ Added tests for token refresh
+- 🔄 Working on session timeout handling
+EOF
+
+git -C agents add .
+git -C agents commit -m "agent-${AGENT_NUM}: Update task progress"
+git -C agents push
+```
+
+### Find Past Solutions
+
+Check if similar work has been done:
+```bash
+# Search all specs
+grep -r "authentication" agents/specs/
+
+# Search all notes
+grep -r "JWT" agents/notes/
+
+# Search your own notes
+grep -r "token" agents/notes/agent-${AGENT_NUM}/
+```
+
+## Environment Setup
+
+Your worktree was set up by `.agenttree/worktree-setup.sh`.
+
+If you encounter issues (missing dependencies, wrong config, etc.):
+1. **Fix the setup script** - Other agents will benefit!
+2. Test your changes
+3. Commit: `git add .agenttree/worktree-setup.sh && git commit -m "Fix setup script for <issue>"`
+
+## Best Practices
+
+### ✅ DO
+
+- **Document your findings** in agents/notes/
+- **Update your task log** regularly
+- **Fix the setup script** if you find issues
+- **Search past work** before starting from scratch
+- **Commit often** with clear messages
+- **Test your changes** before creating PR
+- **Read TASK.md carefully** before starting
+
+### ❌ DON'T
+
+- **Don't interfere** with other agents' worktrees
+- **Don't push to main** directly (always use branches)
+- **Don't skip tests** to save time
+- **Don't ignore errors** in the setup script
+- **Don't forget** to document non-obvious solutions
+
+## Troubleshooting
+
+### "My setup failed"
+→ Check `.agenttree/worktree-setup.sh` and fix it for everyone
+
+### "I can't find my task"
+→ Check `TASK.md` in your worktree root, or `agents/tasks/agent-${AGENT_NUM}/`
+
+### "Where are the other agents' notes?"
+→ `agents/notes/agent-1/`, `agents/notes/agent-2/`, etc.
+
+### "How do I know what other agents are doing?"
+→ Run `cd .. && agenttree status` or check `agents/tasks/`
+
+### "My port is conflicting"
+→ Check `echo $PORT` - each agent has a unique port (you have ${PORT})
+
+## Getting Help
+
+- **Read this guide** first
+- **Check agents/notes/** for past solutions
+- **Ask other agents** by creating a note in `agents/notes/agent-${AGENT_NUM}/`
+- **Fix documentation** if you find gaps (including this file!)
+
+## Advanced: ML Learning System (Phase 6)
+
+🚧 Coming soon: AgentTree will learn from merged PRs and suggest solutions.
+
+When implemented, you'll see:
+- **Similar past solutions** appended to TASK.md
+- **Pattern recommendations** based on successful PRs
+- **Cross-project knowledge** (if enabled)
+
+---
+
+**Remember:** You're part of a team. Document your work, help others, and improve the system as you go!
+
+Good luck, Agent-${AGENT_NUM}! 🚀
+"""
+
+    with open(agent_guide, "w") as f:
+        f.write(agent_guide_template)
+
+    console.print(f"[green]✓ Created {agent_guide}[/green]")
+    console.print(f"[dim]  → This guide will be copied to each agent's worktree[/dim]")
 
     # Initialize agents repository
     console.print("\n[cyan]Initializing agents repository...[/cyan]")
