@@ -180,39 +180,15 @@ class TmuxManager:
         tool_name: str,
         startup_script: Optional[Path] = None,
     ) -> None:
-        """Start an agent in a tmux session.
-
-        Args:
-            agent_num: Agent number
-            worktree_path: Path to the agent's worktree
-            tool_name: Name of the AI tool to use
-            startup_script: Optional path to startup script
-        """
-        session_name = self.get_session_name(agent_num)
-
-        # Kill existing session if it exists
-        if session_exists(session_name):
-            kill_session(session_name)
-
-        # Get tool config
-        tool_config = self.config.get_tool_config(tool_name)
+        """DEPRECATED: Use start_agent_in_container instead.
         
-        # Build command with optional --dangerously-skip-permissions
-        command = tool_config.command
-        if tool_config.skip_permissions and "--dangerously-skip-permissions" not in command:
-            command = f"{command} --dangerously-skip-permissions"
-
-        # Create session
-        if startup_script and startup_script.exists():
-            create_session(session_name, worktree_path, f"./{startup_script.name}")
-        else:
-            create_session(session_name, worktree_path, command)
-
-        # Send startup prompt after Claude is ready
-        # Claude takes ~3-5 seconds to start and show the prompt
-        import time
-        time.sleep(5)
-        send_keys(session_name, tool_config.startup_prompt)
+        This method is kept for backwards compatibility but will raise an error.
+        AgentTree requires containers - there is no non-container mode.
+        """
+        raise RuntimeError(
+            "start_agent() is deprecated. Use start_agent_in_container() instead. "
+            "AgentTree requires containers for security - there is no non-container mode."
+        )
 
     def start_agent_in_container(
         self,
