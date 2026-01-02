@@ -11,6 +11,7 @@ class ToolConfig(BaseModel):
 
     command: str
     startup_prompt: str = "Check tasks/ folder and start working on the oldest task."
+    skip_permissions: bool = False  # Add --dangerously-skip-permissions to command
 
 
 class SecurityConfig(BaseModel):

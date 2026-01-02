@@ -251,25 +251,21 @@ def reset_worktree(worktree_path: Path, base_branch: str = "main") -> None:
         check=True,
     )
 
-    # Checkout base branch
-    try:
-        subprocess.run(
-            ["git", "checkout", base_branch],
-            cwd=worktree_path,
-            check=True,
-            capture_output=True,
-        )
-    except subprocess.CalledProcessError:
-        # Branch doesn't exist locally, create it from origin
-        subprocess.run(
-            ["git", "checkout", "-b", base_branch, f"origin/{base_branch}"],
-            cwd=worktree_path,
-            check=True,
-        )
-
-    # Reset to origin
+    # Get agent number from worktree path to create unique branch
+    worktree_name = worktree_path.name
+    work_branch = f"{worktree_name}-work"
+    
+    # Delete the work branch if it exists (so we can recreate it fresh)
     subprocess.run(
-        ["git", "reset", "--hard", f"origin/{base_branch}"],
+        ["git", "branch", "-D", work_branch],
+        cwd=worktree_path,
+        capture_output=True,  # Don't fail if branch doesn't exist
+    )
+    
+    # Create fresh work branch from origin/main
+    # Using -B to force-create (replaces if exists)
+    subprocess.run(
+        ["git", "checkout", "-B", work_branch, f"origin/{base_branch}"],
         cwd=worktree_path,
         check=True,
     )

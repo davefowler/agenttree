@@ -196,17 +196,22 @@ class TmuxManager:
 
         # Get tool config
         tool_config = self.config.get_tool_config(tool_name)
+        
+        # Build command with optional --dangerously-skip-permissions
+        command = tool_config.command
+        if tool_config.skip_permissions and "--dangerously-skip-permissions" not in command:
+            command = f"{command} --dangerously-skip-permissions"
 
         # Create session
         if startup_script and startup_script.exists():
             create_session(session_name, worktree_path, f"./{startup_script.name}")
         else:
-            create_session(session_name, worktree_path, tool_config.command)
+            create_session(session_name, worktree_path, command)
 
-        # Send startup prompt after a brief delay
+        # Send startup prompt after Claude is ready
+        # Claude takes ~3-5 seconds to start and show the prompt
         import time
-
-        time.sleep(1)
+        time.sleep(5)
         send_keys(session_name, tool_config.startup_prompt)
 
     def start_agent_in_container(

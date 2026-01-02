@@ -81,6 +81,29 @@ def init(worktrees_dir: Optional[str], project: Optional[str]) -> None:
             console.print("[red]Please install a container runtime and try again.[/red]")
             sys.exit(1)
 
+    # Ask about Claude's permission prompts
+    console.print()
+    console.print("[cyan]Claude Permission Settings[/cyan]")
+    console.print("─" * 40)
+    console.print("Claude normally asks for permission before running commands.")
+    console.print("With containers, this is redundant (container provides isolation).")
+    console.print("Without containers, skipping is risky but speeds up autonomous work.")
+    console.print()
+    
+    skip_permissions = False
+    if require_container:
+        # In container mode, default to skipping permissions (container is the sandbox)
+        skip_permissions = click.confirm(
+            "Skip Claude permission prompts? (safe in containers)", 
+            default=True
+        )
+    else:
+        # Without containers, warn more strongly
+        skip_permissions = click.confirm(
+            "Skip Claude permission prompts? (⚠️  RISKY without containers)", 
+            default=False
+        )
+
     # Create config
     config_data = {
         "project": project,
@@ -91,6 +114,7 @@ def init(worktrees_dir: Optional[str], project: Optional[str]) -> None:
             "claude": {
                 "command": "claude",
                 "startup_prompt": "Check tasks/ folder and start working on the oldest task.",
+                "skip_permissions": skip_permissions,
             },
             "aider": {
                 "command": "aider --model sonnet",

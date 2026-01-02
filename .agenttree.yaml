@@ -7,7 +7,8 @@ tools:
     startup_prompt: /read tasks/
   claude:
     command: claude
-    startup_prompt: Check the tasks/ folder and work on the oldest .md file first.
+    startup_prompt: Check tasks/ folder and start working on the oldest task.
+    skip_permissions: true
 worktrees_dir: ~/Projects/worktrees
 security:
   require_container: true
