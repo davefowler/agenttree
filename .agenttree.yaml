@@ -10,6 +10,3 @@ tools:
     startup_prompt: Check tasks/ folder and start working on the oldest task.
     skip_permissions: true
 worktrees_dir: ~/Projects/worktrees
-security:
-  require_container: true
-  allow_dangerous_no_container: false

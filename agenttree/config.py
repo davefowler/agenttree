@@ -15,10 +15,14 @@ class ToolConfig(BaseModel):
 
 
 class SecurityConfig(BaseModel):
-    """Security configuration for agents."""
+    """Security configuration for agents.
     
-    require_container: bool = True  # Require container isolation (default: True)
-    allow_dangerous_no_container: bool = False  # Allow --no-container without confirmation
+    NOTE: Containers are MANDATORY. There is no option to disable them.
+    This config exists for future security settings, not to bypass containers.
+    """
+    
+    # Reserved for future security settings
+    # Containers are always required - this is not configurable
     
 
 class Config(BaseModel):

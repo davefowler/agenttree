@@ -54,55 +54,44 @@ def init(worktrees_dir: Optional[str], project: Optional[str]) -> None:
     if not project:
         project = repo_path.name
 
-    # Check container runtime
+    # Check container runtime - MANDATORY
     runtime = get_container_runtime()
     
-    # Security configuration
-    console.print("\n[cyan]Security Configuration[/cyan]")
+    console.print("\n[cyan]Container Runtime Check[/cyan]")
     console.print("─" * 40)
+    console.print("[dim]AgentTree requires containers for security isolation.[/dim]")
+    console.print("[dim]There is no option to run without containers.[/dim]")
+    console.print()
     
     if runtime.is_available():
         console.print(f"[green]✓ Container runtime detected: {runtime.get_runtime_name()}[/green]")
-        console.print("  Agents will run in isolated containers (recommended)")
-        require_container = True
-        allow_dangerous = False
+        console.print("  Agents will run in isolated containers.")
     else:
-        console.print("[yellow]⚠️  No container runtime detected![/yellow]")
-        console.print("  Without containers, agents have full system access.")
+        console.print("[red]" + "=" * 50 + "[/red]")
+        console.print("[red]ERROR: No container runtime available![/red]")
+        console.print("[red]" + "=" * 50 + "[/red]")
         console.print()
+        console.print("[yellow]AgentTree REQUIRES containers. This is not optional.[/yellow]")
+        console.print()
+        console.print("[green]Install a container runtime:[/green]")
         console.print(f"  {runtime.get_recommended_action()}")
         console.print()
-        
-        if click.confirm("Allow running without containers? (NOT RECOMMENDED)", default=False):
-            require_container = False
-            allow_dangerous = True
-            console.print("[yellow]⚠️  Dangerous mode enabled - agents will have full system access[/yellow]")
-        else:
-            console.print("[red]Please install a container runtime and try again.[/red]")
-            sys.exit(1)
+        console.print("[dim]After installing, run 'agenttree init' again.[/dim]")
+        sys.exit(1)
 
     # Ask about Claude's permission prompts
     console.print()
     console.print("[cyan]Claude Permission Settings[/cyan]")
     console.print("─" * 40)
     console.print("Claude normally asks for permission before running commands.")
-    console.print("With containers, this is redundant (container provides isolation).")
-    console.print("Without containers, skipping is risky but speeds up autonomous work.")
+    console.print("Since agents run in containers, this is redundant.")
+    console.print("Skipping permissions allows fully autonomous operation.")
     console.print()
     
-    skip_permissions = False
-    if require_container:
-        # In container mode, default to skipping permissions (container is the sandbox)
-        skip_permissions = click.confirm(
-            "Skip Claude permission prompts? (safe in containers)", 
-            default=True
-        )
-    else:
-        # Without containers, warn more strongly
-        skip_permissions = click.confirm(
-            "Skip Claude permission prompts? (⚠️  RISKY without containers)", 
-            default=False
-        )
+    skip_permissions = click.confirm(
+        "Skip Claude permission prompts? (recommended - container provides isolation)", 
+        default=True
+    )
 
     # Create config
     config_data = {
@@ -120,10 +109,6 @@ def init(worktrees_dir: Optional[str], project: Optional[str]) -> None:
                 "command": "aider --model sonnet",
                 "startup_prompt": "/read tasks/",
             },
-        },
-        "security": {
-            "require_container": require_container,
-            "allow_dangerous_no_container": allow_dangerous,
         },
     }
 
@@ -205,71 +190,39 @@ def setup(agent_numbers: tuple) -> None:
 @click.option("--task", help="Ad-hoc task description")
 @click.option("--tool", help="AI tool to use (default: from config)")
 @click.option("--force", is_flag=True, help="Force dispatch even if agent is busy")
-@click.option(
-    "--no-container",
-    is_flag=True,
-    help="⚠️  UNSAFE: Run without container isolation (NOT RECOMMENDED)",
-)
-@click.option(
-    "--i-accept-the-risk",
-    is_flag=True,
-    help="Confirm you accept the risk of running without container",
-)
 def dispatch(
     agent_num: int,
     issue_number: Optional[int],
     task: Optional[str],
     tool: Optional[str],
     force: bool,
-    no_container: bool,
-    i_accept_the_risk: bool,
 ) -> None:
     """Dispatch a task to an agent.
     
-    By default, agents run in containers for security isolation.
+    Agents ALWAYS run in containers for security isolation.
+    There is no option to disable this - containers are mandatory.
     """
     repo_path = Path.cwd()
     config = load_config(repo_path)
     
-    # Check container runtime
+    # Check container runtime - MANDATORY, no fallback
     runtime = get_container_runtime()
     
-    # Check if config allows dangerous mode
-    risk_accepted = i_accept_the_risk or config.security.allow_dangerous_no_container
+    if not runtime.is_available():
+        console.print("[red]" + "=" * 60 + "[/red]")
+        console.print("[red]ERROR: No container runtime available![/red]")
+        console.print("[red]" + "=" * 60 + "[/red]")
+        console.print()
+        console.print("[yellow]AgentTree REQUIRES containers for safe agent execution.[/yellow]")
+        console.print("[yellow]There is no way to run without containers.[/yellow]")
+        console.print()
+        console.print("[green]Install a container runtime:[/green]")
+        console.print(f"  {runtime.get_recommended_action()}")
+        console.print()
+        console.print("[dim]This is not optional. Containers are mandatory for security.[/dim]")
+        sys.exit(1)
     
-    if no_container:
-        if not risk_accepted:
-            console.print("[red]" + "=" * 60 + "[/red]")
-            console.print("[red]⚠️  WARNING: RUNNING WITHOUT CONTAINER ISOLATION ⚠️[/red]")
-            console.print("[red]" + "=" * 60 + "[/red]")
-            console.print()
-            console.print("[yellow]Running agents without containers means:[/yellow]")
-            console.print("  • The agent has FULL ACCESS to your filesystem")
-            console.print("  • The agent can run ANY shell commands")
-            console.print("  • The agent could modify/delete files outside the worktree")
-            console.print("  • The agent could access your credentials, SSH keys, etc.")
-            console.print()
-            console.print("[red]To proceed, add: --i-accept-the-risk[/red]")
-            console.print()
-            console.print("[green]Better option: Install Docker and run safely![/green]")
-            console.print(f"  {runtime.get_recommended_action()}")
-            sys.exit(1)
-        else:
-            console.print("[yellow]⚠️  Running WITHOUT container isolation (you accepted the risk)[/yellow]")
-    else:
-        # Container mode (default) - verify runtime available
-        if not runtime.is_available():
-            console.print("[red]Error: No container runtime available![/red]")
-            console.print()
-            console.print("[yellow]AgentTree requires containers for safe agent execution.[/yellow]")
-            console.print()
-            console.print(f"[green]Install a container runtime:[/green]")
-            console.print(f"  {runtime.get_recommended_action()}")
-            console.print()
-            console.print("[dim]Or use --no-container --i-accept-the-risk (NOT RECOMMENDED)[/dim]")
-            sys.exit(1)
-        
-        console.print(f"[green]✓ Using container runtime: {runtime.get_runtime_name()}[/green]")
+    console.print(f"[green]✓ Using container runtime: {runtime.get_runtime_name()}[/green]")
 
     if not issue_number and not task:
         console.print("[red]Error: Provide either issue number or --task[/red]")
@@ -368,19 +321,13 @@ gh pr create --fill
         task_path = create_task_file(worktree_path, task_title, task_content)
         console.print(f"[green]✓ Created task: {task_path.name}[/green]")
 
-    # Start agent in tmux
+    # Start agent in container via tmux - ALWAYS containerized
     tool_name = tool or config.default_tool
-
-    if no_container:
-        # Unsafe mode - run directly on host
-        tmux_manager.start_agent(agent_num, worktree_path, tool_name)
-        console.print(f"[yellow]⚠️  Started {tool_name} in tmux (NO CONTAINER)[/yellow]")
-    else:
-        # Container mode (default) - run in container via tmux
-        tmux_manager.start_agent_in_container(
-            agent_num, worktree_path, tool_name, runtime
-        )
-        console.print(f"[green]✓ Started {tool_name} in container via tmux[/green]")
+    
+    tmux_manager.start_agent_in_container(
+        agent_num, worktree_path, tool_name, runtime
+    )
+    console.print(f"[green]✓ Started {tool_name} in container via tmux[/green]")
 
     console.print(f"\nCommands:")
     console.print(f"  agenttree attach {agent_num}  # Attach to session")
