@@ -10,8 +10,15 @@ class ToolConfig(BaseModel):
     """Configuration for an AI tool."""
 
     command: str
-    startup_prompt: str = "Check TASK.md and start working."
+    startup_prompt: str = "Check tasks/ folder and start working on the oldest task."
 
+
+class SecurityConfig(BaseModel):
+    """Security configuration for agents."""
+    
+    require_container: bool = True  # Require container isolation (default: True)
+    allow_dangerous_no_container: bool = False  # Allow --no-container without confirmation
+    
 
 class Config(BaseModel):
     """AgentTree configuration."""
@@ -23,6 +30,7 @@ class Config(BaseModel):
     port_range: str = "8001-8009"
     default_tool: str = "claude"
     tools: Dict[str, ToolConfig] = Field(default_factory=dict)
+    security: SecurityConfig = Field(default_factory=SecurityConfig)
 
     def get_port_for_agent(self, agent_num: int) -> int:
         """Get port number for a specific agent.

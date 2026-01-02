@@ -54,6 +54,33 @@ def init(worktrees_dir: Optional[str], project: Optional[str]) -> None:
     if not project:
         project = repo_path.name
 
+    # Check container runtime
+    runtime = get_container_runtime()
+    
+    # Security configuration
+    console.print("\n[cyan]Security Configuration[/cyan]")
+    console.print("─" * 40)
+    
+    if runtime.is_available():
+        console.print(f"[green]✓ Container runtime detected: {runtime.get_runtime_name()}[/green]")
+        console.print("  Agents will run in isolated containers (recommended)")
+        require_container = True
+        allow_dangerous = False
+    else:
+        console.print("[yellow]⚠️  No container runtime detected![/yellow]")
+        console.print("  Without containers, agents have full system access.")
+        console.print()
+        console.print(f"  {runtime.get_recommended_action()}")
+        console.print()
+        
+        if click.confirm("Allow running without containers? (NOT RECOMMENDED)", default=False):
+            require_container = False
+            allow_dangerous = True
+            console.print("[yellow]⚠️  Dangerous mode enabled - agents will have full system access[/yellow]")
+        else:
+            console.print("[red]Please install a container runtime and try again.[/red]")
+            sys.exit(1)
+
     # Create config
     config_data = {
         "project": project,
@@ -63,12 +90,16 @@ def init(worktrees_dir: Optional[str], project: Optional[str]) -> None:
         "tools": {
             "claude": {
                 "command": "claude",
-                "startup_prompt": "Check TASK.md and start working on it.",
+                "startup_prompt": "Check tasks/ folder and start working on the oldest task.",
             },
             "aider": {
                 "command": "aider --model sonnet",
-                "startup_prompt": "/read TASK.md",
+                "startup_prompt": "/read tasks/",
             },
+        },
+        "security": {
+            "require_container": require_container,
+            "allow_dangerous_no_container": allow_dangerous,
         },
     }
 
@@ -179,8 +210,11 @@ def dispatch(
     # Check container runtime
     runtime = get_container_runtime()
     
+    # Check if config allows dangerous mode
+    risk_accepted = i_accept_the_risk or config.security.allow_dangerous_no_container
+    
     if no_container:
-        if not i_accept_the_risk:
+        if not risk_accepted:
             console.print("[red]" + "=" * 60 + "[/red]")
             console.print("[red]⚠️  WARNING: RUNNING WITHOUT CONTAINER ISOLATION ⚠️[/red]")
             console.print("[red]" + "=" * 60 + "[/red]")

@@ -4,8 +4,11 @@ project: agenttree
 tools:
   aider:
     command: aider --model sonnet
-    startup_prompt: /read TASK.md
+    startup_prompt: /read tasks/
   claude:
     command: claude
-    startup_prompt: Check TASK.md and start working on it.
+    startup_prompt: Check the tasks/ folder and work on the oldest .md file first.
 worktrees_dir: ~/Projects/worktrees
+security:
+  require_container: true
+  allow_dangerous_no_container: false
