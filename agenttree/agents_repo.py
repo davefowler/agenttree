@@ -11,6 +11,12 @@ from datetime import datetime
 from typing import Optional
 import re
 
+from agenttree.frontmatter import (
+    create_frontmatter,
+    get_git_context,
+    utc_now,
+)
+
 
 def slugify(text: str) -> str:
     """Convert text to a slug.
@@ -575,7 +581,7 @@ See [README.md](README.md) for structure overview.
     def create_task_file(
         self, agent_num: int, issue_num: int, issue_title: str, issue_body: str, issue_url: str
     ) -> Path:
-        """Create task file from template.
+        """Create task file with frontmatter.
 
         Args:
             agent_num: Agent number
@@ -593,18 +599,43 @@ See [README.md](README.md) for structure overview.
         agent_dir.mkdir(exist_ok=True)
 
         task_file = agent_dir / f"{date}-{slug}.md"
+        task_id = f"agent-{agent_num}-{date}-{slug}"
 
-        # Fill in template
-        template = (self.agents_path / "templates" / "task-log.md").read_text()
-        content = template.format(
-            title=issue_title,
-            date=date,
-            agent=f"agent-{agent_num}",
-            issue_num=issue_num,
-            description=issue_body,
-            timestamp=datetime.now().strftime("%Y-%m-%d %H:%M"),
-            issue_url=issue_url,
-        )
+        # Get git context from project repo
+        git_ctx = get_git_context(self.project_path)
+
+        # Create frontmatter
+        frontmatter = {
+            "document_type": "task_log",
+            "version": 1,
+            "task_id": task_id,
+            "issue_number": issue_num,
+            "issue_title": issue_title,
+            "issue_url": issue_url,
+            "agent": f"agent-{agent_num}",
+            "created_at": utc_now(),
+            "started_at": utc_now(),
+            "completed_at": None,
+            "status": "in_progress",
+            **git_ctx,
+            "work_branch": f"agent-{agent_num}/work",
+            "commits": [],
+            "pr_number": None,
+            "pr_url": None,
+            "pr_status": None,
+            "spec_file": f"specs/features/issue-{issue_num}.md",
+            "context_file": f"context/agent-{agent_num}/issue-{issue_num}.md",
+            "files_changed": [],
+            "tags": [],
+        }
+
+        # Create content
+        content = create_frontmatter(frontmatter)
+        content += f"# Task: {issue_title}\n\n"
+        content += f"## Context\n\n{issue_body}\n\n"
+        content += f"## Work Log\n\n"
+        content += f"### {datetime.now().strftime('%Y-%m-%d %H:%M')}\n\n"
+        content += f"Task started.\n"
 
         task_file.write_text(content)
 
@@ -616,7 +647,7 @@ See [README.md](README.md) for structure overview.
     def create_spec_file(
         self, issue_num: int, issue_title: str, issue_body: str, issue_url: str
     ) -> None:
-        """Create spec file from issue if it doesn't exist.
+        """Create spec file with frontmatter from issue if it doesn't exist.
 
         Args:
             issue_num: Issue number
@@ -629,27 +660,112 @@ See [README.md](README.md) for structure overview.
         if spec_file.exists():
             return  # Already exists
 
-        content = f"""# {issue_title}
+        # Get git context from project repo
+        git_ctx = get_git_context(self.project_path)
 
-**Issue:** [#{issue_num}]({issue_url})
-**Created:** {datetime.now().strftime("%Y-%m-%d")}
-**Status:** In Progress
+        # Create frontmatter
+        frontmatter = {
+            "document_type": "spec",
+            "version": 1,
+            "spec_type": "feature",
+            "feature_name": issue_title,
+            "issue_number": issue_num,
+            "issue_url": issue_url,
+            "status": "planning",
+            "created_at": utc_now(),
+            "updated_at": utc_now(),
+            "implemented_at": None,
+            **git_ctx,
+            "implemented_in_pr": None,
+            "related_commits": [],
+            "rfc": None,
+            "related_specs": [],
+            "tasks": [],
+            "tags": [],
+            "contributors": [],
+        }
 
-## Description
-
-{issue_body}
-
-## Implementation Notes
-
-(Agents will add notes here as work progresses)
-
-## Related
-
-- Issue: #{issue_num}
-"""
+        # Create content
+        content = create_frontmatter(frontmatter)
+        content += f"# {issue_title}\n\n"
+        content += f"## Description\n\n{issue_body}\n\n"
+        content += f"## Implementation Notes\n\n"
+        content += f"(Agents will add notes here as work progresses)\n\n"
+        content += f"## Related\n\n"
+        content += f"- Issue: [#{issue_num}]({issue_url})\n"
 
         spec_file.write_text(content)
         self._commit(f"Add spec for issue #{issue_num}")
+
+    def create_context_summary(
+        self, agent_num: int, issue_num: int, issue_title: str, task_id: str
+    ) -> Path:
+        """Create pre-filled context summary for task re-engagement.
+
+        Args:
+            agent_num: Agent number
+            issue_num: Issue number
+            issue_title: Issue title
+            task_id: Task ID (e.g., agent-1-2026-01-04-fix-auth)
+
+        Returns:
+            Path to created context summary file
+        """
+        context_dir = self.agents_path / "context" / f"agent-{agent_num}"
+        context_dir.mkdir(parents=True, exist_ok=True)
+
+        context_file = context_dir / f"issue-{issue_num}.md"
+
+        # Don't overwrite existing context summary
+        if context_file.exists():
+            return context_file
+
+        # Get git context from project repo
+        git_ctx = get_git_context(self.project_path)
+
+        # Create frontmatter (mostly pre-filled, agent fills content)
+        frontmatter = {
+            "document_type": "context_summary",
+            "version": 1,
+            "task_id": task_id,
+            "issue_number": issue_num,
+            "agent": f"agent-{agent_num}",
+            "task_started": utc_now(),
+            "summary_created": None,  # Filled when agent completes task
+            **git_ctx,
+            "work_branch": f"agent-{agent_num}/work",
+            "final_commit": None,  # Filled on completion
+            "pr_number": None,
+            "pr_status": None,
+            "commits_count": 0,
+            "files_changed_count": 0,
+            "key_files": [],
+            "task_log": f"tasks/agent-{agent_num}/{datetime.now().strftime('%Y-%m-%d')}-{slugify(issue_title)}.md",
+            "spec_file": f"specs/features/issue-{issue_num}.md",
+            "notes_created": [],
+            "tags": [],
+        }
+
+        # Create content with template sections
+        content = create_frontmatter(frontmatter)
+        content += f"# Context Summary: {issue_title}\n\n"
+        content += f"## What Was Done\n\n"
+        content += f"<!-- Fill this in as you work, or at task completion -->\n\n"
+        content += f"## Key Decisions\n\n"
+        content += f"<!-- Document important architectural/design decisions -->\n\n"
+        content += f"## Gotchas Discovered\n\n"
+        content += f"<!-- Any non-obvious issues you hit -->\n\n"
+        content += f"## Key Files Modified\n\n"
+        content += f"<!-- List main files changed with brief descriptions -->\n\n"
+        content += f"## For Resuming\n\n"
+        content += f"<!-- If someone (including you) needs to resume this task later, what should they know? -->\n\n"
+
+        context_file.write_text(content)
+
+        # Commit
+        self._commit(f"Create context summary for issue #{issue_num}")
+
+        return context_file
 
     def mark_task_complete(self, agent_num: int, pr_num: int) -> None:
         """Mark task as complete and prepare for archival.

@@ -671,12 +671,23 @@ def dispatch(
             agents_repo.create_spec_file(
                 issue_number, issue.title, issue.body, issue.url
             )
-            agents_repo.create_task_file(
+            task_log_file = agents_repo.create_task_file(
                 agent_num, issue_number, issue.title, issue.body, issue.url
             )
 
+            # Pre-create context summary for task re-engagement
+            from datetime import datetime as dt
+            from agenttree.agents_repo import slugify
+            date = dt.now().strftime("%Y-%m-%d")
+            slug = slugify(issue.title)
+            task_id = f"agent-{agent_num}-{date}-{slug}"
+
+            agents_repo.create_context_summary(
+                agent_num, issue_number, issue.title, task_id
+            )
+
             console.print(f"[green]✓ Created task for issue #{issue_number}[/green]")
-            console.print(f"[green]✓ Created spec and task log in agents/ repo[/green]")
+            console.print(f"[green]✓ Created spec, task log, and context summary in agents/ repo[/green]")
         except Exception as e:
             console.print(f"[red]Error fetching issue: {e}[/red]")
             sys.exit(1)
