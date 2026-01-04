@@ -13,6 +13,7 @@ from agenttree.tmux import TmuxManager
 from agenttree.github import GitHubManager, get_issue, ensure_gh_cli
 from agenttree.container import get_container_runtime
 from agenttree.agents_repo import AgentsRepository
+from agenttree.cli_docs import create_rfc, create_investigation, create_note, complete, resume
 
 console = Console()
 
@@ -1020,6 +1021,16 @@ def remote_dispatch(hostname: str, agent_num: int, user: str, agents_repo: str) 
     else:
         console.print(f"[red]✗ Failed to dispatch task[/red]")
         sys.exit(1)
+
+
+# Add document creation commands
+main.add_command(create_rfc)
+main.add_command(create_investigation)
+main.add_command(create_note)
+
+# Add task management commands
+main.add_command(complete)
+main.add_command(resume)
 
 
 if __name__ == "__main__":
