@@ -246,6 +246,33 @@
         .collapsible-content.hidden {
             max-height: 0;
         }
+
+        .tabs {
+            display: flex;
+            gap: 0;
+            margin-top: 20px;
+            border-bottom: 1px solid #30363d;
+        }
+
+        .tab {
+            padding: 10px 20px;
+            color: #8b949e;
+            text-decoration: none;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .tab:hover {
+            color: #c9d1d9;
+            border-bottom-color: #30363d;
+        }
+
+        .tab.active {
+            color: #58a6ff;
+            border-bottom-color: #58a6ff;
+        }
     </style>
 </head>
 <body>
@@ -253,6 +280,10 @@
         <div class="container">
             <h1>🌳 AgentTree Dashboard</h1>
             <div class="subtitle">Multi-agent development framework</div>
+            <nav class="tabs">
+                <a href="/" class="tab active">Dashboard</a>
+                <a href="/flow" class="tab">Flow</a>
+            </nav>
         </div>
     </header>
 

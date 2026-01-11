@@ -1,0 +1,39 @@
+<div class="issue-detail">
+    <div class="detail-header">
+        <div class="detail-title">
+            #{{ issue.number }}: {{ issue.title }}
+        </div>
+        <div class="detail-meta">
+            <span>State: {{ issue.state }}</span>
+            {% if issue.stage %}
+            <span>Stage: {{ issue.stage }}</span>
+            {% endif %}
+            {% if issue.assignees %}
+            <span>Assignees: {{ ', '.join(issue.assignees) }}</span>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="detail-body">
+        {{ issue.body if issue.body else "No description provided." }}
+    </div>
+
+    {% if issue.labels %}
+    <div class="detail-labels">
+        {% for label in issue.labels %}
+        <span class="label">{{ label }}</span>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="actions">
+        <a href="{{ issue.url }}" target="_blank" class="btn btn-primary">View on GitHub</a>
+        <button class="btn"
+                hx-post="/agent/1/dispatch"
+                hx-vals='{"issue_number": {{ issue.number }}}'
+                hx-target="#issue-detail"
+                hx-swap="afterbegin">
+            Dispatch to Agent
+        </button>
+    </div>
+</div>

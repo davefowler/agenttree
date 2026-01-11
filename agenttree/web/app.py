@@ -15,7 +15,7 @@ from datetime import datetime
 
 from agenttree.config import load_config
 from agenttree.worktree import WorktreeManager
-from agenttree.github import get_issue
+from agenttree.github import get_issue, list_issues, sort_issues_by_priority, IssueWithContext
 
 # Get the directory where this file is located
 BASE_DIR = Path(__file__).resolve().parent
@@ -248,6 +248,59 @@ async def tmux_websocket(websocket: WebSocket, agent_num: int):
 
     except WebSocketDisconnect:
         pass
+
+
+@app.get("/flow", response_class=HTMLResponse)
+async def flow_view(request: Request):
+    """Flow view page (inbox-style task management)."""
+    user = get_current_user()  # Check auth if enabled
+    try:
+        issues = list_issues(state="open")
+        sorted_issues = sort_issues_by_priority(issues)
+    except Exception as e:
+        print(f"Error fetching issues: {e}")
+        sorted_issues = []
+
+    return templates.TemplateResponse(
+        "flow.html",
+        {"request": request, "issues": sorted_issues, "user": user, "selected_issue": sorted_issues[0] if sorted_issues else None}
+    )
+
+
+@app.get("/flow/issues", response_class=HTMLResponse)
+async def flow_issues_list(request: Request):
+    """Get issues list for Flow view (HTMX endpoint)."""
+    get_current_user()  # Check auth if enabled
+    try:
+        issues = list_issues(state="open")
+        sorted_issues = sort_issues_by_priority(issues)
+    except Exception as e:
+        print(f"Error fetching issues: {e}")
+        sorted_issues = []
+
+    return templates.TemplateResponse(
+        "partials/flow_issues_list.html",
+        {"request": request, "issues": sorted_issues}
+    )
+
+
+@app.get("/flow/issue/{issue_number}", response_class=HTMLResponse)
+async def flow_issue_detail(request: Request, issue_number: int):
+    """Get issue detail for Flow view (HTMX endpoint)."""
+    get_current_user()  # Check auth if enabled
+    try:
+        issues = list_issues(state="open")
+        issue = next((i for i in issues if i.number == issue_number), None)
+
+        if not issue:
+            return HTMLResponse("<div class='error'>Issue not found</div>")
+    except Exception as e:
+        return HTMLResponse(f"<div class='error'>Error: {str(e)}</div>")
+
+    return templates.TemplateResponse(
+        "partials/flow_issue_detail.html",
+        {"request": request, "issue": issue}
+    )
 
 
 @app.get("/health")

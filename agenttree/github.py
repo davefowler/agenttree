@@ -38,6 +38,23 @@ class CheckStatus:
     conclusion: Optional[str] = None
 
 
+@dataclass
+class IssueWithContext:
+    """Issue with additional context for display."""
+
+    number: int
+    title: str
+    body: str
+    url: str
+    labels: List[str]
+    state: str
+    assignees: List[str]
+    created_at: str
+    updated_at: str
+    stage: Optional[int] = None
+    is_review: bool = False
+
+
 def ensure_gh_cli() -> None:
     """Ensure gh CLI is installed and authenticated.
 
@@ -490,3 +507,86 @@ git commit -m "Your message"
 """
         with open(output_path, "w") as f:
             f.write(content)
+
+
+def list_issues(state: str = "open", labels: Optional[List[str]] = None) -> List[IssueWithContext]:
+    """List GitHub issues with context.
+
+    Args:
+        state: Issue state (open, closed, all)
+        labels: Optional list of labels to filter by
+
+    Returns:
+        List of issues with context
+    """
+    args = ["issue", "list", "--json", "number,title,body,url,labels,state,assignees,createdAt,updatedAt", "--limit", "100"]
+
+    if state != "all":
+        args.extend(["--state", state])
+
+    if labels:
+        for label in labels:
+            args.extend(["--label", label])
+
+    output = gh_command(args)
+
+    if not output:
+        return []
+
+    data = json.loads(output)
+    issues = []
+
+    for item in data:
+        labels_list = [label["name"] for label in item.get("labels", [])]
+        assignees_list = [assignee["login"] for assignee in item.get("assignees", [])]
+
+        # Extract stage from labels (look for "stage-N" pattern)
+        stage = None
+        is_review = False
+
+        for label in labels_list:
+            if label.startswith("stage-"):
+                try:
+                    stage = int(label.split("-")[1])
+                except (IndexError, ValueError):
+                    pass
+            elif label.lower() in ["review", "needs-review", "in-review"]:
+                is_review = True
+
+        issues.append(IssueWithContext(
+            number=item["number"],
+            title=item["title"],
+            body=item.get("body", ""),
+            url=item["url"],
+            labels=labels_list,
+            state=item["state"],
+            assignees=assignees_list,
+            created_at=item["createdAt"],
+            updated_at=item["updatedAt"],
+            stage=stage,
+            is_review=is_review
+        ))
+
+    return issues
+
+
+def sort_issues_by_priority(issues: List[IssueWithContext]) -> List[IssueWithContext]:
+    """Sort issues by priority: review stage first, then by stage (descending).
+
+    Args:
+        issues: List of issues to sort
+
+    Returns:
+        Sorted list of issues
+    """
+    def sort_key(issue: IssueWithContext):
+        # First priority: review stage (True = 0, False = 1, so review comes first)
+        # Second priority: stage (higher stages first, None last)
+        # Third priority: issue number (lower numbers first for same stage)
+        return (
+            0 if issue.is_review else 1,  # Review issues first
+            -(issue.stage or 0),  # Higher stages first (negative for descending)
+            issue.number  # Lower issue numbers first
+        )
+
+    return sorted(issues, key=sort_key)
