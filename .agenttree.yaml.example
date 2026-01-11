@@ -5,8 +5,8 @@
 project: myapp
 
 # Directory where agent worktrees are created
-# Can be absolute path or use ~ for home directory
-worktrees_dir: ~/Projects/worktrees
+# Relative to project root (recommended) or absolute path
+worktrees_dir: .worktrees
 
 # Port range for agents (each agent gets one port)
 # Agent 1 gets 9001, Agent 2 gets 9002, etc.

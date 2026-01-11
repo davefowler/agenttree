@@ -19,7 +19,7 @@ class Config(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     project: str = "myapp"
-    worktrees_dir: Path = Field(default_factory=lambda: Path.home() / "Projects" / "worktrees")
+    worktrees_dir: Path = Field(default_factory=lambda: Path(".worktrees"))
     port_range: str = "8001-8009"
     default_tool: str = "claude"
     tools: Dict[str, ToolConfig] = Field(default_factory=dict)

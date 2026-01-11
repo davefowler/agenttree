@@ -32,7 +32,7 @@ def main() -> None:
 @click.option(
     "--worktrees-dir",
     type=click.Path(),
-    help="Directory for worktrees (default: ~/Projects/worktrees)",
+    help="Directory for worktrees (default: .worktrees/)",
 )
 @click.option("--project", help="Project name for tmux sessions")
 def init(worktrees_dir: Optional[str], project: Optional[str]) -> None:
@@ -58,7 +58,7 @@ def init(worktrees_dir: Optional[str], project: Optional[str]) -> None:
     # Create config
     config_data = {
         "project": project,
-        "worktrees_dir": worktrees_dir or "~/Projects/worktrees",
+        "worktrees_dir": worktrees_dir or ".worktrees",
         "port_range": "9001-9099",  # Less conflicting range (9000 + agent number)
         "default_tool": "claude",
         "tools": {
@@ -214,7 +214,7 @@ echo ""
 echo "📝 Your identity:"
 echo "   AGENT_NUM: $AGENT_NUM"
 echo "   PORT: $AGENT_PORT"
-echo "   Your notes: .agenttree/agents/agent-$AGENT_NUM/"
+echo "   Your notes: .agenttrees/tasks/agent-$AGENT_NUM/"
 echo ""
 echo "📖 IMPORTANT: Read AGENT_GUIDE.md in your worktree to learn:"
 echo "   - How to collaborate with other agents"
@@ -272,7 +272,7 @@ echo $PORT
 │   ├── AGENT_GUIDE.md          ← You are here!
 │   ├── worktree-setup.sh       ← Setup script you ran
 │   └── knowledge/              ← Shared knowledge base (Phase 6)
-├── agents/                     ← Shared notes repository (git submodule)
+├── .agenttrees/                ← Shared notes repository (git submodule)
 │   ├── specs/                  ← Task specifications
 │   │   └── issue-<num>.md
 │   ├── tasks/                  ← Agent task logs
@@ -284,6 +284,9 @@ echo $PORT
 │       ├── agent-1/
 │       └── agent-<N>/
 │           └── <topic>.md
+├── .worktrees/                 ← Agent worktrees (git ignored)
+│   ├── agent-1/
+│   └── agent-<N>/
 ├── TASK.md                     ← Your current task (created by dispatch)
 └── <project files>
 ```
@@ -294,14 +297,14 @@ echo $PORT
 
 When dispatched, you'll find:
 - **TASK.md** in your worktree root
-- **agents/specs/issue-<num>.md** with the full specification
-- **agents/tasks/agent-${AGENT_NUM}/<timestamp>-issue-<num>.md** your task log
+- **.agenttrees/specs/issue-<num>.md** with the full specification
+- **.agenttrees/tasks/agent-${AGENT_NUM}/<timestamp>-issue-<num>.md** your task log
 
 ### 2. You Work on It
 
 - Read TASK.md first
-- Check agents/specs/ for detailed requirements
-- Look at agents/notes/ to see what other agents have learned
+- Check .agenttrees/specs/ for detailed requirements
+- Look at .agenttrees/notes/ to see what other agents have learned
 - Write code, run tests, fix bugs
 - Commit your changes regularly
 
@@ -311,7 +314,7 @@ Create notes for other agents:
 
 ```bash
 # Create a note about your findings
-cat > agents/notes/agent-${AGENT_NUM}/api-authentication.md <<EOF
+cat > .agenttrees/notes/agent-${AGENT_NUM}/api-authentication.md <<EOF
 # API Authentication Pattern
 
 I discovered that our API uses JWT tokens stored in localStorage.
@@ -328,9 +331,9 @@ I discovered that our API uses JWT tokens stored in localStorage.
 Always check token expiry before API calls.
 EOF
 
-git -C agents add .
-git -C agents commit -m "agent-${AGENT_NUM}: Document API auth pattern"
-git -C agents push
+git -C .agenttrees add .
+git -C .agenttrees commit -m "agent-${AGENT_NUM}: Document API auth pattern"
+git -C .agenttrees push
 ```
 
 ### 4. You Collaborate
@@ -338,16 +341,16 @@ git -C agents push
 **Reading other agents' work:**
 ```bash
 # See what agent-1 is working on
-cat agents/tasks/agent-1/*.md
+cat .agenttrees/tasks/agent-1/*.md
 
 # Read agent-2's notes on the database
-cat agents/notes/agent-2/database-schema.md
+cat .agenttrees/notes/agent-2/database-schema.md
 ```
 
 **Asking for help (async):**
 ```bash
 # Create a question for agent-2
-cat > agents/notes/agent-${AGENT_NUM}/question-for-agent-2.md <<EOF
+cat > .agenttrees/notes/agent-${AGENT_NUM}/question-for-agent-2.md <<EOF
 # Question: Database Migration Issue
 
 @agent-2, I noticed you worked on the database schema.
@@ -362,9 +365,9 @@ Did you encounter this? How did you fix it?
 -- Agent-${AGENT_NUM}
 EOF
 
-git -C agents add .
-git -C agents commit -m "agent-${AGENT_NUM}: Ask agent-2 about migration issue"
-git -C agents push
+git -C .agenttrees add .
+git -C .agenttrees commit -m "agent-${AGENT_NUM}: Ask agent-2 about migration issue"
+git -C .agenttrees push
 ```
 
 ### 5. You Create a PR
@@ -394,7 +397,7 @@ agenttree status
 ### Update Your Task Log
 ```bash
 # Update your current task log
-TASK_LOG=$(ls -t agents/tasks/agent-${AGENT_NUM}/*.md | head -1)
+TASK_LOG=$(ls -t .agenttrees/tasks/agent-${AGENT_NUM}/*.md | head -1)
 cat >> "$TASK_LOG" <<EOF
 
 ## Progress Update - $(date)
@@ -404,9 +407,9 @@ cat >> "$TASK_LOG" <<EOF
 - 🔄 Working on session timeout handling
 EOF
 
-git -C agents add .
-git -C agents commit -m "agent-${AGENT_NUM}: Update task progress"
-git -C agents push
+git -C .agenttrees add .
+git -C .agenttrees commit -m "agent-${AGENT_NUM}: Update task progress"
+git -C .agenttrees push
 ```
 
 ### Find Past Solutions
@@ -414,13 +417,13 @@ git -C agents push
 Check if similar work has been done:
 ```bash
 # Search all specs
-grep -r "authentication" agents/specs/
+grep -r "authentication" .agenttrees/specs/
 
 # Search all notes
-grep -r "JWT" agents/notes/
+grep -r "JWT" .agenttrees/notes/
 
 # Search your own notes
-grep -r "token" agents/notes/agent-${AGENT_NUM}/
+grep -r "token" .agenttrees/notes/agent-${AGENT_NUM}/
 ```
 
 ## Environment Setup
@@ -436,7 +439,7 @@ If you encounter issues (missing dependencies, wrong config, etc.):
 
 ### ✅ DO
 
-- **Document your findings** in agents/notes/
+- **Document your findings** in .agenttrees/notes/
 - **Update your task log** regularly
 - **Fix the setup script** if you find issues
 - **Search past work** before starting from scratch
@@ -458,13 +461,13 @@ If you encounter issues (missing dependencies, wrong config, etc.):
 → Check `.agenttree/worktree-setup.sh` and fix it for everyone
 
 ### "I can't find my task"
-→ Check `TASK.md` in your worktree root, or `agents/tasks/agent-${AGENT_NUM}/`
+→ Check `TASK.md` in your worktree root, or `.agenttrees/tasks/agent-${AGENT_NUM}/`
 
 ### "Where are the other agents' notes?"
-→ `agents/notes/agent-1/`, `agents/notes/agent-2/`, etc.
+→ `.agenttrees/notes/agent-1/`, `.agenttrees/notes/agent-2/`, etc.
 
 ### "How do I know what other agents are doing?"
-→ Run `cd .. && agenttree status` or check `agents/tasks/`
+→ Run `cd .. && agenttree status` or check `.agenttrees/tasks/`
 
 ### "My port is conflicting"
 → Check `echo $PORT` - each agent has a unique port (you have ${PORT})
@@ -472,8 +475,8 @@ If you encounter issues (missing dependencies, wrong config, etc.):
 ## Getting Help
 
 - **Read this guide** first
-- **Check agents/notes/** for past solutions
-- **Ask other agents** by creating a note in `agents/notes/agent-${AGENT_NUM}/`
+- **Check .agenttrees/notes/** for past solutions
+- **Ask other agents** by creating a note in `.agenttrees/notes/agent-${AGENT_NUM}/`
 - **Fix documentation** if you find gaps (including this file!)
 
 ## Advanced: ML Learning System (Phase 6)
@@ -504,7 +507,7 @@ Good luck, Agent-${AGENT_NUM}! 🚀
         ensure_gh_cli()
         agents_repo = AgentsRepository(repo_path)
         agents_repo.ensure_repo()
-        console.print("[green]✓ Agents repository created[/green]")
+        console.print("[green]✓ .agenttrees/ repository created[/green]")
     except RuntimeError as e:
         console.print(f"[yellow]Warning: Could not create agents repository:[/yellow]")
         console.print(f"  {e}")
@@ -668,7 +671,7 @@ def dispatch(
             gh_manager.create_task_file(issue, task_file)
             gh_manager.assign_issue_to_agent(issue_number, agent_num)
 
-            # Create spec and task log in agents/ repo
+            # Create spec and task log in .agenttrees/ repo
             agents_repo.create_spec_file(
                 issue_number, issue.title, issue.body, issue.url
             )
@@ -688,7 +691,7 @@ def dispatch(
             )
 
             console.print(f"[green]✓ Created task for issue #{issue_number}[/green]")
-            console.print(f"[green]✓ Created spec, task log, and context summary in agents/ repo[/green]")
+            console.print(f"[green]✓ Created spec, task log, and context summary in .agenttrees/ repo[/green]")
         except Exception as e:
             console.print(f"[red]Error fetching issue: {e}[/red]")
             sys.exit(1)
@@ -837,7 +840,7 @@ def notes_show(agent_num: int) -> None:
     for task_file in task_files:
         console.print(f"  • {task_file.name}")
 
-    console.print(f"\n[dim]View task: cat agents/tasks/agent-{agent_num}/<filename>[/dim]")
+    console.print(f"\n[dim]View task: cat .agenttrees/tasks/agent-{agent_num}/<filename>[/dim]")
 
 
 @notes.command("search")
@@ -997,7 +1000,7 @@ def remote_dispatch(hostname: str, agent_num: int, user: str, agents_repo: str) 
 
     This will:
     1. SSH into the remote host
-    2. Pull latest from agents/ repo
+    2. Pull latest from .agenttrees/ repo
     3. Notify the agent's tmux session
 
     Example:

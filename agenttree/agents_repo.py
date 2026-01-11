@@ -1,6 +1,6 @@
 """Agents repository management for AgentTree.
 
-Manages the agents/ git repository (separate from main project).
+Manages the .agenttrees/ git repository (separate from main project).
 """
 
 import os
@@ -34,7 +34,7 @@ def slugify(text: str) -> str:
 
 
 class AgentsRepository:
-    """Manages the agents/ git repository."""
+    """Manages the .agenttrees/ git repository."""
 
     def __init__(self, project_path: Path):
         """Initialize agents repository manager.
@@ -43,12 +43,12 @@ class AgentsRepository:
             project_path: Path to the main project repository
         """
         self.project_path = project_path
-        self.agents_path = project_path / "agents"
+        self.agents_path = project_path / ".agenttrees"
         self.project_name = project_path.name
 
     def ensure_repo(self) -> None:
-        """Ensure agents/ repo exists, create if needed."""
-        # Check if agents/.git exists
+        """Ensure .agenttrees/ repo exists, create if needed."""
+        # Check if .agenttrees/.git exists
         if (self.agents_path / ".git").exists():
             return
 
@@ -136,7 +136,7 @@ class AgentsRepository:
         )
         username = result.stdout.strip()
 
-        print(f"Cloning {repo_name} to agents/")
+        print(f"Cloning {repo_name} to .agenttrees/")
 
         # Clone
         subprocess.run(
@@ -149,7 +149,7 @@ class AgentsRepository:
 
     def _initialize_structure(self) -> None:
         """Create initial folder structure and templates."""
-        print("Initializing agents/ structure...")
+        print("Initializing .agenttrees/ structure...")
 
         # Create directories
         (self.agents_path / "templates").mkdir(exist_ok=True)
@@ -185,7 +185,7 @@ class AgentsRepository:
         )
         subprocess.run(["git", "push"], cwd=self.agents_path, check=True)
 
-        print("✓ Agents repository initialized")
+        print("✓ .agenttrees/ repository initialized")
 
     def _create_readme(self) -> None:
         """Create main README."""
@@ -501,7 +501,7 @@ This file documents key architectural decisions and their rationale.
 
 ## Documentation Structure
 
-Your work is tracked in this `agents/` repository (separate from main code).
+Your work is tracked in this `.agenttrees/` repository (separate from main code).
 
 ### During Development
 
@@ -562,21 +562,29 @@ See [README.md](README.md) for structure overview.
         )
 
     def _add_to_gitignore(self) -> None:
-        """Add agents/ to parent .gitignore."""
+        """Add .agenttrees/ and .worktrees/ to parent .gitignore."""
         gitignore = self.project_path / ".gitignore"
+
+        entries_to_add = []
 
         if gitignore.exists():
             content = gitignore.read_text()
-            if "agents/" in content:
-                return
+            if ".agenttrees/" not in content:
+                entries_to_add.append(".agenttrees/")
+            if ".worktrees/" not in content:
+                entries_to_add.append(".worktrees/")
 
-            with open(gitignore, "a") as f:
-                f.write("\n# AgentTree AI notes (separate git repo)\n")
-                f.write("agents/\n")
+            if entries_to_add:
+                with open(gitignore, "a") as f:
+                    f.write("\n# AgentTree directories\n")
+                    for entry in entries_to_add:
+                        f.write(f"{entry}\n")
         else:
-            gitignore.write_text("# AgentTree AI notes\nagents/\n")
+            gitignore.write_text("# AgentTree directories\n.agenttrees/\n.worktrees/\n")
+            entries_to_add = [".agenttrees/", ".worktrees/"]
 
-        print("✓ Added agents/ to .gitignore")
+        if entries_to_add:
+            print(f"✓ Added {', '.join(entries_to_add)} to .gitignore")
 
     def create_task_file(
         self, agent_num: int, issue_num: int, issue_title: str, issue_body: str, issue_url: str
