@@ -2,7 +2,7 @@
     {% for issue in issues %}
     <div class="issue-item {% if loop.first %}active{% endif %}"
          data-issue="{{ issue.number }}"
-         hx-get="/flow/issue/{{ issue.number }}"
+         hx-get="/api/issues/{{ issue.number }}/detail"
          hx-target="#issue-detail"
          hx-swap="innerHTML">
         <div class="issue-header">

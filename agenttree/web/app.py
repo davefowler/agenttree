@@ -16,6 +16,9 @@ from datetime import datetime
 from agenttree.config import load_config
 from agenttree.worktree import WorktreeManager
 from agenttree.github import get_issue, list_issues, sort_issues_by_priority, IssueWithContext
+from agenttree.web.models import (
+    Issue, IssueUpdate, IssueMoveRequest, StageEnum, IssueStatus, KanbanBoard
+)
 
 # Get the directory where this file is located
 BASE_DIR = Path(__file__).resolve().parent
@@ -255,15 +258,43 @@ async def flow_view(request: Request):
     """Flow view page (inbox-style task management)."""
     user = get_current_user()  # Check auth if enabled
     try:
-        issues = list_issues(state="open")
-        sorted_issues = sort_issues_by_priority(issues)
+        issues_ctx = list_issues(state="open")
+        sorted_issues_ctx = sort_issues_by_priority(issues_ctx)
+
+        # Convert first issue to Issue model for detail view
+        selected_issue = None
+        if sorted_issues_ctx:
+            first = sorted_issues_ctx[0]
+            stage = StageEnum.BACKLOG
+            for label in first.labels:
+                if label.startswith("stage-"):
+                    stage_name = label.replace("stage-", "").replace("-", "_")
+                    try:
+                        stage = StageEnum(stage_name)
+                    except ValueError:
+                        pass
+
+            selected_issue = Issue(
+                number=first.number,
+                title=first.title,
+                body=first.body,
+                labels=first.labels,
+                assignees=first.assignees,
+                stage=stage,
+                status=IssueStatus.OPEN,
+                url=first.url,
+                created_at=datetime.fromisoformat(first.created_at.replace('Z', '+00:00')),
+                updated_at=datetime.fromisoformat(first.updated_at.replace('Z', '+00:00'))
+            )
+
     except Exception as e:
         print(f"Error fetching issues: {e}")
-        sorted_issues = []
+        sorted_issues_ctx = []
+        selected_issue = None
 
     return templates.TemplateResponse(
         "flow.html",
-        {"request": request, "issues": sorted_issues, "user": user, "selected_issue": sorted_issues[0] if sorted_issues else None}
+        {"request": request, "issues": sorted_issues_ctx, "user": user, "selected_issue": selected_issue}
     )
 
 
@@ -284,21 +315,121 @@ async def flow_issues_list(request: Request):
     )
 
 
-@app.get("/flow/issue/{issue_number}", response_class=HTMLResponse)
-async def flow_issue_detail(request: Request, issue_number: int):
-    """Get issue detail for Flow view (HTMX endpoint)."""
+
+
+
+
+@app.get("/kanban", response_class=HTMLResponse)
+async def kanban_view(request: Request):
+    """Kanban board view."""
+    user = get_current_user()  # Check auth if enabled
+    try:
+        issues = list_issues(state="open")
+
+        # Group issues by stage
+        stages_dict = {stage: [] for stage in StageEnum}
+
+        for issue_ctx in issues:
+            # Map GitHub issue to our Issue model
+            # For now, extract stage from labels or default to backlog
+            stage = StageEnum.BACKLOG
+            for label in issue_ctx.labels:
+                if label.startswith("stage-"):
+                    stage_name = label.replace("stage-", "").replace("-", "_")
+                    try:
+                        stage = StageEnum(stage_name)
+                    except ValueError:
+                        pass
+
+            issue = Issue(
+                number=issue_ctx.number,
+                title=issue_ctx.title,
+                body=issue_ctx.body,
+                labels=issue_ctx.labels,
+                assignees=issue_ctx.assignees,
+                stage=stage,
+                status=IssueStatus.OPEN if issue_ctx.state == "OPEN" else IssueStatus.CLOSED,
+                url=issue_ctx.url,
+                created_at=datetime.fromisoformat(issue_ctx.created_at.replace('Z', '+00:00')),
+                updated_at=datetime.fromisoformat(issue_ctx.updated_at.replace('Z', '+00:00'))
+            )
+            stages_dict[stage].append(issue)
+
+        board = KanbanBoard(
+            stages=stages_dict,
+            total_issues=len(issues)
+        )
+    except Exception as e:
+        print(f"Error fetching issues: {e}")
+        board = KanbanBoard(
+            stages={stage: [] for stage in StageEnum},
+            total_issues=0
+        )
+
+    return templates.TemplateResponse(
+        "kanban.html",
+        {"request": request, "board": board, "stages": StageEnum, "user": user}
+    )
+
+
+@app.post("/api/issues/{issue_number}/move")
+async def move_issue(issue_number: int, move_request: IssueMoveRequest):
+    """Move issue to new stage (API endpoint)."""
+    get_current_user()  # Check auth if enabled
+
+    # TODO: Update issue in agents/ repo
+    # For now, just return success
+    # In real implementation:
+    # 1. Pull agents/ repo
+    # 2. Update issue.yaml with new stage
+    # 3. Commit and push
+
+    return {
+        "success": True,
+        "issue_number": issue_number,
+        "new_stage": move_request.stage.value
+    }
+
+
+@app.get("/api/issues/{issue_number}/detail", response_class=HTMLResponse)
+async def issue_detail(request: Request, issue_number: int):
+    """Get issue detail (shared between kanban modal and flow panel)."""
     get_current_user()  # Check auth if enabled
     try:
         issues = list_issues(state="open")
-        issue = next((i for i in issues if i.number == issue_number), None)
+        issue_ctx = next((i for i in issues if i.number == issue_number), None)
 
-        if not issue:
+        if not issue_ctx:
             return HTMLResponse("<div class='error'>Issue not found</div>")
+
+        # Convert to Issue model
+        stage = StageEnum.BACKLOG
+        for label in issue_ctx.labels:
+            if label.startswith("stage-"):
+                stage_name = label.replace("stage-", "").replace("-", "_")
+                try:
+                    stage = StageEnum(stage_name)
+                except ValueError:
+                    pass
+
+        issue = Issue(
+            number=issue_ctx.number,
+            title=issue_ctx.title,
+            body=issue_ctx.body,
+            labels=issue_ctx.labels,
+            assignees=issue_ctx.assignees,
+            stage=stage,
+            status=IssueStatus.OPEN,
+            url=issue_ctx.url,
+            created_at=datetime.fromisoformat(issue_ctx.created_at.replace('Z', '+00:00')),
+            updated_at=datetime.fromisoformat(issue_ctx.updated_at.replace('Z', '+00:00'))
+        )
+
     except Exception as e:
         return HTMLResponse(f"<div class='error'>Error: {str(e)}</div>")
 
     return templates.TemplateResponse(
-        "partials/flow_issue_detail.html",
+        "partials/issue_detail.html",
         {"request": request, "issue": issue}
     )
 

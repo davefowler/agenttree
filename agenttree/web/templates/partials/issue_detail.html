@@ -1,15 +1,17 @@
+<!-- Shared issue detail template - used by both kanban modal and flow panel -->
 <div class="issue-detail">
     <div class="detail-header">
         <div class="detail-title">
             #{{ issue.number }}: {{ issue.title }}
         </div>
         <div class="detail-meta">
-            <span>State: {{ issue.state }}</span>
-            {% if issue.stage %}
-            <span>Stage: {{ issue.stage }}</span>
-            {% endif %}
+            <span>Stage: {{ issue.stage.value.replace('_', ' ').title() }}</span>
+            <span>Status: {{ issue.status.value.title() }}</span>
             {% if issue.assignees %}
             <span>Assignees: {{ ', '.join(issue.assignees) }}</span>
+            {% endif %}
+            {% if issue.assigned_agent %}
+            <span>Agent: {{ issue.assigned_agent }}</span>
             {% endif %}
         </div>
     </div>
@@ -26,14 +28,20 @@
     </div>
     {% endif %}
 
-    <div class="actions">
+    <div class="detail-actions">
+        {% if issue.url %}
         <a href="{{ issue.url }}" target="_blank" class="btn btn-primary">View on GitHub</a>
+        {% endif %}
         <button class="btn"
                 hx-post="/agent/1/dispatch"
                 hx-vals='{"issue_number": {{ issue.number }}}'
-                hx-target="#issue-detail"
-                hx-swap="afterbegin">
+                hx-swap="none">
             Dispatch to Agent
         </button>
+    </div>
+
+    <div class="detail-timestamps">
+        <small>Created: {{ issue.created_at.strftime('%Y-%m-%d %H:%M') }}</small>
+        <small>Updated: {{ issue.updated_at.strftime('%Y-%m-%d %H:%M') }}</small>
     </div>
 </div>

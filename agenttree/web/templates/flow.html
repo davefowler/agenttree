@@ -290,6 +290,7 @@
             <div class="subtitle">Multi-agent development framework</div>
             <nav class="tabs">
                 <a href="/" class="tab">Dashboard</a>
+                <a href="/kanban" class="tab">Kanban</a>
                 <a href="/flow" class="tab active">Flow</a>
             </nav>
         </div>
@@ -305,7 +306,7 @@
 
         <div class="flow-main" id="issue-detail">
             {% if selected_issue %}
-                {% include 'partials/flow_issue_detail.html' with context %}
+                {% include 'partials/issue_detail.html' %}
             {% else %}
                 <div class="empty-state">
                     <h2>No issues found</h2>
