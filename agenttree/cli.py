@@ -823,10 +823,10 @@ def agents_status() -> None:
         )
 
     console.print(table)
-    console.print(f"\n[dim]Use the ID column value with these commands:[/dim]")
-    console.print(f"  agenttree attach 29     # Attach to session")
-    console.print(f"  agenttree send 29 'msg' # Send message")
-    console.print(f"  agenttree kill 29       # Stop agent")
+    console.print(f"\n[dim]Commands (use ID from table above):[/dim]")
+    console.print(f"  agenttree attach <id>")
+    console.print(f"  agenttree send <id> 'message'")
+    console.print(f"  agenttree kill <id>")
 
 
 @main.command()
