@@ -12,6 +12,8 @@ from typing import Optional
 import yaml
 from pydantic import BaseModel, Field
 
+from agenttree.agents_repo import sync_agents_repo
+
 
 class Priority(str, Enum):
     """Issue priority levels."""
@@ -126,6 +128,10 @@ def create_issue(
     Returns:
         The created Issue object
     """
+    # Sync before and after writing
+    agents_path = get_agenttrees_path()
+    sync_agents_repo(agents_path, pull_only=True)
+
     issues_path = get_issues_path()
     issues_path.mkdir(parents=True, exist_ok=True)
 
@@ -190,6 +196,9 @@ def create_issue(
 
 """)
 
+    # Sync after creating issue
+    sync_agents_repo(agents_path, pull_only=False, commit_message=f"Create issue {issue_id}: {title}")
+
     return issue
 
 
@@ -208,6 +217,10 @@ def list_issues(
     Returns:
         List of Issue objects
     """
+    # Sync before reading
+    agents_path = get_agenttrees_path()
+    sync_agents_repo(agents_path, pull_only=True)
+
     issues_path = get_issues_path()
     if not issues_path.exists():
         return []
@@ -252,6 +265,10 @@ def get_issue(issue_id: str) -> Optional[Issue]:
     Returns:
         Issue object or None if not found
     """
+    # Sync before reading
+    agents_path = get_agenttrees_path()
+    sync_agents_repo(agents_path, pull_only=True)
+
     issues_path = get_issues_path()
     if not issues_path.exists():
         return None
@@ -387,6 +404,10 @@ def update_issue_stage(
     Returns:
         Updated Issue object or None if not found
     """
+    # Sync before and after writing
+    agents_path = get_agenttrees_path()
+    sync_agents_repo(agents_path, pull_only=True)
+
     issue_dir = get_issue_dir(issue_id)
     if not issue_dir:
         return None
@@ -420,6 +441,12 @@ def update_issue_stage(
         data = issue.model_dump(mode="json")
         yaml.dump(data, f, default_flow_style=False, sort_keys=False)
 
+    # Sync after updating stage
+    stage_str = stage.value
+    if substage:
+        stage_str += f".{substage}"
+    sync_agents_repo(agents_path, pull_only=False, commit_message=f"Update issue {issue_id} to stage {stage_str}")
+
     return issue
 
 
@@ -433,6 +460,10 @@ def assign_agent(issue_id: str, agent_num: int) -> Optional[Issue]:
     Returns:
         Updated Issue object or None if not found
     """
+    # Sync before and after writing
+    agents_path = get_agenttrees_path()
+    sync_agents_repo(agents_path, pull_only=True)
+
     issue_dir = get_issue_dir(issue_id)
     if not issue_dir:
         return None
@@ -455,6 +486,9 @@ def assign_agent(issue_id: str, agent_num: int) -> Optional[Issue]:
     with open(yaml_path, "w") as f:
         data = issue.model_dump(mode="json")
         yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+
+    # Sync after assigning agent
+    sync_agents_repo(agents_path, pull_only=False, commit_message=f"Assign agent {agent_num} to issue {issue_id}")
 
     return issue
 
@@ -480,6 +514,10 @@ def update_issue_metadata(
     Returns:
         Updated Issue object or None if not found
     """
+    # Sync before and after writing
+    agents_path = get_agenttrees_path()
+    sync_agents_repo(agents_path, pull_only=True)
+
     issue_dir = get_issue_dir(issue_id)
     if not issue_dir:
         return None
@@ -512,6 +550,9 @@ def update_issue_metadata(
         data = issue.model_dump(mode="json")
         yaml.dump(data, f, default_flow_style=False, sort_keys=False)
 
+    # Sync after updating metadata
+    sync_agents_repo(agents_path, pull_only=False, commit_message=f"Update issue {issue_id} metadata")
+
     return issue
 
 
@@ -525,7 +566,11 @@ def load_skill(stage: Stage, substage: Optional[str] = None) -> Optional[str]:
     Returns:
         Skill content as string, or None if not found
     """
-    skills_path = get_agenttrees_path() / "skills"
+    # Sync before reading
+    agents_path = get_agenttrees_path()
+    sync_agents_repo(agents_path, pull_only=True)
+
+    skills_path = agents_path / "skills"
 
     # Try substage-specific skill first
     if substage:
