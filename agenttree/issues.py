@@ -418,6 +418,42 @@ def update_issue_stage(
     return issue
 
 
+def assign_agent(issue_id: str, agent_num: int) -> Optional[Issue]:
+    """Assign an agent to an issue.
+
+    Args:
+        issue_id: Issue ID
+        agent_num: Agent number to assign
+
+    Returns:
+        Updated Issue object or None if not found
+    """
+    issue_dir = get_issue_dir(issue_id)
+    if not issue_dir:
+        return None
+
+    yaml_path = issue_dir / "issue.yaml"
+    if not yaml_path.exists():
+        return None
+
+    with open(yaml_path) as f:
+        data = yaml.safe_load(f)
+
+    issue = Issue(**data)
+
+    # Update assignment
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    issue.assigned_agent = agent_num
+    issue.updated = now
+
+    # Write back
+    with open(yaml_path, "w") as f:
+        data = issue.model_dump(mode="json")
+        yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+
+    return issue
+
+
 def load_skill(stage: Stage, substage: Optional[str] = None) -> Optional[str]:
     """Load skill/instructions for a stage.
 

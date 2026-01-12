@@ -26,6 +26,7 @@ from agenttree.issues import (
     get_issue_dir,
     get_next_stage,
     update_issue_stage,
+    assign_agent,
     load_skill,
 )
 
@@ -663,10 +664,58 @@ def dispatch(
     task_file = worktree_path / "TASK.md"
 
     if issue_number:
-        # TODO: Issue #011 - Connect to local .agenttrees/issues/ instead of GitHub
-        console.print(f"[red]Error: Issue dispatch not yet implemented for local issues[/red]")
-        console.print(f"[yellow]Use --task for now: agenttree dispatch {agent_num} --task 'description'[/yellow]")
-        sys.exit(1)
+        # Load issue from local .agenttrees/issues/
+        issue = get_issue_func(str(issue_number))
+        if not issue:
+            console.print(f"[red]Error: Issue #{issue_number} not found in .agenttrees/issues/[/red]")
+            console.print(f"[yellow]Create it with: agenttree issue create 'title'[/yellow]")
+            sys.exit(1)
+
+        # Get issue directory and read problem.md
+        issue_dir = get_issue_dir(str(issue_number))
+        problem_content = ""
+        if issue_dir:
+            problem_file = issue_dir / "problem.md"
+            if problem_file.exists():
+                problem_content = problem_file.read_text()
+
+            # Also check for plan.md (if in later stages)
+            plan_file = issue_dir / "plan.md"
+            plan_content = ""
+            if plan_file.exists():
+                plan_content = plan_file.read_text()
+
+        # Create TASK.md with issue content
+        task_content = f"""# Issue #{issue.id}: {issue.title}
+
+**Stage:** {issue.stage.value}
+**Priority:** {issue.priority.value}
+
+## Problem
+
+{problem_content}
+"""
+        if plan_content:
+            task_content += f"""
+## Plan
+
+{plan_content}
+"""
+
+        task_content += f"""
+## Instructions
+
+1. Read CLAUDE.md for workflow instructions
+2. Run `agenttree status --issue {issue.id}` to see current stage
+3. Run `agenttree begin <stage> --issue {issue.id}` to start working
+4. Run `agenttree next --issue {issue.id}` when done with current stage
+"""
+        task_file.write_text(task_content)
+
+        # Assign agent to issue
+        assign_agent(str(issue_number), agent_num)
+
+        console.print(f"[green]✓ Created task for issue #{issue.id}: {issue.title}[/green]")
     else:
         # Create simple TASK.md for ad-hoc tasks
         task_file.write_text(f"# Task\n\n{task}\n")
