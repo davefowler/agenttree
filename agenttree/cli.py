@@ -533,13 +533,13 @@ Good luck, Agent-${AGENT_NUM}! 🚀
     console.print("\n[bold cyan]Next steps:[/bold cyan]")
     console.print("\n[bold]1. Set up agent-1 and let it configure the environment:[/bold]")
     console.print("   agenttree setup 1")
-    console.print("   agenttree dispatch 1 --task 'Test the worktree setup. Run the app, fix any errors in .agenttrees/scripts/worktree-setup.sh, and commit your fixes.'")
+    console.print("   agenttree start 1 --task 'Test the worktree setup. Run the app, fix any errors in .agenttrees/scripts/worktree-setup.sh, and commit your fixes.'")
     console.print("")
     console.print("[bold]2. Once agent-1 has the setup working, set up the rest:[/bold]")
     console.print("   agenttree setup 2 3  # They'll use agent-1's fixes!")
     console.print("")
     console.print("[bold]3. Start dispatching real work:[/bold]")
-    console.print("   agenttree dispatch 2 --task 'Fix the login bug'")
+    console.print("   agenttree start 2 --task 'Fix the login bug'")
     console.print("   agenttree tui            # Or use the terminal dashboard")
     console.print("")
     console.print("[dim]💡 Tip: Agent-1 becomes your sysadmin - it fixes the setup script for everyone![/dim]")
@@ -617,16 +617,16 @@ def setup(agent_numbers: tuple) -> None:
             console.print(f"[red]✗ Failed to set up agent {agent_num}: {e}[/red]")
 
 
-@main.command()
+@main.command(name="start")
 @click.argument("issue_id", type=str)
 @click.option("--tool", help="AI tool to use (default: from config)")
 @click.option("--force", is_flag=True, help="Force dispatch even if agent already exists")
-def dispatch(
+def start_agent(
     issue_id: str,
     tool: Optional[str],
     force: bool,
 ) -> None:
-    """Dispatch an agent for an issue (creates container + worktree).
+    """Start an agent for an issue (creates container + worktree).
 
     ISSUE_ID is the issue number (e.g., "23" or "023").
 
@@ -737,6 +737,18 @@ def dispatch(
     console.print(f"  agenttree agents")
 
 
+# Alias: 'dispatch' is deprecated, use 'start' instead
+@main.command(name="dispatch", hidden=True)
+@click.argument("issue_id", type=str)
+@click.option("--tool", help="AI tool to use (default: from config)")
+@click.option("--force", is_flag=True, help="Force dispatch even if agent already exists")
+@click.pass_context
+def dispatch(ctx, issue_id: str, tool: Optional[str], force: bool) -> None:
+    """[DEPRECATED] Use 'agenttree start' instead."""
+    console.print("[yellow]Note: 'dispatch' is deprecated, use 'agenttree start' instead[/yellow]")
+    ctx.invoke(start_agent, issue_id=issue_id, tool=tool, force=force)
+
+
 @main.command("agents")
 def agents_status() -> None:
     """Show status of all active issue agents."""
@@ -750,7 +762,7 @@ def agents_status() -> None:
     if not agents:
         console.print("[dim]No active agents[/dim]")
         console.print("\nStart an agent with:")
-        console.print("  agenttree dispatch <issue_id>")
+        console.print("  agenttree start <issue_id>")
         return
 
     table = Table(title="Active Agents")
@@ -814,7 +826,7 @@ def attach(issue_id: str) -> None:
 
     if not agent:
         console.print(f"[red]Error: No active agent for issue #{issue_id}[/red]")
-        console.print(f"[yellow]Start one with: agenttree dispatch {issue_id}[/yellow]")
+        console.print(f"[yellow]Start one with: agenttree start {issue_id}[/yellow]")
         sys.exit(1)
 
     try:
@@ -850,7 +862,7 @@ def send(issue_id: str, message: str) -> None:
 
     if not agent:
         console.print(f"[red]Error: No active agent for issue #{issue_id}[/red]")
-        console.print(f"[yellow]Start one with: agenttree dispatch {issue_id}[/yellow]")
+        console.print(f"[yellow]Start one with: agenttree start {issue_id}[/yellow]")
         sys.exit(1)
 
     if not tmux_manager.is_issue_running(agent.tmux_session):
@@ -1196,7 +1208,7 @@ def issue_create(
         console.print(f"[green]✓ Created issue {issue.id}: {issue.title}[/green]")
         console.print(f"[dim]  .agenttrees/issues/{issue.id}-{issue.slug}/[/dim]")
         console.print(f"[dim]  Stage: {issue.stage.value}[/dim]")
-        console.print(f"\n[dim]Dispatch an agent: agenttree dispatch {issue.id}[/dim]")
+        console.print(f"\n[dim]Dispatch an agent: agenttree start {issue.id}[/dim]")
 
     except Exception as e:
         console.print(f"[red]Error creating issue: {e}[/red]")
