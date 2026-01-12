@@ -100,14 +100,31 @@ class ContainerRuntime:
         if claude_config.exists():
             cmd.extend(["-v", f"{claude_config}:/home/agent/.claude"])
 
-        # Pass through auth credentials if set
+        # Pass through auth credentials
         import os
+
+        # Helper to get credential from env or file
+        def get_credential(env_var: str, file_key: str) -> Optional[str]:
+            # Check environment first
+            if os.environ.get(env_var):
+                return os.environ[env_var]
+            # Fall back to credentials file
+            creds_file = home / ".config" / "agenttree" / "credentials"
+            if creds_file.exists():
+                for line in creds_file.read_text().splitlines():
+                    if line.startswith(f"{file_key}="):
+                        return line.split("=", 1)[1].strip()
+            return None
+
         # API key for direct API access
-        if os.environ.get("ANTHROPIC_API_KEY"):
-            cmd.extend(["-e", f"ANTHROPIC_API_KEY={os.environ['ANTHROPIC_API_KEY']}"])
+        api_key = get_credential("ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY")
+        if api_key:
+            cmd.extend(["-e", f"ANTHROPIC_API_KEY={api_key}"])
+
         # OAuth token for subscription auth (from `claude setup-token`)
-        if os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
-            cmd.extend(["-e", f"CLAUDE_CODE_OAUTH_TOKEN={os.environ['CLAUDE_CODE_OAUTH_TOKEN']}"])
+        oauth_token = get_credential("CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN")
+        if oauth_token:
+            cmd.extend(["-e", f"CLAUDE_CODE_OAUTH_TOKEN={oauth_token}"])
 
         if additional_args:
             cmd.extend(additional_args)
