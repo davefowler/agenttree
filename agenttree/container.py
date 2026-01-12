@@ -54,6 +54,7 @@ class ContainerRuntime:
         dangerous: bool = False,
         image: str = "agenttree-agent:latest",
         additional_args: Optional[List[str]] = None,
+        agent_num: Optional[int] = None,
     ) -> List[str]:
         """Build the container run command.
 
@@ -85,21 +86,28 @@ class ContainerRuntime:
             self.runtime,
             "run",
             "-it",
-            "--rm",
             "-v",
             f"{abs_path}:/workspace",
             "-w",
             "/workspace",
         ]
 
+        # Name container for persistence (can restart without re-auth)
+        if agent_num is not None:
+            cmd.extend(["--name", f"agenttree-agent-{agent_num}"])
+
         # Mount Claude config for subscription auth (if exists)
         if claude_config.exists():
             cmd.extend(["-v", f"{claude_config}:/home/agent/.claude"])
 
-        # Pass through API key if set (for API-based auth)
+        # Pass through auth credentials if set
         import os
+        # API key for direct API access
         if os.environ.get("ANTHROPIC_API_KEY"):
             cmd.extend(["-e", f"ANTHROPIC_API_KEY={os.environ['ANTHROPIC_API_KEY']}"])
+        # OAuth token for subscription auth (from `claude setup-token`)
+        if os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
+            cmd.extend(["-e", f"CLAUDE_CODE_OAUTH_TOKEN={os.environ['CLAUDE_CODE_OAUTH_TOKEN']}"])
 
         if additional_args:
             cmd.extend(additional_args)
