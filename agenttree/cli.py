@@ -10,10 +10,19 @@ from rich.table import Table
 from agenttree.config import load_config
 from agenttree.worktree import WorktreeManager
 from agenttree.tmux import TmuxManager
-from agenttree.github import GitHubManager, get_issue, ensure_gh_cli
+from agenttree.github import GitHubManager, get_issue as get_github_issue, ensure_gh_cli
 from agenttree.container import get_container_runtime
 from agenttree.agents_repo import AgentsRepository
 from agenttree.cli_docs import create_rfc, create_investigation, create_note, complete, resume
+from agenttree.issues import (
+    Issue,
+    Stage,
+    Priority,
+    create_issue as create_issue_func,
+    list_issues as list_issues_func,
+    get_issue as get_issue_func,
+    get_issue_dir,
+)
 
 console = Console()
 
@@ -667,7 +676,7 @@ def dispatch(
 
     if issue_number:
         try:
-            issue = get_issue(issue_number)
+            issue = get_github_issue(issue_number)
             gh_manager.create_task_file(issue, task_file)
             gh_manager.assign_issue_to_agent(issue_number, agent_num)
 
@@ -1034,6 +1043,205 @@ main.add_command(create_note)
 # Add task management commands
 main.add_command(complete)
 main.add_command(resume)
+
+
+# =============================================================================
+# Issue Management Commands
+# =============================================================================
+
+@main.group()
+def issue() -> None:
+    """Manage agenttree issues.
+
+    Issues are stored in .agenttrees/issues/ and track work through
+    the agenttree workflow stages.
+    """
+    pass
+
+
+@issue.command("create")
+@click.argument("title")
+@click.option(
+    "--priority", "-p",
+    type=click.Choice(["low", "medium", "high", "critical"]),
+    default="medium",
+    help="Issue priority"
+)
+@click.option(
+    "--label", "-l",
+    multiple=True,
+    help="Labels to add (can be used multiple times)"
+)
+def issue_create(title: str, priority: str, label: tuple) -> None:
+    """Create a new issue.
+
+    Creates an issue directory in .agenttrees/issues/ with:
+    - issue.yaml (metadata)
+    - problem.md (from template)
+
+    Example:
+        agenttree issue create "Fix login validation"
+        agenttree issue create "Add dark mode" -p high -l ui -l feature
+    """
+    try:
+        issue = create_issue_func(
+            title=title,
+            priority=Priority(priority),
+            labels=list(label) if label else None,
+        )
+        console.print(f"[green]✓ Created issue {issue.id}: {issue.title}[/green]")
+        console.print(f"[dim]  Directory: .agenttrees/issues/{issue.id}-{issue.slug}/[/dim]")
+        console.print(f"[dim]  Edit problem.md to define the problem[/dim]")
+    except Exception as e:
+        console.print(f"[red]Error creating issue: {e}[/red]")
+        sys.exit(1)
+
+
+@issue.command("list")
+@click.option(
+    "--stage", "-s",
+    type=click.Choice([s.value for s in Stage]),
+    help="Filter by stage"
+)
+@click.option(
+    "--priority", "-p",
+    type=click.Choice([p.value for p in Priority]),
+    help="Filter by priority"
+)
+@click.option(
+    "--agent", "-a",
+    type=int,
+    help="Filter by assigned agent"
+)
+@click.option(
+    "--json", "as_json",
+    is_flag=True,
+    help="Output as JSON"
+)
+def issue_list(stage: Optional[str], priority: Optional[str], agent: Optional[int], as_json: bool) -> None:
+    """List issues.
+
+    Examples:
+        agenttree issue list
+        agenttree issue list --stage backlog
+        agenttree issue list -s implement -p high
+        agenttree issue list --json
+    """
+    stage_filter = Stage(stage) if stage else None
+    priority_filter = Priority(priority) if priority else None
+
+    issues = list_issues_func(
+        stage=stage_filter,
+        priority=priority_filter,
+        assigned_agent=agent,
+    )
+
+    if as_json:
+        import json
+        console.print(json.dumps([i.model_dump() for i in issues], indent=2))
+        return
+
+    if not issues:
+        console.print("[yellow]No issues found[/yellow]")
+        return
+
+    table = Table(title="Issues")
+    table.add_column("ID", style="cyan")
+    table.add_column("Title", style="white")
+    table.add_column("Stage", style="magenta")
+    table.add_column("Priority", style="yellow")
+    table.add_column("Agent", style="green")
+
+    for issue in issues:
+        agent_str = f"Agent {issue.assigned_agent}" if issue.assigned_agent else "-"
+        stage_str = issue.stage.value
+        if issue.substage:
+            stage_str += f".{issue.substage}"
+
+        # Color priority
+        priority_style = {
+            Priority.CRITICAL: "red bold",
+            Priority.HIGH: "yellow",
+            Priority.MEDIUM: "white",
+            Priority.LOW: "dim",
+        }.get(issue.priority, "white")
+
+        table.add_row(
+            issue.id,
+            issue.title[:40] + ("..." if len(issue.title) > 40 else ""),
+            stage_str,
+            f"[{priority_style}]{issue.priority.value}[/{priority_style}]",
+            agent_str,
+        )
+
+    console.print(table)
+
+
+@issue.command("show")
+@click.argument("issue_id")
+def issue_show(issue_id: str) -> None:
+    """Show issue details.
+
+    Examples:
+        agenttree issue show 001
+        agenttree issue show 1
+        agenttree issue show 001-fix-login
+    """
+    issue = get_issue_func(issue_id)
+
+    if not issue:
+        console.print(f"[red]Issue {issue_id} not found[/red]")
+        sys.exit(1)
+
+    issue_dir = get_issue_dir(issue_id)
+
+    console.print(f"\n[bold cyan]Issue {issue.id}: {issue.title}[/bold cyan]\n")
+
+    # Basic info
+    console.print(f"[bold]Stage:[/bold] {issue.stage.value}", end="")
+    if issue.substage:
+        console.print(f".{issue.substage}")
+    else:
+        console.print()
+
+    console.print(f"[bold]Priority:[/bold] {issue.priority.value}")
+
+    if issue.assigned_agent:
+        console.print(f"[bold]Assigned:[/bold] Agent {issue.assigned_agent}")
+
+    if issue.labels:
+        console.print(f"[bold]Labels:[/bold] {', '.join(issue.labels)}")
+
+    if issue.branch:
+        console.print(f"[bold]Branch:[/bold] {issue.branch}")
+
+    if issue.pr_number:
+        console.print(f"[bold]PR:[/bold] #{issue.pr_number}")
+
+    if issue.github_issue:
+        console.print(f"[bold]GitHub Issue:[/bold] #{issue.github_issue}")
+
+    console.print(f"[bold]Created:[/bold] {issue.created}")
+    console.print(f"[bold]Updated:[/bold] {issue.updated}")
+
+    # Show files
+    if issue_dir:
+        console.print(f"\n[bold]Files:[/bold]")
+        for file in sorted(issue_dir.iterdir()):
+            if file.is_file():
+                console.print(f"  • {file.name}")
+
+    # Show history
+    if issue.history:
+        console.print(f"\n[bold]History:[/bold]")
+        for entry in issue.history[-5:]:  # Last 5 entries
+            stage_str = entry.stage
+            if entry.substage:
+                stage_str += f".{entry.substage}"
+            agent_str = f" (agent {entry.agent})" if entry.agent else ""
+            console.print(f"  • {entry.timestamp[:10]} → {stage_str}{agent_str}")
+
+    console.print(f"\n[dim]Directory: {issue_dir}[/dim]")
 
 
 if __name__ == "__main__":

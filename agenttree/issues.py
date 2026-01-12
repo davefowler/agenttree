@@ -1,0 +1,298 @@
+"""Issue management for AgentTree.
+
+This module handles CRUD operations for issues stored in .agenttrees/issues/.
+"""
+
+import re
+from datetime import datetime, timezone
+from enum import Enum
+from pathlib import Path
+from typing import Optional
+
+import yaml
+from pydantic import BaseModel, Field
+
+
+class Priority(str, Enum):
+    """Issue priority levels."""
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+
+class Stage(str, Enum):
+    """Workflow stages."""
+    BACKLOG = "backlog"
+    PROBLEM = "problem"
+    PROBLEM_REVIEW = "problem_review"
+    RESEARCH = "research"
+    PLAN_REVIEW = "plan_review"
+    IMPLEMENT = "implement"
+    IMPLEMENTATION_REVIEW = "implementation_review"
+    ACCEPTED = "accepted"
+    NOT_DOING = "not_doing"
+
+
+class HistoryEntry(BaseModel):
+    """A single entry in issue history."""
+    stage: str
+    substage: Optional[str] = None
+    timestamp: str
+    agent: Optional[int] = None
+
+
+class Issue(BaseModel):
+    """An issue in the agenttree workflow."""
+    id: str
+    slug: str
+    title: str
+    created: str
+    updated: str
+
+    stage: Stage = Stage.BACKLOG
+    substage: Optional[str] = None
+
+    assigned_agent: Optional[int] = None
+    branch: Optional[str] = None
+
+    labels: list[str] = Field(default_factory=list)
+    priority: Priority = Priority.MEDIUM
+
+    github_issue: Optional[int] = None
+    pr_number: Optional[int] = None
+    relevant_url: Optional[str] = None
+
+    history: list[HistoryEntry] = Field(default_factory=list)
+
+
+def slugify(text: str) -> str:
+    """Convert text to a URL-friendly slug."""
+    # Lowercase and replace spaces with hyphens
+    slug = text.lower().strip()
+    # Remove special characters
+    slug = re.sub(r'[^\w\s-]', '', slug)
+    # Replace whitespace with hyphens
+    slug = re.sub(r'[\s_]+', '-', slug)
+    # Remove leading/trailing hyphens
+    slug = slug.strip('-')
+    # Limit length
+    return slug[:50]
+
+
+def get_agenttrees_path() -> Path:
+    """Get the path to .agenttrees directory."""
+    return Path.cwd() / ".agenttrees"
+
+
+def get_issues_path() -> Path:
+    """Get the path to issues directory."""
+    return get_agenttrees_path() / "issues"
+
+
+def get_next_issue_number() -> int:
+    """Get the next available issue number."""
+    issues_path = get_issues_path()
+    if not issues_path.exists():
+        return 1
+
+    max_num = 0
+    for issue_dir in issues_path.iterdir():
+        if issue_dir.is_dir() and issue_dir.name != "archive":
+            # Extract number from directory name (e.g., "001-fix-login" -> 1)
+            match = re.match(r'^(\d+)-', issue_dir.name)
+            if match:
+                num = int(match.group(1))
+                max_num = max(max_num, num)
+
+    return max_num + 1
+
+
+def create_issue(
+    title: str,
+    priority: Priority = Priority.MEDIUM,
+    labels: Optional[list[str]] = None,
+) -> Issue:
+    """Create a new issue.
+
+    Args:
+        title: Issue title
+        priority: Issue priority
+        labels: Optional list of labels
+
+    Returns:
+        The created Issue object
+    """
+    issues_path = get_issues_path()
+    issues_path.mkdir(parents=True, exist_ok=True)
+
+    # Generate ID and slug
+    num = get_next_issue_number()
+    issue_id = f"{num:03d}"
+    slug = slugify(title)
+    dir_name = f"{issue_id}-{slug}"
+
+    # Create issue directory
+    issue_dir = issues_path / dir_name
+    issue_dir.mkdir(exist_ok=True)
+
+    # Create issue object
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    issue = Issue(
+        id=issue_id,
+        slug=slug,
+        title=title,
+        created=now,
+        updated=now,
+        stage=Stage.BACKLOG,
+        priority=priority,
+        labels=labels or [],
+        history=[
+            HistoryEntry(stage="backlog", timestamp=now)
+        ]
+    )
+
+    # Write issue.yaml
+    yaml_path = issue_dir / "issue.yaml"
+    with open(yaml_path, "w") as f:
+        # Use mode="json" to get plain strings for enums
+        data = issue.model_dump(mode="json")
+        yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+
+    # Copy problem.md template
+    template_path = get_agenttrees_path() / "templates" / "problem.md"
+    problem_path = issue_dir / "problem.md"
+
+    if template_path.exists():
+        problem_path.write_text(template_path.read_text())
+    else:
+        # Fallback template
+        problem_path.write_text(f"""# Problem Statement
+
+<!-- Describe the problem: {title} -->
+
+
+
+## Context
+
+<!-- Background and relevant file paths -->
+
+
+
+## Possible Solutions
+
+<!-- List at least one approach -->
+
+-
+
+""")
+
+    return issue
+
+
+def list_issues(
+    stage: Optional[Stage] = None,
+    priority: Optional[Priority] = None,
+    assigned_agent: Optional[int] = None,
+) -> list[Issue]:
+    """List issues, optionally filtered.
+
+    Args:
+        stage: Filter by stage
+        priority: Filter by priority
+        assigned_agent: Filter by assigned agent
+
+    Returns:
+        List of Issue objects
+    """
+    issues_path = get_issues_path()
+    if not issues_path.exists():
+        return []
+
+    issues = []
+    for issue_dir in sorted(issues_path.iterdir()):
+        if not issue_dir.is_dir() or issue_dir.name == "archive":
+            continue
+
+        yaml_path = issue_dir / "issue.yaml"
+        if not yaml_path.exists():
+            continue
+
+        with open(yaml_path) as f:
+            data = yaml.safe_load(f)
+
+        try:
+            issue = Issue(**data)
+        except Exception:
+            # Skip malformed issues
+            continue
+
+        # Apply filters
+        if stage and issue.stage != stage:
+            continue
+        if priority and issue.priority != priority:
+            continue
+        if assigned_agent is not None and issue.assigned_agent != assigned_agent:
+            continue
+
+        issues.append(issue)
+
+    return issues
+
+
+def get_issue(issue_id: str) -> Optional[Issue]:
+    """Get a single issue by ID.
+
+    Args:
+        issue_id: Issue ID (e.g., "001" or "001-fix-login")
+
+    Returns:
+        Issue object or None if not found
+    """
+    issues_path = get_issues_path()
+    if not issues_path.exists():
+        return None
+
+    # Normalize ID (remove leading zeros for comparison)
+    normalized_id = issue_id.lstrip("0") or "0"
+
+    for issue_dir in issues_path.iterdir():
+        if not issue_dir.is_dir() or issue_dir.name == "archive":
+            continue
+
+        # Check if directory starts with the issue ID
+        dir_id = issue_dir.name.split("-")[0].lstrip("0") or "0"
+        if dir_id == normalized_id or issue_dir.name == issue_id:
+            yaml_path = issue_dir / "issue.yaml"
+            if yaml_path.exists():
+                with open(yaml_path) as f:
+                    data = yaml.safe_load(f)
+                return Issue(**data)
+
+    return None
+
+
+def get_issue_dir(issue_id: str) -> Optional[Path]:
+    """Get the directory path for an issue.
+
+    Args:
+        issue_id: Issue ID
+
+    Returns:
+        Path to issue directory or None
+    """
+    issues_path = get_issues_path()
+    if not issues_path.exists():
+        return None
+
+    normalized_id = issue_id.lstrip("0") or "0"
+
+    for issue_dir in issues_path.iterdir():
+        if not issue_dir.is_dir() or issue_dir.name == "archive":
+            continue
+
+        dir_id = issue_dir.name.split("-")[0].lstrip("0") or "0"
+        if dir_id == normalized_id or issue_dir.name == issue_id:
+            return issue_dir
+
+    return None
