@@ -51,3 +51,4 @@ Thumbs.db
 
 # AgentTree issue tracking (separate git repo)
 .agenttrees/
+.worktrees/

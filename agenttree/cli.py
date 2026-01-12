@@ -1,5 +1,6 @@
 """CLI for AgentTree."""
 
+import subprocess
 import sys
 from pathlib import Path
 from typing import Optional
@@ -93,12 +94,12 @@ def init(worktrees_dir: Optional[str], project: Optional[str]) -> None:
 
     console.print(f"[green]✓ Created {config_file}[/green]")
 
-    # Create .agenttree directory
-    agenttree_dir = repo_path / ".agenttree"
-    agenttree_dir.mkdir(exist_ok=True)
+    # Create .agenttrees/scripts directory
+    scripts_dir = repo_path / ".agenttrees" / "scripts"
+    scripts_dir.mkdir(parents=True, exist_ok=True)
 
     # Create worktree-setup.sh template
-    setup_script = agenttree_dir / "worktree-setup.sh"
+    setup_script = scripts_dir / "worktree-setup.sh"
     setup_template = """#!/bin/bash
 # AgentTree Worktree Setup Script
 #
@@ -216,8 +217,8 @@ fi
 # ============================================================================
 
 # Copy AGENT_GUIDE.md to worktree (with AGENT_NUM substitution)
-if [ -f "../.agenttree/AGENT_GUIDE.md" ]; then
-    sed "s/\${AGENT_NUM}/$AGENT_NUM/g; s/\${PORT}/$AGENT_PORT/g" ../.agenttree/AGENT_GUIDE.md > AGENT_GUIDE.md
+if [ -f "../.agenttrees/templates/AGENT_GUIDE.md" ]; then
+    sed "s/\${AGENT_NUM}/$AGENT_NUM/g; s/\${PORT}/$AGENT_PORT/g" ../.agenttrees/templates/AGENT_GUIDE.md > AGENT_GUIDE.md
     echo "✓ Created personalized AGENT_GUIDE.md"
 fi
 
@@ -253,7 +254,9 @@ echo "and push the changes so future agents can benefit!"
     console.print(f"[dim]  → Customize this script for your project's setup needs[/dim]")
 
     # Create AGENT_GUIDE.md template
-    agent_guide = agenttree_dir / "AGENT_GUIDE.md"
+    templates_dir = repo_path / ".agenttrees" / "templates"
+    templates_dir.mkdir(parents=True, exist_ok=True)
+    agent_guide = templates_dir / "AGENT_GUIDE.md"
     agent_guide_template = """# AgentTree Agent Guide
 
 Welcome, Agent! 👋
@@ -281,26 +284,24 @@ echo $PORT
 
 ```
 <project-root>/
-├── .agenttree/
-│   ├── AGENT_GUIDE.md          ← You are here!
-│   ├── worktree-setup.sh       ← Setup script you ran
-│   └── knowledge/              ← Shared knowledge base (Phase 6)
-├── .agenttrees/                ← Shared notes repository (git submodule)
-│   ├── specs/                  ← Task specifications
-│   │   └── issue-<num>.md
-│   ├── tasks/                  ← Agent task logs
-│   │   ├── agent-1/
-│   │   ├── agent-2/
-│   │   └── agent-<N>/
-│   │       └── <timestamp>-issue-<num>.md
-│   └── notes/                  ← Agent notes and findings
-│       ├── agent-1/
-│       └── agent-<N>/
-│           └── <topic>.md
+├── .agenttrees/                ← Shared repo (issues, skills, scripts)
+│   ├── issues/                 ← Issue tracking
+│   │   └── 001-fix-login/
+│   │       ├── issue.yaml
+│   │       ├── problem.md
+│   │       └── plan.md
+│   ├── skills/                 ← Stage instructions
+│   │   ├── problem.md
+│   │   ├── research.md
+│   │   └── implement.md
+│   ├── scripts/                ← Setup scripts
+│   │   └── worktree-setup.sh
+│   └── templates/              ← Document templates
+│       ├── AGENT_GUIDE.md      ← You are here!
+│       └── problem.md
 ├── .worktrees/                 ← Agent worktrees (git ignored)
-│   ├── agent-1/
-│   └── agent-<N>/
-├── TASK.md                     ← Your current task (created by dispatch)
+│   ├── agenttree-agent-1/
+│   └── agenttree-agent-<N>/
 └── <project files>
 ```
 
@@ -441,12 +442,12 @@ grep -r "token" .agenttrees/notes/agent-${AGENT_NUM}/
 
 ## Environment Setup
 
-Your worktree was set up by `.agenttree/worktree-setup.sh`.
+Your worktree was set up by `.agenttrees/scripts/worktree-setup.sh`.
 
 If you encounter issues (missing dependencies, wrong config, etc.):
 1. **Fix the setup script** - Other agents will benefit!
 2. Test your changes
-3. Commit: `git add .agenttree/worktree-setup.sh && git commit -m "Fix setup script for <issue>"`
+3. Commit: `git add .agenttrees/scripts/worktree-setup.sh && git commit -m "Fix setup script for <issue>"`
 
 ## Best Practices
 
@@ -471,7 +472,7 @@ If you encounter issues (missing dependencies, wrong config, etc.):
 ## Troubleshooting
 
 ### "My setup failed"
-→ Check `.agenttree/worktree-setup.sh` and fix it for everyone
+→ Check `.agenttrees/scripts/worktree-setup.sh` and fix it for everyone
 
 ### "I can't find my task"
 → Check `TASK.md` in your worktree root, or `.agenttrees/tasks/agent-${AGENT_NUM}/`
@@ -529,7 +530,7 @@ Good luck, Agent-${AGENT_NUM}! 🚀
     console.print("\n[bold cyan]Next steps:[/bold cyan]")
     console.print("\n[bold]1. Set up agent-1 and let it configure the environment:[/bold]")
     console.print("   agenttree setup 1")
-    console.print("   agenttree dispatch 1 --task 'Test the worktree setup. Run the app, fix any errors in .agenttree/worktree-setup.sh, and commit your fixes.'")
+    console.print("   agenttree dispatch 1 --task 'Test the worktree setup. Run the app, fix any errors in .agenttrees/scripts/worktree-setup.sh, and commit your fixes.'")
     console.print("")
     console.print("[bold]2. Once agent-1 has the setup working, set up the rest:[/bold]")
     console.print("   agenttree setup 2 3  # They'll use agent-1's fixes!")
@@ -551,7 +552,7 @@ def setup(agent_numbers: tuple) -> None:
     manager = WorktreeManager(repo_path, config)
 
     # Check if custom setup script exists
-    setup_script = repo_path / ".agenttree" / "worktree-setup.sh"
+    setup_script = repo_path / ".agenttrees" / "scripts" / "worktree-setup.sh"
     has_custom_setup = setup_script.exists()
 
     if has_custom_setup:
