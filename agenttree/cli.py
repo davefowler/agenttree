@@ -536,8 +536,8 @@ Good luck, Agent-${AGENT_NUM}! 🚀
     console.print("   agenttree setup 2 3  # They'll use agent-1's fixes!")
     console.print("")
     console.print("[bold]3. Start dispatching real work:[/bold]")
-    console.print("   agenttree dispatch 2 42  # GitHub issue")
-    console.print("   agenttree web            # Or use the dashboard")
+    console.print("   agenttree dispatch 2 --task 'Fix the login bug'")
+    console.print("   agenttree tui            # Or use the terminal dashboard")
     console.print("")
     console.print("[dim]💡 Tip: Agent-1 becomes your sysadmin - it fixes the setup script for everyone![/dim]")
 
@@ -647,7 +647,6 @@ def dispatch(
     # Initialize managers
     wt_manager = WorktreeManager(repo_path, config)
     tmux_manager = TmuxManager(config)
-    gh_manager = GitHubManager()
     agents_repo = AgentsRepository(repo_path)
 
     # Ensure agents repo exists
@@ -664,37 +663,13 @@ def dispatch(
     task_file = worktree_path / "TASK.md"
 
     if issue_number:
-        try:
-            issue = get_github_issue(issue_number)
-            gh_manager.create_task_file(issue, task_file)
-            gh_manager.assign_issue_to_agent(issue_number, agent_num)
-
-            # Create spec and task log in .agenttrees/ repo
-            agents_repo.create_spec_file(
-                issue_number, issue.title, issue.body, issue.url
-            )
-            task_log_file = agents_repo.create_task_file(
-                agent_num, issue_number, issue.title, issue.body, issue.url
-            )
-
-            # Pre-create context summary for task re-engagement
-            from datetime import datetime as dt
-            from agenttree.agents_repo import slugify
-            date = dt.now().strftime("%Y-%m-%d")
-            slug = slugify(issue.title)
-            task_id = f"agent-{agent_num}-{date}-{slug}"
-
-            agents_repo.create_context_summary(
-                agent_num, issue_number, issue.title, task_id
-            )
-
-            console.print(f"[green]✓ Created task for issue #{issue_number}[/green]")
-            console.print(f"[green]✓ Created spec, task log, and context summary in .agenttrees/ repo[/green]")
-        except Exception as e:
-            console.print(f"[red]Error fetching issue: {e}[/red]")
-            sys.exit(1)
+        # TODO: Issue #011 - Connect to local .agenttrees/issues/ instead of GitHub
+        console.print(f"[red]Error: Issue dispatch not yet implemented for local issues[/red]")
+        console.print(f"[yellow]Use --task for now: agenttree dispatch {agent_num} --task 'description'[/yellow]")
+        sys.exit(1)
     else:
-        gh_manager.create_adhoc_task_file(task or "", task_file)
+        # Create simple TASK.md for ad-hoc tasks
+        task_file.write_text(f"# Task\n\n{task}\n")
         console.print("[green]✓ Created ad-hoc task[/green]")
 
     # Start agent in tmux (always in container)
