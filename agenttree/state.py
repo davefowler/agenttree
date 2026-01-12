@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Generator, Optional
 
 import yaml
-from filelock import FileLock, Timeout
+from filelock import FileLock
 
 
 @dataclass

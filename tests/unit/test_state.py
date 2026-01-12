@@ -1,16 +1,12 @@
 """Tests for agenttree.state module with file locking."""
 
-import tempfile
-import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
 from agenttree.state import (
-    get_state_path,
     load_state,
     save_state,
     allocate_port,
