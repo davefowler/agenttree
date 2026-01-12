@@ -1072,7 +1072,13 @@ def issue() -> None:
     multiple=True,
     help="Labels to add (can be used multiple times)"
 )
-def issue_create(title: str, priority: str, label: tuple) -> None:
+@click.option(
+    "--stage", "-s",
+    type=click.Choice(["backlog", "problem", "research", "implement"]),
+    default="backlog",
+    help="Starting stage for the issue (default: backlog)"
+)
+def issue_create(title: str, priority: str, label: tuple, stage: str) -> None:
     """Create a new issue.
 
     Creates an issue directory in .agenttrees/issues/ with:
@@ -1082,15 +1088,18 @@ def issue_create(title: str, priority: str, label: tuple) -> None:
     Example:
         agenttree issue create "Fix login validation"
         agenttree issue create "Add dark mode" -p high -l ui -l feature
+        agenttree issue create "Quick fix" --stage implement
     """
     try:
         issue = create_issue_func(
             title=title,
             priority=Priority(priority),
             labels=list(label) if label else None,
+            stage=Stage(stage),
         )
         console.print(f"[green]✓ Created issue {issue.id}: {issue.title}[/green]")
         console.print(f"[dim]  Directory: .agenttrees/issues/{issue.id}-{issue.slug}/[/dim]")
+        console.print(f"[dim]  Stage: {issue.stage.value}[/dim]")
         console.print(f"[dim]  Edit problem.md to define the problem[/dim]")
     except Exception as e:
         console.print(f"[red]Error creating issue: {e}[/red]")

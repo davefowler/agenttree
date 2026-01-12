@@ -112,6 +112,7 @@ def create_issue(
     title: str,
     priority: Priority = Priority.MEDIUM,
     labels: Optional[list[str]] = None,
+    stage: Stage = Stage.BACKLOG,
 ) -> Issue:
     """Create a new issue.
 
@@ -119,6 +120,7 @@ def create_issue(
         title: Issue title
         priority: Issue priority
         labels: Optional list of labels
+        stage: Starting stage for the issue (default: BACKLOG)
 
     Returns:
         The created Issue object
@@ -144,11 +146,11 @@ def create_issue(
         title=title,
         created=now,
         updated=now,
-        stage=Stage.BACKLOG,
+        stage=stage,
         priority=priority,
         labels=labels or [],
         history=[
-            HistoryEntry(stage="backlog", timestamp=now)
+            HistoryEntry(stage=stage.value, timestamp=now)
         ]
     )
 
