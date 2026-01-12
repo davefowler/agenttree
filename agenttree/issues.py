@@ -116,6 +116,9 @@ def create_issue(
     priority: Priority = Priority.MEDIUM,
     labels: Optional[list[str]] = None,
     stage: Stage = Stage.BACKLOG,
+    problem: Optional[str] = None,
+    context: Optional[str] = None,
+    solutions: Optional[str] = None,
 ) -> Issue:
     """Create a new issue.
 
@@ -124,6 +127,9 @@ def create_issue(
         priority: Issue priority
         labels: Optional list of labels
         stage: Starting stage for the issue (default: BACKLOG)
+        problem: Problem statement text (fills problem.md)
+        context: Context/background text (fills problem.md)
+        solutions: Possible solutions text (fills problem.md)
 
     Returns:
         The created Issue object
@@ -168,15 +174,27 @@ def create_issue(
         data = issue.model_dump(mode="json")
         yaml.dump(data, f, default_flow_style=False, sort_keys=False)
 
-    # Copy problem.md template
-    template_path = get_agenttrees_path() / "templates" / "problem.md"
+    # Create problem.md - use provided content or template
     problem_path = issue_dir / "problem.md"
 
-    if template_path.exists():
-        problem_path.write_text(template_path.read_text())
+    if problem or context or solutions:
+        # Build problem.md from provided content
+        content = "# Problem Statement\n\n"
+        content += problem or f"<!-- Describe the problem: {title} -->\n"
+        content += "\n\n## Context\n\n"
+        content += context or "<!-- Background and relevant file paths -->\n"
+        content += "\n\n## Possible Solutions\n\n"
+        content += solutions or "<!-- List at least one approach -->\n\n-"
+        content += "\n"
+        problem_path.write_text(content)
     else:
-        # Fallback template
-        problem_path.write_text(f"""# Problem Statement
+        # Use template or fallback
+        template_path = get_agenttrees_path() / "templates" / "problem.md"
+        if template_path.exists():
+            problem_path.write_text(template_path.read_text())
+        else:
+            # Fallback template
+            problem_path.write_text(f"""# Problem Statement
 
 <!-- Describe the problem: {title} -->
 

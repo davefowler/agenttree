@@ -1,4 +1,5 @@
 default_tool: claude
+default_model: opus
 port_range: 9001-9099
 project: agenttree
 tools:

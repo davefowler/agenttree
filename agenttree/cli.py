@@ -1150,17 +1150,38 @@ def issue() -> None:
     default="backlog",
     help="Starting stage for the issue (default: backlog)"
 )
-def issue_create(title: str, priority: str, label: tuple, stage: str) -> None:
+@click.option(
+    "--problem",
+    help="Problem statement (fills problem.md)"
+)
+@click.option(
+    "--context",
+    help="Context/background (fills problem.md)"
+)
+@click.option(
+    "--solutions",
+    help="Possible solutions (fills problem.md)"
+)
+def issue_create(
+    title: str,
+    priority: str,
+    label: tuple,
+    stage: str,
+    problem: Optional[str],
+    context: Optional[str],
+    solutions: Optional[str],
+) -> None:
     """Create a new issue.
 
     Creates an issue directory in .agenttrees/issues/ with:
     - issue.yaml (metadata)
-    - problem.md (from template)
+    - problem.md (from template or provided content)
 
     Example:
         agenttree issue create "Fix login validation"
         agenttree issue create "Add dark mode" -p high -l ui -l feature
         agenttree issue create "Quick fix" --stage implement
+        agenttree issue create "Bug" --problem "The login fails" --context "On Chrome only"
     """
     try:
         issue = create_issue_func(
@@ -1168,11 +1189,15 @@ def issue_create(title: str, priority: str, label: tuple, stage: str) -> None:
             priority=Priority(priority),
             labels=list(label) if label else None,
             stage=Stage(stage),
+            problem=problem,
+            context=context,
+            solutions=solutions,
         )
         console.print(f"[green]✓ Created issue {issue.id}: {issue.title}[/green]")
         console.print(f"[dim]  Directory: .agenttrees/issues/{issue.id}-{issue.slug}/[/dim]")
         console.print(f"[dim]  Stage: {issue.stage.value}[/dim]")
-        console.print(f"[dim]  Edit problem.md to define the problem[/dim]")
+        if not (problem or context or solutions):
+            console.print(f"[dim]  Edit problem.md to define the problem[/dim]")
     except Exception as e:
         console.print(f"[red]Error creating issue: {e}[/red]")
         sys.exit(1)
