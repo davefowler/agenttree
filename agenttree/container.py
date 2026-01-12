@@ -1,5 +1,6 @@
 """Container runtime support for AgentTree."""
 
+import os
 import platform
 import shutil
 import subprocess
@@ -80,7 +81,6 @@ class ContainerRuntime:
         # Apple Container requires absolute paths for volume mounts
         abs_path = worktree_path.resolve()
         home = Path.home()
-        claude_config = home / ".claude"
 
         cmd = [
             self.runtime,
@@ -104,8 +104,6 @@ class ContainerRuntime:
             cmd.extend(["-v", f"{claude_config_dir}:/home/agent/.claude-host:ro"])
 
         # Pass through auth credentials
-        import os
-
         # Helper to get credential from env or file
         def get_credential(env_var: str, file_key: str) -> Optional[str]:
             # Check environment first

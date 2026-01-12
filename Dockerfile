@@ -11,7 +11,6 @@ RUN apt-get update && apt-get install -y \
     python3-pip \
     python3-venv \
     sudo \
-    expect \
     gh \
     && rm -rf /var/lib/apt/lists/*
 
