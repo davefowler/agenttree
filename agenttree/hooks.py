@@ -617,6 +617,80 @@ def auto_commit_changes(issue: Issue, stage: Stage) -> bool:
 
 
 @pre_transition(Stage.IMPLEMENT, Stage.IMPLEMENTATION_REVIEW)
+def require_empty_critical_issues(issue: Issue):
+    """Require that review.md has no critical issues before creating PR.
+
+    Blocks transition if:
+    1. review.md doesn't exist
+    2. Critical Issues section contains any items (checked or unchecked)
+
+    Args:
+        issue: Issue being transitioned
+
+    Raises:
+        ValidationError: If review.md missing or has critical issues
+    """
+    from agenttree.issues import get_issue_dir
+
+    issue_dir = get_issue_dir(issue.id)
+    if not issue_dir:
+        raise ValidationError(f"Issue directory not found for #{issue.id}")
+
+    review_path = issue_dir / "review.md"
+    if not review_path.exists():
+        raise ValidationError(
+            f"review.md not found in issue directory. "
+            f"You must complete the code_review substage and create review.md before requesting human review.\n\n"
+            f"Run: agenttree begin implement.code_review --issue {issue.id}"
+        )
+
+    # Read and parse review.md
+    review_content = review_path.read_text()
+
+    # Find the Critical Issues section
+    # Look for the heading and capture content until the next heading or separator
+    critical_section_match = re.search(
+        r'##\s+Critical Issues.*?\n(.*?)(?=\n##|\n---|$)',
+        review_content,
+        re.DOTALL | re.IGNORECASE
+    )
+
+    if not critical_section_match:
+        raise ValidationError(
+            f"review.md is malformed - could not find 'Critical Issues' section.\n"
+            f"Please use the template from .agenttrees/templates/review.md"
+        )
+
+    critical_section = critical_section_match.group(1).strip()
+
+    # Remove HTML comments and check for any checkbox items
+    # Remove <!-- ... --> comments
+    critical_section_clean = re.sub(r'<!--.*?-->', '', critical_section, flags=re.DOTALL)
+    critical_section_clean = critical_section_clean.strip()
+
+    # Check for any checkbox items (- [ ] or - [x])
+    checkbox_items = re.findall(r'^\s*-\s*\[[ xX]\]', critical_section_clean, re.MULTILINE)
+
+    if checkbox_items:
+        # Extract actual issue descriptions for better error message
+        issues = re.findall(
+            r'^\s*-\s*\[[ xX]\]\s*(.+)$',
+            critical_section_clean,
+            re.MULTILINE
+        )
+        issues_text = '\n'.join(f"  • {issue}" for issue in issues)
+
+        raise ValidationError(
+            f"Cannot create PR - Critical Issues section must be empty!\n\n"
+            f"Found {len(checkbox_items)} critical issue(s):\n{issues_text}\n\n"
+            f"You must fix all critical issues before proceeding to human review.\n"
+            f"Edit review.md and remove/fix these issues, then try again."
+        )
+
+    console.print("[green]✓ No critical issues in review.md[/green]")
+
+
+@pre_transition(Stage.IMPLEMENT, Stage.IMPLEMENTATION_REVIEW)
 def require_commits_for_review(issue: Issue):
     """Require that there are commits to push before creating PR.
 

@@ -814,6 +814,133 @@ class TestValidationHooks:
         with pytest.raises(ValidationError, match="No PR number found"):
             require_pr_approval(mock_issue)
 
+    def test_require_empty_critical_issues_no_review_file(self, mock_issue, tmp_path, monkeypatch):
+        """Should block transition when review.md doesn't exist."""
+        from agenttree.hooks import require_empty_critical_issues, ValidationError
+        from agenttree import issues
+
+        # Create issue directory
+        issue_dir = tmp_path / ".agenttrees" / "issues" / "023-test-issue"
+        issue_dir.mkdir(parents=True)
+
+        # Mock get_issue_dir to return our temp directory
+        monkeypatch.setattr(issues, 'get_issue_dir', lambda x: issue_dir)
+
+        with pytest.raises(ValidationError, match="review.md not found"):
+            require_empty_critical_issues(mock_issue)
+
+    def test_require_empty_critical_issues_success_empty_section(self, mock_issue, tmp_path, monkeypatch):
+        """Should pass when Critical Issues section is empty."""
+        from agenttree.hooks import require_empty_critical_issues
+        from agenttree import issues
+
+        # Create issue directory
+        issue_dir = tmp_path / ".agenttrees" / "issues" / "023-test-issue"
+        issue_dir.mkdir(parents=True)
+
+        # Create review.md with empty Critical Issues section
+        review_content = """# Code Review - Issue #023
+
+## Critical Issues (🔴 Blocking)
+
+<!-- MUST be empty before creating PR -->
+<!-- Format: - [ ] Category: Description (file:line) -->
+
+## High Priority Issues
+
+- [ ] Performance: Some issue (file:123)
+
+## Suggestions
+
+- Code quality: Could be better
+"""
+        (issue_dir / "review.md").write_text(review_content)
+
+        # Mock get_issue_dir to return our temp directory
+        monkeypatch.setattr(issues, 'get_issue_dir', lambda x: issue_dir)
+
+        # Should not raise
+        require_empty_critical_issues(mock_issue)
+
+    def test_require_empty_critical_issues_fails_with_unchecked_issues(self, mock_issue, tmp_path, monkeypatch):
+        """Should block transition when Critical Issues section has unchecked items."""
+        from agenttree.hooks import require_empty_critical_issues, ValidationError
+        from agenttree import issues
+
+        # Create issue directory
+        issue_dir = tmp_path / ".agenttrees" / "issues" / "023-test-issue"
+        issue_dir.mkdir(parents=True)
+
+        # Create review.md with Critical Issues
+        review_content = """# Code Review - Issue #023
+
+## Critical Issues (🔴 Blocking)
+
+- [ ] Security: SQL injection in user_handler (api/users.py:45)
+- [ ] Data Loss: Missing transaction rollback (db/migrate.py:123)
+
+## High Priority Issues
+
+- [ ] Performance: N+1 query (services/users.py:78)
+"""
+        (issue_dir / "review.md").write_text(review_content)
+
+        # Mock get_issue_dir to return our temp directory
+        monkeypatch.setattr(issues, 'get_issue_dir', lambda x: issue_dir)
+
+        with pytest.raises(ValidationError, match="Cannot create PR - Critical Issues section must be empty"):
+            require_empty_critical_issues(mock_issue)
+
+    def test_require_empty_critical_issues_fails_with_checked_issues(self, mock_issue, tmp_path, monkeypatch):
+        """Should block transition when Critical Issues section has checked items."""
+        from agenttree.hooks import require_empty_critical_issues, ValidationError
+        from agenttree import issues
+
+        # Create issue directory
+        issue_dir = tmp_path / ".agenttrees" / "issues" / "023-test-issue"
+        issue_dir.mkdir(parents=True)
+
+        # Create review.md with checked Critical Issues (still blocking)
+        review_content = """# Code Review - Issue #023
+
+## Critical Issues (🔴 Blocking)
+
+- [x] Security: SQL injection (fixed but not removed) (api/users.py:45)
+
+## High Priority Issues
+"""
+        (issue_dir / "review.md").write_text(review_content)
+
+        # Mock get_issue_dir to return our temp directory
+        monkeypatch.setattr(issues, 'get_issue_dir', lambda x: issue_dir)
+
+        with pytest.raises(ValidationError, match="Cannot create PR"):
+            require_empty_critical_issues(mock_issue)
+
+    def test_require_empty_critical_issues_malformed_no_section(self, mock_issue, tmp_path, monkeypatch):
+        """Should block transition when review.md doesn't have Critical Issues section."""
+        from agenttree.hooks import require_empty_critical_issues, ValidationError
+        from agenttree import issues
+
+        # Create issue directory
+        issue_dir = tmp_path / ".agenttrees" / "issues" / "023-test-issue"
+        issue_dir.mkdir(parents=True)
+
+        # Create malformed review.md without Critical Issues section
+        review_content = """# Code Review - Issue #023
+
+## Some Other Section
+
+No critical issues section here.
+"""
+        (issue_dir / "review.md").write_text(review_content)
+
+        # Mock get_issue_dir to return our temp directory
+        monkeypatch.setattr(issues, 'get_issue_dir', lambda x: issue_dir)
+
+        with pytest.raises(ValidationError, match="review.md is malformed"):
+            require_empty_critical_issues(mock_issue)
+
 
 class TestActionHooks:
     """Tests for post-transition action hooks."""
