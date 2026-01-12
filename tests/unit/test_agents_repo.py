@@ -5,7 +5,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
 import pytest
 
-from agenttree.agents_repo import AgentsRepository, slugify
+from agenttree.agents_repo import AgentsRepository, slugify, sync_agents_repo
 
 
 @pytest.fixture
@@ -237,3 +237,181 @@ class TestAgentsRepository:
         # git push
         assert "git" in calls[2]
         assert "push" in calls[2]
+
+
+class TestSyncAgentsRepo:
+    """Tests for sync_agents_repo function."""
+
+    @pytest.fixture
+    def git_repo(self, tmp_path):
+        """Create a temporary directory with .git folder."""
+        agents_dir = tmp_path / ".agenttrees"
+        agents_dir.mkdir()
+        (agents_dir / ".git").mkdir()
+        return agents_dir
+
+    def test_sync_returns_false_when_dir_not_exists(self, tmp_path):
+        """Test sync returns False when directory doesn't exist."""
+        non_existent = tmp_path / "nonexistent"
+        result = sync_agents_repo(non_existent)
+        assert result is False
+
+    def test_sync_returns_false_when_not_git_repo(self, tmp_path):
+        """Test sync returns False when directory is not a git repo."""
+        not_git = tmp_path / "not-git"
+        not_git.mkdir()
+        result = sync_agents_repo(not_git)
+        assert result is False
+
+    @patch("agenttree.agents_repo.subprocess.run")
+    def test_sync_pull_only_success(self, mock_run, git_repo):
+        """Test sync with pull_only=True succeeds."""
+        mock_run.return_value = Mock(returncode=0, stderr="")
+
+        result = sync_agents_repo(git_repo, pull_only=True)
+
+        assert result is True
+        # Should only call git pull --rebase
+        assert mock_run.call_count == 1
+        call_args = mock_run.call_args[0][0]
+        assert "pull" in call_args
+        assert "--rebase" in call_args
+
+    @patch("agenttree.agents_repo.subprocess.run")
+    def test_sync_pull_only_offline(self, mock_run, git_repo):
+        """Test sync returns False when offline."""
+        mock_run.return_value = Mock(
+            returncode=1,
+            stderr="Could not resolve host: github.com"
+        )
+
+        result = sync_agents_repo(git_repo, pull_only=True)
+
+        assert result is False
+
+    @patch("agenttree.agents_repo.subprocess.run")
+    def test_sync_pull_only_no_remote(self, mock_run, git_repo):
+        """Test sync returns False when no remote configured."""
+        mock_run.return_value = Mock(
+            returncode=1,
+            stderr="fatal: no remote"
+        )
+
+        result = sync_agents_repo(git_repo, pull_only=True)
+
+        assert result is False
+
+    @patch("agenttree.agents_repo.subprocess.run")
+    def test_sync_pull_only_conflict(self, mock_run, git_repo, capsys):
+        """Test sync returns False on merge conflict."""
+        mock_run.return_value = Mock(
+            returncode=1,
+            stderr="CONFLICT (content): Merge conflict in file.txt"
+        )
+
+        result = sync_agents_repo(git_repo, pull_only=True)
+
+        assert result is False
+        captured = capsys.readouterr()
+        assert "Merge conflict" in captured.out
+
+    @patch("agenttree.agents_repo.subprocess.run")
+    def test_sync_write_commits_and_pushes(self, mock_run, git_repo):
+        """Test sync with write commits and pushes changes."""
+        # Mock responses for: pull, add, diff (has changes), commit, push
+        mock_run.side_effect = [
+            Mock(returncode=0, stderr=""),  # pull
+            Mock(returncode=0),  # add
+            Mock(returncode=1),  # diff --cached --quiet (1 = has changes)
+            Mock(returncode=0, stderr=""),  # commit
+            Mock(returncode=0, stderr=""),  # push
+        ]
+
+        result = sync_agents_repo(
+            git_repo,
+            pull_only=False,
+            commit_message="Test commit"
+        )
+
+        assert result is True
+        assert mock_run.call_count == 5
+
+        # Verify commit message
+        commit_call = mock_run.call_args_list[3]
+        assert "commit" in commit_call[0][0]
+        assert "Test commit" in commit_call[0][0]
+
+    @patch("agenttree.agents_repo.subprocess.run")
+    def test_sync_write_no_changes(self, mock_run, git_repo):
+        """Test sync with write but no changes to commit."""
+        # Mock responses for: pull, add, diff (no changes)
+        mock_run.side_effect = [
+            Mock(returncode=0, stderr=""),  # pull
+            Mock(returncode=0),  # add
+            Mock(returncode=0),  # diff --cached --quiet (0 = no changes)
+        ]
+
+        result = sync_agents_repo(git_repo, pull_only=False)
+
+        assert result is True
+        assert mock_run.call_count == 3  # No commit/push needed
+
+    @patch("agenttree.agents_repo.subprocess.run")
+    def test_sync_write_push_offline(self, mock_run, git_repo, capsys):
+        """Test sync handles offline push gracefully."""
+        mock_run.side_effect = [
+            Mock(returncode=0, stderr=""),  # pull
+            Mock(returncode=0),  # add
+            Mock(returncode=1),  # diff (has changes)
+            Mock(returncode=0, stderr=""),  # commit
+            Mock(returncode=1, stderr="Could not resolve host"),  # push fails
+        ]
+
+        result = sync_agents_repo(git_repo, pull_only=False)
+
+        assert result is False
+        captured = capsys.readouterr()
+        assert "Offline" in captured.out
+
+    @patch("agenttree.agents_repo.subprocess.run")
+    def test_sync_timeout(self, mock_run, git_repo, capsys):
+        """Test sync handles timeout gracefully."""
+        mock_run.side_effect = subprocess.TimeoutExpired(cmd="git", timeout=30)
+
+        result = sync_agents_repo(git_repo, pull_only=True)
+
+        assert result is False
+        captured = capsys.readouterr()
+        assert "timed out" in captured.out
+
+    @patch("agenttree.agents_repo.subprocess.run")
+    def test_sync_uses_default_commit_message(self, mock_run, git_repo):
+        """Test sync uses default commit message when not provided."""
+        mock_run.side_effect = [
+            Mock(returncode=0, stderr=""),  # pull
+            Mock(returncode=0),  # add
+            Mock(returncode=1),  # diff (has changes)
+            Mock(returncode=0, stderr=""),  # commit
+            Mock(returncode=0, stderr=""),  # push
+        ]
+
+        sync_agents_repo(git_repo, pull_only=False)
+
+        commit_call = mock_run.call_args_list[3]
+        assert "Auto-sync: update issue data" in commit_call[0][0]
+
+    @patch("agenttree.agents_repo.subprocess.run")
+    def test_sync_commit_failure(self, mock_run, git_repo, capsys):
+        """Test sync handles commit failure gracefully."""
+        mock_run.side_effect = [
+            Mock(returncode=0, stderr=""),  # pull
+            Mock(returncode=0),  # add
+            Mock(returncode=1),  # diff (has changes)
+            Mock(returncode=1, stderr="error: unable to commit"),  # commit fails
+        ]
+
+        result = sync_agents_repo(git_repo, pull_only=False)
+
+        assert result is False
+        captured = capsys.readouterr()
+        assert "Failed to commit" in captured.out

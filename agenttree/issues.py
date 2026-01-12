@@ -570,7 +570,7 @@ def load_skill(stage: Stage, substage: Optional[str] = None) -> Optional[str]:
     agents_path = get_agenttrees_path()
     sync_agents_repo(agents_path, pull_only=True)
 
-    skills_path = get_agenttrees_path() / "skills"
+    skills_path = agents_path / "skills"
 
     # Try substage-specific skill first
     if substage:
