@@ -367,13 +367,7 @@ claude setup-token
 export CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-YOUR-TOKEN-HERE
 ```
 
-**For Anthropic API Key:**
-
-```bash
-export ANTHROPIC_API_KEY=sk-ant-api03-...
-```
-
-AgentTree automatically passes these to containers.
+AgentTree automatically passes this OAuth token to containers.
 
 ## Project Structure
 
