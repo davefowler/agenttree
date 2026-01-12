@@ -814,6 +814,105 @@ class TestValidationHooks:
         with pytest.raises(ValidationError, match="No PR number found"):
             require_pr_approval(mock_issue)
 
+    @patch('agenttree.hooks._get_issue_dir')
+    def test_require_review_md_for_pr_success(self, mock_get_issue_dir, mock_issue, tmp_path):
+        """Should pass when review.md exists with empty Critical Issues section."""
+        from agenttree.hooks import require_review_md_for_pr
+
+        # Setup: Create review.md with empty Critical Issues section
+        mock_get_issue_dir.return_value = tmp_path
+        review_content = """# Code Review - Issue #023
+
+## Critical Issues (Blocking)
+
+<!-- MUST be empty before creating PR -->
+
+---
+
+## Suggestions
+
+- Consider adding more tests
+"""
+        (tmp_path / "review.md").write_text(review_content)
+
+        # Should not raise
+        require_review_md_for_pr(mock_issue)
+
+    @patch('agenttree.hooks._get_issue_dir')
+    def test_require_review_md_for_pr_fails_missing_file(self, mock_get_issue_dir, mock_issue, tmp_path):
+        """Should block transition when review.md doesn't exist."""
+        from agenttree.hooks import require_review_md_for_pr, ValidationError
+
+        mock_get_issue_dir.return_value = tmp_path
+        # Don't create review.md
+
+        with pytest.raises(ValidationError, match="review.md not found"):
+            require_review_md_for_pr(mock_issue)
+
+    @patch('agenttree.hooks._get_issue_dir')
+    def test_require_review_md_for_pr_fails_unchecked_items(self, mock_get_issue_dir, mock_issue, tmp_path):
+        """Should block transition when Critical Issues has unchecked items."""
+        from agenttree.hooks import require_review_md_for_pr, ValidationError
+
+        mock_get_issue_dir.return_value = tmp_path
+        review_content = """# Code Review - Issue #023
+
+## Critical Issues (Blocking)
+
+- [ ] Security: SQL injection vulnerability in user input
+
+---
+
+## Suggestions
+"""
+        (tmp_path / "review.md").write_text(review_content)
+
+        with pytest.raises(ValidationError, match="Critical Issues"):
+            require_review_md_for_pr(mock_issue)
+
+    @patch('agenttree.hooks._get_issue_dir')
+    def test_require_review_md_for_pr_fails_checked_items(self, mock_get_issue_dir, mock_issue, tmp_path):
+        """Should block transition when Critical Issues has checked items (should be removed, not checked)."""
+        from agenttree.hooks import require_review_md_for_pr, ValidationError
+
+        mock_get_issue_dir.return_value = tmp_path
+        review_content = """# Code Review - Issue #023
+
+## Critical Issues (Blocking)
+
+- [x] Security: Fixed SQL injection vulnerability
+
+---
+
+## Suggestions
+"""
+        (tmp_path / "review.md").write_text(review_content)
+
+        with pytest.raises(ValidationError, match="Critical Issues"):
+            require_review_md_for_pr(mock_issue)
+
+    @patch('agenttree.hooks._get_issue_dir')
+    def test_require_review_md_for_pr_success_only_comments(self, mock_get_issue_dir, mock_issue, tmp_path):
+        """Should pass when Critical Issues section only has HTML comments."""
+        from agenttree.hooks import require_review_md_for_pr
+
+        mock_get_issue_dir.return_value = tmp_path
+        review_content = """# Code Review - Issue #023
+
+## Critical Issues (Blocking)
+
+<!-- MUST be empty before creating PR -->
+<!-- Format: - [ ] Description of critical bug/security issue -->
+
+---
+
+## High Priority Issues
+"""
+        (tmp_path / "review.md").write_text(review_content)
+
+        # Should not raise
+        require_review_md_for_pr(mock_issue)
+
 
 class TestActionHooks:
     """Tests for post-transition action hooks."""
