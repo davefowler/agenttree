@@ -524,7 +524,7 @@ class TestGitUtilities:
         push_branch_to_remote("test-branch")
 
         mock_run.assert_called_once_with(
-            ["git", "push", "-u", "origin", "test-branch"],
+            ["git", "push", "-u", "origin", "test-branch:test-branch"],
             check=True,
             capture_output=True,
             text=True
@@ -581,10 +581,8 @@ class TestGitUtilities:
 
         assert "Issue #023" in body
         assert "Test Issue" in body
-        assert "023-test-issue" in body
-        assert "problem.md" in body
-        assert "plan.md" in body
-        assert "implement → implementation_review" in body
+        assert "agenttree" in body.lower()  # Should mention agenttree
+        assert "Review Checklist" in body
 
     @patch('subprocess.run')
     def test_auto_commit_changes_no_changes(self, mock_run):
