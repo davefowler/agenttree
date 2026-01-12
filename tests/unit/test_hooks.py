@@ -256,6 +256,84 @@ class TestHookRegistry:
         assert executed == ["hook1"]
 
 
+class TestHelperFunctions:
+    """Tests for helper functions get_registry and execute_transition_hooks."""
+
+    def test_get_registry_returns_global_registry(self):
+        """Should return the global HookRegistry instance."""
+        from agenttree.hooks import get_registry, _registry
+
+        result = get_registry()
+        assert result is _registry
+
+    def test_get_registry_returns_hookregistry_instance(self):
+        """Should return a HookRegistry instance."""
+        from agenttree.hooks import get_registry, HookRegistry
+
+        result = get_registry()
+        assert isinstance(result, HookRegistry)
+
+    def test_execute_transition_hooks_calls_hooks_in_order(self):
+        """Should execute hooks in correct order: on_exit, pre, post, on_enter."""
+        from agenttree.hooks import execute_transition_hooks, HookRegistry
+
+        # Create a fresh registry for this test
+        registry = HookRegistry()
+        execution_order = []
+
+        def on_exit_hook(issue):
+            execution_order.append("on_exit")
+
+        def pre_hook(issue):
+            execution_order.append("pre")
+
+        def post_hook(issue):
+            execution_order.append("post")
+
+        def on_enter_hook(issue):
+            execution_order.append("on_enter")
+
+        registry.register_on_exit(Stage.IMPLEMENT, on_exit_hook)
+        registry.register_pre_transition(Stage.IMPLEMENT, Stage.IMPLEMENTATION_REVIEW, pre_hook)
+        registry.register_post_transition(Stage.IMPLEMENT, Stage.IMPLEMENTATION_REVIEW, post_hook)
+        registry.register_on_enter(Stage.IMPLEMENTATION_REVIEW, on_enter_hook)
+
+        # Patch the global registry
+        import agenttree.hooks
+        original_registry = agenttree.hooks._registry
+        agenttree.hooks._registry = registry
+
+        try:
+            mock_issue = Mock(spec=Issue)
+            execute_transition_hooks(mock_issue, Stage.IMPLEMENT, Stage.IMPLEMENTATION_REVIEW)
+
+            assert execution_order == ["on_exit", "pre", "post", "on_enter"]
+        finally:
+            agenttree.hooks._registry = original_registry
+
+    def test_execute_transition_hooks_raises_on_pre_validation_error(self):
+        """Should raise ValidationError if pre-transition hook fails."""
+        from agenttree.hooks import execute_transition_hooks, HookRegistry, ValidationError
+
+        registry = HookRegistry()
+
+        def failing_pre_hook(issue):
+            raise ValidationError("Blocked!")
+
+        registry.register_pre_transition(Stage.IMPLEMENT, Stage.IMPLEMENTATION_REVIEW, failing_pre_hook)
+
+        import agenttree.hooks
+        original_registry = agenttree.hooks._registry
+        agenttree.hooks._registry = registry
+
+        try:
+            mock_issue = Mock(spec=Issue)
+            with pytest.raises(ValidationError, match="Blocked!"):
+                execute_transition_hooks(mock_issue, Stage.IMPLEMENT, Stage.IMPLEMENTATION_REVIEW)
+        finally:
+            agenttree.hooks._registry = original_registry
+
+
 class TestHookDecorators:
     """Tests for hook decorator functions."""
 
@@ -438,6 +516,47 @@ class TestGitUtilities:
         )
 
         assert has_uncommitted_changes() is True
+
+    @patch('subprocess.run')
+    def test_get_default_branch_from_symbolic_ref(self, mock_run):
+        """Should detect default branch from origin/HEAD."""
+        from agenttree.hooks import get_default_branch
+
+        mock_run.return_value = MagicMock(
+            stdout="refs/remotes/origin/main\n",
+            returncode=0
+        )
+
+        result = get_default_branch()
+        assert result == "main"
+
+    @patch('subprocess.run')
+    def test_get_default_branch_fallback_to_main(self, mock_run):
+        """Should fall back to 'main' when origin/HEAD doesn't exist."""
+        from agenttree.hooks import get_default_branch
+
+        # First call fails (no symbolic-ref), second succeeds (main exists)
+        mock_run.side_effect = [
+            MagicMock(stdout="", returncode=128),  # symbolic-ref fails
+            MagicMock(stdout="abc123\n", returncode=0),  # origin/main exists
+        ]
+
+        result = get_default_branch()
+        assert result == "main"
+
+    @patch('subprocess.run')
+    def test_get_default_branch_fallback_to_master(self, mock_run):
+        """Should fall back to 'master' when neither origin/HEAD nor origin/main exist."""
+        from agenttree.hooks import get_default_branch
+
+        # Both calls fail
+        mock_run.side_effect = [
+            MagicMock(stdout="", returncode=128),  # symbolic-ref fails
+            MagicMock(stdout="", returncode=128),  # origin/main doesn't exist
+        ]
+
+        result = get_default_branch()
+        assert result == "master"
 
     def test_has_commits_to_push_no_commits(self, temp_git_repo, monkeypatch):
         """Should return False when there are no unpushed commits."""
