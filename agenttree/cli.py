@@ -698,65 +698,6 @@ def dispatch(
     port = allocate_port(base_port=int(config.port_range.split("-")[0]))
     console.print(f"[dim]Allocated port: {port}[/dim]")
 
-    # Get issue directory and read problem.md
-    issue_dir = get_issue_dir(issue.id)
-    problem_content = ""
-    plan_content = ""
-    if issue_dir:
-        problem_file = issue_dir / "problem.md"
-        if problem_file.exists():
-            problem_content = problem_file.read_text()
-
-        plan_file = issue_dir / "plan.md"
-        if plan_file.exists():
-            plan_content = plan_file.read_text()
-
-    # Create TASK.md with issue content
-    task_file = worktree_path / "TASK.md"
-    task_content = f"""# Issue #{issue.id}: {issue.title}
-
-**Stage:** {issue.stage.value}
-**Priority:** {issue.priority.value}
-
-## Problem
-
-{problem_content}
-"""
-    if plan_content:
-        task_content += f"""
-## Plan
-
-{plan_content}
-"""
-
-    task_content += f"""
-## Instructions
-
-1. Read CLAUDE.md for workflow instructions
-2. Run `agenttree status --issue {issue.id}` to see current stage
-3. Run `agenttree begin <stage> --issue {issue.id}` to start working
-4. Run `agenttree next --issue {issue.id}` when done with current stage
-
-## Documentation
-
-All documentation for this issue belongs in: `.agenttrees/issues/{issue.id}-{issue.slug}/`
-
-Use this command to create docs in the right place:
-```bash
-agenttree issue doc <type> --issue {issue.id}
-# Types: problem, plan, review, research
-```
-
-Example:
-```bash
-agenttree issue doc research --issue {issue.id}  # Creates research.md
-agenttree issue doc plan --issue {issue.id}      # Creates plan.md
-```
-
-**DO NOT** create documentation files (RESEARCH.md, etc.) in the worktree root.
-"""
-    task_file.write_text(task_content)
-
     # Register agent in state
     agent = create_agent_for_issue(
         issue_id=issue.id,
@@ -766,7 +707,7 @@ agenttree issue doc plan --issue {issue.id}      # Creates plan.md
         project=config.project,
     )
 
-    console.print(f"[green]✓ Created task for issue #{issue.id}: {issue.title}[/green]")
+    console.print(f"[green]✓ Dispatching agent for issue #{issue.id}: {issue.title}[/green]")
 
     # Start agent in tmux (always in container)
     tool_name = tool or config.default_tool

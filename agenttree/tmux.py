@@ -390,7 +390,13 @@ class TmuxManager:
 
         # Wait for Claude CLI prompt before sending startup message
         if wait_for_prompt(session_name, prompt_char="❯", timeout=30.0):
-            send_keys(session_name, tool_config.startup_prompt)
+            # Build issue-specific startup prompt
+            startup_prompt = (
+                f"You are working on issue #{issue_id}. "
+                f"Read your task: cat .agenttrees/issues/{issue_id}-*/problem.md && "
+                f"agenttree status --issue {issue_id}"
+            )
+            send_keys(session_name, startup_prompt)
 
     def stop_issue_agent(self, session_name: str) -> None:
         """Stop an issue-bound agent's tmux session.

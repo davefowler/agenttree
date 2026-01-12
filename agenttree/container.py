@@ -146,6 +146,14 @@ class ContainerRuntime:
             # Mount main .git directory at the same absolute path inside container
             cmd.extend(["-v", f"{main_git_dir}:{main_git_dir}"])
 
+            # Also mount .agenttrees directory so agent can access issue files and state
+            # The .agenttrees dir is in the main repo, not the worktree
+            # Mount it at /workspace/.agenttrees so it's accessible from the working directory
+            main_repo_dir = main_git_dir.parent
+            agenttrees_dir = main_repo_dir / ".agenttrees"
+            if agenttrees_dir.exists():
+                cmd.extend(["-v", f"{agenttrees_dir}:/workspace/.agenttrees"])
+
         # Mount ~/.claude directory (contains settings, but skip if it would cause issues)
         # Note: ~/.claude.json is the main config but Apple Container can't mount files, only dirs
         # The entrypoint copies ~/.claude.json from a mounted config dir if available
