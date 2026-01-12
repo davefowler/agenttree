@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y \
     python3 \
     python3-pip \
     sudo \
+    expect \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Claude CLI
@@ -27,5 +28,53 @@ RUN git config --global user.email "agent@agenttree.dev" && \
 # Create workspace directory
 WORKDIR /workspace
 
-# Default command
-CMD ["claude"]
+# Create expect script to automate Claude first-run wizard
+RUN cat > /home/agent/claude-init.exp << 'EXPECT_EOF'
+#!/usr/bin/expect -f
+set timeout 30
+spawn claude --dangerously-skip-permissions
+
+# Handle theme selection (select dark mode - option 1)
+expect {
+    "Choose the text style" {
+        send "\r"
+        exp_continue
+    }
+    "Select login method" {
+        # Select option 2 (API key auth)
+        send "\033\[B"
+        sleep 0.5
+        send "\r"
+        exp_continue
+    }
+    "bypass permissions" {
+        # Select "Yes, I accept" (option 2)
+        send "\033\[B"
+        sleep 0.5
+        send "\r"
+        exp_continue
+    }
+    "OAuth error" {
+        send "\r"
+        exp_continue
+    }
+    -re "❯.*" {
+        # We're at the prompt - ready!
+        interact
+    }
+    timeout {
+        puts "Timeout - trying to continue"
+        interact
+    }
+}
+EXPECT_EOF
+RUN chmod +x /home/agent/claude-init.exp
+
+# Create entrypoint script
+RUN echo '#!/bin/bash\n\
+exec "$@"' > /home/agent/entrypoint.sh && chmod +x /home/agent/entrypoint.sh
+
+ENTRYPOINT ["/home/agent/entrypoint.sh"]
+
+# Default command - use expect script for interactive mode
+CMD ["/home/agent/claude-init.exp"]
