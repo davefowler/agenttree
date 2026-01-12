@@ -94,7 +94,7 @@ class AgentsRepository:
 
     def _create_github_repo(self) -> None:
         """Create GitHub repo for agents."""
-        repo_name = f"{self.project_name}-agents"
+        repo_name = f"{self.project_name}-agenttree"
 
         # Check if repo already exists
         result = subprocess.run(
@@ -118,14 +118,14 @@ class AgentsRepository:
                 repo_name,
                 "--private",
                 "--description",
-                f"AI agent notes for {self.project_name}",
+                f"AgentTree issue tracking for {self.project_name}",
             ],
             check=True,
         )
 
     def _clone_repo(self) -> None:
-        """Clone agents repo locally."""
-        repo_name = f"{self.project_name}-agents"
+        """Clone agenttree repo locally."""
+        repo_name = f"{self.project_name}-agenttree"
 
         # Get current GitHub user
         result = subprocess.run(

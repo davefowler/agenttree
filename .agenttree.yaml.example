@@ -1,34 +1,64 @@
 # AgentTree Configuration Example
 # Copy to .agenttree.yaml in your project root
 
-# Project name (used for tmux session naming)
+# Project name (used for tmux session naming and agenttree repo)
+# GitHub repo will be created as: {project}-agenttree
 project: myapp
 
 # Directory where agent worktrees are created
 # Relative to project root (recommended) or absolute path
 worktrees_dir: .worktrees
 
+# Directory containing CI and test scripts
+# agenttree looks for ci.sh, quick_ci.sh, extensive_ci.sh here
+scripts_dir: scripts
+
 # Port range for agents (each agent gets one port)
 # Agent 1 gets 9001, Agent 2 gets 9002, etc.
-# Using 9001-9099 to avoid conflicts with common dev servers
 port_range: 9001-9099
 
 # Default AI tool to use when not specified
 default_tool: claude
+
+# Web UI refresh interval (seconds)
+# Set to 0 to disable auto-refresh
+refresh_interval: 10
 
 # Tool configurations
 tools:
   # Claude Code configuration
   claude:
     command: claude
-    startup_prompt: "Check TASK.md and start working on it."
+    startup_prompt: |
+      Read your task from the .agenttrees/issues/ directory.
+      Check issue.yaml for your current stage and follow the stage instructions.
 
-  # Aider configuration
+  # Aider configuration (alternative)
   aider:
     command: aider --model sonnet
     startup_prompt: "/read TASK.md"
 
-  # Example: Custom tool
-  # custom_tool:
-  #   command: my-ai-tool --config config.json
-  #   startup_prompt: "Begin task"
+# Stage configuration (customize if needed)
+stages:
+  - name: backlog
+    substages: []
+  - name: problem
+    substages: [draft, refine]
+  - name: problem_review
+    substages: []
+    human_review: true
+  - name: research
+    substages: [explore, plan, spec]
+  - name: plan_review
+    substages: []
+    human_review: true
+  - name: implement
+    substages: [setup, code, test, debug, code_review]
+  - name: implementation_review
+    substages: []
+    human_review: true
+  - name: accepted
+    substages: []
+    triggers_merge: true
+  - name: not_doing
+    substages: []

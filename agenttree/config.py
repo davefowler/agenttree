@@ -13,6 +13,29 @@ class ToolConfig(BaseModel):
     startup_prompt: str = "Check TASK.md and start working."
 
 
+class StageConfig(BaseModel):
+    """Configuration for a workflow stage."""
+
+    name: str
+    substages: list[str] = Field(default_factory=list)
+    human_review: bool = False
+    triggers_merge: bool = False
+
+
+# Default stages if not configured
+DEFAULT_STAGES = [
+    StageConfig(name="backlog"),
+    StageConfig(name="problem", substages=["draft", "refine"]),
+    StageConfig(name="problem_review", human_review=True),
+    StageConfig(name="research", substages=["explore", "plan", "spec"]),
+    StageConfig(name="plan_review", human_review=True),
+    StageConfig(name="implement", substages=["setup", "code", "test", "debug", "code_review"]),
+    StageConfig(name="implementation_review", human_review=True),
+    StageConfig(name="accepted", triggers_merge=True),
+    StageConfig(name="not_doing"),
+]
+
+
 class Config(BaseModel):
     """AgentTree configuration."""
 
@@ -20,9 +43,12 @@ class Config(BaseModel):
 
     project: str = "myapp"
     worktrees_dir: Path = Field(default_factory=lambda: Path(".worktrees"))
-    port_range: str = "8001-8009"
+    scripts_dir: Path = Field(default_factory=lambda: Path("scripts"))
+    port_range: str = "9001-9099"
     default_tool: str = "claude"
+    refresh_interval: int = 10
     tools: Dict[str, ToolConfig] = Field(default_factory=dict)
+    stages: list[StageConfig] = Field(default_factory=lambda: DEFAULT_STAGES.copy())
 
     def get_port_for_agent(self, agent_num: int) -> int:
         """Get port number for a specific agent.
@@ -82,6 +108,47 @@ class Config(BaseModel):
 
         # Return default config for unknown tools
         return ToolConfig(command=tool_name)
+
+    def get_ci_script(self, script_name: str = "ci.sh") -> Path:
+        """Get path to a CI script.
+
+        Args:
+            script_name: Name of the script (ci.sh, quick_ci.sh, extensive_ci.sh)
+
+        Returns:
+            Path to the script
+        """
+        return self.scripts_dir / script_name
+
+    def get_stage(self, stage_name: str) -> Optional[StageConfig]:
+        """Get configuration for a stage.
+
+        Args:
+            stage_name: Name of the stage
+
+        Returns:
+            Stage configuration, or None if not found
+        """
+        for stage in self.stages:
+            if stage.name == stage_name:
+                return stage
+        return None
+
+    def get_stage_names(self) -> list[str]:
+        """Get list of all stage names in order.
+
+        Returns:
+            List of stage names
+        """
+        return [stage.name for stage in self.stages]
+
+    def get_human_review_stages(self) -> list[str]:
+        """Get list of stages that require human review.
+
+        Returns:
+            List of stage names that require human review
+        """
+        return [stage.name for stage in self.stages if stage.human_review]
 
 
 def find_config_file(start_path: Path) -> Optional[Path]:
