@@ -298,3 +298,187 @@ def get_issue_dir(issue_id: str) -> Optional[Path]:
             return issue_dir
 
     return None
+
+
+# Stage workflow definitions
+# Note: NOT_DOING is intentionally excluded - it's a terminal state outside the normal workflow.
+# Issues marked NOT_DOING cannot progress via get_next_stage().
+STAGE_ORDER = [
+    Stage.BACKLOG,
+    Stage.PROBLEM,
+    Stage.PROBLEM_REVIEW,
+    Stage.RESEARCH,
+    Stage.PLAN_REVIEW,
+    Stage.IMPLEMENT,
+    Stage.IMPLEMENTATION_REVIEW,
+    Stage.ACCEPTED,
+]
+
+STAGE_SUBSTAGES = {
+    Stage.PROBLEM: ["draft", "refine"],
+    Stage.RESEARCH: ["explore", "plan", "spec"],
+    Stage.IMPLEMENT: ["setup", "test", "code", "debug", "code_review"],
+}
+
+HUMAN_REVIEW_STAGES = {
+    Stage.PROBLEM_REVIEW,
+    Stage.PLAN_REVIEW,
+    Stage.IMPLEMENTATION_REVIEW,
+}
+
+
+def get_next_stage(
+    current_stage: Stage,
+    current_substage: Optional[str] = None,
+) -> tuple[Stage, Optional[str], bool]:
+    """Calculate the next stage/substage.
+
+    Args:
+        current_stage: Current stage
+        current_substage: Current substage (if any)
+
+    Returns:
+        Tuple of (next_stage, next_substage, is_human_review)
+        is_human_review is True if the next stage requires human approval
+    """
+    substages = STAGE_SUBSTAGES.get(current_stage, [])
+
+    # If we have substages, try to advance within them
+    if substages and current_substage:
+        try:
+            idx = substages.index(current_substage)
+            if idx < len(substages) - 1:
+                # Move to next substage
+                return current_stage, substages[idx + 1], False
+        except ValueError:
+            pass  # substage not found, move to next stage
+
+    # Move to next stage
+    try:
+        stage_idx = STAGE_ORDER.index(current_stage)
+        if stage_idx < len(STAGE_ORDER) - 1:
+            next_stage = STAGE_ORDER[stage_idx + 1]
+            next_substages = STAGE_SUBSTAGES.get(next_stage, [])
+            next_substage = next_substages[0] if next_substages else None
+            is_human_review = next_stage in HUMAN_REVIEW_STAGES
+            return next_stage, next_substage, is_human_review
+    except ValueError:
+        pass
+
+    # Already at end
+    return current_stage, current_substage, False
+
+
+def update_issue_stage(
+    issue_id: str,
+    stage: Stage,
+    substage: Optional[str] = None,
+    agent: Optional[int] = None,
+) -> Optional[Issue]:
+    """Update an issue's stage and substage.
+
+    Args:
+        issue_id: Issue ID
+        stage: New stage
+        substage: New substage (optional)
+        agent: Agent number making the change (optional)
+
+    Returns:
+        Updated Issue object or None if not found
+    """
+    issue_dir = get_issue_dir(issue_id)
+    if not issue_dir:
+        return None
+
+    yaml_path = issue_dir / "issue.yaml"
+    if not yaml_path.exists():
+        return None
+
+    with open(yaml_path) as f:
+        data = yaml.safe_load(f)
+
+    issue = Issue(**data)
+
+    # Update stage
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    issue.stage = stage
+    issue.substage = substage
+    issue.updated = now
+
+    # Add history entry
+    history_entry = HistoryEntry(
+        stage=stage.value,
+        substage=substage,
+        timestamp=now,
+        agent=agent,
+    )
+    issue.history.append(history_entry)
+
+    # Write back
+    with open(yaml_path, "w") as f:
+        data = issue.model_dump(mode="json")
+        yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+
+    return issue
+
+
+def assign_agent(issue_id: str, agent_num: int) -> Optional[Issue]:
+    """Assign an agent to an issue.
+
+    Args:
+        issue_id: Issue ID
+        agent_num: Agent number to assign
+
+    Returns:
+        Updated Issue object or None if not found
+    """
+    issue_dir = get_issue_dir(issue_id)
+    if not issue_dir:
+        return None
+
+    yaml_path = issue_dir / "issue.yaml"
+    if not yaml_path.exists():
+        return None
+
+    with open(yaml_path) as f:
+        data = yaml.safe_load(f)
+
+    issue = Issue(**data)
+
+    # Update assignment
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    issue.assigned_agent = agent_num
+    issue.updated = now
+
+    # Write back
+    with open(yaml_path, "w") as f:
+        data = issue.model_dump(mode="json")
+        yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+
+    return issue
+
+
+def load_skill(stage: Stage, substage: Optional[str] = None) -> Optional[str]:
+    """Load skill/instructions for a stage.
+
+    Args:
+        stage: Stage to load skill for
+        substage: Optional substage for more specific skill
+
+    Returns:
+        Skill content as string, or None if not found
+    """
+    skills_path = get_agenttrees_path() / "skills"
+
+    # Try substage-specific skill first
+    if substage:
+        substage_skill = skills_path / f"{stage.value}-{substage}.md"
+        if substage_skill.exists():
+            return substage_skill.read_text()
+
+    # Fall back to stage skill
+    stage_skill = skills_path / f"{stage.value}.md"
+    if stage_skill.exists():
+        return stage_skill.read_text()
+
+    return None

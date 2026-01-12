@@ -9,18 +9,23 @@ RUN apt-get update && apt-get install -y \
     curl \
     python3 \
     python3-pip \
+    sudo \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Claude CLI
 RUN npm install -g @anthropic-ai/claude-code
 
-# Create workspace directory
-WORKDIR /workspace
+# Create non-root user (Claude CLI refuses --dangerously-skip-permissions as root)
+RUN useradd -m -s /bin/bash agent && \
+    echo "agent ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
-# Set up git config (agents need this for commits)
+# Set up git config for agent user
+USER agent
 RUN git config --global user.email "agent@agenttree.dev" && \
     git config --global user.name "AgentTree Agent"
 
+# Create workspace directory
+WORKDIR /workspace
+
 # Default command
 CMD ["claude"]
-

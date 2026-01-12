@@ -323,21 +323,36 @@ agenttree notes archive 1
 
 ## Container Mode (Isolated & Autonomous)
 
-For autonomous operation with safety:
-
-```bash
-# Run in container (isolated from host)
-agenttree dispatch 1 42 --container
-
-# Dangerous mode (skip permissions, requires container)
-agenttree dispatch 1 42 --container --dangerous
-```
+Agents run in containers for isolation and security. Containers persist between sessions so you only need to authenticate once.
 
 **Container runtimes:**
 - **macOS 26+**: Apple Container (native, VM isolation)
 - **macOS < 26**: Docker
 - **Linux**: Docker or Podman
 - **Windows**: Docker Desktop or WSL2
+
+### Authentication Setup (One-Time)
+
+**For Claude Subscription (Pro/Max/Team):**
+
+OAuth doesn't work inside containers, so you need to generate a long-lived token:
+
+```bash
+# On your host machine (not in container)
+claude setup-token
+
+# This opens a browser for OAuth, then prints a token starting with sk-ant-oat01-...
+# Add to your shell profile (.zshrc, .bashrc, etc.):
+export CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-YOUR-TOKEN-HERE
+```
+
+**For Anthropic API Key:**
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-api03-...
+```
+
+AgentTree automatically passes these to containers.
 
 ## Project Structure
 

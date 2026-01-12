@@ -1,5 +1,6 @@
 """CLI for AgentTree."""
 
+import subprocess
 import sys
 from pathlib import Path
 from typing import Optional
@@ -18,10 +19,16 @@ from agenttree.issues import (
     Issue,
     Stage,
     Priority,
+    HUMAN_REVIEW_STAGES,
+    STAGE_SUBSTAGES,
     create_issue as create_issue_func,
     list_issues as list_issues_func,
     get_issue as get_issue_func,
     get_issue_dir,
+    get_next_stage,
+    update_issue_stage,
+    assign_agent,
+    load_skill,
 )
 
 console = Console()
@@ -89,12 +96,12 @@ def init(worktrees_dir: Optional[str], project: Optional[str]) -> None:
 
     console.print(f"[green]✓ Created {config_file}[/green]")
 
-    # Create .agenttree directory
-    agenttree_dir = repo_path / ".agenttree"
-    agenttree_dir.mkdir(exist_ok=True)
+    # Create .agenttrees/scripts directory
+    scripts_dir = repo_path / ".agenttrees" / "scripts"
+    scripts_dir.mkdir(parents=True, exist_ok=True)
 
     # Create worktree-setup.sh template
-    setup_script = agenttree_dir / "worktree-setup.sh"
+    setup_script = scripts_dir / "worktree-setup.sh"
     setup_template = """#!/bin/bash
 # AgentTree Worktree Setup Script
 #
@@ -212,8 +219,8 @@ fi
 # ============================================================================
 
 # Copy AGENT_GUIDE.md to worktree (with AGENT_NUM substitution)
-if [ -f "../.agenttree/AGENT_GUIDE.md" ]; then
-    sed "s/\${AGENT_NUM}/$AGENT_NUM/g; s/\${PORT}/$AGENT_PORT/g" ../.agenttree/AGENT_GUIDE.md > AGENT_GUIDE.md
+if [ -f "../.agenttrees/templates/AGENT_GUIDE.md" ]; then
+    sed "s/\${AGENT_NUM}/$AGENT_NUM/g; s/\${PORT}/$AGENT_PORT/g" ../.agenttrees/templates/AGENT_GUIDE.md > AGENT_GUIDE.md
     echo "✓ Created personalized AGENT_GUIDE.md"
 fi
 
@@ -249,7 +256,9 @@ echo "and push the changes so future agents can benefit!"
     console.print(f"[dim]  → Customize this script for your project's setup needs[/dim]")
 
     # Create AGENT_GUIDE.md template
-    agent_guide = agenttree_dir / "AGENT_GUIDE.md"
+    templates_dir = repo_path / ".agenttrees" / "templates"
+    templates_dir.mkdir(parents=True, exist_ok=True)
+    agent_guide = templates_dir / "AGENT_GUIDE.md"
     agent_guide_template = """# AgentTree Agent Guide
 
 Welcome, Agent! 👋
@@ -277,26 +286,24 @@ echo $PORT
 
 ```
 <project-root>/
-├── .agenttree/
-│   ├── AGENT_GUIDE.md          ← You are here!
-│   ├── worktree-setup.sh       ← Setup script you ran
-│   └── knowledge/              ← Shared knowledge base (Phase 6)
-├── .agenttrees/                ← Shared notes repository (git submodule)
-│   ├── specs/                  ← Task specifications
-│   │   └── issue-<num>.md
-│   ├── tasks/                  ← Agent task logs
-│   │   ├── agent-1/
-│   │   ├── agent-2/
-│   │   └── agent-<N>/
-│   │       └── <timestamp>-issue-<num>.md
-│   └── notes/                  ← Agent notes and findings
-│       ├── agent-1/
-│       └── agent-<N>/
-│           └── <topic>.md
+├── .agenttrees/                ← Shared repo (issues, skills, scripts)
+│   ├── issues/                 ← Issue tracking
+│   │   └── 001-fix-login/
+│   │       ├── issue.yaml
+│   │       ├── problem.md
+│   │       └── plan.md
+│   ├── skills/                 ← Stage instructions
+│   │   ├── problem.md
+│   │   ├── research.md
+│   │   └── implement.md
+│   ├── scripts/                ← Setup scripts
+│   │   └── worktree-setup.sh
+│   └── templates/              ← Document templates
+│       ├── AGENT_GUIDE.md      ← You are here!
+│       └── problem.md
 ├── .worktrees/                 ← Agent worktrees (git ignored)
-│   ├── agent-1/
-│   └── agent-<N>/
-├── TASK.md                     ← Your current task (created by dispatch)
+│   ├── agenttree-agent-1/
+│   └── agenttree-agent-<N>/
 └── <project files>
 ```
 
@@ -437,12 +444,12 @@ grep -r "token" .agenttrees/notes/agent-${AGENT_NUM}/
 
 ## Environment Setup
 
-Your worktree was set up by `.agenttree/worktree-setup.sh`.
+Your worktree was set up by `.agenttrees/scripts/worktree-setup.sh`.
 
 If you encounter issues (missing dependencies, wrong config, etc.):
 1. **Fix the setup script** - Other agents will benefit!
 2. Test your changes
-3. Commit: `git add .agenttree/worktree-setup.sh && git commit -m "Fix setup script for <issue>"`
+3. Commit: `git add .agenttrees/scripts/worktree-setup.sh && git commit -m "Fix setup script for <issue>"`
 
 ## Best Practices
 
@@ -467,7 +474,7 @@ If you encounter issues (missing dependencies, wrong config, etc.):
 ## Troubleshooting
 
 ### "My setup failed"
-→ Check `.agenttree/worktree-setup.sh` and fix it for everyone
+→ Check `.agenttrees/scripts/worktree-setup.sh` and fix it for everyone
 
 ### "I can't find my task"
 → Check `TASK.md` in your worktree root, or `.agenttrees/tasks/agent-${AGENT_NUM}/`
@@ -525,14 +532,14 @@ Good luck, Agent-${AGENT_NUM}! 🚀
     console.print("\n[bold cyan]Next steps:[/bold cyan]")
     console.print("\n[bold]1. Set up agent-1 and let it configure the environment:[/bold]")
     console.print("   agenttree setup 1")
-    console.print("   agenttree dispatch 1 --task 'Test the worktree setup. Run the app, fix any errors in .agenttree/worktree-setup.sh, and commit your fixes.'")
+    console.print("   agenttree dispatch 1 --task 'Test the worktree setup. Run the app, fix any errors in .agenttrees/scripts/worktree-setup.sh, and commit your fixes.'")
     console.print("")
     console.print("[bold]2. Once agent-1 has the setup working, set up the rest:[/bold]")
     console.print("   agenttree setup 2 3  # They'll use agent-1's fixes!")
     console.print("")
     console.print("[bold]3. Start dispatching real work:[/bold]")
-    console.print("   agenttree dispatch 2 42  # GitHub issue")
-    console.print("   agenttree web            # Or use the dashboard")
+    console.print("   agenttree dispatch 2 --task 'Fix the login bug'")
+    console.print("   agenttree tui            # Or use the terminal dashboard")
     console.print("")
     console.print("[dim]💡 Tip: Agent-1 becomes your sysadmin - it fixes the setup script for everyone![/dim]")
 
@@ -547,7 +554,7 @@ def setup(agent_numbers: tuple) -> None:
     manager = WorktreeManager(repo_path, config)
 
     # Check if custom setup script exists
-    setup_script = repo_path / ".agenttree" / "worktree-setup.sh"
+    setup_script = repo_path / ".agenttrees" / "scripts" / "worktree-setup.sh"
     has_custom_setup = setup_script.exists()
 
     if has_custom_setup:
@@ -615,32 +622,16 @@ def setup(agent_numbers: tuple) -> None:
 @click.option("--task", help="Ad-hoc task description")
 @click.option("--tool", help="AI tool to use (default: from config)")
 @click.option("--force", is_flag=True, help="Force dispatch even if agent is busy")
-@click.option(
-    "--container", is_flag=True, help="Run agent in container (isolated mode)"
-)
-@click.option(
-    "--dangerous",
-    is_flag=True,
-    help="Run in dangerous mode (skip permissions, requires --container)",
-)
 def dispatch(
     agent_num: int,
     issue_number: Optional[int],
     task: Optional[str],
     tool: Optional[str],
     force: bool,
-    container: bool,
-    dangerous: bool,
 ) -> None:
-    """Dispatch a task to an agent."""
+    """Dispatch a task to an agent (runs in container)."""
     repo_path = Path.cwd()
     config = load_config(repo_path)
-
-    if dangerous and not container:
-        console.print(
-            "[red]Error: --dangerous requires --container for safety[/red]"
-        )
-        sys.exit(1)
 
     if not issue_number and not task:
         console.print("[red]Error: Provide either issue number or --task[/red]")
@@ -658,7 +649,6 @@ def dispatch(
     # Initialize managers
     wt_manager = WorktreeManager(repo_path, config)
     tmux_manager = TmuxManager(config)
-    gh_manager = GitHubManager()
     agents_repo = AgentsRepository(repo_path)
 
     # Ensure agents repo exists
@@ -675,63 +665,83 @@ def dispatch(
     task_file = worktree_path / "TASK.md"
 
     if issue_number:
-        try:
-            issue = get_github_issue(issue_number)
-            gh_manager.create_task_file(issue, task_file)
-            gh_manager.assign_issue_to_agent(issue_number, agent_num)
-
-            # Create spec and task log in .agenttrees/ repo
-            agents_repo.create_spec_file(
-                issue_number, issue.title, issue.body, issue.url
-            )
-            task_log_file = agents_repo.create_task_file(
-                agent_num, issue_number, issue.title, issue.body, issue.url
-            )
-
-            # Pre-create context summary for task re-engagement
-            from datetime import datetime as dt
-            from agenttree.agents_repo import slugify
-            date = dt.now().strftime("%Y-%m-%d")
-            slug = slugify(issue.title)
-            task_id = f"agent-{agent_num}-{date}-{slug}"
-
-            agents_repo.create_context_summary(
-                agent_num, issue_number, issue.title, task_id
-            )
-
-            console.print(f"[green]✓ Created task for issue #{issue_number}[/green]")
-            console.print(f"[green]✓ Created spec, task log, and context summary in .agenttrees/ repo[/green]")
-        except Exception as e:
-            console.print(f"[red]Error fetching issue: {e}[/red]")
+        # Load issue from local .agenttrees/issues/
+        issue = get_issue_func(str(issue_number))
+        if not issue:
+            console.print(f"[red]Error: Issue #{issue_number} not found in .agenttrees/issues/[/red]")
+            console.print(f"[yellow]Create it with: agenttree issue create 'title'[/yellow]")
             sys.exit(1)
+
+        # Get issue directory and read problem.md
+        issue_dir = get_issue_dir(str(issue_number))
+        problem_content = ""
+        if issue_dir:
+            problem_file = issue_dir / "problem.md"
+            if problem_file.exists():
+                problem_content = problem_file.read_text()
+
+            # Also check for plan.md (if in later stages)
+            plan_file = issue_dir / "plan.md"
+            plan_content = ""
+            if plan_file.exists():
+                plan_content = plan_file.read_text()
+
+        # Create TASK.md with issue content
+        task_content = f"""# Issue #{issue.id}: {issue.title}
+
+**Stage:** {issue.stage.value}
+**Priority:** {issue.priority.value}
+
+## Problem
+
+{problem_content}
+"""
+        if plan_content:
+            task_content += f"""
+## Plan
+
+{plan_content}
+"""
+
+        task_content += f"""
+## Instructions
+
+1. Read CLAUDE.md for workflow instructions
+2. Run `agenttree status --issue {issue.id}` to see current stage
+3. Run `agenttree begin <stage> --issue {issue.id}` to start working
+4. Run `agenttree next --issue {issue.id}` when done with current stage
+"""
+        task_file.write_text(task_content)
+
+        # Assign agent to issue
+        assign_agent(str(issue_number), agent_num)
+
+        console.print(f"[green]✓ Created task for issue #{issue.id}: {issue.title}[/green]")
     else:
-        gh_manager.create_adhoc_task_file(task or "", task_file)
+        # Create simple TASK.md for ad-hoc tasks
+        task_file.write_text(f"# Task\n\n{task}\n")
         console.print("[green]✓ Created ad-hoc task[/green]")
 
-    # Start agent in tmux
+    # Start agent in tmux (always in container)
     tool_name = tool or config.default_tool
+    runtime = get_container_runtime()
 
-    if container:
-        runtime = get_container_runtime()
-        if not runtime.is_available():
-            console.print(f"[red]Error: No container runtime available[/red]")
-            console.print(f"Recommendation: {runtime.get_recommended_action()}")
-            sys.exit(1)
+    if not runtime.is_available():
+        console.print(f"[red]Error: No container runtime available[/red]")
+        console.print(f"Recommendation: {runtime.get_recommended_action()}")
+        sys.exit(1)
 
-        console.print(f"[yellow]Running in container ({runtime.get_runtime_name()})[/yellow]")
-        # TODO: Integrate container mode with tmux
-        console.print("[yellow]Container mode integration coming soon[/yellow]")
-    else:
-        tmux_manager.start_agent(agent_num, worktree_path, tool_name)
-        console.print(f"[green]✓ Started {tool_name} in tmux session[/green]")
+    console.print(f"[dim]Container runtime: {runtime.get_runtime_name()}[/dim]")
+    tmux_manager.start_agent_in_container(agent_num, worktree_path, tool_name, runtime)
+    console.print(f"[green]✓ Started {tool_name} in container[/green]")
 
     console.print(f"\nCommands:")
     console.print(f"  agenttree attach {agent_num}  # Attach to session")
-    console.print(f"  agenttree status             # View all agents")
+    console.print(f"  agenttree agents             # View all agents")
 
 
-@main.command()
-def status() -> None:
+@main.command("agents")
+def agents_status() -> None:
     """Show status of all agents."""
     repo_path = Path.cwd()
     config = load_config(repo_path)
@@ -1251,6 +1261,311 @@ def issue_show(issue_id: str) -> None:
             console.print(f"  • {entry.timestamp[:10]} → {stage_str}{agent_str}")
 
     console.print(f"\n[dim]Directory: {issue_dir}[/dim]")
+
+
+# =============================================================================
+# Stage Transition Commands
+# =============================================================================
+
+@main.command("status")
+@click.option("--issue", "-i", "issue_id", help="Issue ID (if not in agent context)")
+def stage_status(issue_id: Optional[str]) -> None:
+    """Show current issue and stage status.
+
+    Examples:
+        agenttree status
+        agenttree status --issue 001
+    """
+    # Try to get issue from argument or agent context
+    if not issue_id:
+        # TODO: Read from .agenttree-agent file when in agent worktree
+        console.print("[yellow]No issue specified. Use --issue flag or run from agent worktree.[/yellow]")
+        console.print("[dim]Showing all active issues:[/dim]\n")
+
+        # Show all non-backlog, non-accepted issues
+        active_issues = [
+            i for i in list_issues_func()
+            if i.stage not in (Stage.BACKLOG, Stage.ACCEPTED, Stage.NOT_DOING)
+        ]
+
+        if not active_issues:
+            console.print("[dim]No active issues[/dim]")
+            return
+
+        table = Table(title="Active Issues")
+        table.add_column("ID", style="cyan")
+        table.add_column("Title", style="white")
+        table.add_column("Stage", style="magenta")
+        table.add_column("Agent", style="green")
+
+        for issue in active_issues:
+            stage_str = issue.stage.value
+            if issue.substage:
+                stage_str += f".{issue.substage}"
+            agent_str = f"Agent {issue.assigned_agent}" if issue.assigned_agent else "-"
+            table.add_row(issue.id, issue.title[:40], stage_str, agent_str)
+
+        console.print(table)
+        return
+
+    issue = get_issue_func(issue_id)
+    if not issue:
+        console.print(f"[red]Issue {issue_id} not found[/red]")
+        sys.exit(1)
+
+    console.print(f"\n[bold cyan]Issue {issue.id}: {issue.title}[/bold cyan]")
+    console.print(f"[bold]Stage:[/bold] {issue.stage.value}", end="")
+    if issue.substage:
+        console.print(f".{issue.substage}")
+    else:
+        console.print()
+
+    if issue.assigned_agent:
+        console.print(f"[bold]Agent:[/bold] {issue.assigned_agent}")
+
+    if issue.stage in HUMAN_REVIEW_STAGES:
+        console.print(f"\n[yellow]⏳ Waiting for human review[/yellow]")
+    elif issue.stage == Stage.ACCEPTED:
+        console.print(f"\n[green]✓ Issue completed[/green]")
+
+
+@main.command("begin")
+@click.argument("stage", type=click.Choice([s.value for s in Stage]))
+@click.option("--issue", "-i", "issue_id", required=True, help="Issue ID")
+def stage_begin(stage: str, issue_id: str) -> None:
+    """Begin working on a stage. Returns stage instructions.
+
+    Examples:
+        agenttree begin problem --issue 001
+        agenttree begin research --issue 002
+    """
+    issue = get_issue_func(issue_id)
+    if not issue:
+        console.print(f"[red]Issue {issue_id} not found[/red]")
+        sys.exit(1)
+
+    target_stage = Stage(stage)
+
+    # Validate: can't begin review stages or terminal stages directly
+    if target_stage in HUMAN_REVIEW_STAGES:
+        console.print(f"[red]Cannot begin review stages directly. Use 'agenttree next' to transition.[/red]")
+        sys.exit(1)
+    if target_stage in (Stage.ACCEPTED, Stage.NOT_DOING):
+        console.print(f"[red]Cannot begin terminal stages ({target_stage.value})[/red]")
+        sys.exit(1)
+
+    # Get substages for this stage
+    substages = STAGE_SUBSTAGES.get(target_stage, [])
+    substage = substages[0] if substages else None
+
+    # Update issue to this stage
+    updated = update_issue_stage(issue_id, target_stage, substage)
+    if not updated:
+        console.print(f"[red]Failed to update issue[/red]")
+        sys.exit(1)
+
+    stage_str = target_stage.value
+    if substage:
+        stage_str += f".{substage}"
+    console.print(f"[green]✓ Started {stage_str}[/green]")
+
+    # Load and display skill
+    skill = load_skill(target_stage, substage)
+    if skill:
+        console.print(f"\n{'='*60}")
+        console.print(f"[bold cyan]Stage Instructions: {target_stage.value.upper()}[/bold cyan]")
+        console.print(f"{'='*60}\n")
+        console.print(skill)
+    else:
+        console.print(f"\n[dim]No skill file found for {target_stage.value}[/dim]")
+
+    # Show relevant files
+    issue_dir = get_issue_dir(issue_id)
+    if issue_dir:
+        console.print(f"\n[bold]Issue files:[/bold]")
+        for file in sorted(issue_dir.iterdir()):
+            if file.is_file():
+                console.print(f"  • {file.name}")
+
+
+@main.command("next")
+@click.option("--issue", "-i", "issue_id", required=True, help="Issue ID")
+def stage_next(issue_id: str) -> None:
+    """Move to the next substage or stage.
+
+    Examples:
+        agenttree next --issue 001
+    """
+    issue = get_issue_func(issue_id)
+    if not issue:
+        console.print(f"[red]Issue {issue_id} not found[/red]")
+        sys.exit(1)
+
+    if issue.stage == Stage.ACCEPTED:
+        console.print(f"[yellow]Issue is already accepted[/yellow]")
+        return
+
+    if issue.stage == Stage.NOT_DOING:
+        console.print(f"[yellow]Issue is marked as not doing[/yellow]")
+        return
+
+    # Calculate next stage
+    next_stage, next_substage, is_human_review = get_next_stage(
+        issue.stage, issue.substage
+    )
+
+    # Check if we're already at the next stage (no change)
+    if next_stage == issue.stage and next_substage == issue.substage:
+        console.print(f"[yellow]Already at final stage[/yellow]")
+        return
+
+    # Update issue
+    updated = update_issue_stage(issue_id, next_stage, next_substage)
+    if not updated:
+        console.print(f"[red]Failed to update issue[/red]")
+        sys.exit(1)
+
+    stage_str = next_stage.value
+    if next_substage:
+        stage_str += f".{next_substage}"
+    console.print(f"[green]✓ Moved to {stage_str}[/green]")
+
+    if is_human_review:
+        console.print(f"\n[yellow]⏳ Waiting for human review[/yellow]")
+        console.print(f"[dim]Your work has been submitted for review.[/dim]")
+        console.print(f"[dim]You will receive instructions when the review is complete.[/dim]")
+        return
+
+    # Load and display skill for next stage
+    skill = load_skill(next_stage, next_substage)
+    if skill:
+        console.print(f"\n{'='*60}")
+        header = f"Stage Instructions: {next_stage.value.upper()}"
+        if next_substage:
+            header += f" ({next_substage})"
+        console.print(f"[bold cyan]{header}[/bold cyan]")
+        console.print(f"{'='*60}\n")
+        console.print(skill)
+
+
+# =============================================================================
+# Agent Context Commands
+# =============================================================================
+
+@main.command("context-init")
+@click.option("--agent", "-a", "agent_num", type=int, help="Agent number (reads from .env if not provided)")
+@click.option("--port", "-p", "port", type=int, help="Agent port (derived from agent number if not provided)")
+def context_init(agent_num: Optional[int], port: Optional[int]) -> None:
+    """Initialize agent context in current worktree.
+
+    This command:
+    1. Clones the .agenttrees repo into the current directory
+    2. Verifies/creates agent identity (.env with AGENT_NUM, PORT)
+
+    Run this from within an agent worktree during setup.
+
+    Examples:
+        agenttree context-init --agent 1
+        agenttree context-init  # Reads agent number from .env
+    """
+    cwd = Path.cwd()
+
+    # Try to read agent number from .env if not provided
+    if agent_num is None:
+        env_file = cwd / ".env"
+        if env_file.exists():
+            for line in env_file.read_text().splitlines():
+                if line.startswith("AGENT_NUM="):
+                    try:
+                        agent_num = int(line.split("=")[1].strip())
+                        console.print(f"[dim]Found AGENT_NUM={agent_num} in .env[/dim]")
+                    except ValueError:
+                        pass
+
+    if agent_num is None:
+        console.print("[red]Error: No agent number provided and none found in .env[/red]")
+        console.print("[dim]Use --agent <N> or ensure .env contains AGENT_NUM=<N>[/dim]")
+        sys.exit(1)
+
+    # Calculate port if not provided
+    if port is None:
+        config = load_config()
+        port = config.get_port_for_agent(agent_num)
+
+    # Check if .agenttrees already exists
+    agenttrees_path = cwd / ".agenttrees"
+    if agenttrees_path.exists() and (agenttrees_path / ".git").exists():
+        console.print(f"[green]✓ .agenttrees already exists[/green]")
+    else:
+        # Try to find the remote URL from the main project
+        # Go up directories to find the main .agenttrees repo
+        main_agenttrees = None
+        parent = cwd.parent
+        for _ in range(5):  # Check up to 5 levels up
+            candidate = parent / ".agenttrees"
+            if candidate.exists() and (candidate / ".git").exists():
+                main_agenttrees = candidate
+                break
+            parent = parent.parent
+
+        if main_agenttrees is None:
+            console.print("[red]Error: Could not find main .agenttrees repo[/red]")
+            console.print("[dim]Make sure you're in an agent worktree[/dim]")
+            sys.exit(1)
+
+        # Get the remote URL
+        try:
+            result = subprocess.run(
+                ["git", "remote", "get-url", "origin"],
+                cwd=main_agenttrees,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            remote_url = result.stdout.strip()
+        except subprocess.CalledProcessError:
+            console.print("[red]Error: Could not get remote URL from main .agenttrees[/red]")
+            sys.exit(1)
+
+        # Clone the repo
+        console.print(f"[cyan]Cloning .agenttrees from {remote_url}...[/cyan]")
+        try:
+            subprocess.run(
+                ["git", "clone", remote_url, ".agenttrees"],
+                cwd=cwd,
+                check=True,
+            )
+            console.print(f"[green]✓ Cloned .agenttrees[/green]")
+        except subprocess.CalledProcessError as e:
+            console.print(f"[red]Error cloning: {e}[/red]")
+            sys.exit(1)
+
+    # Verify/create .env with agent identity
+    env_file = cwd / ".env"
+    env_content = {}
+
+    if env_file.exists():
+        for line in env_file.read_text().splitlines():
+            if "=" in line and not line.startswith("#"):
+                key, value = line.split("=", 1)
+                env_content[key.strip()] = value.strip()
+
+    # Update agent identity
+    env_content["AGENT_NUM"] = str(agent_num)
+    env_content["PORT"] = str(port)
+
+    # Write back
+    with open(env_file, "w") as f:
+        for key, value in env_content.items():
+            f.write(f"{key}={value}\n")
+
+    console.print(f"[green]✓ Agent identity verified: AGENT_NUM={agent_num}, PORT={port}[/green]")
+
+    # Show summary
+    console.print(f"\n[bold]Agent {agent_num} context initialized:[/bold]")
+    console.print(f"  .agenttrees/ - Issues, skills, templates")
+    console.print(f"  .env - AGENT_NUM={agent_num}, PORT={port}")
+    console.print(f"\n[dim]Read CLAUDE.md for workflow instructions[/dim]")
 
 
 if __name__ == "__main__":

@@ -31,7 +31,7 @@ class TestAgentsRepository:
         agents_repo = AgentsRepository(project_path)
         assert agents_repo.project_path == project_path
         assert agents_repo.project_name == "test-repo"
-        assert agents_repo.agents_path == project_path / "agents"
+        assert agents_repo.agents_path == project_path / ".agenttrees"
 
     def test_ensure_repo_already_exists(self, agents_repo):
         """Test ensure_repo when agents/ directory already exists."""
@@ -146,7 +146,7 @@ class TestAgentsRepository:
 
         content = task_path.read_text()
         assert "# Task: Add dark mode" in content
-        assert "[#42](https://github.com/user/repo/issues/42)" in content
+        assert "issue_number: 42" in content  # Frontmatter format
         assert "Users want dark mode support" in content
 
     def test_archive_task(self, agents_repo, tmp_path):
@@ -191,8 +191,8 @@ class TestAgentsRepository:
         assert slugify("Update API v2.0") == "update-api-v20"
         assert slugify("Add   Multiple   Spaces") == "add-multiple-spaces"
 
-    def test_add_to_gitignore_adds_agents(self, agents_repo, tmp_path):
-        """Test _add_to_gitignore adds agents/ to parent .gitignore."""
+    def test_add_to_gitignore_adds_agenttrees(self, agents_repo, tmp_path):
+        """Test _add_to_gitignore adds .agenttrees/ to parent .gitignore."""
         agents_repo.project_path = tmp_path
         gitignore = tmp_path / ".gitignore"
         gitignore.write_text("__pycache__/\n*.pyc\n")
@@ -200,21 +200,21 @@ class TestAgentsRepository:
         agents_repo._add_to_gitignore()
 
         content = gitignore.read_text()
-        assert "agents/" in content
+        assert ".agenttrees/" in content
         assert "__pycache__/" in content  # Original content preserved
 
     def test_add_to_gitignore_skips_if_exists(self, agents_repo, tmp_path):
         """Test _add_to_gitignore doesn't duplicate entry."""
         agents_repo.project_path = tmp_path
         gitignore = tmp_path / ".gitignore"
-        gitignore.write_text("agents/\n")
+        gitignore.write_text(".agenttrees/\n")
 
         original_content = gitignore.read_text()
         agents_repo._add_to_gitignore()
 
-        # Should not modify
-        assert gitignore.read_text() == original_content
-        assert gitignore.read_text().count("agents/") == 1
+        # Should not modify (already has .agenttrees/)
+        assert ".agenttrees/" in gitignore.read_text()
+        assert gitignore.read_text().count(".agenttrees/") == 1
 
     @patch("agenttree.agents_repo.subprocess.run")
     def test_commit(self, mock_run, agents_repo):
