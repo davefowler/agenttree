@@ -51,16 +51,20 @@ fi
 
 # Set up agenttree - only do editable install if workspace IS agenttree
 # (for self-development). Other projects would need agenttree from PyPI.
+AGENTTREE_PATH=""
 if [ -f /workspace/pyproject.toml ] && grep -q 'name = "agenttree"' /workspace/pyproject.toml; then
     # Working on agenttree itself - install from workspace (editable)
     if [ ! -d /home/agent/.agenttree-venv ]; then
         python3 -m venv /home/agent/.agenttree-venv
     fi
-    /home/agent/.agenttree-venv/bin/pip install -q -e "/workspace[dev]"
-    export PATH="/home/agent/.agenttree-venv/bin:$PATH"
+    if ! /home/agent/.agenttree-venv/bin/pip install -q -e "/workspace[dev]" 2>&1; then
+        echo "Warning: Failed to install agenttree dependencies" >&2
+    fi
+    AGENTTREE_PATH="/home/agent/.agenttree-venv/bin:"
 fi
 
-exec "$@"
+# Use exec env to ensure PATH persists to child processes
+exec env PATH="${AGENTTREE_PATH}${PATH}" "$@"
 EOF
 RUN chmod +x /home/agent/entrypoint.sh
 
