@@ -76,13 +76,16 @@ class ContainerRuntime:
                 "Install Docker or upgrade to macOS 26+ for Apple Container."
             )
 
+        # Apple Container requires absolute paths for volume mounts
+        abs_path = worktree_path.resolve()
+
         cmd = [
             self.runtime,
             "run",
             "-it",
             "--rm",
             "-v",
-            f"{worktree_path}:/workspace",
+            f"{abs_path}:/workspace",
             "-w",
             "/workspace",
         ]
