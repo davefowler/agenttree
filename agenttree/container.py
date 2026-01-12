@@ -78,6 +78,8 @@ class ContainerRuntime:
 
         # Apple Container requires absolute paths for volume mounts
         abs_path = worktree_path.resolve()
+        home = Path.home()
+        claude_config = home / ".claude"
 
         cmd = [
             self.runtime,
@@ -89,6 +91,15 @@ class ContainerRuntime:
             "-w",
             "/workspace",
         ]
+
+        # Mount Claude config for subscription auth (if exists)
+        if claude_config.exists():
+            cmd.extend(["-v", f"{claude_config}:/home/agent/.claude"])
+
+        # Pass through API key if set (for API-based auth)
+        import os
+        if os.environ.get("ANTHROPIC_API_KEY"):
+            cmd.extend(["-e", f"ANTHROPIC_API_KEY={os.environ['ANTHROPIC_API_KEY']}"])
 
         if additional_args:
             cmd.extend(additional_args)
