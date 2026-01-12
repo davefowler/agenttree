@@ -61,6 +61,7 @@ class Issue(BaseModel):
 
     github_issue: Optional[int] = None
     pr_number: Optional[int] = None
+    pr_url: Optional[str] = None
     relevant_url: Optional[str] = None
 
     history: list[HistoryEntry] = Field(default_factory=list)
@@ -497,7 +498,7 @@ def update_issue_metadata(
     if pr_number is not None:
         issue.pr_number = pr_number
     if pr_url is not None:
-        issue.relevant_url = pr_url  # Store PR URL in relevant_url
+        issue.pr_url = pr_url
     if branch is not None:
         issue.branch = branch
     if github_issue is not None:

@@ -390,6 +390,41 @@ def has_uncommitted_changes() -> bool:
     return bool(result.stdout.strip())
 
 
+def get_default_branch() -> str:
+    """Get the default branch name for the remote.
+
+    Tries to detect from origin/HEAD, falls back to 'main', then 'master'.
+
+    Returns:
+        Default branch name (e.g., 'main' or 'master')
+    """
+    # Try to get from origin/HEAD symbolic ref
+    result = subprocess.run(
+        ["git", "symbolic-ref", "refs/remotes/origin/HEAD"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode == 0:
+        # Output is like "refs/remotes/origin/main"
+        ref = result.stdout.strip()
+        if ref.startswith("refs/remotes/origin/"):
+            return ref.replace("refs/remotes/origin/", "")
+
+    # Fallback: check if origin/main exists
+    result = subprocess.run(
+        ["git", "rev-parse", "--verify", "origin/main"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode == 0:
+        return "main"
+
+    # Last resort: try master
+    return "master"
+
+
 def has_commits_to_push(branch: Optional[str] = None) -> bool:
     """Check if there are unpushed commits.
 
@@ -424,10 +459,11 @@ def has_commits_to_push(branch: Optional[str] = None) -> bool:
     if result.returncode == 0 and result.stdout.strip():
         return True
 
-    # Fallback: check if we have ANY local commits not on origin/main
+    # Fallback: check if we have ANY local commits not on default branch
     # This handles new branches that haven't been pushed and aren't tracking anything
+    default_branch = get_default_branch()
     result = subprocess.run(
-        ["git", "log", "origin/main..HEAD", "--oneline"],
+        ["git", "log", f"origin/{default_branch}..HEAD", "--oneline"],
         capture_output=True,
         text=True,
         check=False,
