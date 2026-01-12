@@ -735,6 +735,16 @@ def dispatch(
 2. Run `agenttree status --issue {issue.id}` to see current stage
 3. Run `agenttree begin <stage> --issue {issue.id}` to start working
 4. Run `agenttree next --issue {issue.id}` when done with current stage
+
+## Documentation
+
+All documentation for this issue belongs in: `.agenttrees/issues/{issue.id}-{issue.slug}/`
+- `problem.md` - Problem statement (fill this out!)
+- `plan.md` - Implementation plan
+- `review.md` - Self-review before PR
+- `research.md` - Research notes (if needed)
+
+**DO NOT** create documentation files in the worktree root.
 """
     task_file.write_text(task_content)
 

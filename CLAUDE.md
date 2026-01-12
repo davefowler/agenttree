@@ -50,8 +50,12 @@ Each stage has a skill file with detailed instructions:
 
 Each issue has a directory: `.agenttrees/issues/<ID>-<slug>/`
 - `issue.yaml` - Status, stage, metadata
-- `problem.md` - Problem statement
+- `problem.md` - Problem statement (fill this out in problem stage!)
 - `plan.md` - Implementation plan (created in research stage)
+- `review.md` - Self-review before PR (created in implement.code_review)
+- `research.md` - Research notes (if you do external research)
+
+**ALL documentation for your issue goes in this folder, NOT in the worktree root.**
 
 ## Key Files
 
