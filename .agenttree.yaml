@@ -7,5 +7,5 @@ tools:
     startup_prompt: /read TASK.md
   claude:
     command: claude
-    startup_prompt: Check TASK.md and start working on it.
+    startup_prompt: "First run: agenttree status --issue <ID> to check your stage. Read CLAUDE.md for workflow rules. Then check TASK.md."
 worktrees_dir: .worktrees

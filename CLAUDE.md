@@ -1,36 +1,41 @@
 # AgentTree - Claude Instructions
 
-## Your Workflow
+## CRITICAL: Follow the Workflow
 
-You work on issues tracked in `.agenttrees/issues/`. Use these commands:
+**You MUST follow the staged workflow. You cannot skip stages.**
 
+### First: Check Your Stage
 ```bash
-# Check your current issue and stage
 agenttree status --issue <ID>
-
-# Move to next stage/substage
-agenttree next --issue <ID>
-
-# Start a specific stage
-agenttree begin <stage> --issue <ID>
 ```
 
-## Issue Structure
+Your work depends on your current stage. Don't start coding if you're at `backlog` or `problem`.
 
-Each issue has a directory: `.agenttrees/issues/<ID>-<slug>/`
-- `issue.yaml` - Status, stage, metadata
-- `problem.md` - Problem statement
-- `plan.md` - Implementation plan (created in research stage)
+### Progress with `agenttree next`
+```bash
+agenttree next --issue <ID>
+```
 
-## Stages
+**This command handles everything automatically:**
+- Commits your changes
+- Pushes to the branch
+- Creates PRs when needed
+- Moves to the next stage
 
-1. **problem** - Define the problem clearly
-2. **problem_review** - Human reviews problem statement
-3. **research** - Explore codebase, create plan
-4. **plan_review** - Human reviews plan
-5. **implement** - Write tests, then code (TDD)
-6. **implementation_review** - Human reviews PR
-7. **accepted** - Done!
+**DO NOT manually run:** `git push`, `git commit`, or `gh pr create`. The workflow handles this.
+
+## Stages (Must Follow In Order)
+
+| Stage | What You Do | What Happens on `next` |
+|-------|-------------|------------------------|
+| **backlog** | Nothing yet | → problem |
+| **problem** | Write problem.md | → problem_review (waits for human) |
+| **problem_review** | Wait | Human approves → research |
+| **research** | Write plan.md | → plan_review (waits for human) |
+| **plan_review** | Wait | Human approves → implement |
+| **implement** | Write tests, then code | Auto-commits, pushes, creates PR → implementation_review |
+| **implementation_review** | Wait | Human approves PR → accepted (auto-merges) |
+| **accepted** | Done! | Cleanup |
 
 ## Stage Instructions
 
@@ -39,7 +44,14 @@ Each stage has a skill file with detailed instructions:
 - `.agenttrees/skills/research.md`
 - `.agenttrees/skills/implement.md`
 
-Read the skill file when you start a stage.
+**Read the skill file for your current stage before doing any work.**
+
+## Issue Structure
+
+Each issue has a directory: `.agenttrees/issues/<ID>-<slug>/`
+- `issue.yaml` - Status, stage, metadata
+- `problem.md` - Problem statement
+- `plan.md` - Implementation plan (created in research stage)
 
 ## Key Files
 
