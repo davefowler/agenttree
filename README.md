@@ -111,14 +111,35 @@ agents:
 
 ## Why AgentTree?
 
-**Problems it solves:**
+**The goal isn't to be a better engineer managing AI agents. It's to become a product person who specifies and reviews.**
 
-1. **Single-threaded development** - Work on multiple issues simultaneously
-2. **Context switching** - Each agent maintains its own context
-3. **Agent interference** - Isolated worktrees prevent conflicts
-4. **CI blind spots** - Automatically monitor PR checks
-5. **Lost knowledge** - Task history preserved in git
-6. **No orchestration** - Programmatic task dispatch
+See [docs/VISION.md](docs/VISION.md) for the full vision.
+
+### The Pain Points
+
+1. **GitHub's UI is tedious** - Constantly pinging "@cursor see the code review", scrolling through PRs, checking CI status, clicking merge
+2. **Agents don't self-enforce** - They skip CI, ignore reviews, don't follow plans unless forced
+3. **Getting lost in issues** - No clear view of "what needs my attention NOW"
+4. **Manual babysitting** - You're doing engineering oversight when you should be doing product work
+
+### The Insight
+
+**If the workflow is tight enough, you don't need to review.**
+
+```
+Today:     Agent writes code → You review everything → Merge
+Tomorrow:  Problem validated → Plan validated → CI enforced → Auto-merge
+```
+
+### What AgentTree Adds
+
+1. **Parallel agents** - Multiple agents on different issues simultaneously
+2. **Enforced gates** - Can't skip CI, can't bypass validation, can't ignore reviews
+3. **Auto-dispatch** - Agents start when you approve, not when you remember to ping
+4. **Unified visibility** - One dashboard for all work across all agents
+5. **Structured handoffs** - Problem → Plan → Implementation with validated transitions
+
+**The outcome:** You specify what you want. You approve plans. Features ship. You move from engineer to product person.
 
 ## How It Works
 
