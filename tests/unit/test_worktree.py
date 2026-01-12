@@ -42,8 +42,10 @@ class TestIsBusy:
     """Tests for busy detection."""
 
     def test_busy_with_task_file(self, tmp_path: Path) -> None:
-        """Test agent is busy when TASK.md exists."""
-        task_file = tmp_path / "TASK.md"
+        """Test agent is busy when tasks/ folder exists with files."""
+        tasks_dir = tmp_path / "tasks"
+        tasks_dir.mkdir()
+        task_file = tasks_dir / "issue-1.md"
         task_file.write_text("# Task\nDo something")
 
         assert is_busy(tmp_path) is True
@@ -149,21 +151,14 @@ class TestResetWorktree:
         """Test resetting worktree to latest main."""
         mock_run.return_value = Mock(returncode=0)
 
-        # Create TASK.md file
-        task_file = tmp_path / "TASK.md"
-        task_file.write_text("# Old task")
-
         reset_worktree(tmp_path, "main")
 
         # Verify git commands were called
         calls = [c[0][0] for c in mock_run.call_args_list]  # Get the command lists
 
         assert any("fetch" in call for call in calls)
-        assert any("reset" in call for call in calls)
+        assert any("checkout" in call for call in calls)
         assert any("clean" in call for call in calls)
-
-        # Verify TASK.md was removed
-        assert not task_file.exists()
 
     @patch("subprocess.run")
     def test_reset_worktree_custom_branch(
@@ -218,13 +213,14 @@ class TestWorktreeManager:
         self, mock_create: Mock, tmp_path: Path
     ) -> None:
         """Test setting up an agent worktree."""
-        config = Config(worktrees_dir=tmp_path)
+        config = Config(project="myapp", worktrees_dir=tmp_path)
         manager = WorktreeManager(tmp_path, config)
 
         manager.setup_agent(1)
 
         mock_create.assert_called_once()
-        assert tmp_path / "agent-1" in mock_create.call_args[0]
+        # Worktree path now uses {project}-agent-{num} format
+        assert tmp_path / "myapp-agent-1" in mock_create.call_args[0]
 
     @patch("agenttree.worktree.is_busy")
     @patch("agenttree.worktree.reset_worktree")
@@ -280,14 +276,17 @@ class TestWorktreeManager:
     def test_get_agent_status(self, mock_is_busy: Mock, tmp_path: Path) -> None:
         """Test getting agent status."""
         mock_is_busy.return_value = True
-        config = Config(worktrees_dir=tmp_path)
+        config = Config(project="myapp", worktrees_dir=tmp_path)
         manager = WorktreeManager(tmp_path, config)
 
-        worktree_path = tmp_path / "agent-1"
+        # Worktree path now uses {project}-agent-{num} format
+        worktree_path = tmp_path / "myapp-agent-1"
         worktree_path.mkdir(parents=True)
 
-        # Create TASK.md
-        task_file = worktree_path / "TASK.md"
+        # Create tasks/ folder with a task
+        tasks_dir = worktree_path / "tasks"
+        tasks_dir.mkdir()
+        task_file = tasks_dir / "issue-1.md"
         task_file.write_text("# Task")
 
         status = manager.get_status(1)
@@ -376,26 +375,18 @@ class TestResetWorktreeErrors:
     """Tests for reset_worktree error handling."""
 
     @patch("agenttree.worktree.subprocess.run")
-    def test_reset_worktree_checkout_fails_creates_branch(
+    def test_reset_worktree_checkout_succeeds(
         self, mock_run: Mock, tmp_path: Path
     ) -> None:
-        """Test reset_worktree when checkout fails and creates branch from origin (lines 124-126)."""
-        # git fetch succeeds, git checkout fails (branch doesn't exist locally),
-        # then creates from origin
-        mock_run.side_effect = [
-            Mock(returncode=0),  # git fetch succeeds
-            subprocess.CalledProcessError(1, "git checkout"),  # checkout fails
-            Mock(returncode=0),  # git checkout -b from origin succeeds
-            Mock(returncode=0),  # git reset succeeds
-            Mock(returncode=0),  # git clean succeeds
-        ]
+        """Test reset_worktree when checkout succeeds."""
+        # All commands succeed
+        mock_run.return_value = Mock(returncode=0)
 
         worktree_path = tmp_path / "agent-1"
 
-        # Should not raise, creates branch from origin
         reset_worktree(worktree_path, "main")
 
-        # Verify it tried to create branch from origin
+        # Verify checkout from origin was called
         calls = [str(c) for c in mock_run.call_args_list]
         assert any("origin/main" in str(c) for c in calls)
 
@@ -485,15 +476,16 @@ class TestGetAgentStatusEdgeCases:
         # Test when worktree exists with branch info
         mock_is_busy.return_value = False
 
-        config = Config(worktrees_dir=tmp_path)
+        config = Config(project="myapp", worktrees_dir=tmp_path)
         manager = WorktreeManager(tmp_path, config)
 
-        worktree_path = tmp_path / "agent-1"
+        # Worktree path now uses {project}-agent-{num} format
+        worktree_path = tmp_path / "myapp-agent-1"
         worktree_path.mkdir(parents=True)
 
         # Create a .git file (worktree pointer)
         git_file = worktree_path / ".git"
-        git_file.write_text("gitdir: /main/.git/worktrees/agent-1")
+        git_file.write_text("gitdir: /main/.git/worktrees/myapp-agent-1")
 
         status = manager.get_status(1)
 

@@ -15,8 +15,8 @@ class TestConfig:
         """Test default configuration values."""
         config = Config()
         assert config.project == "myapp"
-        assert config.worktrees_dir == Path.home() / "Projects" / "worktrees"
-        assert config.port_range == "8001-8009"
+        assert config.worktrees_dir == Path(".worktrees")
+        assert config.port_range == "9001-9099"
         assert config.default_tool == "claude"
 
     def test_config_from_dict(self) -> None:
@@ -69,9 +69,9 @@ class TestConfig:
 
     def test_get_worktree_path(self) -> None:
         """Test getting worktree path for an agent."""
-        config = Config(worktrees_dir="/tmp/worktrees")
+        config = Config(project="myapp", worktrees_dir="/tmp/worktrees")
         path = config.get_worktree_path(1)
-        assert path == Path("/tmp/worktrees/agent-1")
+        assert path == Path("/tmp/worktrees/myapp-agent-1")
 
     def test_get_tmux_session_name(self) -> None:
         """Test getting tmux session name for an agent."""
@@ -177,7 +177,7 @@ class TestToolConfig:
         """Test default tool config values."""
         tool = ToolConfig(command="claude")
         assert tool.command == "claude"
-        assert tool.startup_prompt == "Check TASK.md and start working."
+        assert tool.startup_prompt == "Check tasks/ folder and start working on the oldest task."
 
     def test_tool_config_custom_prompt(self) -> None:
         """Test custom startup prompt."""
