@@ -98,6 +98,7 @@ class ContainerRuntime:
         image: str = "agenttree-agent:latest",
         additional_args: Optional[List[str]] = None,
         agent_num: Optional[int] = None,
+        model: Optional[str] = None,
     ) -> List[str]:
         """Build the container run command.
 
@@ -107,6 +108,8 @@ class ContainerRuntime:
             dangerous: Whether to run in dangerous mode (skip permissions)
             image: Container image to use
             additional_args: Additional arguments for the container
+            agent_num: Agent number for container naming
+            model: Model to use (e.g., "opus", "sonnet"). Defaults to CLI default.
 
         Returns:
             Command list
@@ -190,6 +193,9 @@ class ContainerRuntime:
 
         cmd.append(image)
         cmd.append(ai_tool)
+
+        if model:
+            cmd.extend(["--model", model])
 
         if dangerous:
             cmd.append("--dangerously-skip-permissions")

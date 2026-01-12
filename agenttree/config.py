@@ -58,6 +58,7 @@ class Config(BaseModel):
     scripts_dir: Path = Field(default_factory=lambda: Path("scripts"))
     port_range: str = "9001-9099"
     default_tool: str = "claude"
+    default_model: str = "opus"  # Model to use for Claude CLI (opus, sonnet)
     refresh_interval: int = 10
     tools: Dict[str, ToolConfig] = Field(default_factory=dict)
     stages: list[StageConfig] = Field(default_factory=lambda: DEFAULT_STAGES.copy())

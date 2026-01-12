@@ -277,15 +277,16 @@ class TmuxManager:
         # Get tool config
         tool_config = self.config.get_tool_config(tool_name)
 
-        # Build container command
+        # Build container command with model from config
         # The container runs the AI tool with --dangerously-skip-permissions
         # since it's already isolated in a container
         container_cmd = container_runtime.build_run_command(
             worktree_path=worktree_path,
             ai_tool=tool_name,
             dangerous=True,  # Safe because we're in a container
+            model=self.config.default_model,
         )
-        
+
         # Join command for shell execution
         container_cmd_str = " ".join(container_cmd)
 
@@ -375,11 +376,12 @@ class TmuxManager:
         # Get tool config
         tool_config = self.config.get_tool_config(tool_name)
 
-        # Build container command
+        # Build container command with model from config
         container_cmd = container_runtime.build_run_command(
             worktree_path=worktree_path,
             ai_tool=tool_name,
             dangerous=True,  # Safe because we're in a container
+            model=self.config.default_model,
         )
 
         # Join command for shell execution
