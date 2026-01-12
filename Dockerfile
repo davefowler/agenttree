@@ -57,7 +57,7 @@ if [ -f /workspace/pyproject.toml ] && grep -q 'name = "agenttree"' /workspace/p
     if [ ! -d /home/agent/.agenttree-venv ]; then
         python3 -m venv /home/agent/.agenttree-venv
     fi
-    /home/agent/.agenttree-venv/bin/pip install -q -e /workspace
+    /home/agent/.agenttree-venv/bin/pip install -q -e "/workspace[dev]"
     export PATH="/home/agent/.agenttree-venv/bin:$PATH"
 fi
 
