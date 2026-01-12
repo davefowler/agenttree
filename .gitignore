@@ -49,5 +49,5 @@ TASK.md
 .DS_Store
 Thumbs.db
 
-# AgentTree AI notes (separate git repo)
-agents/
+# AgentTree issue tracking (separate git repo)
+.agenttrees/

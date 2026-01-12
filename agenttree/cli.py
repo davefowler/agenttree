@@ -10,9 +10,19 @@ from rich.table import Table
 from agenttree.config import load_config
 from agenttree.worktree import WorktreeManager
 from agenttree.tmux import TmuxManager
-from agenttree.github import GitHubManager, get_issue, ensure_gh_cli
+from agenttree.github import GitHubManager, get_issue as get_github_issue, ensure_gh_cli
 from agenttree.container import get_container_runtime
 from agenttree.agents_repo import AgentsRepository
+from agenttree.cli_docs import create_rfc, create_investigation, create_note, complete, resume
+from agenttree.issues import (
+    Issue,
+    Stage,
+    Priority,
+    create_issue as create_issue_func,
+    list_issues as list_issues_func,
+    get_issue as get_issue_func,
+    get_issue_dir,
+)
 
 console = Console()
 
@@ -31,7 +41,7 @@ def main() -> None:
 @click.option(
     "--worktrees-dir",
     type=click.Path(),
-    help="Directory for worktrees (default: ~/Projects/worktrees)",
+    help="Directory for worktrees (default: .worktrees/)",
 )
 @click.option("--project", help="Project name for tmux sessions")
 def init(worktrees_dir: Optional[str], project: Optional[str]) -> None:
@@ -54,60 +64,20 @@ def init(worktrees_dir: Optional[str], project: Optional[str]) -> None:
     if not project:
         project = repo_path.name
 
-    # Check container runtime - MANDATORY
-    runtime = get_container_runtime()
-    
-    console.print("\n[cyan]Container Runtime Check[/cyan]")
-    console.print("─" * 40)
-    console.print("[dim]AgentTree requires containers for security isolation.[/dim]")
-    console.print("[dim]There is no option to run without containers.[/dim]")
-    console.print()
-    
-    if runtime.is_available():
-        console.print(f"[green]✓ Container runtime detected: {runtime.get_runtime_name()}[/green]")
-        console.print("  Agents will run in isolated containers.")
-    else:
-        console.print("[red]" + "=" * 50 + "[/red]")
-        console.print("[red]ERROR: No container runtime available![/red]")
-        console.print("[red]" + "=" * 50 + "[/red]")
-        console.print()
-        console.print("[yellow]AgentTree REQUIRES containers. This is not optional.[/yellow]")
-        console.print()
-        console.print("[green]Install a container runtime:[/green]")
-        console.print(f"  {runtime.get_recommended_action()}")
-        console.print()
-        console.print("[dim]After installing, run 'agenttree init' again.[/dim]")
-        sys.exit(1)
-
-    # Ask about Claude's permission prompts
-    console.print()
-    console.print("[cyan]Claude Permission Settings[/cyan]")
-    console.print("─" * 40)
-    console.print("Claude normally asks for permission before running commands.")
-    console.print("Since agents run in containers, this is redundant.")
-    console.print("Skipping permissions allows fully autonomous operation.")
-    console.print()
-    
-    skip_permissions = click.confirm(
-        "Skip Claude permission prompts? (recommended - container provides isolation)", 
-        default=True
-    )
-
     # Create config
     config_data = {
         "project": project,
-        "worktrees_dir": worktrees_dir or "~/Projects/worktrees",
+        "worktrees_dir": worktrees_dir or ".worktrees",
         "port_range": "9001-9099",  # Less conflicting range (9000 + agent number)
         "default_tool": "claude",
         "tools": {
             "claude": {
                 "command": "claude",
-                "startup_prompt": "Check tasks/ folder and start working on the oldest task.",
-                "skip_permissions": skip_permissions,
+                "startup_prompt": "Check TASK.md and start working on it.",
             },
             "aider": {
                 "command": "aider --model sonnet",
-                "startup_prompt": "/read tasks/",
+                "startup_prompt": "/read TASK.md",
             },
         },
     }
@@ -253,7 +223,7 @@ echo ""
 echo "📝 Your identity:"
 echo "   AGENT_NUM: $AGENT_NUM"
 echo "   PORT: $AGENT_PORT"
-echo "   Your notes: .agenttree/agents/agent-$AGENT_NUM/"
+echo "   Your notes: .agenttrees/tasks/agent-$AGENT_NUM/"
 echo ""
 echo "📖 IMPORTANT: Read AGENT_GUIDE.md in your worktree to learn:"
 echo "   - How to collaborate with other agents"
@@ -311,7 +281,7 @@ echo $PORT
 │   ├── AGENT_GUIDE.md          ← You are here!
 │   ├── worktree-setup.sh       ← Setup script you ran
 │   └── knowledge/              ← Shared knowledge base (Phase 6)
-├── agents/                     ← Shared notes repository (git submodule)
+├── .agenttrees/                ← Shared notes repository (git submodule)
 │   ├── specs/                  ← Task specifications
 │   │   └── issue-<num>.md
 │   ├── tasks/                  ← Agent task logs
@@ -323,6 +293,9 @@ echo $PORT
 │       ├── agent-1/
 │       └── agent-<N>/
 │           └── <topic>.md
+├── .worktrees/                 ← Agent worktrees (git ignored)
+│   ├── agent-1/
+│   └── agent-<N>/
 ├── TASK.md                     ← Your current task (created by dispatch)
 └── <project files>
 ```
@@ -333,14 +306,14 @@ echo $PORT
 
 When dispatched, you'll find:
 - **TASK.md** in your worktree root
-- **agents/specs/issue-<num>.md** with the full specification
-- **agents/tasks/agent-${AGENT_NUM}/<timestamp>-issue-<num>.md** your task log
+- **.agenttrees/specs/issue-<num>.md** with the full specification
+- **.agenttrees/tasks/agent-${AGENT_NUM}/<timestamp>-issue-<num>.md** your task log
 
 ### 2. You Work on It
 
 - Read TASK.md first
-- Check agents/specs/ for detailed requirements
-- Look at agents/notes/ to see what other agents have learned
+- Check .agenttrees/specs/ for detailed requirements
+- Look at .agenttrees/notes/ to see what other agents have learned
 - Write code, run tests, fix bugs
 - Commit your changes regularly
 
@@ -350,7 +323,7 @@ Create notes for other agents:
 
 ```bash
 # Create a note about your findings
-cat > agents/notes/agent-${AGENT_NUM}/api-authentication.md <<EOF
+cat > .agenttrees/notes/agent-${AGENT_NUM}/api-authentication.md <<EOF
 # API Authentication Pattern
 
 I discovered that our API uses JWT tokens stored in localStorage.
@@ -367,9 +340,9 @@ I discovered that our API uses JWT tokens stored in localStorage.
 Always check token expiry before API calls.
 EOF
 
-git -C agents add .
-git -C agents commit -m "agent-${AGENT_NUM}: Document API auth pattern"
-git -C agents push
+git -C .agenttrees add .
+git -C .agenttrees commit -m "agent-${AGENT_NUM}: Document API auth pattern"
+git -C .agenttrees push
 ```
 
 ### 4. You Collaborate
@@ -377,16 +350,16 @@ git -C agents push
 **Reading other agents' work:**
 ```bash
 # See what agent-1 is working on
-cat agents/tasks/agent-1/*.md
+cat .agenttrees/tasks/agent-1/*.md
 
 # Read agent-2's notes on the database
-cat agents/notes/agent-2/database-schema.md
+cat .agenttrees/notes/agent-2/database-schema.md
 ```
 
 **Asking for help (async):**
 ```bash
 # Create a question for agent-2
-cat > agents/notes/agent-${AGENT_NUM}/question-for-agent-2.md <<EOF
+cat > .agenttrees/notes/agent-${AGENT_NUM}/question-for-agent-2.md <<EOF
 # Question: Database Migration Issue
 
 @agent-2, I noticed you worked on the database schema.
@@ -401,9 +374,9 @@ Did you encounter this? How did you fix it?
 -- Agent-${AGENT_NUM}
 EOF
 
-git -C agents add .
-git -C agents commit -m "agent-${AGENT_NUM}: Ask agent-2 about migration issue"
-git -C agents push
+git -C .agenttrees add .
+git -C .agenttrees commit -m "agent-${AGENT_NUM}: Ask agent-2 about migration issue"
+git -C .agenttrees push
 ```
 
 ### 5. You Create a PR
@@ -433,7 +406,7 @@ agenttree status
 ### Update Your Task Log
 ```bash
 # Update your current task log
-TASK_LOG=$(ls -t agents/tasks/agent-${AGENT_NUM}/*.md | head -1)
+TASK_LOG=$(ls -t .agenttrees/tasks/agent-${AGENT_NUM}/*.md | head -1)
 cat >> "$TASK_LOG" <<EOF
 
 ## Progress Update - $(date)
@@ -443,9 +416,9 @@ cat >> "$TASK_LOG" <<EOF
 - 🔄 Working on session timeout handling
 EOF
 
-git -C agents add .
-git -C agents commit -m "agent-${AGENT_NUM}: Update task progress"
-git -C agents push
+git -C .agenttrees add .
+git -C .agenttrees commit -m "agent-${AGENT_NUM}: Update task progress"
+git -C .agenttrees push
 ```
 
 ### Find Past Solutions
@@ -453,13 +426,13 @@ git -C agents push
 Check if similar work has been done:
 ```bash
 # Search all specs
-grep -r "authentication" agents/specs/
+grep -r "authentication" .agenttrees/specs/
 
 # Search all notes
-grep -r "JWT" agents/notes/
+grep -r "JWT" .agenttrees/notes/
 
 # Search your own notes
-grep -r "token" agents/notes/agent-${AGENT_NUM}/
+grep -r "token" .agenttrees/notes/agent-${AGENT_NUM}/
 ```
 
 ## Environment Setup
@@ -475,7 +448,7 @@ If you encounter issues (missing dependencies, wrong config, etc.):
 
 ### ✅ DO
 
-- **Document your findings** in agents/notes/
+- **Document your findings** in .agenttrees/notes/
 - **Update your task log** regularly
 - **Fix the setup script** if you find issues
 - **Search past work** before starting from scratch
@@ -497,13 +470,13 @@ If you encounter issues (missing dependencies, wrong config, etc.):
 → Check `.agenttree/worktree-setup.sh` and fix it for everyone
 
 ### "I can't find my task"
-→ Check `TASK.md` in your worktree root, or `agents/tasks/agent-${AGENT_NUM}/`
+→ Check `TASK.md` in your worktree root, or `.agenttrees/tasks/agent-${AGENT_NUM}/`
 
 ### "Where are the other agents' notes?"
-→ `agents/notes/agent-1/`, `agents/notes/agent-2/`, etc.
+→ `.agenttrees/notes/agent-1/`, `.agenttrees/notes/agent-2/`, etc.
 
 ### "How do I know what other agents are doing?"
-→ Run `cd .. && agenttree status` or check `agents/tasks/`
+→ Run `cd .. && agenttree status` or check `.agenttrees/tasks/`
 
 ### "My port is conflicting"
 → Check `echo $PORT` - each agent has a unique port (you have ${PORT})
@@ -511,8 +484,8 @@ If you encounter issues (missing dependencies, wrong config, etc.):
 ## Getting Help
 
 - **Read this guide** first
-- **Check agents/notes/** for past solutions
-- **Ask other agents** by creating a note in `agents/notes/agent-${AGENT_NUM}/`
+- **Check .agenttrees/notes/** for past solutions
+- **Ask other agents** by creating a note in `.agenttrees/notes/agent-${AGENT_NUM}/`
 - **Fix documentation** if you find gaps (including this file!)
 
 ## Advanced: ML Learning System (Phase 6)
@@ -537,91 +510,13 @@ Good luck, Agent-${AGENT_NUM}! 🚀
     console.print(f"[green]✓ Created {agent_guide}[/green]")
     console.print(f"[dim]  → This guide will be copied to each agent's worktree[/dim]")
 
-    # Create CLAUDE.md for Claude Code agents
-    claude_md = repo_path / "CLAUDE.md"
-    claude_md_content = f"""# {project} - Claude Instructions
-
-## Quick Start
-
-If you have a task file in `tasks/`, read the oldest one first and start working on it.
-
-## Documentation Structure
-
-**All documentation goes in `agents/` repository, NOT in the main codebase.**
-
-| Type | Location |
-|------|----------|
-| Plans & Proposals | `agents/plans/` |
-| Feature Specs | `agents/specs/` |
-| RFCs & Decisions | `agents/rfcs/` |
-| Gotchas & Patterns | `agents/knowledge/` |
-| Task Logs | `agents/tasks/` |
-
-See `agents/AGENTS.md` for full conventions.
-
-## Task Workflow
-
-1. Check `tasks/` directory for pending work
-2. Work on the **oldest** task first (by filename date)
-3. When complete, task moves to `tasks/archive/`
-4. Run `./scripts/submit.sh` to create PR
-
-## Container Security
-
-All agents run in containers. There is no non-container mode.
-
-## Key Files
-
-- `.agenttree.yaml` - Project configuration
-- `agents/AGENTS.md` - Full agent instructions
-"""
-    with open(claude_md, "w") as f:
-        f.write(claude_md_content)
-    console.print(f"[green]✓ Created {claude_md}[/green]")
-
-    # Create .cursorrules for Cursor IDE
-    cursorrules = repo_path / ".cursorrules"
-    cursorrules_content = f"""# {project} - Cursor Rules
-
-## Documentation Structure
-
-**All documentation goes in `agents/` repository, NOT in the main codebase.**
-
-When creating plans, specs, proposals, or documentation:
-- `agents/plans/` - Planning docs, proposals, design discussions
-- `agents/specs/` - Feature specifications, architecture docs
-- `agents/rfcs/` - Request for comments, major decisions
-- `agents/knowledge/` - Gotchas, patterns, onboarding info
-- `agents/tasks/` - Task logs and work history
-
-**DO NOT create:**
-- `docs/` directories in main repo for AI documentation
-- Proposal files outside of agents/
-
-See `agents/AGENTS.md` for full documentation conventions.
-
-## Container Security
-
-AgentTree REQUIRES containers for agent execution. There is no non-container mode.
-
-## Task System
-
-Tasks are stored in `tasks/` directory within agent worktrees:
-- Files named: `YYYY-MM-DD-task-title.md`
-- Oldest task is worked on first (FIFO)
-- Completed tasks move to `tasks/archive/`
-"""
-    with open(cursorrules, "w") as f:
-        f.write(cursorrules_content)
-    console.print(f"[green]✓ Created {cursorrules}[/green]")
-
     # Initialize agents repository
     console.print("\n[cyan]Initializing agents repository...[/cyan]")
     try:
         ensure_gh_cli()
         agents_repo = AgentsRepository(repo_path)
         agents_repo.ensure_repo()
-        console.print("[green]✓ Agents repository created[/green]")
+        console.print("[green]✓ .agenttrees/ repository created[/green]")
     except RuntimeError as e:
         console.print(f"[yellow]Warning: Could not create agents repository:[/yellow]")
         console.print(f"  {e}")
@@ -720,39 +615,32 @@ def setup(agent_numbers: tuple) -> None:
 @click.option("--task", help="Ad-hoc task description")
 @click.option("--tool", help="AI tool to use (default: from config)")
 @click.option("--force", is_flag=True, help="Force dispatch even if agent is busy")
+@click.option(
+    "--container", is_flag=True, help="Run agent in container (isolated mode)"
+)
+@click.option(
+    "--dangerous",
+    is_flag=True,
+    help="Run in dangerous mode (skip permissions, requires --container)",
+)
 def dispatch(
     agent_num: int,
     issue_number: Optional[int],
     task: Optional[str],
     tool: Optional[str],
     force: bool,
+    container: bool,
+    dangerous: bool,
 ) -> None:
-    """Dispatch a task to an agent.
-    
-    Agents ALWAYS run in containers for security isolation.
-    There is no option to disable this - containers are mandatory.
-    """
+    """Dispatch a task to an agent."""
     repo_path = Path.cwd()
     config = load_config(repo_path)
-    
-    # Check container runtime - MANDATORY, no fallback
-    runtime = get_container_runtime()
-    
-    if not runtime.is_available():
-        console.print("[red]" + "=" * 60 + "[/red]")
-        console.print("[red]ERROR: No container runtime available![/red]")
-        console.print("[red]" + "=" * 60 + "[/red]")
-        console.print()
-        console.print("[yellow]AgentTree REQUIRES containers for safe agent execution.[/yellow]")
-        console.print("[yellow]There is no way to run without containers.[/yellow]")
-        console.print()
-        console.print("[green]Install a container runtime:[/green]")
-        console.print(f"  {runtime.get_recommended_action()}")
-        console.print()
-        console.print("[dim]This is not optional. Containers are mandatory for security.[/dim]")
+
+    if dangerous and not container:
+        console.print(
+            "[red]Error: --dangerous requires --container for safety[/red]"
+        )
         sys.exit(1)
-    
-    console.print(f"[green]✓ Using container runtime: {runtime.get_runtime_name()}[/green]")
 
     if not issue_number and not task:
         console.print("[red]Error: Provide either issue number or --task[/red]")
@@ -783,81 +671,59 @@ def dispatch(
         console.print(f"[red]Error: {e}[/red]")
         sys.exit(1)
 
-    # Import task creation function
-    from agenttree.worktree import create_task_file
+    # Create TASK.md
+    task_file = worktree_path / "TASK.md"
 
     if issue_number:
         try:
-            issue = get_issue(issue_number)
-            
-            # Create task content
-            task_content = f"""# Task: {issue.title}
-
-**Issue:** [#{issue.number}]({issue.url})
-
-## Description
-
-{issue.body}
-
-## Workflow
-
-```bash
-git checkout -b issue-{issue.number}
-# ... implement changes ...
-git commit -m "Your message (Fixes #{issue.number})"
-git push -u origin issue-{issue.number}
-gh pr create --fill
-```
-"""
-            # Create dated task file in tasks/ folder
-            task_path = create_task_file(
-                worktree_path, issue.title, task_content, issue_number
-            )
-            
+            issue = get_github_issue(issue_number)
+            gh_manager.create_task_file(issue, task_file)
             gh_manager.assign_issue_to_agent(issue_number, agent_num)
 
-            # Create spec and task log in agents/ repo
+            # Create spec and task log in .agenttrees/ repo
             agents_repo.create_spec_file(
                 issue_number, issue.title, issue.body, issue.url
             )
-            agents_repo.create_task_file(
+            task_log_file = agents_repo.create_task_file(
                 agent_num, issue_number, issue.title, issue.body, issue.url
             )
 
-            console.print(f"[green]✓ Created task: {task_path.name}[/green]")
-            console.print(f"[green]✓ Created spec and task log in agents/ repo[/green]")
+            # Pre-create context summary for task re-engagement
+            from datetime import datetime as dt
+            from agenttree.agents_repo import slugify
+            date = dt.now().strftime("%Y-%m-%d")
+            slug = slugify(issue.title)
+            task_id = f"agent-{agent_num}-{date}-{slug}"
+
+            agents_repo.create_context_summary(
+                agent_num, issue_number, issue.title, task_id
+            )
+
+            console.print(f"[green]✓ Created task for issue #{issue_number}[/green]")
+            console.print(f"[green]✓ Created spec, task log, and context summary in .agenttrees/ repo[/green]")
         except Exception as e:
             console.print(f"[red]Error fetching issue: {e}[/red]")
             sys.exit(1)
     else:
-        # Ad-hoc task
-        task_content = f"""# Task: {task or 'Ad-hoc Task'}
+        gh_manager.create_adhoc_task_file(task or "", task_file)
+        console.print("[green]✓ Created ad-hoc task[/green]")
 
-## Description
-
-{task or 'No description provided.'}
-
-## Workflow
-
-```bash
-git checkout -b feature/your-feature-name
-# ... implement changes ...
-git commit -m "Your message"
-git push -u origin feature/your-feature-name
-gh pr create --fill
-```
-"""
-        task_title = task[:50] if task else "ad-hoc-task"
-        task_path = create_task_file(worktree_path, task_title, task_content)
-        console.print(f"[green]✓ Created task: {task_path.name}[/green]")
-
-    # Start agent in container via tmux - ALWAYS containerized
+    # Start agent in tmux
     tool_name = tool or config.default_tool
-    
-    tmux_manager.start_agent_in_container(
-        agent_num, worktree_path, tool_name, runtime
-    )
-    console.print(f"[green]✓ Started {tool_name} in container via tmux[/green]")
+
+    if container:
+        runtime = get_container_runtime()
+        if not runtime.is_available():
+            console.print(f"[red]Error: No container runtime available[/red]")
+            console.print(f"Recommendation: {runtime.get_recommended_action()}")
+            sys.exit(1)
+
+        console.print(f"[yellow]Running in container ({runtime.get_runtime_name()})[/yellow]")
+        # TODO: Integrate container mode with tmux
+        console.print("[yellow]Container mode integration coming soon[/yellow]")
+    else:
+        tmux_manager.start_agent(agent_num, worktree_path, tool_name)
+        console.print(f"[green]✓ Started {tool_name} in tmux session[/green]")
 
     console.print(f"\nCommands:")
     console.print(f"  agenttree attach {agent_num}  # Attach to session")
@@ -899,12 +765,13 @@ def status() -> None:
         else:
             status_str = "⚪ Available"
 
-        # Get task description from WorktreeStatus
+        # Get task description
         task_desc = ""
-        if status.has_task and status.current_task:
-            task_desc = status.current_task[:40]
-            if status.task_count > 1:
-                task_desc += f" (+{status.task_count - 1} more)"
+        if status.has_task:
+            task_file = worktree_path / "TASK.md"
+            with open(task_file) as f:
+                first_line = f.readline().strip()
+                task_desc = first_line.replace("# Task: ", "").replace("# Task", "")[:50]
 
         table.add_row(f"Agent {agent_num}", status_str, task_desc, status.branch)
 
@@ -982,7 +849,7 @@ def notes_show(agent_num: int) -> None:
     for task_file in task_files:
         console.print(f"  • {task_file.name}")
 
-    console.print(f"\n[dim]View task: cat agents/tasks/agent-{agent_num}/<filename>[/dim]")
+    console.print(f"\n[dim]View task: cat .agenttrees/tasks/agent-{agent_num}/<filename>[/dim]")
 
 
 @notes.command("search")
@@ -1142,7 +1009,7 @@ def remote_dispatch(hostname: str, agent_num: int, user: str, agents_repo: str) 
 
     This will:
     1. SSH into the remote host
-    2. Pull latest from agents/ repo
+    2. Pull latest from .agenttrees/ repo
     3. Notify the agent's tmux session
 
     Example:
@@ -1166,6 +1033,215 @@ def remote_dispatch(hostname: str, agent_num: int, user: str, agents_repo: str) 
     else:
         console.print(f"[red]✗ Failed to dispatch task[/red]")
         sys.exit(1)
+
+
+# Add document creation commands
+main.add_command(create_rfc)
+main.add_command(create_investigation)
+main.add_command(create_note)
+
+# Add task management commands
+main.add_command(complete)
+main.add_command(resume)
+
+
+# =============================================================================
+# Issue Management Commands
+# =============================================================================
+
+@main.group()
+def issue() -> None:
+    """Manage agenttree issues.
+
+    Issues are stored in .agenttrees/issues/ and track work through
+    the agenttree workflow stages.
+    """
+    pass
+
+
+@issue.command("create")
+@click.argument("title")
+@click.option(
+    "--priority", "-p",
+    type=click.Choice(["low", "medium", "high", "critical"]),
+    default="medium",
+    help="Issue priority"
+)
+@click.option(
+    "--label", "-l",
+    multiple=True,
+    help="Labels to add (can be used multiple times)"
+)
+def issue_create(title: str, priority: str, label: tuple) -> None:
+    """Create a new issue.
+
+    Creates an issue directory in .agenttrees/issues/ with:
+    - issue.yaml (metadata)
+    - problem.md (from template)
+
+    Example:
+        agenttree issue create "Fix login validation"
+        agenttree issue create "Add dark mode" -p high -l ui -l feature
+    """
+    try:
+        issue = create_issue_func(
+            title=title,
+            priority=Priority(priority),
+            labels=list(label) if label else None,
+        )
+        console.print(f"[green]✓ Created issue {issue.id}: {issue.title}[/green]")
+        console.print(f"[dim]  Directory: .agenttrees/issues/{issue.id}-{issue.slug}/[/dim]")
+        console.print(f"[dim]  Edit problem.md to define the problem[/dim]")
+    except Exception as e:
+        console.print(f"[red]Error creating issue: {e}[/red]")
+        sys.exit(1)
+
+
+@issue.command("list")
+@click.option(
+    "--stage", "-s",
+    type=click.Choice([s.value for s in Stage]),
+    help="Filter by stage"
+)
+@click.option(
+    "--priority", "-p",
+    type=click.Choice([p.value for p in Priority]),
+    help="Filter by priority"
+)
+@click.option(
+    "--agent", "-a",
+    type=int,
+    help="Filter by assigned agent"
+)
+@click.option(
+    "--json", "as_json",
+    is_flag=True,
+    help="Output as JSON"
+)
+def issue_list(stage: Optional[str], priority: Optional[str], agent: Optional[int], as_json: bool) -> None:
+    """List issues.
+
+    Examples:
+        agenttree issue list
+        agenttree issue list --stage backlog
+        agenttree issue list -s implement -p high
+        agenttree issue list --json
+    """
+    stage_filter = Stage(stage) if stage else None
+    priority_filter = Priority(priority) if priority else None
+
+    issues = list_issues_func(
+        stage=stage_filter,
+        priority=priority_filter,
+        assigned_agent=agent,
+    )
+
+    if as_json:
+        import json
+        console.print(json.dumps([i.model_dump() for i in issues], indent=2))
+        return
+
+    if not issues:
+        console.print("[yellow]No issues found[/yellow]")
+        return
+
+    table = Table(title="Issues")
+    table.add_column("ID", style="cyan")
+    table.add_column("Title", style="white")
+    table.add_column("Stage", style="magenta")
+    table.add_column("Priority", style="yellow")
+    table.add_column("Agent", style="green")
+
+    for issue in issues:
+        agent_str = f"Agent {issue.assigned_agent}" if issue.assigned_agent else "-"
+        stage_str = issue.stage.value
+        if issue.substage:
+            stage_str += f".{issue.substage}"
+
+        # Color priority
+        priority_style = {
+            Priority.CRITICAL: "red bold",
+            Priority.HIGH: "yellow",
+            Priority.MEDIUM: "white",
+            Priority.LOW: "dim",
+        }.get(issue.priority, "white")
+
+        table.add_row(
+            issue.id,
+            issue.title[:40] + ("..." if len(issue.title) > 40 else ""),
+            stage_str,
+            f"[{priority_style}]{issue.priority.value}[/{priority_style}]",
+            agent_str,
+        )
+
+    console.print(table)
+
+
+@issue.command("show")
+@click.argument("issue_id")
+def issue_show(issue_id: str) -> None:
+    """Show issue details.
+
+    Examples:
+        agenttree issue show 001
+        agenttree issue show 1
+        agenttree issue show 001-fix-login
+    """
+    issue = get_issue_func(issue_id)
+
+    if not issue:
+        console.print(f"[red]Issue {issue_id} not found[/red]")
+        sys.exit(1)
+
+    issue_dir = get_issue_dir(issue_id)
+
+    console.print(f"\n[bold cyan]Issue {issue.id}: {issue.title}[/bold cyan]\n")
+
+    # Basic info
+    console.print(f"[bold]Stage:[/bold] {issue.stage.value}", end="")
+    if issue.substage:
+        console.print(f".{issue.substage}")
+    else:
+        console.print()
+
+    console.print(f"[bold]Priority:[/bold] {issue.priority.value}")
+
+    if issue.assigned_agent:
+        console.print(f"[bold]Assigned:[/bold] Agent {issue.assigned_agent}")
+
+    if issue.labels:
+        console.print(f"[bold]Labels:[/bold] {', '.join(issue.labels)}")
+
+    if issue.branch:
+        console.print(f"[bold]Branch:[/bold] {issue.branch}")
+
+    if issue.pr_number:
+        console.print(f"[bold]PR:[/bold] #{issue.pr_number}")
+
+    if issue.github_issue:
+        console.print(f"[bold]GitHub Issue:[/bold] #{issue.github_issue}")
+
+    console.print(f"[bold]Created:[/bold] {issue.created}")
+    console.print(f"[bold]Updated:[/bold] {issue.updated}")
+
+    # Show files
+    if issue_dir:
+        console.print(f"\n[bold]Files:[/bold]")
+        for file in sorted(issue_dir.iterdir()):
+            if file.is_file():
+                console.print(f"  • {file.name}")
+
+    # Show history
+    if issue.history:
+        console.print(f"\n[bold]History:[/bold]")
+        for entry in issue.history[-5:]:  # Last 5 entries
+            stage_str = entry.stage
+            if entry.substage:
+                stage_str += f".{entry.substage}"
+            agent_str = f" (agent {entry.agent})" if entry.agent else ""
+            console.print(f"  • {entry.timestamp[:10]} → {stage_str}{agent_str}")
+
+    console.print(f"\n[dim]Directory: {issue_dir}[/dim]")
 
 
 if __name__ == "__main__":

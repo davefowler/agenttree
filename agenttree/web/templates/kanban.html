@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kanban - AgentTree</title>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0d1117;
+            color: #c9d1d9;
+            line-height: 1.6;
+            overflow-x: auto;
+        }
+
+        header {
+            background: #161b22;
+            border-bottom: 1px solid #30363d;
+            padding: 20px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            color: #58a6ff;
+            font-size: 28px;
+            font-weight: 600;
+        }
+
+        .subtitle {
+            color: #8b949e;
+            font-size: 14px;
+            margin-top: 5px;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 0;
+            margin-top: 20px;
+            border-bottom: 1px solid #30363d;
+        }
+
+        .tab {
+            padding: 10px 20px;
+            color: #8b949e;
+            text-decoration: none;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .tab:hover {
+            color: #c9d1d9;
+            border-bottom-color: #30363d;
+        }
+
+        .tab.active {
+            color: #58a6ff;
+            border-bottom-color: #58a6ff;
+        }
+
+        .kanban-board {
+            display: flex;
+            gap: 15px;
+            padding: 20px;
+            overflow-x: auto;
+            min-height: calc(100vh - 150px);
+        }
+
+        .kanban-column {
+            flex: 0 0 280px;
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            display: flex;
+            flex-direction: column;
+            max-height: calc(100vh - 180px);
+        }
+
+        .column-header {
+            padding: 15px;
+            border-bottom: 1px solid #30363d;
+            font-weight: 600;
+            font-size: 14px;
+            color: #c9d1d9;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .column-count {
+            background: #30363d;
+            color: #8b949e;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 12px;
+        }
+
+        .column-cards {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+            min-height: 100px;
+        }
+
+        .kanban-card {
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            padding: 12px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .kanban-card:hover {
+            border-color: #58a6ff;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+        }
+
+        .kanban-card.dragging {
+            opacity: 0.5;
+            cursor: grabbing;
+        }
+
+        .kanban-card.drag-over {
+            border-color: #58a6ff;
+            border-style: dashed;
+        }
+
+        .card-number {
+            color: #8b949e;
+            font-size: 12px;
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+
+        .card-title {
+            color: #c9d1d9;
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 8px;
+        }
+
+        .card-badges {
+            display: flex;
+            gap: 5px;
+            flex-wrap: wrap;
+        }
+
+        .badge {
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: 600;
+            background: #30363d;
+            color: #8b949e;
+        }
+
+        .badge-agent {
+            background: #1f6feb20;
+            color: #58a6ff;
+        }
+
+        /* Modal styles */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            max-width: 800px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+            padding: 30px;
+            position: relative;
+        }
+
+        .modal-close {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: none;
+            border: none;
+            color: #8b949e;
+            font-size: 24px;
+            cursor: pointer;
+            padding: 5px 10px;
+        }
+
+        .modal-close:hover {
+            color: #c9d1d9;
+        }
+
+        /* Issue detail styles */
+        .issue-detail {
+            color: #c9d1d9;
+        }
+
+        .detail-header {
+            margin-bottom: 20px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #30363d;
+        }
+
+        .detail-title {
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+
+        .detail-meta {
+            display: flex;
+            gap: 20px;
+            font-size: 14px;
+            color: #8b949e;
+            flex-wrap: wrap;
+        }
+
+        .detail-body {
+            background: #0d1117;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            padding: 20px;
+            margin-bottom: 20px;
+            white-space: pre-wrap;
+            line-height: 1.6;
+        }
+
+        .detail-labels {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+
+        .label {
+            padding: 5px 12px;
+            background: #1f6feb20;
+            color: #58a6ff;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .detail-actions {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .btn {
+            padding: 8px 16px;
+            border: 1px solid #30363d;
+            background: #21262d;
+            color: #c9d1d9;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .btn:hover {
+            background: #30363d;
+            border-color: #58a6ff;
+        }
+
+        .btn-primary {
+            background: #1f6feb;
+            border-color: #1f6feb;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #388bfd;
+            border-color: #388bfd;
+        }
+
+        .detail-timestamps {
+            display: flex;
+            gap: 20px;
+            color: #8b949e;
+            font-size: 12px;
+            padding-top: 20px;
+            border-top: 1px solid #30363d;
+        }
+
+        ::-webkit-scrollbar {
+            width: 10px;
+            height: 10px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #0d1117;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #30363d;
+            border-radius: 5px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #484f58;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <h1>🌳 AgentTree Dashboard</h1>
+            <div class="subtitle">Multi-agent development framework</div>
+            <nav class="tabs">
+                <a href="/" class="tab">Dashboard</a>
+                <a href="/kanban" class="tab active">Kanban</a>
+                <a href="/flow" class="tab">Flow</a>
+            </nav>
+        </div>
+    </header>
+
+    <div class="kanban-board">
+        {% for stage in stages %}
+        <div class="kanban-column" data-stage="{{ stage.value }}">
+            <div class="column-header">
+                <span>{{ stage.value.replace('_', ' ').title() }}</span>
+                <span class="column-count">{{ board.stages[stage]|length }}</span>
+            </div>
+            <div class="column-cards">
+                {% for issue in board.stages[stage] %}
+                <div class="kanban-card"
+                     data-issue="{{ issue.number }}"
+                     data-stage="{{ issue.stage.value }}"
+                     draggable="true"
+                     onclick="openIssueModal({{ issue.number }})">
+                    <div class="card-number">#{{ issue.number }}</div>
+                    <div class="card-title">{{ issue.title }}</div>
+                    <div class="card-badges">
+                        {% if issue.assigned_agent %}
+                        <span class="badge badge-agent">Agent {{ issue.assigned_agent }}</span>
+                        {% endif %}
+                        {% for label in issue.labels[:2] %}
+                        {% if not label.startswith('stage-') %}
+                        <span class="badge">{{ label }}</span>
+                        {% endif %}
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Modal for issue detail -->
+    <div id="issue-modal" class="modal">
+        <div class="modal-content">
+            <button class="modal-close" onclick="closeIssueModal()">&times;</button>
+            <div id="modal-issue-detail">
+                <!-- Issue detail loaded here via HTMX -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Minimal JS for drag-drop and modal
+
+        // Drag and drop
+        let draggedCard = null;
+
+        document.addEventListener('dragstart', (e) => {
+            if (e.target.classList.contains('kanban-card')) {
+                draggedCard = e.target;
+                e.target.classList.add('dragging');
+            }
+        });
+
+        document.addEventListener('dragend', (e) => {
+            if (e.target.classList.contains('kanban-card')) {
+                e.target.classList.remove('dragging');
+                draggedCard = null;
+            }
+        });
+
+        document.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            const column = e.target.closest('.column-cards');
+            if (column && draggedCard) {
+                column.appendChild(draggedCard);
+            }
+        });
+
+        document.addEventListener('drop', async (e) => {
+            e.preventDefault();
+            const column = e.target.closest('.kanban-column');
+
+            if (column && draggedCard) {
+                const issueNumber = draggedCard.dataset.issue;
+                const newStage = column.dataset.stage;
+                const oldStage = draggedCard.dataset.stage;
+
+                if (newStage !== oldStage) {
+                    // Update backend
+                    try {
+                        const response = await fetch(`/api/issues/${issueNumber}/move`, {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({stage: newStage})
+                        });
+
+                        if (response.ok) {
+                            draggedCard.dataset.stage = newStage;
+                            console.log(`Moved issue #${issueNumber} to ${newStage}`);
+                        } else {
+                            // Revert on error
+                            console.error('Failed to move issue');
+                            location.reload();
+                        }
+                    } catch (error) {
+                        console.error('Error moving issue:', error);
+                        location.reload();
+                    }
+                }
+            }
+        });
+
+        // Modal functions
+        function openIssueModal(issueNumber) {
+            const modal = document.getElementById('issue-modal');
+            const detailDiv = document.getElementById('modal-issue-detail');
+
+            // Load issue detail via HTMX
+            htmx.ajax('GET', `/api/issues/${issueNumber}/detail`, {
+                target: '#modal-issue-detail',
+                swap: 'innerHTML'
+            });
+
+            modal.classList.add('active');
+        }
+
+        function closeIssueModal() {
+            const modal = document.getElementById('issue-modal');
+            modal.classList.remove('active');
+        }
+
+        // Close modal on escape key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                closeIssueModal();
+            }
+        });
+
+        // Close modal on background click
+        document.getElementById('issue-modal').addEventListener('click', (e) => {
+            if (e.target.id === 'issue-modal') {
+                closeIssueModal();
+            }
+        });
+    </script>
+</body>
+</html>
