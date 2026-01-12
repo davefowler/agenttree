@@ -37,6 +37,7 @@ Hook Execution Order:
 
 import re
 import subprocess
+from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
 from rich.console import Console
@@ -69,6 +70,9 @@ class HookRegistry:
 
         # On-enter: key = stage, value = list of hooks
         self.on_enter: Dict[Stage, List[Callable]] = {}
+
+        # On-enter substage: key = (stage, substage), value = list of hooks
+        self.on_enter_substage: Dict[Tuple[Stage, str], List[Callable]] = {}
 
         # On-exit: key = stage, value = list of hooks
         self.on_exit: Dict[Stage, List[Callable]] = {}
@@ -103,16 +107,23 @@ class HookRegistry:
             self.post_transition[key] = []
         self.post_transition[key].append(func)
 
-    def register_on_enter(self, stage: Stage, func: Callable):
+    def register_on_enter(self, stage: Stage, func: Callable, substage: Optional[str] = None):
         """Register an on-enter hook.
 
         Args:
             stage: Stage being entered
             func: Hook function to register
+            substage: Optional substage (if None, runs for entire stage)
         """
-        if stage not in self.on_enter:
-            self.on_enter[stage] = []
-        self.on_enter[stage].append(func)
+        if substage:
+            key = (stage, substage)
+            if key not in self.on_enter_substage:
+                self.on_enter_substage[key] = []
+            self.on_enter_substage[key].append(func)
+        else:
+            if stage not in self.on_enter:
+                self.on_enter[stage] = []
+            self.on_enter[stage].append(func)
 
     def register_on_exit(self, stage: Stage, func: Callable):
         """Register an on-exit hook.
@@ -164,20 +175,31 @@ class HookRegistry:
                 # Log error but don't fail - stage already changed
                 console.print(f"[yellow]Warning: Post-transition hook failed: {e}[/yellow]")
 
-    def execute_on_enter(self, issue: Issue, stage: Stage):
-        """Execute all on-enter hooks for a stage.
+    def execute_on_enter(self, issue: Issue, stage: Stage, substage: Optional[str] = None):
+        """Execute all on-enter hooks for a stage/substage.
 
         Logs errors but doesn't block.
 
         Args:
             issue: Issue entering the stage
             stage: Stage being entered
+            substage: Optional substage being entered
         """
+        # Execute stage-level hooks
         for hook in self.on_enter.get(stage, []):
             try:
                 hook(issue)
             except Exception as e:
                 console.print(f"[yellow]Warning: On-enter hook failed: {e}[/yellow]")
+
+        # Execute substage-specific hooks
+        if substage:
+            key = (stage, substage)
+            for hook in self.on_enter_substage.get(key, []):
+                try:
+                    hook(issue)
+                except Exception as e:
+                    console.print(f"[yellow]Warning: On-enter substage hook failed: {e}[/yellow]")
 
     def execute_on_exit(self, issue: Issue, stage: Stage):
         """Execute all on-exit hooks for a stage.
@@ -211,7 +233,10 @@ def get_registry() -> HookRegistry:
 
 
 def execute_transition_hooks(
-    issue: Issue, from_stage: Stage, to_stage: Stage
+    issue: Issue,
+    from_stage: Stage,
+    to_stage: Stage,
+    to_substage: Optional[str] = None,
 ) -> None:
     """Execute all hooks for a stage transition in correct order.
 
@@ -219,7 +244,7 @@ def execute_transition_hooks(
     1. on_exit hooks for from_stage
     2. pre_transition hooks (can raise ValidationError to block)
     3. post_transition hooks (logs errors but continues)
-    4. on_enter hooks for to_stage
+    4. on_enter hooks for to_stage (and substage if provided)
 
     Note: The actual stage update should happen between steps 2 and 3,
     but that's handled by the caller (cli.py).
@@ -228,6 +253,7 @@ def execute_transition_hooks(
         issue: Issue being transitioned
         from_stage: Stage transitioning from
         to_stage: Stage transitioning to
+        to_substage: Substage being entered (optional)
 
     Raises:
         ValidationError: If pre_transition validation fails
@@ -243,8 +269,8 @@ def execute_transition_hooks(
     # 3. Post-transition actions
     _registry.execute_post_transition(issue, from_stage, to_stage)
 
-    # 4. Enter new stage
-    _registry.execute_on_enter(issue, to_stage)
+    # 4. Enter new stage (and substage)
+    _registry.execute_on_enter(issue, to_stage, to_substage)
 
 
 # Decorator functions for registering hooks
@@ -304,10 +330,11 @@ def post_transition(from_stage: Stage, to_stage: Stage):
     return decorator
 
 
-def on_enter(stage: Stage):
+def on_enter(stage: Stage, substage: Optional[str] = None):
     """Decorator to register an on-enter hook.
 
     On-enter hooks run when entering a stage to set up the environment.
+    Can optionally target a specific substage.
 
     Example:
         @on_enter(Stage.RESEARCH)
@@ -315,15 +342,21 @@ def on_enter(stage: Stage):
             # Create plan.md from template
             ...
 
+        @on_enter(Stage.IMPLEMENT, substage="code_review")
+        def setup_code_review(issue: Issue):
+            # Create review.md from template
+            ...
+
     Args:
         stage: Stage being entered
+        substage: Optional substage to target (if None, runs for entire stage)
 
     Returns:
         Decorator function
     """
 
     def decorator(func: Callable):
-        _registry.register_on_enter(stage, func)
+        _registry.register_on_enter(stage, func, substage)
         return func
 
     return decorator
@@ -777,3 +810,133 @@ def cleanup_issue_agent_hook(issue: Issue):
     # Unregister agent (frees port)
     unregister_agent(issue.id)
     console.print(f"[green]✓ Agent cleaned up for issue #{issue.id}[/green]")
+
+
+# On-enter hooks for auto-creating documentation
+
+
+def _get_issue_dir(issue: Issue) -> Path:
+    """Get the issue directory path."""
+    from agenttree.issues import get_issue_dir
+    issue_dir = get_issue_dir(issue.id)
+    if not issue_dir:
+        raise ValueError(f"Issue directory not found for issue {issue.id}")
+    return issue_dir
+
+
+def _copy_template(template_name: str, dest_path: Path, issue: Issue) -> bool:
+    """Copy a template file to destination, filling in placeholders.
+
+    Args:
+        template_name: Name of template file (e.g., "plan.md")
+        dest_path: Destination path for the file
+        issue: Issue object for filling placeholders
+
+    Returns:
+        True if file was created, False if it already exists
+    """
+    if dest_path.exists():
+        return False  # Don't overwrite existing files
+
+    from agenttree.issues import get_agenttrees_path
+
+    template_path = get_agenttrees_path() / "templates" / template_name
+    if not template_path.exists():
+        console.print(f"[yellow]Warning: Template {template_name} not found[/yellow]")
+        return False
+
+    # Read template and fill placeholders
+    content = template_path.read_text()
+
+    # Common placeholder substitutions
+    placeholders = {
+        "{{issue_id}}": issue.id,
+        "{{branch}}": issue.branch or "N/A",
+        "{{pr_url}}": issue.pr_url or "N/A",
+        "{{files_changed}}": "TBD",
+        "{{lines_added}}": "TBD",
+        "{{lines_removed}}": "TBD",
+    }
+
+    for placeholder, value in placeholders.items():
+        content = content.replace(placeholder, str(value))
+
+    # Write the file
+    dest_path.write_text(content)
+    return True
+
+
+@on_enter(Stage.RESEARCH)
+def create_plan_md_on_research(issue: Issue):
+    """Auto-create plan.md when entering research stage.
+
+    Args:
+        issue: Issue entering research stage
+    """
+    issue_dir = _get_issue_dir(issue)
+    plan_path = issue_dir / "plan.md"
+
+    if _copy_template("plan.md", plan_path, issue):
+        console.print(f"[dim]Created plan.md in issue directory[/dim]")
+
+
+@on_enter(Stage.IMPLEMENT, substage="code_review")
+def create_review_md_on_code_review(issue: Issue):
+    """Auto-create review.md when entering code_review substage.
+
+    Args:
+        issue: Issue entering code_review substage
+    """
+    issue_dir = _get_issue_dir(issue)
+    review_path = issue_dir / "review.md"
+
+    if _copy_template("review.md", review_path, issue):
+        console.print(f"[dim]Created review.md in issue directory[/dim]")
+
+
+# Pre-transition hooks to enforce workflow order
+
+
+@pre_transition(Stage.PLAN_REVIEW, Stage.IMPLEMENT)
+def require_plan_md_for_implement(issue: Issue):
+    """Require that plan.md exists and has content before implementing.
+
+    Blocks transition if plan.md doesn't exist or is mostly empty.
+
+    Args:
+        issue: Issue being transitioned
+
+    Raises:
+        ValidationError: If plan.md doesn't exist or is incomplete
+    """
+    issue_dir = _get_issue_dir(issue)
+    plan_path = issue_dir / "plan.md"
+
+    if not plan_path.exists():
+        raise ValidationError(
+            "plan.md not found. Complete the research stage and fill out plan.md "
+            "before moving to implementation."
+        )
+
+    # Check if plan has meaningful content (beyond just template)
+    content = plan_path.read_text()
+
+    # Look for filled-in sections - at least Approach should have content
+    approach_section = "## Approach"
+    if approach_section in content:
+        # Find content after "## Approach" header
+        approach_idx = content.index(approach_section) + len(approach_section)
+        next_section_idx = content.find("##", approach_idx)
+        if next_section_idx == -1:
+            next_section_idx = len(content)
+
+        approach_content = content[approach_idx:next_section_idx].strip()
+        # Remove HTML comments
+        import re
+        approach_content = re.sub(r'<!--.*?-->', '', approach_content, flags=re.DOTALL).strip()
+
+        if len(approach_content) < 20:  # Minimum 20 chars of actual content
+            raise ValidationError(
+                "plan.md Approach section is too short. Describe your implementation "
+                "approach before moving to implementation stage."
+            )

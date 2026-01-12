@@ -30,6 +30,7 @@ from agenttree.issues import (
     assign_agent,
     load_skill,
 )
+from agenttree.hooks import execute_transition_hooks, ValidationError
 
 console = Console()
 
@@ -739,12 +740,20 @@ def dispatch(
 ## Documentation
 
 All documentation for this issue belongs in: `.agenttrees/issues/{issue.id}-{issue.slug}/`
-- `problem.md` - Problem statement (fill this out!)
-- `plan.md` - Implementation plan
-- `review.md` - Self-review before PR
-- `research.md` - Research notes (if needed)
 
-**DO NOT** create documentation files in the worktree root.
+Use this command to create docs in the right place:
+```bash
+agenttree issue doc <type> --issue {issue.id}
+# Types: problem, plan, review, research
+```
+
+Example:
+```bash
+agenttree issue doc research --issue {issue.id}  # Creates research.md
+agenttree issue doc plan --issue {issue.id}      # Creates plan.md
+```
+
+**DO NOT** create documentation files (RESEARCH.md, etc.) in the worktree root.
 """
     task_file.write_text(task_content)
 
@@ -1375,6 +1384,54 @@ def issue_show(issue_id: str) -> None:
     console.print(f"\n[dim]Directory: {issue_dir}[/dim]")
 
 
+@issue.command("doc")
+@click.argument("doc_type", type=click.Choice(["problem", "plan", "review", "research"]))
+@click.option("--issue", "-i", "issue_id", required=True, help="Issue ID")
+def issue_doc(doc_type: str, issue_id: str) -> None:
+    """Create or show path to an issue documentation file.
+
+    Creates the file from template if it doesn't exist, then prints the path.
+    Use this to ensure documentation goes in the right place.
+
+    Examples:
+        agenttree issue doc problem --issue 026
+        agenttree issue doc research --issue 026
+        agenttree issue doc plan --issue 026
+        agenttree issue doc review --issue 026
+    """
+    issue = get_issue_func(issue_id)
+    if not issue:
+        console.print(f"[red]Issue {issue_id} not found[/red]")
+        sys.exit(1)
+
+    issue_dir = get_issue_dir(issue_id)
+    if not issue_dir:
+        console.print(f"[red]Issue directory not found[/red]")
+        sys.exit(1)
+
+    doc_file = issue_dir / f"{doc_type}.md"
+
+    # Create from template if doesn't exist
+    if not doc_file.exists():
+        templates_dir = Path.cwd() / ".agenttrees" / "templates"
+        template_file = templates_dir / f"{doc_type}.md"
+
+        if template_file.exists():
+            content = template_file.read_text()
+            # Replace template variables
+            content = content.replace("{{issue_id}}", issue.id)
+            content = content.replace("{{title}}", issue.title)
+            doc_file.write_text(content)
+            console.print(f"[green]✓ Created {doc_type}.md from template[/green]")
+        else:
+            # Create with basic header
+            doc_file.write_text(f"# {doc_type.title()} - Issue #{issue.id}\n\n")
+            console.print(f"[green]✓ Created {doc_type}.md[/green]")
+
+    console.print(f"\n[bold]Path:[/bold] {doc_file}")
+    console.print(f"\n[dim]Write your {doc_type} documentation to this file.[/dim]")
+
+
 # =============================================================================
 # Stage Transition Commands
 # =============================================================================
@@ -1530,6 +1587,13 @@ def stage_next(issue_id: str) -> None:
     if next_stage == issue.stage and next_substage == issue.substage:
         console.print(f"[yellow]Already at final stage[/yellow]")
         return
+
+    # Execute hooks (pre-transition can block with ValidationError)
+    try:
+        execute_transition_hooks(issue, issue.stage, next_stage, next_substage)
+    except ValidationError as e:
+        console.print(f"[red]Cannot proceed: {e}[/red]")
+        sys.exit(1)
 
     # Update issue
     updated = update_issue_stage(issue_id, next_stage, next_substage)
