@@ -620,32 +620,16 @@ def setup(agent_numbers: tuple) -> None:
 @click.option("--task", help="Ad-hoc task description")
 @click.option("--tool", help="AI tool to use (default: from config)")
 @click.option("--force", is_flag=True, help="Force dispatch even if agent is busy")
-@click.option(
-    "--container", is_flag=True, help="Run agent in container (isolated mode)"
-)
-@click.option(
-    "--dangerous",
-    is_flag=True,
-    help="Run in dangerous mode (skip permissions, requires --container)",
-)
 def dispatch(
     agent_num: int,
     issue_number: Optional[int],
     task: Optional[str],
     tool: Optional[str],
     force: bool,
-    container: bool,
-    dangerous: bool,
 ) -> None:
-    """Dispatch a task to an agent."""
+    """Dispatch a task to an agent (runs in container)."""
     repo_path = Path.cwd()
     config = load_config(repo_path)
-
-    if dangerous and not container:
-        console.print(
-            "[red]Error: --dangerous requires --container for safety[/red]"
-        )
-        sys.exit(1)
 
     if not issue_number and not task:
         console.print("[red]Error: Provide either issue number or --task[/red]")
@@ -713,22 +697,18 @@ def dispatch(
         gh_manager.create_adhoc_task_file(task or "", task_file)
         console.print("[green]✓ Created ad-hoc task[/green]")
 
-    # Start agent in tmux
+    # Start agent in tmux (always in container)
     tool_name = tool or config.default_tool
+    runtime = get_container_runtime()
 
-    if container:
-        runtime = get_container_runtime()
-        if not runtime.is_available():
-            console.print(f"[red]Error: No container runtime available[/red]")
-            console.print(f"Recommendation: {runtime.get_recommended_action()}")
-            sys.exit(1)
+    if not runtime.is_available():
+        console.print(f"[red]Error: No container runtime available[/red]")
+        console.print(f"Recommendation: {runtime.get_recommended_action()}")
+        sys.exit(1)
 
-        console.print(f"[yellow]Running in container ({runtime.get_runtime_name()})[/yellow]")
-        # TODO: Integrate container mode with tmux
-        console.print("[yellow]Container mode integration coming soon[/yellow]")
-    else:
-        tmux_manager.start_agent(agent_num, worktree_path, tool_name)
-        console.print(f"[green]✓ Started {tool_name} in tmux session[/green]")
+    console.print(f"[dim]Container runtime: {runtime.get_runtime_name()}[/dim]")
+    tmux_manager.start_agent_in_container(agent_num, worktree_path, tool_name, runtime)
+    console.print(f"[green]✓ Started {tool_name} in container[/green]")
 
     console.print(f"\nCommands:")
     console.print(f"  agenttree attach {agent_num}  # Attach to session")
