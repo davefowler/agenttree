@@ -96,9 +96,12 @@ class ContainerRuntime:
         if agent_num is not None:
             cmd.extend(["--name", f"agenttree-agent-{agent_num}"])
 
-        # Mount Claude config for subscription auth (if exists)
-        if claude_config.exists():
-            cmd.extend(["-v", f"{claude_config}:/home/agent/.claude"])
+        # Mount ~/.claude directory (contains settings, but skip if it would cause issues)
+        # Note: ~/.claude.json is the main config but Apple Container can't mount files, only dirs
+        # The entrypoint copies ~/.claude.json from a mounted config dir if available
+        claude_config_dir = home / ".claude"
+        if claude_config_dir.exists():
+            cmd.extend(["-v", f"{claude_config_dir}:/home/agent/.claude-host:ro"])
 
         # Pass through auth credentials
         import os
