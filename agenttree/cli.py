@@ -794,11 +794,11 @@ def agents_status() -> None:
         return
 
     table = Table(title="Active Agents")
-    table.add_column("Issue", style="cyan")
+    table.add_column("ID", style="bold cyan")
+    table.add_column("Title", style="cyan")
     table.add_column("Status", style="magenta")
     table.add_column("Port", style="green")
     table.add_column("Branch", style="yellow")
-    table.add_column("Started", style="dim")
 
     for agent in agents:
         # Check if tmux session is running
@@ -806,7 +806,7 @@ def agents_status() -> None:
 
         # Get issue info
         issue = get_issue_func(agent.issue_id)
-        issue_title = issue.title[:30] if issue else "Unknown"
+        issue_title = issue.title[:35] if issue else "Unknown"
 
         # Determine status
         if is_running:
@@ -814,22 +814,19 @@ def agents_status() -> None:
         else:
             status_str = "⚪ Stopped"
 
-        # Format started time
-        started = agent.started[:10] if agent.started else "?"
-
         table.add_row(
-            f"#{agent.issue_id} {issue_title}",
+            agent.issue_id,
+            issue_title,
             status_str,
             str(agent.port),
-            agent.branch[:30],
-            started,
+            agent.branch[:25],
         )
 
     console.print(table)
-    console.print(f"\n[dim]Commands:[/dim]")
-    console.print(f"  agenttree attach <issue_id>  # Attach to session")
-    console.print(f"  agenttree send <issue_id> 'msg'  # Send message")
-    console.print(f"  agenttree kill <issue_id>    # Stop agent")
+    console.print(f"\n[dim]Use the ID column value with these commands:[/dim]")
+    console.print(f"  agenttree attach 29     # Attach to session")
+    console.print(f"  agenttree send 29 'msg' # Send message")
+    console.print(f"  agenttree kill 29       # Stop agent")
 
 
 @main.command()
