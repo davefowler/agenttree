@@ -709,6 +709,52 @@ def require_commits_for_review(issue: Issue):
         )
 
 
+@pre_transition(Stage.IMPLEMENT, Stage.IMPLEMENTATION_REVIEW)
+def require_review_md_for_pr(issue: Issue):
+    """Require that review.md exists with no unresolved Critical Issues before creating PR.
+
+    Blocks transition if:
+    - review.md doesn't exist in issue directory
+    - Critical Issues section contains any items (checked or unchecked)
+
+    Args:
+        issue: Issue being transitioned
+
+    Raises:
+        ValidationError: If review.md is missing or has unresolved critical issues
+    """
+    import re
+
+    issue_dir = _get_issue_dir(issue)
+    review_path = issue_dir / "review.md"
+
+    if not review_path.exists():
+        raise ValidationError(
+            "review.md not found. Complete the code_review substage and fill out review.md "
+            "before creating a PR. Run 'agenttree next' from implement.debug to enter code_review."
+        )
+
+    content = review_path.read_text()
+
+    # Find the Critical Issues section
+    # Match variations like "## Critical Issues" or "## Critical Issues (Blocking)"
+    critical_match = re.search(r'##\s*Critical Issues.*?\n(.*?)(?=\n##|\n---|\Z)', content, re.DOTALL | re.IGNORECASE)
+
+    if critical_match:
+        critical_section = critical_match.group(1)
+
+        # Remove HTML comments
+        critical_section = re.sub(r'<!--.*?-->', '', critical_section, flags=re.DOTALL)
+
+        # Check for any list items (- [ ] or - [x])
+        if re.search(r'-\s*\[[x ]\]', critical_section, re.IGNORECASE):
+            raise ValidationError(
+                "Critical Issues section in review.md is not empty. "
+                "Fix all critical issues and remove them from the list before creating a PR. "
+                "(Fixed issues should be removed, not checked off.)"
+            )
+
+
 @pre_transition(Stage.IMPLEMENTATION_REVIEW, Stage.ACCEPTED)
 def require_pr_approval(issue: Issue):
     """Require that PR is approved before merging.
