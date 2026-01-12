@@ -232,28 +232,24 @@ def get_registry() -> HookRegistry:
     return _registry
 
 
-def execute_transition_hooks(
+def execute_pre_hooks(
     issue: Issue,
     from_stage: Stage,
     to_stage: Stage,
-    to_substage: Optional[str] = None,
 ) -> None:
-    """Execute all hooks for a stage transition in correct order.
+    """Execute hooks that run BEFORE stage update.
 
     Execution order:
     1. on_exit hooks for from_stage
     2. pre_transition hooks (can raise ValidationError to block)
-    3. post_transition hooks (logs errors but continues)
-    4. on_enter hooks for to_stage (and substage if provided)
 
-    Note: The actual stage update should happen between steps 2 and 3,
-    but that's handled by the caller (cli.py).
+    Call this BEFORE updating the issue stage. If ValidationError is raised,
+    the transition should be blocked.
 
     Args:
         issue: Issue being transitioned
         from_stage: Stage transitioning from
         to_stage: Stage transitioning to
-        to_substage: Substage being entered (optional)
 
     Raises:
         ValidationError: If pre_transition validation fails
@@ -264,13 +260,59 @@ def execute_transition_hooks(
     # 2. Pre-transition validation (can block)
     _registry.execute_pre_transition(issue, from_stage, to_stage)
 
-    # Note: Stage update happens here (in caller)
 
-    # 3. Post-transition actions
+def execute_post_hooks(
+    issue: Issue,
+    from_stage: Stage,
+    to_stage: Stage,
+    to_substage: Optional[str] = None,
+) -> None:
+    """Execute hooks that run AFTER stage update.
+
+    Execution order:
+    1. post_transition hooks (logs errors but continues)
+    2. on_enter hooks for to_stage (and substage if provided)
+
+    Call this AFTER the issue stage has been updated in the database.
+
+    Args:
+        issue: Issue that was transitioned
+        from_stage: Stage transitioned from
+        to_stage: Stage transitioned to
+        to_substage: Substage being entered (optional)
+    """
+    # 1. Post-transition actions
     _registry.execute_post_transition(issue, from_stage, to_stage)
 
-    # 4. Enter new stage (and substage)
+    # 2. Enter new stage (and substage)
     _registry.execute_on_enter(issue, to_stage, to_substage)
+
+
+def execute_transition_hooks(
+    issue: Issue,
+    from_stage: Stage,
+    to_stage: Stage,
+    to_substage: Optional[str] = None,
+) -> None:
+    """Execute all hooks for a stage transition (DEPRECATED - use split functions).
+
+    This function is kept for backwards compatibility but doesn't correctly
+    handle the timing of hooks relative to stage updates. New code should use:
+    - execute_pre_hooks() before update_issue_stage()
+    - execute_post_hooks() after update_issue_stage()
+
+    Args:
+        issue: Issue being transitioned
+        from_stage: Stage transitioning from
+        to_stage: Stage transitioning to
+        to_substage: Substage being entered (optional)
+
+    Raises:
+        ValidationError: If pre_transition validation fails
+    """
+    execute_pre_hooks(issue, from_stage, to_stage)
+    # Note: Stage update should happen here in caller - but doesn't with this API
+    execute_post_hooks(issue, from_stage, to_stage, to_substage)
 
 
 # Decorator functions for registering hooks

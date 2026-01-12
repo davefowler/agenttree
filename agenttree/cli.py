@@ -30,7 +30,7 @@ from agenttree.issues import (
     assign_agent,
     load_skill,
 )
-from agenttree.hooks import execute_transition_hooks, ValidationError
+from agenttree.hooks import execute_pre_hooks, execute_post_hooks, ValidationError
 
 console = Console()
 
@@ -1528,10 +1528,15 @@ def stage_begin(stage: str, issue_id: str) -> None:
     substage = substages[0] if substages else None
 
     # Update issue to this stage
+    from_stage = issue.stage
     updated = update_issue_stage(issue_id, target_stage, substage)
     if not updated:
         console.print(f"[red]Failed to update issue[/red]")
         sys.exit(1)
+
+    # Run on_enter hooks (e.g., create plan.md for research stage)
+    # Note: We skip pre_transition hooks since begin allows arbitrary stage jumps
+    execute_post_hooks(updated, from_stage, target_stage, substage)
 
     stage_str = target_stage.value
     if substage:
@@ -1588,18 +1593,22 @@ def stage_next(issue_id: str) -> None:
         console.print(f"[yellow]Already at final stage[/yellow]")
         return
 
-    # Execute hooks (pre-transition can block with ValidationError)
+    # Execute pre-hooks (can block with ValidationError)
+    from_stage = issue.stage
     try:
-        execute_transition_hooks(issue, issue.stage, next_stage, next_substage)
+        execute_pre_hooks(issue, from_stage, next_stage)
     except ValidationError as e:
         console.print(f"[red]Cannot proceed: {e}[/red]")
         sys.exit(1)
 
-    # Update issue
+    # Update issue stage in database
     updated = update_issue_stage(issue_id, next_stage, next_substage)
     if not updated:
         console.print(f"[red]Failed to update issue[/red]")
         sys.exit(1)
+
+    # Execute post-hooks (after stage updated)
+    execute_post_hooks(updated, from_stage, next_stage, next_substage)
 
     stage_str = next_stage.value
     if next_substage:
