@@ -1194,10 +1194,28 @@ def issue_create(
             solutions=solutions,
         )
         console.print(f"[green]✓ Created issue {issue.id}: {issue.title}[/green]")
-        console.print(f"[dim]  Directory: .agenttrees/issues/{issue.id}-{issue.slug}/[/dim]")
-        console.print(f"[dim]  Stage: {issue.stage.value}[/dim]")
-        if not (problem or context or solutions):
-            console.print(f"[dim]  Edit problem.md to define the problem[/dim]")
+
+        issue_dir = f".agenttrees/issues/{issue.id}-{issue.slug}"
+        problem_file = f"{issue_dir}/problem.md"
+
+        if problem or context or solutions:
+            console.print(f"\n[cyan]Good start![/cyan] A placeholder has been created at:")
+            console.print(f"  [bold]{problem_file}[/bold]")
+            console.print(f"\nNow edit it to create a complete problem document.")
+        else:
+            console.print(f"\n[cyan]Issue created at:[/cyan]")
+            console.print(f"  [bold]{problem_file}[/bold]")
+
+        # Load and display the problem skill instructions
+        skill = load_skill(Stage.PROBLEM)
+        if skill:
+            console.print(f"\n{'='*60}")
+            console.print(f"[bold cyan]Problem Stage Instructions[/bold cyan]")
+            console.print(f"{'='*60}\n")
+            console.print(skill)
+        else:
+            console.print(f"\n[dim]Fill out the problem statement, context, and possible solutions.[/dim]")
+
     except Exception as e:
         console.print(f"[red]Error creating issue: {e}[/red]")
         sys.exit(1)
