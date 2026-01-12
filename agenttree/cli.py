@@ -617,77 +617,102 @@ def setup(agent_numbers: tuple) -> None:
 
 
 @main.command()
-@click.argument("agent_num", type=int)
-@click.argument("issue_number", type=int, required=False)
-@click.option("--task", help="Ad-hoc task description")
+@click.argument("issue_id", type=str)
 @click.option("--tool", help="AI tool to use (default: from config)")
-@click.option("--force", is_flag=True, help="Force dispatch even if agent is busy")
+@click.option("--force", is_flag=True, help="Force dispatch even if agent already exists")
 def dispatch(
-    agent_num: int,
-    issue_number: Optional[int],
-    task: Optional[str],
+    issue_id: str,
     tool: Optional[str],
     force: bool,
 ) -> None:
-    """Dispatch a task to an agent (runs in container)."""
+    """Dispatch an agent for an issue (creates container + worktree).
+
+    ISSUE_ID is the issue number (e.g., "23" or "023").
+
+    This creates a dedicated agent for the issue with:
+    - A new worktree (issue-023-slug/)
+    - A new container (agenttree-issue-023)
+    - A tmux session for interaction
+
+    The agent is automatically cleaned up when the issue is accepted.
+    """
+    from agenttree.state import (
+        get_active_agent,
+        allocate_port,
+        create_agent_for_issue,
+        get_issue_names,
+    )
+    from agenttree.worktree import create_worktree
+
     repo_path = Path.cwd()
     config = load_config(repo_path)
 
-    if not issue_number and not task:
-        console.print("[red]Error: Provide either issue number or --task[/red]")
+    # Normalize issue ID (strip leading zeros for lookup, keep for display)
+    issue_id_normalized = issue_id.lstrip("0") or "0"
+
+    # Load issue from local .agenttrees/issues/
+    issue = get_issue_func(issue_id_normalized)
+    if not issue:
+        console.print(f"[red]Error: Issue #{issue_id} not found in .agenttrees/issues/[/red]")
+        console.print(f"[yellow]Create it with: agenttree issue create 'title'[/yellow]")
         sys.exit(1)
 
-    # Get worktree path
-    worktree_path = config.get_worktree_path(agent_num)
-
-    if not worktree_path.exists():
-        console.print(
-            f"[red]Error: Agent {agent_num} not set up. Run: agenttree setup {agent_num}[/red]"
-        )
+    # Check if issue already has an active agent
+    existing_agent = get_active_agent(issue.id)
+    if existing_agent and not force:
+        console.print(f"[yellow]Issue #{issue.id} already has an active agent[/yellow]")
+        console.print(f"  Container: {existing_agent.container}")
+        console.print(f"  Port: {existing_agent.port}")
+        console.print(f"\nUse --force to replace it, or attach with:")
+        console.print(f"  agenttree attach {issue.id}")
         sys.exit(1)
 
     # Initialize managers
-    wt_manager = WorktreeManager(repo_path, config)
     tmux_manager = TmuxManager(config)
     agents_repo = AgentsRepository(repo_path)
 
     # Ensure agents repo exists
     agents_repo.ensure_repo()
 
-    # Dispatch worktree (reset to main)
-    try:
-        wt_manager.dispatch(agent_num, force=force)
-    except RuntimeError as e:
-        console.print(f"[red]Error: {e}[/red]")
-        sys.exit(1)
+    # Get names for this issue
+    names = get_issue_names(issue.id, issue.slug, config.project)
 
-    # Create TASK.md
+    # Create worktree for issue
+    worktree_path = config.get_issue_worktree_path(issue.id, issue.slug)
+    worktree_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if worktree_path.exists():
+        if force:
+            console.print(f"[yellow]Removing existing worktree...[/yellow]")
+            from agenttree.worktree import remove_worktree
+            remove_worktree(repo_path, worktree_path)
+        else:
+            console.print(f"[dim]Using existing worktree at {worktree_path}[/dim]")
+
+    if not worktree_path.exists():
+        console.print(f"[dim]Creating worktree: {worktree_path.name}[/dim]")
+        create_worktree(repo_path, worktree_path, names["branch"])
+
+    # Allocate port
+    port = allocate_port(base_port=int(config.port_range.split("-")[0]))
+    console.print(f"[dim]Allocated port: {port}[/dim]")
+
+    # Get issue directory and read problem.md
+    issue_dir = get_issue_dir(issue.id)
+    problem_content = ""
+    plan_content = ""
+    if issue_dir:
+        problem_file = issue_dir / "problem.md"
+        if problem_file.exists():
+            problem_content = problem_file.read_text()
+
+        plan_file = issue_dir / "plan.md"
+        if plan_file.exists():
+            plan_content = plan_file.read_text()
+
+    # Create TASK.md with issue content
     task_file = worktree_path / "TASK.md"
-
-    if issue_number:
-        # Load issue from local .agenttrees/issues/
-        issue = get_issue_func(str(issue_number))
-        if not issue:
-            console.print(f"[red]Error: Issue #{issue_number} not found in .agenttrees/issues/[/red]")
-            console.print(f"[yellow]Create it with: agenttree issue create 'title'[/yellow]")
-            sys.exit(1)
-
-        # Get issue directory and read problem.md
-        issue_dir = get_issue_dir(str(issue_number))
-        problem_content = ""
-        if issue_dir:
-            problem_file = issue_dir / "problem.md"
-            if problem_file.exists():
-                problem_content = problem_file.read_text()
-
-            # Also check for plan.md (if in later stages)
-            plan_file = issue_dir / "plan.md"
-            plan_content = ""
-            if plan_file.exists():
-                plan_content = plan_file.read_text()
-
-        # Create TASK.md with issue content
-        task_content = f"""# Issue #{issue.id}: {issue.title}
+    task_content = f"""# Issue #{issue.id}: {issue.title}
 
 **Stage:** {issue.stage.value}
 **Priority:** {issue.priority.value}
@@ -696,14 +721,14 @@ def dispatch(
 
 {problem_content}
 """
-        if plan_content:
-            task_content += f"""
+    if plan_content:
+        task_content += f"""
 ## Plan
 
 {plan_content}
 """
 
-        task_content += f"""
+    task_content += f"""
 ## Instructions
 
 1. Read CLAUDE.md for workflow instructions
@@ -711,16 +736,18 @@ def dispatch(
 3. Run `agenttree begin <stage> --issue {issue.id}` to start working
 4. Run `agenttree next --issue {issue.id}` when done with current stage
 """
-        task_file.write_text(task_content)
+    task_file.write_text(task_content)
 
-        # Assign agent to issue
-        assign_agent(str(issue_number), agent_num)
+    # Register agent in state
+    agent = create_agent_for_issue(
+        issue_id=issue.id,
+        slug=issue.slug,
+        worktree_path=worktree_path,
+        port=port,
+        project=config.project,
+    )
 
-        console.print(f"[green]✓ Created task for issue #{issue.id}: {issue.title}[/green]")
-    else:
-        # Create simple TASK.md for ad-hoc tasks
-        task_file.write_text(f"# Task\n\n{task}\n")
-        console.print("[green]✓ Created ad-hoc task[/green]")
+    console.print(f"[green]✓ Created task for issue #{issue.id}: {issue.title}[/green]")
 
     # Start agent in tmux (always in container)
     tool_name = tool or config.default_tool
@@ -732,102 +759,180 @@ def dispatch(
         sys.exit(1)
 
     console.print(f"[dim]Container runtime: {runtime.get_runtime_name()}[/dim]")
-    tmux_manager.start_agent_in_container(agent_num, worktree_path, tool_name, runtime)
+    tmux_manager.start_issue_agent_in_container(
+        issue_id=issue.id,
+        session_name=agent.tmux_session,
+        worktree_path=worktree_path,
+        tool_name=tool_name,
+        container_runtime=runtime,
+    )
     console.print(f"[green]✓ Started {tool_name} in container[/green]")
 
+    console.print(f"\n[bold]Agent ready for issue #{issue.id}[/bold]")
+    console.print(f"  Container: {agent.container}")
+    console.print(f"  Port: {agent.port}")
     console.print(f"\nCommands:")
-    console.print(f"  agenttree attach {agent_num}  # Attach to session")
-    console.print(f"  agenttree agents             # View all agents")
+    console.print(f"  agenttree attach {issue.id}   # Attach to session")
+    console.print(f"  agenttree send {issue.id} 'message'  # Send message")
+    console.print(f"  agenttree status             # View all agents")
 
 
 @main.command("agents")
 def agents_status() -> None:
-    """Show status of all agents."""
-    repo_path = Path.cwd()
-    config = load_config(repo_path)
+    """Show status of all active issue agents."""
+    from agenttree.state import list_active_agents
 
-    wt_manager = WorktreeManager(repo_path, config)
-    tmux_manager = TmuxManager(config)
-
-    table = Table(title="Agent Status")
-    table.add_column("Agent", style="cyan")
-    table.add_column("Status", style="magenta")
-    table.add_column("Task", style="green")
-    table.add_column("Branch", style="yellow")
-
-    # Check agents 1-9 by default
-    for agent_num in range(1, 10):
-        worktree_path = config.get_worktree_path(agent_num)
-
-        if not worktree_path.exists():
-            continue
-
-        status = wt_manager.get_status(agent_num)
-        is_running = tmux_manager.is_running(agent_num)
-
-        # Determine status emoji
-        if is_running and status.is_busy:
-            status_str = "🔴 Busy"
-        elif status.is_busy:
-            status_str = "🟡 Has task"
-        elif is_running:
-            status_str = "🟢 Running"
-        else:
-            status_str = "⚪ Available"
-
-        # Get task description
-        task_desc = ""
-        if status.has_task:
-            task_file = worktree_path / "TASK.md"
-            with open(task_file) as f:
-                first_line = f.readline().strip()
-                task_desc = first_line.replace("# Task: ", "").replace("# Task", "")[:50]
-
-        table.add_row(f"Agent {agent_num}", status_str, task_desc, status.branch)
-
-    console.print(table)
-
-
-@main.command()
-@click.argument("agent_num", type=int)
-def attach(agent_num: int) -> None:
-    """Attach to an agent's tmux session."""
     config = load_config()
     tmux_manager = TmuxManager(config)
 
+    agents = list_active_agents()
+
+    if not agents:
+        console.print("[dim]No active agents[/dim]")
+        console.print("\nStart an agent with:")
+        console.print("  agenttree dispatch <issue_id>")
+        return
+
+    table = Table(title="Active Agents")
+    table.add_column("Issue", style="cyan")
+    table.add_column("Status", style="magenta")
+    table.add_column("Port", style="green")
+    table.add_column("Branch", style="yellow")
+    table.add_column("Started", style="dim")
+
+    for agent in agents:
+        # Check if tmux session is running
+        is_running = tmux_manager.is_issue_running(agent.tmux_session)
+
+        # Get issue info
+        issue = get_issue_func(agent.issue_id)
+        issue_title = issue.title[:30] if issue else "Unknown"
+
+        # Determine status
+        if is_running:
+            status_str = "🟢 Running"
+        else:
+            status_str = "⚪ Stopped"
+
+        # Format started time
+        started = agent.started[:10] if agent.started else "?"
+
+        table.add_row(
+            f"#{agent.issue_id} {issue_title}",
+            status_str,
+            str(agent.port),
+            agent.branch[:30],
+            started,
+        )
+
+    console.print(table)
+    console.print(f"\n[dim]Commands:[/dim]")
+    console.print(f"  agenttree attach <issue_id>  # Attach to session")
+    console.print(f"  agenttree send <issue_id> 'msg'  # Send message")
+    console.print(f"  agenttree kill <issue_id>    # Stop agent")
+
+
+@main.command()
+@click.argument("issue_id", type=str)
+def attach(issue_id: str) -> None:
+    """Attach to an issue's agent tmux session.
+
+    ISSUE_ID is the issue number (e.g., "23" or "023").
+    """
+    from agenttree.state import get_active_agent
+
+    config = load_config()
+    tmux_manager = TmuxManager(config)
+
+    # Normalize issue ID
+    issue_id_normalized = issue_id.lstrip("0") or "0"
+
+    # Get active agent for this issue
+    agent = get_active_agent(issue_id_normalized)
+    if not agent:
+        # Try with padded ID
+        issue = get_issue_func(issue_id_normalized)
+        if issue:
+            agent = get_active_agent(issue.id)
+
+    if not agent:
+        console.print(f"[red]Error: No active agent for issue #{issue_id}[/red]")
+        console.print(f"[yellow]Start one with: agenttree dispatch {issue_id}[/yellow]")
+        sys.exit(1)
+
     try:
-        console.print(f"Attaching to agent-{agent_num} (Ctrl+B, D to detach)...")
-        tmux_manager.attach(agent_num)
+        console.print(f"Attaching to issue #{agent.issue_id} (Ctrl+B, D to detach)...")
+        tmux_manager.attach_to_issue(agent.tmux_session)
     except RuntimeError as e:
         console.print(f"[red]Error: {e}[/red]")
         sys.exit(1)
 
 
 @main.command()
-@click.argument("agent_num", type=int)
+@click.argument("issue_id", type=str)
 @click.argument("message")
-def send(agent_num: int, message: str) -> None:
-    """Send a message to an agent."""
+def send(issue_id: str, message: str) -> None:
+    """Send a message to an issue's agent.
+
+    ISSUE_ID is the issue number (e.g., "23" or "023").
+    """
+    from agenttree.state import get_active_agent
+
     config = load_config()
     tmux_manager = TmuxManager(config)
 
-    if not tmux_manager.is_running(agent_num):
-        console.print(f"[red]Error: Agent {agent_num} is not running[/red]")
+    # Normalize issue ID
+    issue_id_normalized = issue_id.lstrip("0") or "0"
+
+    # Get active agent for this issue
+    agent = get_active_agent(issue_id_normalized)
+    if not agent:
+        issue = get_issue_func(issue_id_normalized)
+        if issue:
+            agent = get_active_agent(issue.id)
+
+    if not agent:
+        console.print(f"[red]Error: No active agent for issue #{issue_id}[/red]")
+        console.print(f"[yellow]Start one with: agenttree dispatch {issue_id}[/yellow]")
         sys.exit(1)
 
-    tmux_manager.send_message(agent_num, message)
-    console.print(f"[green]✓ Sent message to agent-{agent_num}[/green]")
+    if not tmux_manager.is_issue_running(agent.tmux_session):
+        console.print(f"[red]Error: Agent for issue #{issue_id} is not running[/red]")
+        sys.exit(1)
+
+    tmux_manager.send_message_to_issue(agent.tmux_session, message)
+    console.print(f"[green]✓ Sent message to issue #{agent.issue_id}[/green]")
 
 
 @main.command()
-@click.argument("agent_num", type=int)
-def kill(agent_num: int) -> None:
-    """Kill an agent's tmux session."""
+@click.argument("issue_id", type=str)
+def kill(issue_id: str) -> None:
+    """Kill an issue's agent tmux session.
+
+    ISSUE_ID is the issue number (e.g., "23" or "023").
+    """
+    from agenttree.state import get_active_agent, unregister_agent
+
     config = load_config()
     tmux_manager = TmuxManager(config)
 
-    tmux_manager.stop_agent(agent_num)
-    console.print(f"[green]✓ Killed agent-{agent_num}[/green]")
+    # Normalize issue ID
+    issue_id_normalized = issue_id.lstrip("0") or "0"
+
+    # Get active agent for this issue
+    agent = get_active_agent(issue_id_normalized)
+    if not agent:
+        issue = get_issue_func(issue_id_normalized)
+        if issue:
+            agent = get_active_agent(issue.id)
+
+    if not agent:
+        console.print(f"[red]Error: No active agent for issue #{issue_id}[/red]")
+        sys.exit(1)
+
+    tmux_manager.stop_issue_agent(agent.tmux_session)
+    unregister_agent(agent.issue_id)
+    console.print(f"[green]✓ Killed agent for issue #{agent.issue_id}[/green]")
 
 
 @main.group()

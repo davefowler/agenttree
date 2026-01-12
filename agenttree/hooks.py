@@ -725,3 +725,55 @@ def merge_pull_request_hook(issue: Issue):
     merge_pr(issue.pr_number, method="squash")
 
     console.print(f"[green]✓ PR #{issue.pr_number} merged and branch deleted[/green]")
+
+
+@post_transition(Stage.IMPLEMENTATION_REVIEW, Stage.ACCEPTED)
+def cleanup_issue_agent_hook(issue: Issue):
+    """Clean up agent resources when issue is accepted.
+
+    Stops container, removes worktree, frees port.
+
+    Args:
+        issue: Issue that was transitioned
+    """
+    from agenttree.state import get_active_agent, unregister_agent
+
+    agent = get_active_agent(issue.id)
+    if not agent:
+        return  # No agent to clean up
+
+    console.print(f"[dim]Cleaning up agent for issue #{issue.id}...[/dim]")
+
+    # Stop tmux session
+    try:
+        from agenttree.tmux import kill_session, session_exists
+        if session_exists(agent.tmux_session):
+            kill_session(agent.tmux_session)
+            console.print(f"[dim]  Stopped tmux session: {agent.tmux_session}[/dim]")
+    except Exception as e:
+        console.print(f"[yellow]  Warning: Could not stop tmux session: {e}[/yellow]")
+
+    # Stop container (if running)
+    try:
+        result = subprocess.run(
+            ["docker", "stop", agent.container],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode == 0:
+            console.print(f"[dim]  Stopped container: {agent.container}[/dim]")
+
+        # Remove container
+        subprocess.run(
+            ["docker", "rm", agent.container],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except Exception as e:
+        console.print(f"[yellow]  Warning: Could not stop container: {e}[/yellow]")
+
+    # Unregister agent (frees port)
+    unregister_agent(issue.id)
+    console.print(f"[green]✓ Agent cleaned up for issue #{issue.id}[/green]")

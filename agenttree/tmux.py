@@ -286,3 +286,96 @@ class TmuxManager:
         project_prefix = f"{self.config.project}-agent-"
 
         return [s for s in all_sessions if s.name.startswith(project_prefix)]
+
+    # Issue-based agent methods
+
+    def start_issue_agent_in_container(
+        self,
+        issue_id: str,
+        session_name: str,
+        worktree_path: Path,
+        tool_name: str,
+        container_runtime: "ContainerRuntime",
+    ) -> None:
+        """Start an issue-bound agent in a container within a tmux session.
+
+        Args:
+            issue_id: Issue ID (e.g., "023")
+            session_name: Tmux session name
+            worktree_path: Path to the issue's worktree
+            tool_name: Name of the AI tool to use
+            container_runtime: Container runtime instance
+        """
+        # Kill existing session if it exists
+        if session_exists(session_name):
+            kill_session(session_name)
+
+        # Get tool config
+        tool_config = self.config.get_tool_config(tool_name)
+
+        # Build container command
+        container_cmd = container_runtime.build_run_command(
+            worktree_path=worktree_path,
+            ai_tool=tool_name,
+            dangerous=True,  # Safe because we're in a container
+        )
+
+        # Join command for shell execution
+        container_cmd_str = " ".join(container_cmd)
+
+        # Create tmux session running the container
+        create_session(session_name, worktree_path, container_cmd_str)
+
+        # Send startup prompt after container starts
+        import time
+        time.sleep(2)  # Container startup takes a bit longer
+        send_keys(session_name, tool_config.startup_prompt)
+
+    def stop_issue_agent(self, session_name: str) -> None:
+        """Stop an issue-bound agent's tmux session.
+
+        Args:
+            session_name: Tmux session name
+        """
+        kill_session(session_name)
+
+    def send_message_to_issue(self, session_name: str, message: str) -> None:
+        """Send a message to an issue-bound agent.
+
+        Args:
+            session_name: Tmux session name
+            message: Message to send
+        """
+        send_keys(session_name, message)
+
+    def attach_to_issue(self, session_name: str) -> None:
+        """Attach to an issue-bound agent's tmux session.
+
+        Args:
+            session_name: Tmux session name
+        """
+        if not session_exists(session_name):
+            raise RuntimeError(f"Session {session_name} does not exist")
+        attach_session(session_name)
+
+    def is_issue_running(self, session_name: str) -> bool:
+        """Check if an issue-bound agent's tmux session is running.
+
+        Args:
+            session_name: Tmux session name
+
+        Returns:
+            True if session is running
+        """
+        return session_exists(session_name)
+
+    def list_issue_sessions(self) -> List[TmuxSession]:
+        """List all issue-bound agent tmux sessions.
+
+        Returns:
+            List of issue agent sessions
+        """
+        all_sessions = list_sessions()
+        project_prefix = f"{self.config.project}-issue-"
+
+        return [s for s in all_sessions if s.name.startswith(project_prefix)]
