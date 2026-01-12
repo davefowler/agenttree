@@ -458,6 +458,62 @@ def assign_agent(issue_id: str, agent_num: int) -> Optional[Issue]:
     return issue
 
 
+def update_issue_metadata(
+    issue_id: str,
+    pr_number: Optional[int] = None,
+    pr_url: Optional[str] = None,
+    branch: Optional[str] = None,
+    github_issue: Optional[int] = None,
+    relevant_url: Optional[str] = None,
+) -> Optional[Issue]:
+    """Update metadata fields on an issue.
+
+    Args:
+        issue_id: Issue ID
+        pr_number: PR number (optional)
+        pr_url: PR URL (optional)
+        branch: Branch name (optional)
+        github_issue: GitHub issue number (optional)
+        relevant_url: Relevant URL (optional)
+
+    Returns:
+        Updated Issue object or None if not found
+    """
+    issue_dir = get_issue_dir(issue_id)
+    if not issue_dir:
+        return None
+
+    yaml_path = issue_dir / "issue.yaml"
+    if not yaml_path.exists():
+        return None
+
+    with open(yaml_path) as f:
+        data = yaml.safe_load(f)
+
+    issue = Issue(**data)
+
+    # Update fields if provided
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    if pr_number is not None:
+        issue.pr_number = pr_number
+    if pr_url is not None:
+        issue.relevant_url = pr_url  # Store PR URL in relevant_url
+    if branch is not None:
+        issue.branch = branch
+    if github_issue is not None:
+        issue.github_issue = github_issue
+    if relevant_url is not None:
+        issue.relevant_url = relevant_url
+    issue.updated = now
+
+    # Write back
+    with open(yaml_path, "w") as f:
+        data = issue.model_dump(mode="json")
+        yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+
+    return issue
+
+
 def load_skill(stage: Stage, substage: Optional[str] = None) -> Optional[str]:
     """Load skill/instructions for a stage.
 

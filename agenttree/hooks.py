@@ -199,6 +199,54 @@ class HookRegistry:
 _registry = HookRegistry()
 
 
+def get_registry() -> HookRegistry:
+    """Get the global hook registry.
+
+    Useful for testing or inspecting registered hooks.
+
+    Returns:
+        The global HookRegistry instance
+    """
+    return _registry
+
+
+def execute_transition_hooks(
+    issue: Issue, from_stage: Stage, to_stage: Stage
+) -> None:
+    """Execute all hooks for a stage transition in correct order.
+
+    Execution order:
+    1. on_exit hooks for from_stage
+    2. pre_transition hooks (can raise ValidationError to block)
+    3. post_transition hooks (logs errors but continues)
+    4. on_enter hooks for to_stage
+
+    Note: The actual stage update should happen between steps 2 and 3,
+    but that's handled by the caller (cli.py).
+
+    Args:
+        issue: Issue being transitioned
+        from_stage: Stage transitioning from
+        to_stage: Stage transitioning to
+
+    Raises:
+        ValidationError: If pre_transition validation fails
+    """
+    # 1. Exit current stage
+    _registry.execute_on_exit(issue, from_stage)
+
+    # 2. Pre-transition validation (can block)
+    _registry.execute_pre_transition(issue, from_stage, to_stage)
+
+    # Note: Stage update happens here (in caller)
+
+    # 3. Post-transition actions
+    _registry.execute_post_transition(issue, from_stage, to_stage)
+
+    # 4. Enter new stage
+    _registry.execute_on_enter(issue, to_stage)
+
+
 # Decorator functions for registering hooks
 
 
@@ -354,7 +402,7 @@ def has_commits_to_push(branch: Optional[str] = None) -> bool:
     if branch is None:
         branch = get_current_branch()
 
-    # First try checking against the remote branch
+    # First try checking against the remote branch with same name
     result = subprocess.run(
         ["git", "log", f"origin/{branch}..HEAD", "--oneline"],
         capture_output=True,
@@ -365,8 +413,7 @@ def has_commits_to_push(branch: Optional[str] = None) -> bool:
     if result.returncode == 0 and result.stdout.strip():
         return True
 
-    # If remote branch doesn't exist, check if we have commits beyond upstream
-    # This handles the case where the branch hasn't been pushed yet
+    # Check if we have commits beyond upstream (whatever branch we're tracking)
     result = subprocess.run(
         ["git", "rev-list", "@{upstream}..HEAD", "--oneline"],
         capture_output=True,
@@ -374,11 +421,27 @@ def has_commits_to_push(branch: Optional[str] = None) -> bool:
         check=False,  # Don't fail if no upstream
     )
 
+    if result.returncode == 0 and result.stdout.strip():
+        return True
+
+    # Fallback: check if we have ANY local commits not on origin/main
+    # This handles new branches that haven't been pushed and aren't tracking anything
+    result = subprocess.run(
+        ["git", "log", "origin/main..HEAD", "--oneline"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
     return bool(result.stdout.strip())
 
 
 def push_branch_to_remote(branch: str) -> None:
-    """Push branch to remote with -u flag.
+    """Push branch to remote, creating remote branch with same name.
+
+    IMPORTANT: This explicitly pushes local branch to origin/{branch},
+    NOT to whatever upstream the branch might be tracking. This ensures
+    feature branches don't accidentally push to main.
 
     Args:
         branch: Branch name to push
@@ -386,8 +449,11 @@ def push_branch_to_remote(branch: str) -> None:
     Raises:
         subprocess.CalledProcessError: If push fails
     """
+    # Explicitly specify source:destination to avoid pushing to tracked branch
+    # e.g., "git push -u origin mybranch:mybranch" ensures we create/update
+    # origin/mybranch, not whatever origin/main the branch might be tracking
     subprocess.run(
-        ["git", "push", "-u", "origin", branch],
+        ["git", "push", "-u", "origin", f"{branch}:{branch}"],
         check=True,
         capture_output=True,
         text=True,
@@ -437,7 +503,7 @@ def get_repo_remote_name() -> str:
 
 
 def generate_pr_body(issue: Issue) -> str:
-    """Generate PR body with links to issue files.
+    """Generate PR body for the issue.
 
     Args:
         issue: Issue object
@@ -445,20 +511,22 @@ def generate_pr_body(issue: Issue) -> str:
     Returns:
         Formatted PR body text
     """
-    slug = issue.slug
     issue_id = issue.id
 
     return f"""## Issue #{issue_id}: {issue.title}
 
-Automated PR created for issue #{issue_id}.
+Automated PR created by agenttree workflow.
 
-**Problem**: See [problem.md](.agenttrees/issues/{issue_id}-{slug}/problem.md)
-**Plan**: See [plan.md](.agenttrees/issues/{issue_id}-{slug}/plan.md)
+### Summary
+This PR implements the changes for issue #{issue_id}.
 
-**Stage transition**: implement → implementation_review
+### Review Checklist
+- [ ] Code follows project conventions
+- [ ] Tests pass
+- [ ] Changes match the approved plan
 
 ---
-*This PR was automatically created by agenttree workflow*
+*Generated by [agenttree](https://github.com/davefowler/agenttree)*
 """
 
 
@@ -563,7 +631,8 @@ def require_pr_approval(issue: Issue):
 def create_pull_request_hook(issue: Issue):
     """Create PR when transitioning to implementation review.
 
-    Automatically pushes the branch and creates a pull request.
+    Automatically commits any uncommitted changes, pushes the branch,
+    and creates a pull request.
 
     Args:
         issue: Issue that was transitioned
@@ -574,8 +643,13 @@ def create_pull_request_hook(issue: Issue):
     # Get current branch
     branch = get_current_branch()
 
-    # Push to remote
-    console.print(f"[dim]Pushing {branch} to remote...[/dim]")
+    # Auto-commit any uncommitted changes before pushing
+    if has_uncommitted_changes():
+        console.print(f"[dim]Auto-committing uncommitted changes...[/dim]")
+        auto_commit_changes(issue, Stage.IMPLEMENT)
+
+    # Push to remote (explicitly to origin/{branch}, not tracked branch)
+    console.print(f"[dim]Pushing {branch} to origin/{branch}...[/dim]")
     push_branch_to_remote(branch)
 
     # Generate PR title and body
