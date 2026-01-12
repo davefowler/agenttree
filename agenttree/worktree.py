@@ -1,6 +1,7 @@
 """Git worktree management for AgentTree."""
 
 import subprocess
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 from pydantic import BaseModel
@@ -17,13 +18,94 @@ class WorktreeStatus(BaseModel):
     has_task: bool
     has_uncommitted: bool
     is_busy: bool
+    current_task: Optional[str] = None
+    task_count: int = 0
+
+
+def get_tasks_dir(worktree_path: Path) -> Path:
+    """Get the tasks directory for a worktree."""
+    return worktree_path / "tasks"
+
+
+def get_pending_tasks(worktree_path: Path) -> List[Path]:
+    """Get all pending task files (not in archive), sorted oldest first.
+    
+    Args:
+        worktree_path: Path to the worktree
+        
+    Returns:
+        List of task file paths, sorted by creation time (oldest first)
+    """
+    tasks_dir = get_tasks_dir(worktree_path)
+    if not tasks_dir.exists():
+        return []
+    
+    # Get all .md files in tasks/ (not in archive/)
+    task_files = [f for f in tasks_dir.glob("*.md") if f.is_file()]
+    
+    # Sort by file modification time (oldest first = FIFO)
+    return sorted(task_files, key=lambda f: f.stat().st_mtime)
+
+
+def get_current_task(worktree_path: Path) -> Optional[Path]:
+    """Get the current (oldest) task to work on.
+    
+    Args:
+        worktree_path: Path to the worktree
+        
+    Returns:
+        Path to the oldest task file, or None if no tasks
+    """
+    tasks = get_pending_tasks(worktree_path)
+    return tasks[0] if tasks else None
+
+
+def get_task_title(task_path: Path) -> str:
+    """Extract title from a task file.
+    
+    Args:
+        task_path: Path to the task file
+        
+    Returns:
+        Task title (from first # heading or filename)
+    """
+    try:
+        content = task_path.read_text()
+        for line in content.split("\n"):
+            if line.startswith("# "):
+                # Remove "# " and "Task: " prefix if present
+                title = line[2:].strip()
+                if title.lower().startswith("task:"):
+                    title = title[5:].strip()
+                return title
+    except Exception:
+        pass
+    
+    # Fallback to filename without date prefix and extension
+    name = task_path.stem
+    # Remove date prefix like "2026-01-01-"
+    if len(name) > 11 and name[10] == "-":
+        name = name[11:]
+    return name.replace("-", " ").title()
+
+
+def has_pending_tasks(worktree_path: Path) -> bool:
+    """Check if there are any pending tasks.
+    
+    Args:
+        worktree_path: Path to the worktree
+        
+    Returns:
+        True if there are pending tasks
+    """
+    return len(get_pending_tasks(worktree_path)) > 0
 
 
 def is_busy(worktree_path: Path) -> bool:
     """Check if an agent is busy.
 
     An agent is busy if:
-    - It has a TASK.md file, OR
+    - It has pending tasks in tasks/ folder, OR
     - It has uncommitted git changes
 
     Args:
@@ -32,8 +114,8 @@ def is_busy(worktree_path: Path) -> bool:
     Returns:
         True if agent is busy
     """
-    # Check for TASK.md
-    if (worktree_path / "TASK.md").exists():
+    # Check for pending tasks
+    if has_pending_tasks(worktree_path):
         return True
 
     # Check for uncommitted changes
@@ -48,6 +130,62 @@ def is_busy(worktree_path: Path) -> bool:
         return bool(result.stdout.strip())
     except (subprocess.CalledProcessError, FileNotFoundError):
         return False
+
+
+def archive_task(task_path: Path) -> Path:
+    """Move a completed task to the archive.
+    
+    Args:
+        task_path: Path to the task file
+        
+    Returns:
+        Path to the archived task file
+    """
+    archive_dir = task_path.parent / "archive"
+    archive_dir.mkdir(exist_ok=True)
+    
+    archived_path = archive_dir / task_path.name
+    task_path.rename(archived_path)
+    return archived_path
+
+
+def create_task_file(
+    worktree_path: Path,
+    title: str,
+    content: str,
+    issue_number: Optional[int] = None
+) -> Path:
+    """Create a new task file with dated filename.
+    
+    Args:
+        worktree_path: Path to the worktree
+        title: Task title
+        content: Full task content (markdown)
+        issue_number: Optional GitHub issue number
+        
+    Returns:
+        Path to the created task file
+    """
+    tasks_dir = get_tasks_dir(worktree_path)
+    tasks_dir.mkdir(exist_ok=True)
+    
+    # Create filename: YYYY-MM-DD-slug.md
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    
+    # Create slug from title
+    slug = title.lower()
+    slug = "".join(c if c.isalnum() or c == " " else "" for c in slug)
+    slug = "-".join(slug.split())[:50]  # Max 50 chars
+    
+    if issue_number:
+        filename = f"{date_str}-issue-{issue_number}-{slug}.md"
+    else:
+        filename = f"{date_str}-{slug}.md"
+    
+    task_path = tasks_dir / filename
+    task_path.write_text(content)
+    
+    return task_path
 
 
 def create_worktree(
@@ -113,25 +251,21 @@ def reset_worktree(worktree_path: Path, base_branch: str = "main") -> None:
         check=True,
     )
 
-    # Checkout base branch
-    try:
-        subprocess.run(
-            ["git", "checkout", base_branch],
-            cwd=worktree_path,
-            check=True,
-            capture_output=True,
-        )
-    except subprocess.CalledProcessError:
-        # Branch doesn't exist locally, create it from origin
-        subprocess.run(
-            ["git", "checkout", "-b", base_branch, f"origin/{base_branch}"],
-            cwd=worktree_path,
-            check=True,
-        )
-
-    # Reset to origin
+    # Get agent number from worktree path to create unique branch
+    worktree_name = worktree_path.name
+    work_branch = f"{worktree_name}-work"
+    
+    # Delete the work branch if it exists (so we can recreate it fresh)
     subprocess.run(
-        ["git", "reset", "--hard", f"origin/{base_branch}"],
+        ["git", "branch", "-D", work_branch],
+        cwd=worktree_path,
+        capture_output=True,  # Don't fail if branch doesn't exist
+    )
+    
+    # Create fresh work branch from origin/main
+    # Using -B to force-create (replaces if exists)
+    subprocess.run(
+        ["git", "checkout", "-B", work_branch, f"origin/{base_branch}"],
         cwd=worktree_path,
         check=True,
     )
@@ -143,10 +277,9 @@ def reset_worktree(worktree_path: Path, base_branch: str = "main") -> None:
         check=True,
     )
 
-    # Remove TASK.md if it exists
-    task_file = worktree_path / "TASK.md"
-    if task_file.exists():
-        task_file.unlink()
+    # Archive any pending tasks (they're being reset, not completed)
+    for task_file in get_pending_tasks(worktree_path):
+        archive_task(task_file)
 
 
 def list_worktrees(repo_path: Path) -> List[Dict[str, str]]:
@@ -262,8 +395,15 @@ class WorktreeManager:
         except (subprocess.CalledProcessError, FileNotFoundError):
             branch = "unknown"
 
-        # Check for TASK.md
-        has_task = (worktree_path / "TASK.md").exists()
+        # Check for pending tasks
+        pending_tasks = get_pending_tasks(worktree_path)
+        has_task = len(pending_tasks) > 0
+        task_count = len(pending_tasks)
+        
+        # Get current task title
+        current_task_title = None
+        if pending_tasks:
+            current_task_title = get_task_title(pending_tasks[0])
 
         # Check for uncommitted changes
         try:
@@ -278,7 +418,7 @@ class WorktreeManager:
         except (subprocess.CalledProcessError, FileNotFoundError):
             has_uncommitted = False
 
-        # Agent is busy if it has a task or uncommitted changes
+        # Agent is busy if it has tasks or uncommitted changes
         busy = has_task or has_uncommitted
 
         return WorktreeStatus(
@@ -288,6 +428,8 @@ class WorktreeManager:
             has_task=has_task,
             has_uncommitted=has_uncommitted,
             is_busy=busy,
+            current_task=current_task_title,
+            task_count=task_count,
         )
 
     def list_all(self) -> List[Dict[str, str]]:

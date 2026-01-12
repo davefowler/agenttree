@@ -15,10 +15,7 @@ from datetime import datetime
 
 from agenttree.config import load_config
 from agenttree.worktree import WorktreeManager
-from agenttree.github import get_issue, list_issues, sort_issues_by_priority, IssueWithContext
-from agenttree.web.models import (
-    Issue, IssueUpdate, IssueMoveRequest, StageEnum, IssueStatus, KanbanBoard
-)
+from agenttree.github import get_issue
 
 # Get the directory where this file is located
 BASE_DIR = Path(__file__).resolve().parent
@@ -29,23 +26,55 @@ app = FastAPI(title="AgentTree Dashboard")
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
+# Optional authentication (auto_error=False allows requests without credentials)
+security = HTTPBasic(auto_error=False)
+
 # Auth configuration from environment variables
 AUTH_ENABLED = os.getenv("AGENTTREE_WEB_AUTH", "false").lower() == "true"
 AUTH_USERNAME = os.getenv("AGENTTREE_WEB_USERNAME", "admin")
 AUTH_PASSWORD = os.getenv("AGENTTREE_WEB_PASSWORD", "changeme")
 
 
-def get_current_user() -> Optional[str]:
-    """Get current authenticated user (or None if auth disabled).
+def verify_credentials(credentials: Optional[HTTPBasicCredentials] = Depends(security)) -> Optional[str]:
+    """Verify HTTP Basic Auth credentials.
 
     This dependency is optional - only enforces auth if AUTH_ENABLED=true.
     """
     if not AUTH_ENABLED:
         return None
 
-    # Auth is enabled, require HTTP Basic Auth
-    # Note: This is a simplified version - in production you'd want proper dependency injection
-    return "authenticated_user"
+    # If auth is enabled but no credentials provided
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+
+    # Constant-time comparison to prevent timing attacks
+    username_correct = secrets.compare_digest(
+        credentials.username.encode("utf-8"),
+        AUTH_USERNAME.encode("utf-8")
+    )
+    password_correct = secrets.compare_digest(
+        credentials.password.encode("utf-8"),
+        AUTH_PASSWORD.encode("utf-8")
+    )
+
+    if not (username_correct and password_correct):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid credentials",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+
+    return credentials.username
+
+
+# Dependency for protected routes
+def get_current_user(username: Optional[str] = Depends(verify_credentials)) -> Optional[str]:
+    """Get current authenticated user (or None if auth disabled)."""
+    return username
 
 
 class AgentManager:
@@ -72,10 +101,19 @@ class AgentManager:
         if self.worktree_manager:
             try:
                 status = self.worktree_manager.get_status(agent_num)
+                
+                # Build task description
+                task_desc = None
+                if status.has_task and status.current_task:
+                    task_desc = status.current_task
+                    if status.task_count > 1:
+                        task_desc += f" (+{status.task_count - 1} queued)"
+                
                 return {
                     "agent_num": agent_num,
                     "status": "working" if status.is_busy else "idle",
-                    "current_task": "Active" if status.has_task else None,
+                    "current_task": task_desc,
+                    "task_count": status.task_count,
                     "tmux_active": self._check_tmux_session(agent_num),
                     "last_activity": datetime.now().isoformat()
                 }
@@ -88,19 +126,25 @@ class AgentManager:
             "agent_num": agent_num,
             "status": "idle",
             "current_task": None,
+            "task_count": 0,
             "tmux_active": self._check_tmux_session(agent_num),
             "last_activity": "Unknown"
         }
 
     def get_all_agents(self) -> List[dict]:
-        """Get all configured agents."""
+        """Get all configured agents by scanning for existing worktrees."""
+        agents = []
         if self.worktree_manager:
-            # Get configured agent count from config
-            num_agents = self.worktree_manager.config.num_agents
-            return [self.get_agent_status(i) for i in range(1, num_agents + 1)]
-
-        # Fallback to default
-        return [self.get_agent_status(i) for i in range(1, 4)]
+            config = self.worktree_manager.config
+            worktrees_dir = Path(config.worktrees_dir).expanduser()
+            
+            # Scan for existing agent directories matching project namespace
+            for agent_num in range(1, 10):
+                agent_path = worktrees_dir / f"{config.project}-agent-{agent_num}"
+                if agent_path.exists():
+                    agents.append(self.get_agent_status(agent_num))
+        
+        return agents
 
 
 # Global agent manager - will be initialized in startup
@@ -182,33 +226,46 @@ async def dispatch_task(
     request: Request,
     agent_num: int,
     issue_number: int = Form(default=None),
-    task_description: str = Form(default=None)
+    task_description: str = Form(default=None),
+    user: Optional[str] = Depends(get_current_user)
 ):
-    """Dispatch a task to an agent."""
-    get_current_user()  # Check auth if enabled
+    """Dispatch a task to an agent (adds to queue)."""
+    from agenttree.worktree import create_task_file
+
     try:
         if agent_manager.worktree_manager:
             worktree_path = agent_manager.worktree_manager.config.get_worktree_path(agent_num)
-            task_file = worktree_path / "TASK.md"
 
             # Create task content
             if issue_number:
                 try:
                     issue = get_issue(issue_number)
-                    task_content = f"# Task: {issue.title}\n\n"
-                    task_content += f"Issue: #{issue_number}\n\n"
-                    task_content += f"{issue.body}\n"
-                except Exception as e:
-                    task_content = f"# Task from Issue #{issue_number}\n\n"
-                    task_content += f"Error fetching issue: {e}\n"
-            else:
-                task_content = f"# Ad-hoc Task\n\n{task_description or 'No description provided'}\n"
+                    task_content = f"""# Task: {issue.title}
 
-            # Write TASK.md
-            task_file.write_text(task_content)
-            status = f"Task dispatched to agent-{agent_num}"
+**Issue:** [#{issue.number}]({issue.url})
+
+## Description
+
+{issue.body}
+"""
+                    task_path = create_task_file(
+                        worktree_path, issue.title, task_content, issue_number
+                    )
+                    status = f"Task queued: {task_path.name}"
+                except Exception as e:
+                    status = f"Error fetching issue: {e}"
+            else:
+                task_title = task_description[:50] if task_description else "Ad-hoc Task"
+                task_content = f"""# Task: {task_title}
+
+## Description
+
+{task_description or 'No description provided.'}
+"""
+                task_path = create_task_file(worktree_path, task_title, task_content)
+                status = f"Task queued: {task_path.name}"
         else:
-            status = "Dashboard running in mock mode - task not actually dispatched"
+            status = "Error: No worktree manager configured"
 
     except Exception as e:
         status = f"Error: {str(e)}"
@@ -253,187 +310,6 @@ async def tmux_websocket(websocket: WebSocket, agent_num: int):
         pass
 
 
-@app.get("/flow", response_class=HTMLResponse)
-async def flow_view(request: Request):
-    """Flow view page (inbox-style task management)."""
-    user = get_current_user()  # Check auth if enabled
-    try:
-        issues_ctx = list_issues(state="open")
-        sorted_issues_ctx = sort_issues_by_priority(issues_ctx)
-
-        # Convert first issue to Issue model for detail view
-        selected_issue = None
-        if sorted_issues_ctx:
-            first = sorted_issues_ctx[0]
-            stage = StageEnum.BACKLOG
-            for label in first.labels:
-                if label.startswith("stage-"):
-                    stage_name = label.replace("stage-", "").replace("-", "_")
-                    try:
-                        stage = StageEnum(stage_name)
-                    except ValueError:
-                        pass
-
-            selected_issue = Issue(
-                number=first.number,
-                title=first.title,
-                body=first.body,
-                labels=first.labels,
-                assignees=first.assignees,
-                stage=stage,
-                status=IssueStatus.OPEN,
-                url=first.url,
-                created_at=datetime.fromisoformat(first.created_at.replace('Z', '+00:00')),
-                updated_at=datetime.fromisoformat(first.updated_at.replace('Z', '+00:00'))
-            )
-
-    except Exception as e:
-        print(f"Error fetching issues: {e}")
-        sorted_issues_ctx = []
-        selected_issue = None
-
-    return templates.TemplateResponse(
-        "flow.html",
-        {"request": request, "issues": sorted_issues_ctx, "user": user, "selected_issue": selected_issue}
-    )
-
-
-@app.get("/flow/issues", response_class=HTMLResponse)
-async def flow_issues_list(request: Request):
-    """Get issues list for Flow view (HTMX endpoint)."""
-    get_current_user()  # Check auth if enabled
-    try:
-        issues = list_issues(state="open")
-        sorted_issues = sort_issues_by_priority(issues)
-    except Exception as e:
-        print(f"Error fetching issues: {e}")
-        sorted_issues = []
-
-    return templates.TemplateResponse(
-        "partials/flow_issues_list.html",
-        {"request": request, "issues": sorted_issues}
-    )
-
-
-
-
-
-
-@app.get("/kanban", response_class=HTMLResponse)
-async def kanban_view(request: Request):
-    """Kanban board view."""
-    user = get_current_user()  # Check auth if enabled
-    try:
-        issues = list_issues(state="open")
-
-        # Group issues by stage
-        stages_dict = {stage: [] for stage in StageEnum}
-
-        for issue_ctx in issues:
-            # Map GitHub issue to our Issue model
-            # For now, extract stage from labels or default to backlog
-            stage = StageEnum.BACKLOG
-            for label in issue_ctx.labels:
-                if label.startswith("stage-"):
-                    stage_name = label.replace("stage-", "").replace("-", "_")
-                    try:
-                        stage = StageEnum(stage_name)
-                    except ValueError:
-                        pass
-
-            issue = Issue(
-                number=issue_ctx.number,
-                title=issue_ctx.title,
-                body=issue_ctx.body,
-                labels=issue_ctx.labels,
-                assignees=issue_ctx.assignees,
-                stage=stage,
-                status=IssueStatus.OPEN if issue_ctx.state == "OPEN" else IssueStatus.CLOSED,
-                url=issue_ctx.url,
-                created_at=datetime.fromisoformat(issue_ctx.created_at.replace('Z', '+00:00')),
-                updated_at=datetime.fromisoformat(issue_ctx.updated_at.replace('Z', '+00:00'))
-            )
-            stages_dict[stage].append(issue)
-
-        board = KanbanBoard(
-            stages=stages_dict,
-            total_issues=len(issues)
-        )
-    except Exception as e:
-        print(f"Error fetching issues: {e}")
-        board = KanbanBoard(
-            stages={stage: [] for stage in StageEnum},
-            total_issues=0
-        )
-
-    return templates.TemplateResponse(
-        "kanban.html",
-        {"request": request, "board": board, "stages": StageEnum, "user": user}
-    )
-
-
-@app.post("/api/issues/{issue_number}/move")
-async def move_issue(issue_number: int, move_request: IssueMoveRequest):
-    """Move issue to new stage (API endpoint)."""
-    get_current_user()  # Check auth if enabled
-
-    # TODO: Update issue in agents/ repo
-    # For now, just return success
-    # In real implementation:
-    # 1. Pull agents/ repo
-    # 2. Update issue.yaml with new stage
-    # 3. Commit and push
-
-    return {
-        "success": True,
-        "issue_number": issue_number,
-        "new_stage": move_request.stage.value
-    }
-
-
-@app.get("/api/issues/{issue_number}/detail", response_class=HTMLResponse)
-async def issue_detail(request: Request, issue_number: int):
-    """Get issue detail (shared between kanban modal and flow panel)."""
-    get_current_user()  # Check auth if enabled
-    try:
-        issues = list_issues(state="open")
-        issue_ctx = next((i for i in issues if i.number == issue_number), None)
-
-        if not issue_ctx:
-            return HTMLResponse("<div class='error'>Issue not found</div>")
-
-        # Convert to Issue model
-        stage = StageEnum.BACKLOG
-        for label in issue_ctx.labels:
-            if label.startswith("stage-"):
-                stage_name = label.replace("stage-", "").replace("-", "_")
-                try:
-                    stage = StageEnum(stage_name)
-                except ValueError:
-                    pass
-
-        issue = Issue(
-            number=issue_ctx.number,
-            title=issue_ctx.title,
-            body=issue_ctx.body,
-            labels=issue_ctx.labels,
-            assignees=issue_ctx.assignees,
-            stage=stage,
-            status=IssueStatus.OPEN,
-            url=issue_ctx.url,
-            created_at=datetime.fromisoformat(issue_ctx.created_at.replace('Z', '+00:00')),
-            updated_at=datetime.fromisoformat(issue_ctx.updated_at.replace('Z', '+00:00'))
-        )
-
-    except Exception as e:
-        return HTMLResponse(f"<div class='error'>Error: {str(e)}</div>")
-
-    return templates.TemplateResponse(
-        "partials/issue_detail.html",
-        {"request": request, "issue": issue}
-    )
-
-
 @app.get("/health")
 async def health_check():
     """Health check endpoint."""
@@ -454,17 +330,16 @@ def run_server(
     """
     global agent_manager
 
-    # Try to load config and initialize real agent manager
-    if config_path or Path(".agenttree/config.yaml").exists():
-        try:
-            config = load_config(config_path)
-            repo_path = Path.cwd()  # Assume current directory is the repo
-            worktree_manager = WorktreeManager(repo_path, config)
-            agent_manager = AgentManager(worktree_manager)
-            print(f"✓ Loaded config with {config.num_agents} agents")
-        except Exception as e:
-            print(f"⚠ Could not load config: {e}")
-            print("  Running with mock data")
+    # Load config - find_config_file walks up directory tree to find .agenttree.yaml
+    try:
+        config = load_config(config_path)
+        repo_path = Path.cwd()
+        worktree_manager = WorktreeManager(repo_path, config)
+        agent_manager = AgentManager(worktree_manager)
+        print(f"✓ Loaded config for project: {config.project}")
+    except Exception as e:
+        print(f"⚠ Could not load config: {e}")
+        print("  Run 'agenttree init' to create a config file")
 
     import uvicorn
     uvicorn.run(app, host=host, port=port)

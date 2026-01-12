@@ -48,4 +48,6 @@ TASK.md
 # OS
 .DS_Store
 Thumbs.db
+
+# AgentTree issue tracking (separate git repo)
 .agenttrees/

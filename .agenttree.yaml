@@ -1,0 +1,12 @@
+default_tool: claude
+port_range: 8001-8009
+project: agenttree
+tools:
+  aider:
+    command: aider --model sonnet
+    startup_prompt: /read tasks/
+  claude:
+    command: claude
+    startup_prompt: Check tasks/ folder and start working on the oldest task.
+    skip_permissions: true
+worktrees_dir: ~/Projects/worktrees

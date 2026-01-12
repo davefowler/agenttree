@@ -15,6 +15,7 @@ scripts_dir: scripts
 
 # Port range for agents (each agent gets one port)
 # Agent 1 gets 9001, Agent 2 gets 9002, etc.
+# Using 9001-9099 to avoid conflicts with common dev servers
 port_range: 9001-9099
 
 # Default AI tool to use when not specified

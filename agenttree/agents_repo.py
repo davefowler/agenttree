@@ -497,7 +497,10 @@ This file documents key architectural decisions and their rationale.
         (self.agents_path / "AGENTS.md").write_text(
             """# Agent Instructions
 
-## 📋 If you have a TASK.md file, read it first!
+## 📋 Check the tasks/ folder for pending work!
+
+Tasks are stored as dated .md files (e.g., `tasks/2025-01-15-fix-login-bug.md`).
+Work on the **oldest** task first. When done, it moves to `tasks/archive/`.
 
 ## Documentation Structure
 

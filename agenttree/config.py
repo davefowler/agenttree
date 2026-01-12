@@ -10,7 +10,8 @@ class ToolConfig(BaseModel):
     """Configuration for an AI tool."""
 
     command: str
-    startup_prompt: str = "Check TASK.md and start working."
+    startup_prompt: str = "Check tasks/ folder and start working on the oldest task."
+    skip_permissions: bool = False  # Add --dangerously-skip-permissions to command
 
 
 class StageConfig(BaseModel):
@@ -29,11 +30,22 @@ DEFAULT_STAGES = [
     StageConfig(name="problem_review", human_review=True),
     StageConfig(name="research", substages=["explore", "plan", "spec"]),
     StageConfig(name="plan_review", human_review=True),
-    StageConfig(name="implement", substages=["setup", "code", "test", "debug", "code_review"]),
+    StageConfig(name="implement", substages=["setup", "test", "code", "debug", "code_review"]),
     StageConfig(name="implementation_review", human_review=True),
     StageConfig(name="accepted", triggers_merge=True),
     StageConfig(name="not_doing"),
 ]
+
+
+class SecurityConfig(BaseModel):
+    """Security configuration for agents.
+
+    NOTE: Containers are MANDATORY. There is no option to disable them.
+    This config exists for future security settings, not to bypass containers.
+    """
+
+    # Reserved for future security settings
+    # Containers are always required - this is not configurable
 
 
 class Config(BaseModel):
@@ -49,6 +61,7 @@ class Config(BaseModel):
     refresh_interval: int = 10
     tools: Dict[str, ToolConfig] = Field(default_factory=dict)
     stages: list[StageConfig] = Field(default_factory=lambda: DEFAULT_STAGES.copy())
+    security: SecurityConfig = Field(default_factory=SecurityConfig)
 
     def get_port_for_agent(self, agent_num: int) -> int:
         """Get port number for a specific agent.
@@ -81,7 +94,8 @@ class Config(BaseModel):
         Returns:
             Path to the agent's worktree
         """
-        return self.worktrees_dir / f"agent-{agent_num}"
+        expanded_dir = Path(self.worktrees_dir).expanduser()
+        return expanded_dir / f"{self.project}-agent-{agent_num}"
 
     def get_tmux_session_name(self, agent_num: int) -> str:
         """Get tmux session name for a specific agent.

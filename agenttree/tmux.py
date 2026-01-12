@@ -1,11 +1,16 @@
 """Tmux session management for AgentTree."""
 
+from __future__ import annotations
+
 import subprocess
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, TYPE_CHECKING
 from dataclasses import dataclass
 
 from agenttree.config import Config
+
+if TYPE_CHECKING:
+    from agenttree.container import ContainerRuntime
 
 
 @dataclass
@@ -175,13 +180,30 @@ class TmuxManager:
         tool_name: str,
         startup_script: Optional[Path] = None,
     ) -> None:
-        """Start an agent in a tmux session.
+        """DEPRECATED: Use start_agent_in_container instead.
+        
+        This method is kept for backwards compatibility but will raise an error.
+        AgentTree requires containers - there is no non-container mode.
+        """
+        raise RuntimeError(
+            "start_agent() is deprecated. Use start_agent_in_container() instead. "
+            "AgentTree requires containers for security - there is no non-container mode."
+        )
+
+    def start_agent_in_container(
+        self,
+        agent_num: int,
+        worktree_path: Path,
+        tool_name: str,
+        container_runtime: "ContainerRuntime",
+    ) -> None:
+        """Start an agent in a container within a tmux session.
 
         Args:
             agent_num: Agent number
             worktree_path: Path to the agent's worktree
             tool_name: Name of the AI tool to use
-            startup_script: Optional path to startup script
+            container_runtime: Container runtime instance
         """
         session_name = self.get_session_name(agent_num)
 
@@ -192,16 +214,24 @@ class TmuxManager:
         # Get tool config
         tool_config = self.config.get_tool_config(tool_name)
 
-        # Create session
-        if startup_script and startup_script.exists():
-            create_session(session_name, worktree_path, f"./{startup_script.name}")
-        else:
-            create_session(session_name, worktree_path, tool_config.command)
+        # Build container command
+        # The container runs the AI tool with --dangerously-skip-permissions
+        # since it's already isolated in a container
+        container_cmd = container_runtime.build_run_command(
+            worktree_path=worktree_path,
+            ai_tool=tool_name,
+            dangerous=True,  # Safe because we're in a container
+        )
+        
+        # Join command for shell execution
+        container_cmd_str = " ".join(container_cmd)
 
-        # Send startup prompt after a brief delay
+        # Create tmux session running the container
+        create_session(session_name, worktree_path, container_cmd_str)
+
+        # Send startup prompt after container starts
         import time
-
-        time.sleep(1)
+        time.sleep(2)  # Container startup takes a bit longer
         send_keys(session_name, tool_config.startup_prompt)
 
     def stop_agent(self, agent_num: int) -> None:
