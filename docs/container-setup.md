@@ -189,7 +189,7 @@ rm -rf .worktrees/
 | Variable | Description |
 |----------|-------------|
 | `GITHUB_TOKEN` | For GitHub API access (PRs, issues) |
-| `ANTHROPIC_API_KEY` | For Claude API (if needed) |
+| `CLAUDE_CODE_OAUTH_TOKEN` | OAuth token for Claude CLI (from `claude setup-token`) |
 | `AGENT_PORT` | Allocated port for dev server |
 
 ## See Also

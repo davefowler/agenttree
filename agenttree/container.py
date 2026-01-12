@@ -178,11 +178,6 @@ class ContainerRuntime:
                         return line.split("=", 1)[1].strip()
             return None
 
-        # API key for direct API access
-        api_key = get_credential("ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY")
-        if api_key:
-            cmd.extend(["-e", f"ANTHROPIC_API_KEY={api_key}"])
-
         # OAuth token for subscription auth (from `claude setup-token`)
         oauth_token = get_credential("CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN")
         if oauth_token:
