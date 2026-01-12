@@ -50,15 +50,15 @@ if [ -f /home/agent/.claude-host/settings.json ]; then
     cp /home/agent/.claude-host/settings.json /home/agent/.claude/settings.json
 fi
 
-# Set up agenttree if pyproject.toml exists and agenttree isn't available
-# (Host .venv won't work in container due to different paths)
-if [ -f /workspace/pyproject.toml ] && ! command -v agenttree &> /dev/null; then
-    # Create container-specific venv if it doesn't exist
+# Set up agenttree from workspace (editable install stays in sync with source)
+# Host .venv won't work in container due to different paths
+if [ -f /workspace/pyproject.toml ]; then
+    # Create venv if it doesn't exist
     if [ ! -d /home/agent/.agenttree-venv ]; then
         python3 -m venv /home/agent/.agenttree-venv
-        /home/agent/.agenttree-venv/bin/pip install -q -e /workspace
     fi
-    # Add to PATH
+    # Always run pip install -e (fast if unchanged, picks up new deps)
+    /home/agent/.agenttree-venv/bin/pip install -q -e /workspace
     export PATH="/home/agent/.agenttree-venv/bin:$PATH"
 fi
 
