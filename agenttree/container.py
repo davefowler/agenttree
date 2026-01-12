@@ -1,10 +1,53 @@
 """Container runtime support for AgentTree."""
 
+import os
 import platform
+import re
 import shutil
 import subprocess
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
+
+
+def get_git_worktree_info(worktree_path: Path) -> Tuple[Optional[Path], Optional[Path]]:
+    """Get git directory info for a worktree.
+
+    Git worktrees have a .git FILE (not directory) that points to the main
+    repo's .git directory. We need to mount that directory in the container
+    for git operations to work.
+
+    Args:
+        worktree_path: Path to the worktree
+
+    Returns:
+        Tuple of (main_git_dir, worktree_git_dir) or (None, None) if not a worktree
+    """
+    git_path = worktree_path / ".git"
+
+    if not git_path.exists():
+        return None, None
+
+    # If .git is a directory, this is a regular repo, not a worktree
+    if git_path.is_dir():
+        return None, None
+
+    # .git is a file - read it to get the gitdir path
+    try:
+        content = git_path.read_text().strip()
+        # Format: "gitdir: /path/to/.git/worktrees/name"
+        match = re.match(r'^gitdir:\s*(.+)$', content)
+        if match:
+            worktree_git_dir = Path(match.group(1))
+            # The main .git dir is the parent of "worktrees"
+            # e.g., /repo/.git/worktrees/agent-1 -> /repo/.git
+            if "worktrees" in worktree_git_dir.parts:
+                idx = worktree_git_dir.parts.index("worktrees")
+                main_git_dir = Path(*worktree_git_dir.parts[:idx])
+                return main_git_dir, worktree_git_dir
+    except Exception:
+        pass
+
+    return None, None
 
 
 class ContainerRuntime:
@@ -95,6 +138,14 @@ class ContainerRuntime:
         # Name container for persistence (can restart without re-auth)
         if agent_num is not None:
             cmd.extend(["--name", f"agenttree-agent-{agent_num}"])
+
+        # Mount git directory for worktrees so git operations work in container
+        # Worktrees have a .git file pointing to /path/to/repo/.git/worktrees/name
+        # We mount the main .git dir at the same path so the reference resolves
+        main_git_dir, worktree_git_dir = get_git_worktree_info(abs_path)
+        if main_git_dir and main_git_dir.exists():
+            # Mount main .git directory at the same absolute path inside container
+            cmd.extend(["-v", f"{main_git_dir}:{main_git_dir}"])
 
         # Mount Claude config for subscription auth (if exists)
         if claude_config.exists():
