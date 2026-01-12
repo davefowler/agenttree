@@ -92,12 +92,16 @@ def send_keys(session_name: str, keys: str, submit: bool = True) -> None:
         keys: Keys to send
         submit: Whether to send Enter to submit (default True)
     """
+    import time
+
     # Always send text using literal mode to avoid interpretation
     subprocess.run(
         ["tmux", "send-keys", "-t", session_name, "-l", keys],
         check=True,
     )
     if submit:
+        # Small delay to let the terminal process the text
+        time.sleep(0.1)
         # Send Enter separately - Claude CLI needs this as a separate command
         # to properly submit (it's in multi-line mode where Enter adds newlines)
         subprocess.run(
@@ -113,6 +117,56 @@ def attach_session(session_name: str) -> None:
         session_name: Name of the session to attach to
     """
     subprocess.run(["tmux", "attach", "-t", session_name])
+
+
+def capture_pane(session_name: str, lines: int = 50) -> str:
+    """Capture the contents of a tmux pane.
+
+    Args:
+        session_name: Name of the session
+        lines: Number of lines to capture from history
+
+    Returns:
+        The captured pane contents
+    """
+    try:
+        result = subprocess.run(
+            ["tmux", "capture-pane", "-t", session_name, "-p", "-S", f"-{lines}"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return result.stdout
+    except subprocess.CalledProcessError:
+        return ""
+
+
+def wait_for_prompt(
+    session_name: str,
+    prompt_char: str = "❯",
+    timeout: float = 30.0,
+    poll_interval: float = 0.5,
+) -> bool:
+    """Wait for a prompt to appear in a tmux session.
+
+    Args:
+        session_name: Name of the session
+        prompt_char: Character to look for (default: Claude CLI prompt)
+        timeout: Maximum time to wait in seconds
+        poll_interval: Time between checks in seconds
+
+    Returns:
+        True if prompt found, False if timeout
+    """
+    import time
+
+    start = time.time()
+    while time.time() - start < timeout:
+        pane_content = capture_pane(session_name, lines=20)
+        if prompt_char in pane_content:
+            return True
+        time.sleep(poll_interval)
+    return False
 
 
 def list_sessions() -> List[TmuxSession]:
@@ -238,10 +292,9 @@ class TmuxManager:
         # Create tmux session running the container
         create_session(session_name, worktree_path, container_cmd_str)
 
-        # Send startup prompt after container starts
-        import time
-        time.sleep(8)  # Container + Claude CLI startup takes a bit
-        send_keys(session_name, tool_config.startup_prompt)
+        # Wait for Claude CLI prompt before sending startup message
+        if wait_for_prompt(session_name, prompt_char="❯", timeout=30.0):
+            send_keys(session_name, tool_config.startup_prompt)
 
     def stop_agent(self, agent_num: int) -> None:
         """Stop an agent's tmux session.
@@ -335,10 +388,9 @@ class TmuxManager:
         # Create tmux session running the container
         create_session(session_name, worktree_path, container_cmd_str)
 
-        # Send startup prompt after container starts
-        import time
-        time.sleep(8)  # Container + Claude CLI startup takes a bit
-        send_keys(session_name, tool_config.startup_prompt)
+        # Wait for Claude CLI prompt before sending startup message
+        if wait_for_prompt(session_name, prompt_char="❯", timeout=30.0):
+            send_keys(session_name, tool_config.startup_prompt)
 
     def stop_issue_agent(self, session_name: str) -> None:
         """Stop an issue-bound agent's tmux session.
