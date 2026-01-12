@@ -771,10 +771,10 @@ def dispatch(
     console.print(f"\n[bold]Agent ready for issue #{issue.id}[/bold]")
     console.print(f"  Container: {agent.container}")
     console.print(f"  Port: {agent.port}")
-    console.print(f"\nCommands:")
-    console.print(f"  agenttree attach {issue.id}   # Attach to session")
-    console.print(f"  agenttree send {issue.id} 'message'  # Send message")
-    console.print(f"  agenttree status             # View all agents")
+    console.print(f"\n[dim]Commands:[/dim]")
+    console.print(f"  agenttree attach {issue.id}")
+    console.print(f"  agenttree send {issue.id} 'message'")
+    console.print(f"  agenttree agents")
 
 
 @main.command("agents")
