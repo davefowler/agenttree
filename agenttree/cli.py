@@ -18,10 +18,14 @@ from agenttree.issues import (
     Issue,
     Stage,
     Priority,
+    HUMAN_REVIEW_STAGES,
     create_issue as create_issue_func,
     list_issues as list_issues_func,
     get_issue as get_issue_func,
     get_issue_dir,
+    get_next_stage,
+    update_issue_stage,
+    load_skill,
 )
 
 console = Console()
@@ -1242,6 +1246,184 @@ def issue_show(issue_id: str) -> None:
             console.print(f"  • {entry.timestamp[:10]} → {stage_str}{agent_str}")
 
     console.print(f"\n[dim]Directory: {issue_dir}[/dim]")
+
+
+# =============================================================================
+# Stage Transition Commands
+# =============================================================================
+
+@main.command("status")
+@click.option("--issue", "-i", "issue_id", help="Issue ID (if not in agent context)")
+def stage_status(issue_id: Optional[str]) -> None:
+    """Show current issue and stage status.
+
+    Examples:
+        agenttree status
+        agenttree status --issue 001
+    """
+    # Try to get issue from argument or agent context
+    if not issue_id:
+        # TODO: Read from .agenttree-agent file when in agent worktree
+        console.print("[yellow]No issue specified. Use --issue flag or run from agent worktree.[/yellow]")
+        console.print("[dim]Showing all active issues:[/dim]\n")
+
+        # Show all non-backlog, non-accepted issues
+        active_issues = [
+            i for i in list_issues_func()
+            if i.stage not in (Stage.BACKLOG, Stage.ACCEPTED, Stage.NOT_DOING)
+        ]
+
+        if not active_issues:
+            console.print("[dim]No active issues[/dim]")
+            return
+
+        table = Table(title="Active Issues")
+        table.add_column("ID", style="cyan")
+        table.add_column("Title", style="white")
+        table.add_column("Stage", style="magenta")
+        table.add_column("Agent", style="green")
+
+        for issue in active_issues:
+            stage_str = issue.stage.value
+            if issue.substage:
+                stage_str += f".{issue.substage}"
+            agent_str = f"Agent {issue.assigned_agent}" if issue.assigned_agent else "-"
+            table.add_row(issue.id, issue.title[:40], stage_str, agent_str)
+
+        console.print(table)
+        return
+
+    issue = get_issue_func(issue_id)
+    if not issue:
+        console.print(f"[red]Issue {issue_id} not found[/red]")
+        sys.exit(1)
+
+    console.print(f"\n[bold cyan]Issue {issue.id}: {issue.title}[/bold cyan]")
+    console.print(f"[bold]Stage:[/bold] {issue.stage.value}", end="")
+    if issue.substage:
+        console.print(f".{issue.substage}")
+    else:
+        console.print()
+
+    if issue.assigned_agent:
+        console.print(f"[bold]Agent:[/bold] {issue.assigned_agent}")
+
+    if issue.stage in HUMAN_REVIEW_STAGES:
+        console.print(f"\n[yellow]⏳ Waiting for human review[/yellow]")
+    elif issue.stage == Stage.ACCEPTED:
+        console.print(f"\n[green]✓ Issue completed[/green]")
+
+
+@main.command("begin")
+@click.argument("stage", type=click.Choice([s.value for s in Stage]))
+@click.option("--issue", "-i", "issue_id", required=True, help="Issue ID")
+def stage_begin(stage: str, issue_id: str) -> None:
+    """Begin working on a stage. Returns stage instructions.
+
+    Examples:
+        agenttree begin problem --issue 001
+        agenttree begin research --issue 002
+    """
+    issue = get_issue_func(issue_id)
+    if not issue:
+        console.print(f"[red]Issue {issue_id} not found[/red]")
+        sys.exit(1)
+
+    target_stage = Stage(stage)
+
+    # Get substages for this stage
+    from agenttree.issues import STAGE_SUBSTAGES
+    substages = STAGE_SUBSTAGES.get(target_stage, [])
+    substage = substages[0] if substages else None
+
+    # Update issue to this stage
+    updated = update_issue_stage(issue_id, target_stage, substage)
+    if not updated:
+        console.print(f"[red]Failed to update issue[/red]")
+        sys.exit(1)
+
+    stage_str = target_stage.value
+    if substage:
+        stage_str += f".{substage}"
+    console.print(f"[green]✓ Started {stage_str}[/green]")
+
+    # Load and display skill
+    skill = load_skill(target_stage, substage)
+    if skill:
+        console.print(f"\n{'='*60}")
+        console.print(f"[bold cyan]Stage Instructions: {target_stage.value.upper()}[/bold cyan]")
+        console.print(f"{'='*60}\n")
+        console.print(skill)
+    else:
+        console.print(f"\n[dim]No skill file found for {target_stage.value}[/dim]")
+
+    # Show relevant files
+    issue_dir = get_issue_dir(issue_id)
+    if issue_dir:
+        console.print(f"\n[bold]Issue files:[/bold]")
+        for file in sorted(issue_dir.iterdir()):
+            if file.is_file():
+                console.print(f"  • {file.name}")
+
+
+@main.command("next")
+@click.option("--issue", "-i", "issue_id", required=True, help="Issue ID")
+def stage_next(issue_id: str) -> None:
+    """Move to the next substage or stage.
+
+    Examples:
+        agenttree next --issue 001
+    """
+    issue = get_issue_func(issue_id)
+    if not issue:
+        console.print(f"[red]Issue {issue_id} not found[/red]")
+        sys.exit(1)
+
+    if issue.stage == Stage.ACCEPTED:
+        console.print(f"[yellow]Issue is already accepted[/yellow]")
+        return
+
+    if issue.stage == Stage.NOT_DOING:
+        console.print(f"[yellow]Issue is marked as not doing[/yellow]")
+        return
+
+    # Calculate next stage
+    next_stage, next_substage, is_human_review = get_next_stage(
+        issue.stage, issue.substage
+    )
+
+    # Check if we're already at the next stage (no change)
+    if next_stage == issue.stage and next_substage == issue.substage:
+        console.print(f"[yellow]Already at final stage[/yellow]")
+        return
+
+    # Update issue
+    updated = update_issue_stage(issue_id, next_stage, next_substage)
+    if not updated:
+        console.print(f"[red]Failed to update issue[/red]")
+        sys.exit(1)
+
+    stage_str = next_stage.value
+    if next_substage:
+        stage_str += f".{next_substage}"
+    console.print(f"[green]✓ Moved to {stage_str}[/green]")
+
+    if is_human_review:
+        console.print(f"\n[yellow]⏳ Waiting for human review[/yellow]")
+        console.print(f"[dim]Your work has been submitted for review.[/dim]")
+        console.print(f"[dim]You will receive instructions when the review is complete.[/dim]")
+        return
+
+    # Load and display skill for next stage
+    skill = load_skill(next_stage, next_substage)
+    if skill:
+        console.print(f"\n{'='*60}")
+        header = f"Stage Instructions: {next_stage.value.upper()}"
+        if next_substage:
+            header += f" ({next_substage})"
+        console.print(f"[bold cyan]{header}[/bold cyan]")
+        console.print(f"{'='*60}\n")
+        console.print(skill)
 
 
 if __name__ == "__main__":
