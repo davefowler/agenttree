@@ -913,6 +913,141 @@ class TestValidationHooks:
         # Should not raise
         require_review_md_for_pr(mock_issue)
 
+    @patch('agenttree.hooks._get_issue_dir')
+    def test_require_plan_md_for_implement_success(self, mock_get_issue_dir, mock_issue, tmp_path):
+        """Should pass when plan.md exists with meaningful Approach content."""
+        from agenttree.hooks import require_plan_md_for_implement
+
+        mock_get_issue_dir.return_value = tmp_path
+        plan_content = """# Implementation Plan
+
+## Problem Summary
+
+Brief summary of the problem.
+
+## Approach
+
+This is a meaningful approach description that explains the implementation strategy
+with more than 20 characters of content to pass validation.
+
+## Files to Modify
+
+- file1.py
+- file2.py
+"""
+        (tmp_path / "plan.md").write_text(plan_content)
+
+        # Should not raise
+        require_plan_md_for_implement(mock_issue)
+
+    @patch('agenttree.hooks._get_issue_dir')
+    def test_require_plan_md_for_implement_fails_missing_file(self, mock_get_issue_dir, mock_issue, tmp_path):
+        """Should block transition when plan.md doesn't exist."""
+        from agenttree.hooks import require_plan_md_for_implement, ValidationError
+
+        mock_get_issue_dir.return_value = tmp_path
+        # Don't create plan.md
+
+        with pytest.raises(ValidationError, match="plan.md not found"):
+            require_plan_md_for_implement(mock_issue)
+
+    @patch('agenttree.hooks._get_issue_dir')
+    def test_require_plan_md_for_implement_fails_empty_approach(self, mock_get_issue_dir, mock_issue, tmp_path):
+        """Should block transition when Approach section is empty."""
+        from agenttree.hooks import require_plan_md_for_implement, ValidationError
+
+        mock_get_issue_dir.return_value = tmp_path
+        plan_content = """# Implementation Plan
+
+## Problem Summary
+
+Brief summary.
+
+## Approach
+
+<!-- Describe your approach here -->
+
+## Files to Modify
+
+- file1.py
+"""
+        (tmp_path / "plan.md").write_text(plan_content)
+
+        with pytest.raises(ValidationError, match="Approach section is too short"):
+            require_plan_md_for_implement(mock_issue)
+
+    @patch('agenttree.hooks._get_issue_dir')
+    def test_require_plan_md_for_implement_fails_short_approach(self, mock_get_issue_dir, mock_issue, tmp_path):
+        """Should block transition when Approach section has less than 20 chars."""
+        from agenttree.hooks import require_plan_md_for_implement, ValidationError
+
+        mock_get_issue_dir.return_value = tmp_path
+        plan_content = """# Implementation Plan
+
+## Approach
+
+Short.
+
+## Files to Modify
+"""
+        (tmp_path / "plan.md").write_text(plan_content)
+
+        with pytest.raises(ValidationError, match="Approach section is too short"):
+            require_plan_md_for_implement(mock_issue)
+
+    @patch('agenttree.hooks._get_issue_dir')
+    def test_require_plan_md_for_implement_ignores_html_comments(self, mock_get_issue_dir, mock_issue, tmp_path):
+        """Should ignore HTML comments when counting Approach content length."""
+        from agenttree.hooks import require_plan_md_for_implement, ValidationError
+
+        mock_get_issue_dir.return_value = tmp_path
+        plan_content = """# Implementation Plan
+
+## Approach
+
+<!-- This is a very long HTML comment that should be ignored when counting -->
+<!-- Another comment here -->
+Too short
+
+## Files to Modify
+"""
+        (tmp_path / "plan.md").write_text(plan_content)
+
+        with pytest.raises(ValidationError, match="Approach section is too short"):
+            require_plan_md_for_implement(mock_issue)
+
+
+class TestMissingHooks:
+    """Document validation hooks that are mentioned but not implemented.
+
+    This test class serves as documentation for expected hooks that don't
+    exist in the codebase yet. These should be implemented in future issues.
+    """
+
+    def test_require_problem_md_for_research_not_implemented(self):
+        """Document that require_problem_md_for_research hook doesn't exist.
+
+        Expected behavior: Should block PROBLEM_REVIEW -> RESEARCH transition
+        when problem.md is missing or empty.
+
+        This hook is mentioned in issue #038 problem.md but was never implemented.
+        """
+        from agenttree.hooks import _registry, Stage
+
+        # Check if this hook is registered for the expected transition
+        key = (Stage.PROBLEM_REVIEW, Stage.RESEARCH)
+        hooks_for_transition = _registry.pre_transition.get(key, [])
+
+        # Get hook names
+        hook_names = [hook.__name__ for hook in hooks_for_transition]
+
+        # Document the gap - this assertion will PASS because the hook doesn't exist
+        # When the hook is implemented, update this test to verify it works
+        assert "require_problem_md_for_research" not in hook_names, (
+            "Hook require_problem_md_for_research has been implemented! "
+            "Update this test to verify its behavior instead of documenting its absence."
+        )
+
 
 class TestActionHooks:
     """Tests for post-transition action hooks."""
