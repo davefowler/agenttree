@@ -2,14 +2,19 @@
 
 Tracks which issues have active agents (container + worktree + tmux session)
 and manages dynamic port allocation.
+
+Uses file locking to prevent race conditions when multiple processes access
+the state file concurrently (e.g., starting multiple agents simultaneously).
 """
 
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Generator, Optional
 
 import yaml
+from filelock import FileLock, Timeout
 
 
 @dataclass
@@ -53,6 +58,42 @@ class ActiveAgent:
 def get_state_path() -> Path:
     """Get path to state file."""
     return Path.cwd() / ".agenttrees" / "state.yaml"
+
+
+def get_state_lock_path() -> Path:
+    """Get path to state lock file.
+
+    The lock file is a sibling of the state file, used by filelock
+    to coordinate concurrent access.
+    """
+    return get_state_path().parent / "state.yaml.lock"
+
+
+# Lock timeout in seconds - prevents deadlocks if a process crashes while holding lock
+_LOCK_TIMEOUT = 5.0
+
+
+@contextmanager
+def state_lock() -> Generator[None, None, None]:
+    """Context manager for exclusive access to state file.
+
+    Use this for atomic read-modify-write operations to prevent race conditions.
+
+    Raises:
+        Timeout: If lock cannot be acquired within _LOCK_TIMEOUT seconds
+
+    Example:
+        with state_lock():
+            state = load_state()
+            state["key"] = "value"
+            save_state(state)
+    """
+    lock_path = get_state_lock_path()
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    lock = FileLock(lock_path, timeout=_LOCK_TIMEOUT)
+
+    with lock:
+        yield
 
 
 def load_state() -> dict:
@@ -130,28 +171,33 @@ def list_active_agents() -> list[ActiveAgent]:
 def register_agent(agent: ActiveAgent) -> None:
     """Register a new active agent.
 
+    Uses file locking to prevent race conditions during concurrent registrations.
+
     Args:
         agent: ActiveAgent to register
     """
-    state = load_state()
+    with state_lock():
+        state = load_state()
 
-    if "active_agents" not in state:
-        state["active_agents"] = {}
+        if "active_agents" not in state:
+            state["active_agents"] = {}
 
-    state["active_agents"][agent.issue_id] = agent.to_dict()
+        state["active_agents"][agent.issue_id] = agent.to_dict()
 
-    # Track port allocation
-    if "port_pool" not in state:
-        state["port_pool"] = {"base": 3000, "allocated": []}
+        # Track port allocation
+        if "port_pool" not in state:
+            state["port_pool"] = {"base": 3000, "allocated": []}
 
-    if agent.port not in state["port_pool"]["allocated"]:
-        state["port_pool"]["allocated"].append(agent.port)
+        if agent.port not in state["port_pool"]["allocated"]:
+            state["port_pool"]["allocated"].append(agent.port)
 
-    save_state(state)
+        save_state(state)
 
 
 def unregister_agent(issue_id: str) -> Optional[ActiveAgent]:
     """Unregister an active agent.
+
+    Uses file locking to prevent race conditions during concurrent unregistrations.
 
     Args:
         issue_id: Issue ID to unregister
@@ -159,25 +205,29 @@ def unregister_agent(issue_id: str) -> Optional[ActiveAgent]:
     Returns:
         The unregistered ActiveAgent, or None if not found
     """
-    state = load_state()
+    with state_lock():
+        state = load_state()
 
-    agent_data = state.get("active_agents", {}).pop(issue_id, None)
+        agent_data = state.get("active_agents", {}).pop(issue_id, None)
 
-    if agent_data:
-        agent = ActiveAgent.from_dict(agent_data)
+        if agent_data:
+            agent = ActiveAgent.from_dict(agent_data)
 
-        # Free port
-        if agent.port in state.get("port_pool", {}).get("allocated", []):
-            state["port_pool"]["allocated"].remove(agent.port)
+            # Free port
+            if agent.port in state.get("port_pool", {}).get("allocated", []):
+                state["port_pool"]["allocated"].remove(agent.port)
 
-        save_state(state)
-        return agent
+            save_state(state)
+            return agent
 
-    return None
+        return None
 
 
 def allocate_port(base_port: int = 3000) -> int:
     """Allocate an available port.
+
+    Uses file locking to prevent race conditions when multiple processes
+    allocate ports concurrently (e.g., starting multiple agents at once).
 
     Args:
         base_port: Starting port number
@@ -185,36 +235,40 @@ def allocate_port(base_port: int = 3000) -> int:
     Returns:
         Allocated port number
     """
-    state = load_state()
+    with state_lock():
+        state = load_state()
 
-    if "port_pool" not in state:
-        state["port_pool"] = {"base": base_port, "allocated": []}
+        if "port_pool" not in state:
+            state["port_pool"] = {"base": base_port, "allocated": []}
 
-    allocated = set(state["port_pool"].get("allocated", []))
+        allocated = set(state["port_pool"].get("allocated", []))
 
-    # Find first available port starting from base + 1
-    port = base_port + 1
-    while port in allocated:
-        port += 1
+        # Find first available port starting from base + 1
+        port = base_port + 1
+        while port in allocated:
+            port += 1
 
-    state["port_pool"]["allocated"].append(port)
-    save_state(state)
+        state["port_pool"]["allocated"].append(port)
+        save_state(state)
 
-    return port
+        return port
 
 
 def free_port(port: int) -> None:
     """Free an allocated port.
 
+    Uses file locking to prevent race conditions during concurrent operations.
+
     Args:
         port: Port number to free
     """
-    state = load_state()
+    with state_lock():
+        state = load_state()
 
-    allocated = state.get("port_pool", {}).get("allocated", [])
-    if port in allocated:
-        allocated.remove(port)
-        save_state(state)
+        allocated = state.get("port_pool", {}).get("allocated", [])
+        if port in allocated:
+            allocated.remove(port)
+            save_state(state)
 
 
 def get_issue_names(issue_id: str, slug: str, project: str = "agenttree") -> dict:
