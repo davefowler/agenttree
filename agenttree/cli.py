@@ -1427,5 +1427,125 @@ def stage_next(issue_id: str) -> None:
         console.print(skill)
 
 
+# =============================================================================
+# Agent Context Commands
+# =============================================================================
+
+@main.command("context-init")
+@click.option("--agent", "-a", "agent_num", type=int, help="Agent number (reads from .env if not provided)")
+@click.option("--port", "-p", "port", type=int, help="Agent port (derived from agent number if not provided)")
+def context_init(agent_num: Optional[int], port: Optional[int]) -> None:
+    """Initialize agent context in current worktree.
+
+    This command:
+    1. Clones the .agenttrees repo into the current directory
+    2. Verifies/creates agent identity (.env with AGENT_NUM, PORT)
+
+    Run this from within an agent worktree during setup.
+
+    Examples:
+        agenttree context-init --agent 1
+        agenttree context-init  # Reads agent number from .env
+    """
+    cwd = Path.cwd()
+
+    # Try to read agent number from .env if not provided
+    if agent_num is None:
+        env_file = cwd / ".env"
+        if env_file.exists():
+            for line in env_file.read_text().splitlines():
+                if line.startswith("AGENT_NUM="):
+                    try:
+                        agent_num = int(line.split("=")[1].strip())
+                        console.print(f"[dim]Found AGENT_NUM={agent_num} in .env[/dim]")
+                    except ValueError:
+                        pass
+
+    if agent_num is None:
+        console.print("[red]Error: No agent number provided and none found in .env[/red]")
+        console.print("[dim]Use --agent <N> or ensure .env contains AGENT_NUM=<N>[/dim]")
+        sys.exit(1)
+
+    # Calculate port if not provided
+    if port is None:
+        config = load_config()
+        port = config.get_port_for_agent(agent_num)
+
+    # Check if .agenttrees already exists
+    agenttrees_path = cwd / ".agenttrees"
+    if agenttrees_path.exists() and (agenttrees_path / ".git").exists():
+        console.print(f"[green]✓ .agenttrees already exists[/green]")
+    else:
+        # Try to find the remote URL from the main project
+        # Go up directories to find the main .agenttrees repo
+        main_agenttrees = None
+        parent = cwd.parent
+        for _ in range(5):  # Check up to 5 levels up
+            candidate = parent / ".agenttrees"
+            if candidate.exists() and (candidate / ".git").exists():
+                main_agenttrees = candidate
+                break
+            parent = parent.parent
+
+        if main_agenttrees is None:
+            console.print("[red]Error: Could not find main .agenttrees repo[/red]")
+            console.print("[dim]Make sure you're in an agent worktree[/dim]")
+            sys.exit(1)
+
+        # Get the remote URL
+        try:
+            result = subprocess.run(
+                ["git", "remote", "get-url", "origin"],
+                cwd=main_agenttrees,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            remote_url = result.stdout.strip()
+        except subprocess.CalledProcessError:
+            console.print("[red]Error: Could not get remote URL from main .agenttrees[/red]")
+            sys.exit(1)
+
+        # Clone the repo
+        console.print(f"[cyan]Cloning .agenttrees from {remote_url}...[/cyan]")
+        try:
+            subprocess.run(
+                ["git", "clone", remote_url, ".agenttrees"],
+                cwd=cwd,
+                check=True,
+            )
+            console.print(f"[green]✓ Cloned .agenttrees[/green]")
+        except subprocess.CalledProcessError as e:
+            console.print(f"[red]Error cloning: {e}[/red]")
+            sys.exit(1)
+
+    # Verify/create .env with agent identity
+    env_file = cwd / ".env"
+    env_content = {}
+
+    if env_file.exists():
+        for line in env_file.read_text().splitlines():
+            if "=" in line and not line.startswith("#"):
+                key, value = line.split("=", 1)
+                env_content[key.strip()] = value.strip()
+
+    # Update agent identity
+    env_content["AGENT_NUM"] = str(agent_num)
+    env_content["PORT"] = str(port)
+
+    # Write back
+    with open(env_file, "w") as f:
+        for key, value in env_content.items():
+            f.write(f"{key}={value}\n")
+
+    console.print(f"[green]✓ Agent identity verified: AGENT_NUM={agent_num}, PORT={port}[/green]")
+
+    # Show summary
+    console.print(f"\n[bold]Agent {agent_num} context initialized:[/bold]")
+    console.print(f"  .agenttrees/ - Issues, skills, templates")
+    console.print(f"  .env - AGENT_NUM={agent_num}, PORT={port}")
+    console.print(f"\n[dim]Read CLAUDE.md for workflow instructions[/dim]")
+
+
 if __name__ == "__main__":
     main()
