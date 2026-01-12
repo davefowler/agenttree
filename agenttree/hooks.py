@@ -354,12 +354,26 @@ def has_commits_to_push(branch: Optional[str] = None) -> bool:
     if branch is None:
         branch = get_current_branch()
 
+    # First try checking against the remote branch
     result = subprocess.run(
         ["git", "log", f"origin/{branch}..HEAD", "--oneline"],
         capture_output=True,
         text=True,
         check=False,  # Don't fail if remote branch doesn't exist
     )
+
+    if result.returncode == 0 and result.stdout.strip():
+        return True
+
+    # If remote branch doesn't exist, check if we have commits beyond upstream
+    # This handles the case where the branch hasn't been pushed yet
+    result = subprocess.run(
+        ["git", "rev-list", "@{upstream}..HEAD", "--oneline"],
+        capture_output=True,
+        text=True,
+        check=False,  # Don't fail if no upstream
+    )
+
     return bool(result.stdout.strip())
 
 
