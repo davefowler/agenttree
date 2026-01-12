@@ -159,6 +159,41 @@ class TestIssueCRUD:
         assert issue is None
 
 
+    def test_create_issue_with_custom_stage(self, temp_agenttrees):
+        """Test creating an issue with a custom starting stage."""
+        issue = create_issue("Test Issue", stage=Stage.PROBLEM)
+
+        assert issue.id == "001"
+        assert issue.title == "Test Issue"
+        assert issue.stage == Stage.PROBLEM
+
+        # Check history entry
+        assert len(issue.history) == 1
+        assert issue.history[0].stage == "problem"
+
+    def test_create_issue_with_research_stage(self, temp_agenttrees):
+        """Test creating an issue starting at research stage."""
+        issue = create_issue("Research Task", stage=Stage.RESEARCH, priority=Priority.HIGH)
+
+        assert issue.stage == Stage.RESEARCH
+        assert issue.priority == Priority.HIGH
+        assert issue.history[0].stage == "research"
+
+    def test_create_issue_with_implement_stage(self, temp_agenttrees):
+        """Test creating an issue starting at implement stage."""
+        issue = create_issue("Quick Fix", stage=Stage.IMPLEMENT)
+
+        assert issue.stage == Stage.IMPLEMENT
+        assert issue.history[0].stage == "implement"
+
+    def test_create_issue_defaults_to_backlog(self, temp_agenttrees):
+        """Test that not providing a stage defaults to backlog."""
+        issue = create_issue("Default Stage Issue")
+
+        assert issue.stage == Stage.BACKLOG
+        assert issue.history[0].stage == "backlog"
+
+
 class TestStageTransitions:
     """Tests for stage transition functions."""
 
@@ -333,3 +368,4 @@ class TestLoadSkill:
         """Return None when skill not found."""
         skill = load_skill(Stage.ACCEPTED)
         assert skill is None
+
