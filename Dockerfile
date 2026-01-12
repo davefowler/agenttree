@@ -9,8 +9,9 @@ RUN apt-get update && apt-get install -y \
     curl \
     python3 \
     python3-pip \
+    python3-venv \
     sudo \
-    expect \
+    gh \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Claude CLI
@@ -28,53 +29,46 @@ RUN git config --global user.email "agent@agenttree.dev" && \
 # Create workspace directory
 WORKDIR /workspace
 
-# Create expect script to automate Claude first-run wizard
-RUN cat > /home/agent/claude-init.exp << 'EXPECT_EOF'
-#!/usr/bin/expect -f
-set timeout 30
-spawn claude --dangerously-skip-permissions
+# Pre-create Claude config to skip onboarding wizard
+RUN mkdir -p /home/agent/.claude && \
+    echo '{"hasCompletedOnboarding":true}' > /home/agent/.claude.json && \
+    echo '{"theme":"dark"}' > /home/agent/.claude/settings.json
 
-# Handle theme selection (select dark mode - option 1)
-expect {
-    "Choose the text style" {
-        send "\r"
-        exp_continue
-    }
-    "Select login method" {
-        # Select option 2 (API key auth)
-        send "\033\[B"
-        sleep 0.5
-        send "\r"
-        exp_continue
-    }
-    "bypass permissions" {
-        # Select "Yes, I accept" (option 2)
-        send "\033\[B"
-        sleep 0.5
-        send "\r"
-        exp_continue
-    }
-    "OAuth error" {
-        send "\r"
-        exp_continue
-    }
-    -re "❯.*" {
-        # We're at the prompt - ready!
-        interact
-    }
-    timeout {
-        puts "Timeout - trying to continue"
-        interact
-    }
-}
-EXPECT_EOF
-RUN chmod +x /home/agent/claude-init.exp
+# Create entrypoint script that sets up environment
+RUN cat > /home/agent/entrypoint.sh << 'EOF'
+#!/bin/bash
 
-# Create entrypoint script
-RUN echo '#!/bin/bash\n\
-exec "$@"' > /home/agent/entrypoint.sh && chmod +x /home/agent/entrypoint.sh
+# If host .claude directory is mounted, copy .claude.json if it exists there
+# (User can place their .claude.json in ~/.claude/ for sharing with containers)
+if [ -f /home/agent/.claude-host/.claude.json ]; then
+    cp /home/agent/.claude-host/.claude.json /home/agent/.claude.json
+fi
+
+# Copy settings.json from host if available
+if [ -f /home/agent/.claude-host/settings.json ]; then
+    cp /home/agent/.claude-host/settings.json /home/agent/.claude/settings.json
+fi
+
+# Set up agenttree - only do editable install if workspace IS agenttree
+# (for self-development). Other projects would need agenttree from PyPI.
+AGENTTREE_PATH=""
+if [ -f /workspace/pyproject.toml ] && grep -q 'name = "agenttree"' /workspace/pyproject.toml; then
+    # Working on agenttree itself - install from workspace (editable)
+    if [ ! -d /home/agent/.agenttree-venv ]; then
+        python3 -m venv /home/agent/.agenttree-venv
+    fi
+    if ! /home/agent/.agenttree-venv/bin/pip install -q -e "/workspace[dev]" 2>&1; then
+        echo "Warning: Failed to install agenttree dependencies" >&2
+    fi
+    AGENTTREE_PATH="/home/agent/.agenttree-venv/bin:"
+fi
+
+# Use exec env to ensure PATH persists to child processes
+exec env PATH="${AGENTTREE_PATH}${PATH}" "$@"
+EOF
+RUN chmod +x /home/agent/entrypoint.sh
 
 ENTRYPOINT ["/home/agent/entrypoint.sh"]
 
-# Default command - use expect script for interactive mode
-CMD ["/home/agent/claude-init.exp"]
+# Default command
+CMD ["claude", "--dangerously-skip-permissions"]
