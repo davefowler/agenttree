@@ -9,8 +9,10 @@ RUN apt-get update && apt-get install -y \
     curl \
     python3 \
     python3-pip \
+    python3-venv \
     sudo \
     expect \
+    gh \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Claude CLI
@@ -33,7 +35,7 @@ RUN mkdir -p /home/agent/.claude && \
     echo '{"hasCompletedOnboarding":true}' > /home/agent/.claude.json && \
     echo '{"theme":"dark"}' > /home/agent/.claude/settings.json
 
-# Create entrypoint script that merges host config if available
+# Create entrypoint script that sets up environment
 RUN cat > /home/agent/entrypoint.sh << 'EOF'
 #!/bin/bash
 
@@ -46,6 +48,18 @@ fi
 # Copy settings.json from host if available
 if [ -f /home/agent/.claude-host/settings.json ]; then
     cp /home/agent/.claude-host/settings.json /home/agent/.claude/settings.json
+fi
+
+# Set up agenttree if pyproject.toml exists and agenttree isn't available
+# (Host .venv won't work in container due to different paths)
+if [ -f /workspace/pyproject.toml ] && ! command -v agenttree &> /dev/null; then
+    # Create container-specific venv if it doesn't exist
+    if [ ! -d /home/agent/.agenttree-venv ]; then
+        python3 -m venv /home/agent/.agenttree-venv
+        /home/agent/.agenttree-venv/bin/pip install -q -e /workspace
+    fi
+    # Add to PATH
+    export PATH="/home/agent/.agenttree-venv/bin:$PATH"
 fi
 
 exec "$@"
