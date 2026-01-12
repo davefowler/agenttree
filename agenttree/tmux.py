@@ -84,17 +84,26 @@ def kill_session(session_name: str) -> None:
         pass
 
 
-def send_keys(session_name: str, keys: str) -> None:
+def send_keys(session_name: str, keys: str, submit: bool = True) -> None:
     """Send keystrokes to a tmux session.
 
     Args:
         session_name: Name of the session
         keys: Keys to send
+        submit: Whether to send Enter to submit (default True)
     """
+    # Send the text using literal mode (-l) to handle special characters
     subprocess.run(
-        ["tmux", "send-keys", "-t", session_name, keys, "Enter"],
+        ["tmux", "send-keys", "-t", session_name, "-l", keys],
         check=True,
     )
+    if submit:
+        # Send Escape first to exit any multi-line mode in Claude CLI,
+        # then Enter to submit
+        subprocess.run(
+            ["tmux", "send-keys", "-t", session_name, "Escape", "Enter"],
+            check=True,
+        )
 
 
 def attach_session(session_name: str) -> None:
@@ -231,7 +240,7 @@ class TmuxManager:
 
         # Send startup prompt after container starts
         import time
-        time.sleep(2)  # Container startup takes a bit longer
+        time.sleep(5)  # Container + Claude CLI startup takes a bit
         send_keys(session_name, tool_config.startup_prompt)
 
     def stop_agent(self, agent_num: int) -> None:
@@ -328,7 +337,7 @@ class TmuxManager:
 
         # Send startup prompt after container starts
         import time
-        time.sleep(2)  # Container startup takes a bit longer
+        time.sleep(5)  # Container + Claude CLI startup takes a bit
         send_keys(session_name, tool_config.startup_prompt)
 
     def stop_issue_agent(self, session_name: str) -> None:
