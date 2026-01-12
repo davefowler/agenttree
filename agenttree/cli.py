@@ -20,6 +20,7 @@ from agenttree.issues import (
     Stage,
     Priority,
     HUMAN_REVIEW_STAGES,
+    STAGE_SUBSTAGES,
     create_issue as create_issue_func,
     list_issues as list_issues_func,
     get_issue as get_issue_func,
@@ -736,11 +737,11 @@ def dispatch(
 
     console.print(f"\nCommands:")
     console.print(f"  agenttree attach {agent_num}  # Attach to session")
-    console.print(f"  agenttree status             # View all agents")
+    console.print(f"  agenttree agents             # View all agents")
 
 
-@main.command()
-def status() -> None:
+@main.command("agents")
+def agents_status() -> None:
     """Show status of all agents."""
     repo_path = Path.cwd()
     config = load_config(repo_path)
@@ -1345,8 +1346,15 @@ def stage_begin(stage: str, issue_id: str) -> None:
 
     target_stage = Stage(stage)
 
+    # Validate: can't begin review stages or terminal stages directly
+    if target_stage in HUMAN_REVIEW_STAGES:
+        console.print(f"[red]Cannot begin review stages directly. Use 'agenttree next' to transition.[/red]")
+        sys.exit(1)
+    if target_stage in (Stage.ACCEPTED, Stage.NOT_DOING):
+        console.print(f"[red]Cannot begin terminal stages ({target_stage.value})[/red]")
+        sys.exit(1)
+
     # Get substages for this stage
-    from agenttree.issues import STAGE_SUBSTAGES
     substages = STAGE_SUBSTAGES.get(target_stage, [])
     substage = substages[0] if substages else None
 

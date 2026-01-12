@@ -301,6 +301,8 @@ def get_issue_dir(issue_id: str) -> Optional[Path]:
 
 
 # Stage workflow definitions
+# Note: NOT_DOING is intentionally excluded - it's a terminal state outside the normal workflow.
+# Issues marked NOT_DOING cannot progress via get_next_stage().
 STAGE_ORDER = [
     Stage.BACKLOG,
     Stage.PROBLEM,

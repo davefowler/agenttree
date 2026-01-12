@@ -274,6 +274,13 @@ class TestStageTransitions:
         assert Stage.IMPLEMENTATION_REVIEW in HUMAN_REVIEW_STAGES
         assert len(HUMAN_REVIEW_STAGES) == 3
 
+    def test_get_next_stage_not_doing_stays_not_doing(self):
+        """NOT_DOING is a terminal state - stays at NOT_DOING."""
+        next_stage, next_substage, is_review = get_next_stage(Stage.NOT_DOING, None)
+        assert next_stage == Stage.NOT_DOING
+        assert next_substage is None
+        assert is_review is False
+
 
 class TestUpdateIssueStage:
     """Tests for update_issue_stage function."""
