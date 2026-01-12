@@ -53,7 +53,32 @@ def sync_agents_repo(
         return False
 
     try:
-        # Always pull first to get latest changes
+        # First, commit any local changes (prevents "unstaged changes" error on pull)
+        subprocess.run(
+            ["git", "-C", str(agents_dir), "add", "-A"],
+            check=False,
+            capture_output=True,
+            timeout=10,
+        )
+
+        # Check if there are staged changes to commit
+        diff_result = subprocess.run(
+            ["git", "-C", str(agents_dir), "diff", "--cached", "--quiet"],
+            capture_output=True,
+            timeout=10,
+        )
+
+        # Commit local changes first (if any)
+        if diff_result.returncode != 0:
+            message = commit_message or "Auto-sync: update issue data"
+            subprocess.run(
+                ["git", "-C", str(agents_dir), "commit", "-m", message],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+
+        # Now pull with rebase (safe because local changes are committed)
         result = subprocess.run(
             ["git", "-C", str(agents_dir), "pull", "--rebase"],
             capture_output=True,
@@ -80,51 +105,21 @@ def sync_agents_repo(
         if pull_only:
             return True
 
-        # For write operations, commit and push changes
-        # Stage all changes
-        subprocess.run(
-            ["git", "-C", str(agents_dir), "add", "-A"],
-            check=False,
+        # Push changes (local commits + any we just made)
+        push_result = subprocess.run(
+            ["git", "-C", str(agents_dir), "push"],
             capture_output=True,
-            timeout=10,
+            text=True,
+            timeout=30,
         )
 
-        # Check if there are staged changes
-        diff_result = subprocess.run(
-            ["git", "-C", str(agents_dir), "diff", "--cached", "--quiet"],
-            capture_output=True,
-            timeout=10,
-        )
-
-        # If there are changes (returncode != 0), commit them
-        if diff_result.returncode != 0:
-            message = commit_message or "Auto-sync: update issue data"
-            commit_result = subprocess.run(
-                ["git", "-C", str(agents_dir), "commit", "-m", message],
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-
-            if commit_result.returncode != 0:
-                print(f"Warning: Failed to commit changes: {commit_result.stderr}")
-                return False
-
-            # Push changes
-            push_result = subprocess.run(
-                ["git", "-C", str(agents_dir), "push"],
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-
-            if push_result.returncode != 0:
-                # Push failed - could be offline or permission issue
-                if "Could not resolve host" in push_result.stderr:
-                    print("Warning: Offline - changes committed locally but not pushed")
-                else:
-                    print(f"Warning: Failed to push changes: {push_result.stderr}")
-                return False
+        if push_result.returncode != 0:
+            # Push failed - could be offline or permission issue
+            if "Could not resolve host" in push_result.stderr:
+                print("Warning: Offline - changes committed locally but not pushed")
+            else:
+                print(f"Warning: Failed to push changes: {push_result.stderr}")
+            return False
 
         return True
 
