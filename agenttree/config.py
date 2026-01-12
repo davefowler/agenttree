@@ -86,7 +86,7 @@ class Config(BaseModel):
         return port
 
     def get_worktree_path(self, agent_num: int) -> Path:
-        """Get worktree path for a specific agent.
+        """Get worktree path for a specific agent (legacy numbered agents).
 
         Args:
             agent_num: Agent number
@@ -97,8 +97,22 @@ class Config(BaseModel):
         expanded_dir = Path(self.worktrees_dir).expanduser()
         return expanded_dir / f"{self.project}-agent-{agent_num}"
 
+    def get_issue_worktree_path(self, issue_id: str, slug: str) -> Path:
+        """Get worktree path for an issue-bound agent.
+
+        Args:
+            issue_id: Issue ID (e.g., "023")
+            slug: Issue slug (e.g., "fix-login-bug")
+
+        Returns:
+            Path to the issue's worktree
+        """
+        expanded_dir = Path(self.worktrees_dir).expanduser()
+        short_slug = slug[:30] if len(slug) > 30 else slug
+        return expanded_dir / f"issue-{issue_id}-{short_slug}"
+
     def get_tmux_session_name(self, agent_num: int) -> str:
-        """Get tmux session name for a specific agent.
+        """Get tmux session name for a specific agent (legacy numbered agents).
 
         Args:
             agent_num: Agent number
@@ -107,6 +121,28 @@ class Config(BaseModel):
             Tmux session name
         """
         return f"{self.project}-agent-{agent_num}"
+
+    def get_issue_tmux_session(self, issue_id: str) -> str:
+        """Get tmux session name for an issue-bound agent.
+
+        Args:
+            issue_id: Issue ID
+
+        Returns:
+            Tmux session name
+        """
+        return f"{self.project}-issue-{issue_id}"
+
+    def get_issue_container_name(self, issue_id: str) -> str:
+        """Get container name for an issue-bound agent.
+
+        Args:
+            issue_id: Issue ID
+
+        Returns:
+            Container name
+        """
+        return f"{self.project}-issue-{issue_id}"
 
     def get_tool_config(self, tool_name: str) -> ToolConfig:
         """Get configuration for a tool.
