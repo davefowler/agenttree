@@ -11,7 +11,7 @@ import subprocess
 import yaml
 from pathlib import Path
 from typing import Dict, Any, Tuple, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 def create_frontmatter(data: Dict[str, Any]) -> str:
@@ -228,7 +228,7 @@ def utc_now() -> str:
         >>> utc_now()
         '2026-01-04T10:30:00Z'
     """
-    return datetime.utcnow().isoformat() + "Z"
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def validate_required_fields(frontmatter: Dict[str, Any], required: list[str]) -> list[str]:
