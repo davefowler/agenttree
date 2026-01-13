@@ -53,8 +53,8 @@
 
 ## Project-Specific Notes
 
-- Issues are stored in `.agenttrees/issues/` as YAML and markdown files
-- Stage instructions use Jinja2 templates in `.agenttrees/skills/`
+- Issues are stored in `.agenttree/issues/` as YAML and markdown files
+- Stage instructions use Jinja2 templates in `.agenttree/skills/`
 - The workflow supports both local and containerized agent execution
 - Hooks can be configured in `.agenttree.yaml` for stage transitions
 
@@ -64,7 +64,7 @@
 
 This project uses AgentTree, a workflow system for AI agents working on software development tasks. It provides structured stages (define → research → plan → implement), automated validation, and human review checkpoints.
 
-**For detailed workflow documentation, see:** [`.agenttrees/skills/overview.md`](.agenttrees/skills/overview.md)
+**For detailed workflow documentation, see:** [`.agenttree/skills/overview.md`](.agenttree/skills/overview.md)
 
 **Key commands:**
 - `agenttree issue create "title"` - Create a new issue

@@ -31,7 +31,7 @@ class TestAgentsRepository:
         agents_repo = AgentsRepository(project_path)
         assert agents_repo.project_path == project_path
         assert agents_repo.project_name == "test-repo"
-        assert agents_repo.agents_path == project_path / ".agenttrees"
+        assert agents_repo.agents_path == project_path / ".agenttree"
 
     def test_ensure_repo_already_exists(self, agents_repo):
         """Test ensure_repo when agents/ directory already exists."""
@@ -192,7 +192,7 @@ class TestAgentsRepository:
         assert slugify("Add   Multiple   Spaces") == "add-multiple-spaces"
 
     def test_add_to_gitignore_adds_agenttrees(self, agents_repo, tmp_path):
-        """Test _add_to_gitignore adds .agenttrees/ to parent .gitignore."""
+        """Test _add_to_gitignore adds .agenttree/ to parent .gitignore."""
         agents_repo.project_path = tmp_path
         gitignore = tmp_path / ".gitignore"
         gitignore.write_text("__pycache__/\n*.pyc\n")
@@ -200,21 +200,21 @@ class TestAgentsRepository:
         agents_repo._add_to_gitignore()
 
         content = gitignore.read_text()
-        assert ".agenttrees/" in content
+        assert ".agenttree/" in content
         assert "__pycache__/" in content  # Original content preserved
 
     def test_add_to_gitignore_skips_if_exists(self, agents_repo, tmp_path):
         """Test _add_to_gitignore doesn't duplicate entry."""
         agents_repo.project_path = tmp_path
         gitignore = tmp_path / ".gitignore"
-        gitignore.write_text(".agenttrees/\n")
+        gitignore.write_text(".agenttree/\n")
 
         original_content = gitignore.read_text()
         agents_repo._add_to_gitignore()
 
-        # Should not modify (already has .agenttrees/)
-        assert ".agenttrees/" in gitignore.read_text()
-        assert gitignore.read_text().count(".agenttrees/") == 1
+        # Should not modify (already has .agenttree/)
+        assert ".agenttree/" in gitignore.read_text()
+        assert gitignore.read_text().count(".agenttree/") == 1
 
     @patch("agenttree.agents_repo.subprocess.run")
     def test_commit(self, mock_run, agents_repo):
@@ -245,7 +245,7 @@ class TestSyncAgentsRepo:
     @pytest.fixture
     def git_repo(self, tmp_path):
         """Create a temporary directory with .git folder."""
-        agents_dir = tmp_path / ".agenttrees"
+        agents_dir = tmp_path / ".agenttree"
         agents_dir.mkdir()
         (agents_dir / ".git").mkdir()
         return agents_dir

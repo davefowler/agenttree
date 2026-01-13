@@ -27,11 +27,11 @@ class TestStateLocking:
         could return the same port number.
         """
         # Setup: use temp directory for state file
-        state_file = tmp_path / ".agenttrees" / "state.yaml"
+        state_file = tmp_path / ".agenttree" / "state.yaml"
         monkeypatch.setattr("agenttree.state.get_state_path", lambda: state_file)
 
         # Also patch the lock path to use temp directory
-        lock_file = tmp_path / ".agenttrees" / "state.yaml.lock"
+        lock_file = tmp_path / ".agenttree" / "state.yaml.lock"
         if hasattr(__import__("agenttree.state", fromlist=["get_state_lock_path"]), "get_state_lock_path"):
             monkeypatch.setattr("agenttree.state.get_state_lock_path", lambda: lock_file)
 
@@ -63,10 +63,10 @@ class TestStateLocking:
 
     def test_concurrent_register_unregister_agents(self, tmp_path, monkeypatch):
         """Concurrent agent registration and unregistration should not corrupt state."""
-        state_file = tmp_path / ".agenttrees" / "state.yaml"
+        state_file = tmp_path / ".agenttree" / "state.yaml"
         monkeypatch.setattr("agenttree.state.get_state_path", lambda: state_file)
 
-        lock_file = tmp_path / ".agenttrees" / "state.yaml.lock"
+        lock_file = tmp_path / ".agenttree" / "state.yaml.lock"
         if hasattr(__import__("agenttree.state", fromlist=["get_state_lock_path"]), "get_state_lock_path"):
             monkeypatch.setattr("agenttree.state.get_state_lock_path", lambda: lock_file)
 
@@ -120,7 +120,7 @@ class TestStateLocking:
 
     def test_load_state_returns_default_when_file_missing(self, tmp_path, monkeypatch):
         """load_state should return default state when file doesn't exist."""
-        state_file = tmp_path / ".agenttrees" / "state.yaml"
+        state_file = tmp_path / ".agenttree" / "state.yaml"
         monkeypatch.setattr("agenttree.state.get_state_path", lambda: state_file)
 
         state = load_state()
@@ -131,10 +131,10 @@ class TestStateLocking:
 
     def test_allocate_port_starts_from_base_plus_one(self, tmp_path, monkeypatch):
         """allocate_port should return base_port + 1 for first allocation."""
-        state_file = tmp_path / ".agenttrees" / "state.yaml"
+        state_file = tmp_path / ".agenttree" / "state.yaml"
         monkeypatch.setattr("agenttree.state.get_state_path", lambda: state_file)
 
-        lock_file = tmp_path / ".agenttrees" / "state.yaml.lock"
+        lock_file = tmp_path / ".agenttree" / "state.yaml.lock"
         if hasattr(__import__("agenttree.state", fromlist=["get_state_lock_path"]), "get_state_lock_path"):
             monkeypatch.setattr("agenttree.state.get_state_lock_path", lambda: lock_file)
 
@@ -143,10 +143,10 @@ class TestStateLocking:
 
     def test_free_port_removes_from_allocated(self, tmp_path, monkeypatch):
         """free_port should remove port from allocated list."""
-        state_file = tmp_path / ".agenttrees" / "state.yaml"
+        state_file = tmp_path / ".agenttree" / "state.yaml"
         monkeypatch.setattr("agenttree.state.get_state_path", lambda: state_file)
 
-        lock_file = tmp_path / ".agenttrees" / "state.yaml.lock"
+        lock_file = tmp_path / ".agenttree" / "state.yaml.lock"
         if hasattr(__import__("agenttree.state", fromlist=["get_state_lock_path"]), "get_state_lock_path"):
             monkeypatch.setattr("agenttree.state.get_state_lock_path", lambda: lock_file)
 

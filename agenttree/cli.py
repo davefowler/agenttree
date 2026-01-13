@@ -103,8 +103,8 @@ def init(worktrees_dir: Optional[str], project: Optional[str]) -> None:
 
     console.print(f"[green]✓ Created {config_file}[/green]")
 
-    # Create .agenttrees/scripts directory
-    scripts_dir = repo_path / ".agenttrees" / "scripts"
+    # Create .agenttree/scripts directory
+    scripts_dir = repo_path / ".agenttree" / "scripts"
     scripts_dir.mkdir(parents=True, exist_ok=True)
 
     # Create worktree-setup.sh template
@@ -226,8 +226,8 @@ fi
 # ============================================================================
 
 # Copy AGENT_GUIDE.md to worktree (with AGENT_NUM substitution)
-if [ -f "../.agenttrees/templates/AGENT_GUIDE.md" ]; then
-    sed "s/\${AGENT_NUM}/$AGENT_NUM/g; s/\${PORT}/$AGENT_PORT/g" ../.agenttrees/templates/AGENT_GUIDE.md > AGENT_GUIDE.md
+if [ -f "../.agenttree/templates/AGENT_GUIDE.md" ]; then
+    sed "s/\${AGENT_NUM}/$AGENT_NUM/g; s/\${PORT}/$AGENT_PORT/g" ../.agenttree/templates/AGENT_GUIDE.md > AGENT_GUIDE.md
     echo "✓ Created personalized AGENT_GUIDE.md"
 fi
 
@@ -237,7 +237,7 @@ echo ""
 echo "📝 Your identity:"
 echo "   AGENT_NUM: $AGENT_NUM"
 echo "   PORT: $AGENT_PORT"
-echo "   Your notes: .agenttrees/tasks/agent-$AGENT_NUM/"
+echo "   Your notes: .agenttree/tasks/agent-$AGENT_NUM/"
 echo ""
 echo "📖 IMPORTANT: Read AGENT_GUIDE.md in your worktree to learn:"
 echo "   - How to collaborate with other agents"
@@ -263,7 +263,7 @@ echo "and push the changes so future agents can benefit!"
     console.print(f"[dim]  → Customize this script for your project's setup needs[/dim]")
 
     # Create AGENT_GUIDE.md template
-    templates_dir = repo_path / ".agenttrees" / "templates"
+    templates_dir = repo_path / ".agenttree" / "templates"
     templates_dir.mkdir(parents=True, exist_ok=True)
     agent_guide = templates_dir / "AGENT_GUIDE.md"
     agent_guide_template = r"""# AgentTree Agent Guide
@@ -293,7 +293,7 @@ echo $PORT
 
 ```
 <project-root>/
-├── .agenttrees/                ← Shared repo (issues, skills, scripts)
+├── .agenttree/                ← Shared repo (issues, skills, scripts)
 │   ├── issues/                 ← Issue tracking
 │   │   └── 001-fix-login/
 │   │       ├── issue.yaml
@@ -320,14 +320,14 @@ echo $PORT
 
 When dispatched, you'll find:
 - **TASK.md** in your worktree root
-- **.agenttrees/specs/issue-<num>.md** with the full specification
-- **.agenttrees/tasks/agent-${AGENT_NUM}/<timestamp>-issue-<num>.md** your task log
+- **.agenttree/specs/issue-<num>.md** with the full specification
+- **.agenttree/tasks/agent-${AGENT_NUM}/<timestamp>-issue-<num>.md** your task log
 
 ### 2. You Work on It
 
 - Read TASK.md first
-- Check .agenttrees/specs/ for detailed requirements
-- Look at .agenttrees/notes/ to see what other agents have learned
+- Check .agenttree/specs/ for detailed requirements
+- Look at .agenttree/notes/ to see what other agents have learned
 - Write code, run tests, fix bugs
 - Commit your changes regularly
 
@@ -337,7 +337,7 @@ Create notes for other agents:
 
 ```bash
 # Create a note about your findings
-cat > .agenttrees/notes/agent-${AGENT_NUM}/api-authentication.md <<EOF
+cat > .agenttree/notes/agent-${AGENT_NUM}/api-authentication.md <<EOF
 # API Authentication Pattern
 
 I discovered that our API uses JWT tokens stored in localStorage.
@@ -354,9 +354,9 @@ I discovered that our API uses JWT tokens stored in localStorage.
 Always check token expiry before API calls.
 EOF
 
-git -C .agenttrees add .
-git -C .agenttrees commit -m "agent-${AGENT_NUM}: Document API auth pattern"
-git -C .agenttrees push
+git -C .agenttree add .
+git -C .agenttree commit -m "agent-${AGENT_NUM}: Document API auth pattern"
+git -C .agenttree push
 ```
 
 ### 4. You Collaborate
@@ -364,16 +364,16 @@ git -C .agenttrees push
 **Reading other agents' work:**
 ```bash
 # See what agent-1 is working on
-cat .agenttrees/tasks/agent-1/*.md
+cat .agenttree/tasks/agent-1/*.md
 
 # Read agent-2's notes on the database
-cat .agenttrees/notes/agent-2/database-schema.md
+cat .agenttree/notes/agent-2/database-schema.md
 ```
 
 **Asking for help (async):**
 ```bash
 # Create a question for agent-2
-cat > .agenttrees/notes/agent-${AGENT_NUM}/question-for-agent-2.md <<EOF
+cat > .agenttree/notes/agent-${AGENT_NUM}/question-for-agent-2.md <<EOF
 # Question: Database Migration Issue
 
 @agent-2, I noticed you worked on the database schema.
@@ -388,9 +388,9 @@ Did you encounter this? How did you fix it?
 -- Agent-${AGENT_NUM}
 EOF
 
-git -C .agenttrees add .
-git -C .agenttrees commit -m "agent-${AGENT_NUM}: Ask agent-2 about migration issue"
-git -C .agenttrees push
+git -C .agenttree add .
+git -C .agenttree commit -m "agent-${AGENT_NUM}: Ask agent-2 about migration issue"
+git -C .agenttree push
 ```
 
 ### 5. You Create a PR
@@ -420,7 +420,7 @@ agenttree status
 ### Update Your Task Log
 ```bash
 # Update your current task log
-TASK_LOG=$(ls -t .agenttrees/tasks/agent-${AGENT_NUM}/*.md | head -1)
+TASK_LOG=$(ls -t .agenttree/tasks/agent-${AGENT_NUM}/*.md | head -1)
 cat >> "$TASK_LOG" <<EOF
 
 ## Progress Update - $(date)
@@ -430,9 +430,9 @@ cat >> "$TASK_LOG" <<EOF
 - 🔄 Working on session timeout handling
 EOF
 
-git -C .agenttrees add .
-git -C .agenttrees commit -m "agent-${AGENT_NUM}: Update task progress"
-git -C .agenttrees push
+git -C .agenttree add .
+git -C .agenttree commit -m "agent-${AGENT_NUM}: Update task progress"
+git -C .agenttree push
 ```
 
 ### Find Past Solutions
@@ -440,29 +440,29 @@ git -C .agenttrees push
 Check if similar work has been done:
 ```bash
 # Search all specs
-grep -r "authentication" .agenttrees/specs/
+grep -r "authentication" .agenttree/specs/
 
 # Search all notes
-grep -r "JWT" .agenttrees/notes/
+grep -r "JWT" .agenttree/notes/
 
 # Search your own notes
-grep -r "token" .agenttrees/notes/agent-${AGENT_NUM}/
+grep -r "token" .agenttree/notes/agent-${AGENT_NUM}/
 ```
 
 ## Environment Setup
 
-Your worktree was set up by `.agenttrees/scripts/worktree-setup.sh`.
+Your worktree was set up by `.agenttree/scripts/worktree-setup.sh`.
 
 If you encounter issues (missing dependencies, wrong config, etc.):
 1. **Fix the setup script** - Other agents will benefit!
 2. Test your changes
-3. Commit: `git add .agenttrees/scripts/worktree-setup.sh && git commit -m "Fix setup script for <issue>"`
+3. Commit: `git add .agenttree/scripts/worktree-setup.sh && git commit -m "Fix setup script for <issue>"`
 
 ## Best Practices
 
 ### ✅ DO
 
-- **Document your findings** in .agenttrees/notes/
+- **Document your findings** in .agenttree/notes/
 - **Update your task log** regularly
 - **Fix the setup script** if you find issues
 - **Search past work** before starting from scratch
@@ -481,16 +481,16 @@ If you encounter issues (missing dependencies, wrong config, etc.):
 ## Troubleshooting
 
 ### "My setup failed"
-→ Check `.agenttrees/scripts/worktree-setup.sh` and fix it for everyone
+→ Check `.agenttree/scripts/worktree-setup.sh` and fix it for everyone
 
 ### "I can't find my task"
-→ Check `TASK.md` in your worktree root, or `.agenttrees/tasks/agent-${AGENT_NUM}/`
+→ Check `TASK.md` in your worktree root, or `.agenttree/tasks/agent-${AGENT_NUM}/`
 
 ### "Where are the other agents' notes?"
-→ `.agenttrees/notes/agent-1/`, `.agenttrees/notes/agent-2/`, etc.
+→ `.agenttree/notes/agent-1/`, `.agenttree/notes/agent-2/`, etc.
 
 ### "How do I know what other agents are doing?"
-→ Run `cd .. && agenttree status` or check `.agenttrees/tasks/`
+→ Run `cd .. && agenttree status` or check `.agenttree/tasks/`
 
 ### "My port is conflicting"
 → Check `echo $PORT` - each agent has a unique port (you have ${PORT})
@@ -498,8 +498,8 @@ If you encounter issues (missing dependencies, wrong config, etc.):
 ## Getting Help
 
 - **Read this guide** first
-- **Check .agenttrees/notes/** for past solutions
-- **Ask other agents** by creating a note in `.agenttrees/notes/agent-${AGENT_NUM}/`
+- **Check .agenttree/notes/** for past solutions
+- **Ask other agents** by creating a note in `.agenttree/notes/agent-${AGENT_NUM}/`
 - **Fix documentation** if you find gaps (including this file!)
 
 ## Advanced: ML Learning System (Phase 6)
@@ -530,7 +530,7 @@ Good luck, Agent-${AGENT_NUM}! 🚀
         ensure_gh_cli()
         agents_repo = AgentsRepository(repo_path)
         agents_repo.ensure_repo()
-        console.print("[green]✓ .agenttrees/ repository created[/green]")
+        console.print("[green]✓ .agenttree/ repository created[/green]")
     except RuntimeError as e:
         console.print(f"[yellow]Warning: Could not create agents repository:[/yellow]")
         console.print(f"  {e}")
@@ -539,7 +539,7 @@ Good luck, Agent-${AGENT_NUM}! 🚀
     console.print("\n[bold cyan]Next steps:[/bold cyan]")
     console.print("\n[bold]1. Set up agent-1 and let it configure the environment:[/bold]")
     console.print("   agenttree setup 1")
-    console.print("   agenttree start 1 --task 'Test the worktree setup. Run the app, fix any errors in .agenttrees/scripts/worktree-setup.sh, and commit your fixes.'")
+    console.print("   agenttree start 1 --task 'Test the worktree setup. Run the app, fix any errors in .agenttree/scripts/worktree-setup.sh, and commit your fixes.'")
     console.print("")
     console.print("[bold]2. Once agent-1 has the setup working, set up the rest:[/bold]")
     console.print("   agenttree setup 2 3  # They'll use agent-1's fixes!")
@@ -561,7 +561,7 @@ def setup(agent_numbers: tuple) -> None:
     manager = WorktreeManager(repo_path, config)
 
     # Check if custom setup script exists
-    setup_script = repo_path / ".agenttrees" / "scripts" / "worktree-setup.sh"
+    setup_script = repo_path / ".agenttree" / "scripts" / "worktree-setup.sh"
     has_custom_setup = setup_script.exists()
 
     if has_custom_setup:
@@ -657,10 +657,10 @@ def start_agent(
     # Normalize issue ID (strip leading zeros for lookup, keep for display)
     issue_id_normalized = issue_id.lstrip("0") or "0"
 
-    # Load issue from local .agenttrees/issues/
+    # Load issue from local .agenttree/issues/
     issue = get_issue_func(issue_id_normalized)
     if not issue:
-        console.print(f"[red]Error: Issue #{issue_id} not found in .agenttrees/issues/[/red]")
+        console.print(f"[red]Error: Issue #{issue_id} not found in .agenttree/issues/[/red]")
         console.print(f"[yellow]Create it with: agenttree issue create 'title'[/yellow]")
         sys.exit(1)
 
@@ -927,7 +927,7 @@ def notes_show(agent_num: int) -> None:
     for task_file in task_files:
         console.print(f"  • {task_file.name}")
 
-    console.print(f"\n[dim]View task: cat .agenttrees/tasks/agent-{agent_num}/<filename>[/dim]")
+    console.print(f"\n[dim]View task: cat .agenttree/tasks/agent-{agent_num}/<filename>[/dim]")
 
 
 @notes.command("search")
@@ -1087,7 +1087,7 @@ def remote_dispatch(hostname: str, agent_num: int, user: str, agents_repo: str) 
 
     This will:
     1. SSH into the remote host
-    2. Pull latest from .agenttrees/ repo
+    2. Pull latest from .agenttree/ repo
     3. Notify the agent's tmux session
 
     Example:
@@ -1131,7 +1131,7 @@ main.add_command(resume)
 def issue() -> None:
     """Manage agenttree issues.
 
-    Issues are stored in .agenttrees/issues/ and track work through
+    Issues are stored in .agenttree/issues/ and track work through
     the agenttree workflow stages.
     """
     pass
@@ -1179,7 +1179,7 @@ def issue_create(
 ) -> None:
     """Create a new issue.
 
-    Creates an issue directory in .agenttrees/issues/ with:
+    Creates an issue directory in .agenttree/issues/ with:
     - issue.yaml (metadata)
     - problem.md (from template or provided content)
 
@@ -1200,7 +1200,7 @@ def issue_create(
             solutions=solutions,
         )
         console.print(f"[green]✓ Created issue {issue.id}: {issue.title}[/green]")
-        console.print(f"[dim]  .agenttrees/issues/{issue.id}-{issue.slug}/[/dim]")
+        console.print(f"[dim]  .agenttree/issues/{issue.id}-{issue.slug}/[/dim]")
         console.print(f"[dim]  Stage: {issue.stage}[/dim]")
         console.print(f"\n[dim]Dispatch an agent: agenttree start {issue.id}[/dim]")
 
@@ -1384,7 +1384,7 @@ def issue_doc(doc_type: str, issue_id: str) -> None:
 
     # Create from template if doesn't exist
     if not doc_file.exists():
-        templates_dir = Path.cwd() / ".agenttrees" / "templates"
+        templates_dir = Path.cwd() / ".agenttree" / "templates"
         template_file = templates_dir / f"{doc_type}.md"
 
         if template_file.exists():
@@ -1657,7 +1657,7 @@ def context_init(agent_num: Optional[int], port: Optional[int]) -> None:
     """Initialize agent context in current worktree.
 
     This command:
-    1. Clones the .agenttrees repo into the current directory
+    1. Clones the .agenttree repo into the current directory
     2. Verifies/creates agent identity (.env with AGENT_NUM, PORT)
 
     Run this from within an agent worktree during setup.
@@ -1690,24 +1690,24 @@ def context_init(agent_num: Optional[int], port: Optional[int]) -> None:
         config = load_config()
         port = config.get_port_for_agent(agent_num)
 
-    # Check if .agenttrees already exists
-    agenttrees_path = cwd / ".agenttrees"
+    # Check if .agenttree already exists
+    agenttrees_path = cwd / ".agenttree"
     if agenttrees_path.exists() and (agenttrees_path / ".git").exists():
-        console.print(f"[green]✓ .agenttrees already exists[/green]")
+        console.print(f"[green]✓ .agenttree already exists[/green]")
     else:
         # Try to find the remote URL from the main project
-        # Go up directories to find the main .agenttrees repo
+        # Go up directories to find the main .agenttree repo
         main_agenttrees = None
         parent = cwd.parent
         for _ in range(5):  # Check up to 5 levels up
-            candidate = parent / ".agenttrees"
+            candidate = parent / ".agenttree"
             if candidate.exists() and (candidate / ".git").exists():
                 main_agenttrees = candidate
                 break
             parent = parent.parent
 
         if main_agenttrees is None:
-            console.print("[red]Error: Could not find main .agenttrees repo[/red]")
+            console.print("[red]Error: Could not find main .agenttree repo[/red]")
             console.print("[dim]Make sure you're in an agent worktree[/dim]")
             sys.exit(1)
 
@@ -1722,18 +1722,18 @@ def context_init(agent_num: Optional[int], port: Optional[int]) -> None:
             )
             remote_url = result.stdout.strip()
         except subprocess.CalledProcessError:
-            console.print("[red]Error: Could not get remote URL from main .agenttrees[/red]")
+            console.print("[red]Error: Could not get remote URL from main .agenttree[/red]")
             sys.exit(1)
 
         # Clone the repo
-        console.print(f"[cyan]Cloning .agenttrees from {remote_url}...[/cyan]")
+        console.print(f"[cyan]Cloning .agenttree from {remote_url}...[/cyan]")
         try:
             subprocess.run(
-                ["git", "clone", remote_url, ".agenttrees"],
+                ["git", "clone", remote_url, ".agenttree"],
                 cwd=cwd,
                 check=True,
             )
-            console.print(f"[green]✓ Cloned .agenttrees[/green]")
+            console.print(f"[green]✓ Cloned .agenttree[/green]")
         except subprocess.CalledProcessError as e:
             console.print(f"[red]Error cloning: {e}[/red]")
             sys.exit(1)
@@ -1761,7 +1761,7 @@ def context_init(agent_num: Optional[int], port: Optional[int]) -> None:
 
     # Show summary
     console.print(f"\n[bold]Agent {agent_num} context initialized:[/bold]")
-    console.print(f"  .agenttrees/ - Issues, skills, templates")
+    console.print(f"  .agenttree/ - Issues, skills, templates")
     console.print(f"  .env - AGENT_NUM={agent_num}, PORT={port}")
     console.print(f"\n[dim]Read CLAUDE.md for workflow instructions[/dim]")
 

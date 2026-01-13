@@ -1,6 +1,6 @@
 """Issue management for AgentTree.
 
-This module handles CRUD operations for issues stored in .agenttrees/issues/.
+This module handles CRUD operations for issues stored in .agenttree/issues/.
 """
 
 import re
@@ -86,14 +86,14 @@ def slugify(text: str) -> str:
     return slug[:50]
 
 
-def get_agenttrees_path() -> Path:
-    """Get the path to .agenttrees directory."""
-    return Path.cwd() / ".agenttrees"
+def get_agenttree_path() -> Path:
+    """Get the path to .agenttree directory."""
+    return Path.cwd() / ".agenttree"
 
 
 def get_issues_path() -> Path:
     """Get the path to issues directory."""
-    return get_agenttrees_path() / "issues"
+    return get_agenttree_path() / "issues"
 
 
 def get_next_issue_number() -> int:
@@ -138,7 +138,7 @@ def create_issue(
         The created Issue object
     """
     # Sync before and after writing
-    agents_path = get_agenttrees_path()
+    agents_path = get_agenttree_path()
     sync_agents_repo(agents_path, pull_only=True)
 
     issues_path = get_issues_path()
@@ -192,7 +192,7 @@ def create_issue(
         problem_path.write_text(content)
     else:
         # Use template or fallback
-        template_path = get_agenttrees_path() / "templates" / "problem.md"
+        template_path = get_agenttree_path() / "templates" / "problem.md"
         if template_path.exists():
             problem_path.write_text(template_path.read_text())
         else:
@@ -239,7 +239,7 @@ def list_issues(
         List of Issue objects
     """
     # Sync before reading
-    agents_path = get_agenttrees_path()
+    agents_path = get_agenttree_path()
     sync_agents_repo(agents_path, pull_only=True)
 
     issues_path = get_issues_path()
@@ -287,7 +287,7 @@ def get_issue(issue_id: str) -> Optional[Issue]:
         Issue object or None if not found
     """
     # Sync before reading
-    agents_path = get_agenttrees_path()
+    agents_path = get_agenttree_path()
     sync_agents_repo(agents_path, pull_only=True)
 
     issues_path = get_issues_path()
@@ -413,7 +413,7 @@ def update_issue_stage(
         Updated Issue object or None if not found
     """
     # Sync before and after writing
-    agents_path = get_agenttrees_path()
+    agents_path = get_agenttree_path()
     sync_agents_repo(agents_path, pull_only=True)
 
     issue_dir = get_issue_dir(issue_id)
@@ -469,7 +469,7 @@ def assign_agent(issue_id: str, agent_num: int) -> Optional[Issue]:
         Updated Issue object or None if not found
     """
     # Sync before and after writing
-    agents_path = get_agenttrees_path()
+    agents_path = get_agenttree_path()
     sync_agents_repo(agents_path, pull_only=True)
 
     issue_dir = get_issue_dir(issue_id)
@@ -523,7 +523,7 @@ def update_issue_metadata(
         Updated Issue object or None if not found
     """
     # Sync before and after writing
-    agents_path = get_agenttrees_path()
+    agents_path = get_agenttree_path()
     sync_agents_repo(agents_path, pull_only=True)
 
     issue_dir = get_issue_dir(issue_id)
@@ -628,7 +628,7 @@ def load_skill(
     from agenttree.config import load_config
 
     # Sync before reading
-    agents_path = get_agenttrees_path()
+    agents_path = get_agenttree_path()
     sync_agents_repo(agents_path, pull_only=True)
 
     config = load_config()
@@ -676,7 +676,7 @@ def load_skill(
         "issue_id": issue.id,
         "issue_title": issue.title,
         "issue_dir": str(issue_dir) if issue_dir else "",
-        "issue_dir_rel": f".agenttrees/issues/{issue.id}-{issue.slug}" if issue_dir else "",
+        "issue_dir_rel": f".agenttree/issues/{issue.id}-{issue.slug}" if issue_dir else "",
         "stage": stage,
         "substage": substage or "",
     }

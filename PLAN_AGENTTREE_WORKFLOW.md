@@ -18,7 +18,7 @@ Get to dogfooding: use agenttree to manage agenttree development.
 
 ## Current State
 
-`.agenttrees/` directory is set up with:
+`.agenttree/` directory is set up with:
 - 10 issues filed (001-010)
 - Templates for problem.md, plan.md
 - Skills for each stage
@@ -49,7 +49,7 @@ agenttree issue create <title> [--priority <p>]
     # Creates issue dir, issue.yaml, problem.md from template
 
 agenttree issue list [--stage <stage>] [--json]
-    # Lists issues from .agenttrees/issues/
+    # Lists issues from .agenttree/issues/
 
 agenttree issue show <id>
     # Shows issue details
@@ -101,7 +101,7 @@ history:
 ## Directory Structure
 
 ```
-.agenttrees/                    # Separate git repo (agenttree-agenttree)
+.agenttree/                    # Separate git repo (agenttree-agenttree)
 ├── issues/
 │   ├── 001-issue-crud-cli/
 │   │   ├── issue.yaml
