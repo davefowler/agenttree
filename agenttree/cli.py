@@ -17,7 +17,6 @@ from agenttree.agents_repo import AgentsRepository
 from agenttree.cli_docs import create_rfc, create_investigation, create_note, complete, resume
 from agenttree.issues import (
     Issue,
-    Stage,
     Priority,
     HUMAN_REVIEW_STAGES,
     STAGE_SUBSTAGES,
@@ -29,6 +28,14 @@ from agenttree.issues import (
     update_issue_stage,
     assign_agent,
     load_skill,
+    # Stage constants (strings)
+    BACKLOG,
+    DEFINE,
+    PROBLEM,
+    PLAN_ASSESS,
+    PLAN_REVISE,
+    ACCEPTED,
+    NOT_DOING,
 )
 from agenttree.hooks import execute_pre_hooks, execute_post_hooks, ValidationError
 
@@ -1420,7 +1427,7 @@ def stage_status(issue_id: Optional[str]) -> None:
         # Show all non-backlog, non-accepted issues
         active_issues = [
             i for i in list_issues_func()
-            if i.stage not in (Stage.BACKLOG, Stage.ACCEPTED, Stage.NOT_DOING)
+            if i.stage not in (BACKLOG, ACCEPTED, NOT_DOING)
         ]
 
         if not active_issues:
@@ -1460,7 +1467,7 @@ def stage_status(issue_id: Optional[str]) -> None:
 
     if issue.stage in HUMAN_REVIEW_STAGES:
         console.print(f"\n[yellow]⏳ Waiting for human review[/yellow]")
-    elif issue.stage == Stage.ACCEPTED:
+    elif issue.stage == ACCEPTED:
         console.print(f"\n[green]✓ Issue completed[/green]")
 
 
@@ -1493,14 +1500,14 @@ def stage_begin(stage: str, issue_id: Optional[str]) -> None:
     target_stage = Stage(stage)
 
     # Map legacy stage names to new ones
-    if target_stage == Stage.PROBLEM:
-        target_stage = Stage.DEFINE
+    if target_stage == PROBLEM:
+        target_stage = DEFINE
 
     # Validate: can't begin review stages or terminal stages directly
     if target_stage in HUMAN_REVIEW_STAGES:
         console.print(f"[red]Cannot begin review stages directly. Use 'agenttree next' to transition.[/red]")
         sys.exit(1)
-    if target_stage in (Stage.ACCEPTED, Stage.NOT_DOING):
+    if target_stage in (ACCEPTED, NOT_DOING):
         console.print(f"[red]Cannot begin terminal stages ({target_stage.value})[/red]")
         sys.exit(1)
 
@@ -1525,7 +1532,7 @@ def stage_begin(stage: str, issue_id: Optional[str]) -> None:
     console.print(f"[green]✓ Started {stage_str}[/green]")
 
     # Determine if this is first agent entry (should include AGENTS.md system prompt)
-    is_first_stage = target_stage == Stage.DEFINE and from_stage == Stage.BACKLOG
+    is_first_stage = target_stage == DEFINE and from_stage == BACKLOG
 
     # Load and display skill with Jinja rendering
     skill = load_skill(target_stage, substage, issue=updated, include_system=is_first_stage)
@@ -1573,20 +1580,20 @@ def stage_next(issue_id: Optional[str], reassess: bool) -> None:
         console.print(f"[red]Issue {issue_id} not found[/red]")
         sys.exit(1)
 
-    if issue.stage == Stage.ACCEPTED:
+    if issue.stage == ACCEPTED:
         console.print(f"[yellow]Issue is already accepted[/yellow]")
         return
 
-    if issue.stage == Stage.NOT_DOING:
+    if issue.stage == NOT_DOING:
         console.print(f"[yellow]Issue is marked as not doing[/yellow]")
         return
 
     # Handle --reassess flag for plan revision cycling
     if reassess:
-        if issue.stage != Stage.PLAN_REVISE:
+        if issue.stage != PLAN_REVISE:
             console.print(f"[red]--reassess only works from plan_revise stage[/red]")
             sys.exit(1)
-        next_stage = Stage.PLAN_ASSESS
+        next_stage = PLAN_ASSESS
         next_substage = None
         is_human_review = False
     else:
@@ -1629,7 +1636,7 @@ def stage_next(issue_id: Optional[str], reassess: bool) -> None:
         return
 
     # Determine if this is first agent entry (should include AGENTS.md system prompt)
-    is_first_stage = next_stage == Stage.DEFINE and from_stage == Stage.BACKLOG
+    is_first_stage = next_stage == DEFINE and from_stage == BACKLOG
 
     # Load and display skill for next stage with Jinja rendering
     skill = load_skill(next_stage, next_substage, issue=updated, include_system=is_first_stage)

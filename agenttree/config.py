@@ -368,7 +368,8 @@ class Config(BaseModel):
             Tuple of (next_stage, next_substage, is_human_review)
         """
         stage_config = self.get_stage(current_stage)
-        if stage_config is None or stage_config.terminal:
+        # Terminal stages and stages that trigger merge don't progress further
+        if stage_config is None or stage_config.terminal or stage_config.triggers_merge:
             return current_stage, current_substage, False
 
         substages = stage_config.substage_order()

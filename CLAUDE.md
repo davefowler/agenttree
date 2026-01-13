@@ -7,6 +7,7 @@
 - **Testing:** pytest with pytest-cov
 - **CLI:** Click
 - **Type Checking:** mypy (strict mode)
+- **Container Runtime:** Apple Containers (default on macOS), Docker as fallback. Agents run sandboxed in containers.
 
 ## Architecture
 
@@ -14,7 +15,7 @@
 - Hook system (stage transitions): `agenttree/hooks.py`
 - Issue management: `agenttree/issues.py`
 - Agent repository: `agenttree/agents_repo.py`
-- Docker container support: `agenttree/container.py`
+- Container support: `agenttree/container.py` (uses Apple Containers, not Docker)
 - Agent state management: `agenttree/state.py`
 
 ## Commands
