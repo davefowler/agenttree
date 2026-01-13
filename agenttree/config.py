@@ -30,7 +30,7 @@ DEFAULT_STAGES = [
     StageConfig(name="problem_review", human_review=True),
     StageConfig(name="research", substages=["explore", "plan", "spec"]),
     StageConfig(name="plan_review", human_review=True),
-    StageConfig(name="implement", substages=["setup", "test", "code", "debug", "code_review"]),
+    StageConfig(name="implement", substages=["setup", "test", "code", "debug", "code_review", "address_review"]),
     StageConfig(name="implementation_review", human_review=True),
     StageConfig(name="accepted", triggers_merge=True),
     StageConfig(name="not_doing"),

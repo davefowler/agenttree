@@ -131,6 +131,51 @@ def sync_agents_repo(
         return False
 
 
+def check_pending_prs(agents_dir: Path) -> int:
+    """Check for issues at implementation_review without PRs and create them.
+
+    Called from host (sync, web server, etc.) to create PRs for issues
+    where agents couldn't push from containers.
+
+    Args:
+        agents_dir: Path to .agenttrees directory
+
+    Returns:
+        Number of PRs created
+    """
+    issues_dir = agents_dir / "issues"
+    if not issues_dir.exists():
+        return 0
+
+    import yaml
+
+    prs_created = 0
+
+    for issue_dir in issues_dir.iterdir():
+        if not issue_dir.is_dir():
+            continue
+
+        issue_yaml = issue_dir / "issue.yaml"
+        if not issue_yaml.exists():
+            continue
+
+        try:
+            with open(issue_yaml) as f:
+                data = yaml.safe_load(f)
+
+            # Check if at implementation_review without PR
+            if data.get("stage") == "implementation_review" and not data.get("pr_number"):
+                issue_id = data.get("id", "")
+                if issue_id:
+                    from agenttree.hooks import ensure_pr_for_issue
+                    if ensure_pr_for_issue(str(issue_id)):
+                        prs_created += 1
+        except Exception:
+            continue
+
+    return prs_created
+
+
 class AgentsRepository:
     """Manages the .agenttrees/ git repository."""
 

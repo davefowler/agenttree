@@ -784,28 +784,54 @@ def require_pr_approval(issue: Issue):
 # Post-transition action hooks
 
 
+def is_running_in_container() -> bool:
+    """Check if we're running inside a container.
+
+    Returns:
+        True if running in a container, False otherwise
+    """
+    import os
+    # Check for container indicators
+    return (
+        os.path.exists("/.dockerenv") or
+        os.path.exists("/run/.containerenv") or
+        os.environ.get("CONTAINER_RUNTIME") is not None
+    )
+
+
 @post_transition(Stage.IMPLEMENT, Stage.IMPLEMENTATION_REVIEW)
 def create_pull_request_hook(issue: Issue):
     """Create PR when transitioning to implementation review.
 
-    Automatically commits any uncommitted changes, pushes the branch,
-    and creates a pull request.
+    If running in a container (no push access), only commits locally.
+    The host will handle push/PR creation when it sees the stage change.
 
     Args:
         issue: Issue that was transitioned
     """
-    from agenttree.github import create_pr
     from agenttree.issues import update_issue_metadata
 
     # Get current branch
     branch = get_current_branch()
 
-    # Auto-commit any uncommitted changes before pushing
+    # Auto-commit any uncommitted changes
     if has_uncommitted_changes():
         console.print(f"[dim]Auto-committing uncommitted changes...[/dim]")
         auto_commit_changes(issue, Stage.IMPLEMENT)
 
-    # Push to remote (explicitly to origin/{branch}, not tracked branch)
+    # Update issue with branch info
+    update_issue_metadata(issue.id, branch=branch)
+
+    # If in container, skip remote operations - host will handle them
+    if is_running_in_container():
+        console.print(f"[yellow]Running in container - PR will be created by host[/yellow]")
+        console.print(f"[dim]Branch: {branch} (committed locally, awaiting push)[/dim]")
+        return
+
+    # On host: do the full push/PR
+    from agenttree.github import create_pr
+
+    # Push to remote
     console.print(f"[dim]Pushing {branch} to origin/{branch}...[/dim]")
     push_branch_to_remote(branch)
 
@@ -826,6 +852,80 @@ def create_pull_request_hook(issue: Issue):
     )
 
     console.print(f"[green]✓ PR created: {pr.url}[/green]")
+
+
+def ensure_pr_for_issue(issue_id: str) -> bool:
+    """Ensure a PR exists for an issue at implementation_review stage.
+
+    Called by host (sync or web server) to create PRs for issues
+    where the agent couldn't push.
+
+    Args:
+        issue_id: Issue ID to create PR for
+
+    Returns:
+        True if PR was created or already exists, False on failure
+    """
+    from agenttree.issues import get_issue, update_issue_metadata
+    from agenttree.github import create_pr
+    from pathlib import Path
+    import subprocess
+
+    issue = get_issue(issue_id)
+    if not issue:
+        return False
+
+    # Already has PR
+    if issue.pr_number:
+        return True
+
+    # Not at implementation_review stage
+    if issue.stage != "implementation_review":
+        return False
+
+    # Need branch info
+    if not issue.branch:
+        console.print(f"[yellow]Issue #{issue_id} has no branch info[/yellow]")
+        return False
+
+    # Find the worktree for this issue
+    worktree_path = Path.cwd() / ".worktrees" / f"issue-{issue_id.zfill(3)}-{issue.slug[:30]}"
+    if not worktree_path.exists():
+        # Try without leading zeros
+        for p in Path.cwd().glob(f".worktrees/issue-{issue_id}*"):
+            worktree_path = p
+            break
+
+    if not worktree_path.exists():
+        console.print(f"[yellow]Worktree not found for issue #{issue_id}[/yellow]")
+        return False
+
+    console.print(f"[dim]Creating PR for issue #{issue_id} from host...[/dim]")
+
+    # Push the branch from the worktree
+    result = subprocess.run(
+        ["git", "-C", str(worktree_path), "push", "-u", "origin", issue.branch],
+        capture_output=True,
+        text=True
+    )
+
+    if result.returncode != 0:
+        console.print(f"[red]Failed to push: {result.stderr}[/red]")
+        return False
+
+    # Create PR
+    title = f"[Issue {issue.id}] {issue.title}"
+    body = f"## Summary\n\nImplementation for issue #{issue.id}: {issue.title}\n\n"
+    body += f"🤖 Generated with [Claude Code](https://claude.com/claude-code)"
+
+    try:
+        pr = create_pr(title=title, body=body, branch=issue.branch, base="main")
+        update_issue_metadata(issue.id, pr_number=pr.number, pr_url=pr.url)
+        console.print(f"[green]✓ PR #{pr.number} created for issue #{issue_id}[/green]")
+        return True
+    except Exception as e:
+        console.print(f"[red]Failed to create PR: {e}[/red]")
+        return False
 
 
 @post_transition(Stage.IMPLEMENTATION_REVIEW, Stage.ACCEPTED)

@@ -353,7 +353,7 @@ STAGE_ORDER = [
 STAGE_SUBSTAGES = {
     Stage.PROBLEM: ["draft", "refine"],
     Stage.RESEARCH: ["explore", "plan", "spec"],
-    Stage.IMPLEMENT: ["setup", "test", "code", "debug", "code_review"],
+    Stage.IMPLEMENT: ["setup", "test", "code", "debug", "code_review", "address_review"],
 }
 
 HUMAN_REVIEW_STAGES = {
