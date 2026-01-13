@@ -35,7 +35,7 @@ RUN mkdir -p /home/agent/.claude && \
     echo '{"theme":"dark"}' > /home/agent/.claude/settings.json
 
 # Create entrypoint script that sets up environment
-RUN cat > /home/agent/entrypoint.sh << 'EOF'
+COPY --chown=agent:agent <<'EOF' /home/agent/entrypoint.sh
 #!/bin/bash
 
 # If host .claude directory is mounted, copy .claude.json if it exists there
