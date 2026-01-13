@@ -914,9 +914,9 @@ class TestValidationHooks:
         require_review_md_for_pr(mock_issue)
 
     @patch('agenttree.hooks._get_issue_dir')
-    def test_require_plan_md_for_implement_success(self, mock_get_issue_dir, mock_issue, tmp_path):
-        """Should pass when plan.md exists with meaningful Approach content."""
-        from agenttree.hooks import require_plan_md_for_implement
+    def test_require_spec_md_for_implement_success(self, mock_get_issue_dir, mock_issue, tmp_path):
+        """Should pass when spec.md (or plan.md) exists with meaningful Approach content."""
+        from agenttree.hooks import require_spec_md_for_implement
 
         mock_get_issue_dir.return_value = tmp_path
         plan_content = """# Implementation Plan
@@ -937,24 +937,24 @@ with more than 20 characters of content to pass validation.
 """
         (tmp_path / "plan.md").write_text(plan_content)
 
-        # Should not raise
-        require_plan_md_for_implement(mock_issue)
+        # Should not raise (plan.md is accepted as legacy name)
+        require_spec_md_for_implement(mock_issue)
 
     @patch('agenttree.hooks._get_issue_dir')
-    def test_require_plan_md_for_implement_fails_missing_file(self, mock_get_issue_dir, mock_issue, tmp_path):
-        """Should block transition when plan.md doesn't exist."""
-        from agenttree.hooks import require_plan_md_for_implement, ValidationError
+    def test_require_spec_md_for_implement_fails_missing_file(self, mock_get_issue_dir, mock_issue, tmp_path):
+        """Should block transition when spec.md doesn't exist."""
+        from agenttree.hooks import require_spec_md_for_implement, ValidationError
 
         mock_get_issue_dir.return_value = tmp_path
-        # Don't create plan.md
+        # Don't create spec.md or plan.md
 
-        with pytest.raises(ValidationError, match="plan.md not found"):
-            require_plan_md_for_implement(mock_issue)
+        with pytest.raises(ValidationError, match="spec.md not found"):
+            require_spec_md_for_implement(mock_issue)
 
     @patch('agenttree.hooks._get_issue_dir')
-    def test_require_plan_md_for_implement_fails_empty_approach(self, mock_get_issue_dir, mock_issue, tmp_path):
+    def test_require_spec_md_for_implement_fails_empty_approach(self, mock_get_issue_dir, mock_issue, tmp_path):
         """Should block transition when Approach section is empty."""
-        from agenttree.hooks import require_plan_md_for_implement, ValidationError
+        from agenttree.hooks import require_spec_md_for_implement, ValidationError
 
         mock_get_issue_dir.return_value = tmp_path
         plan_content = """# Implementation Plan
@@ -974,12 +974,12 @@ Brief summary.
         (tmp_path / "plan.md").write_text(plan_content)
 
         with pytest.raises(ValidationError, match="Approach section is too short"):
-            require_plan_md_for_implement(mock_issue)
+            require_spec_md_for_implement(mock_issue)
 
     @patch('agenttree.hooks._get_issue_dir')
-    def test_require_plan_md_for_implement_fails_short_approach(self, mock_get_issue_dir, mock_issue, tmp_path):
+    def test_require_spec_md_for_implement_fails_short_approach(self, mock_get_issue_dir, mock_issue, tmp_path):
         """Should block transition when Approach section has less than 20 chars."""
-        from agenttree.hooks import require_plan_md_for_implement, ValidationError
+        from agenttree.hooks import require_spec_md_for_implement, ValidationError
 
         mock_get_issue_dir.return_value = tmp_path
         plan_content = """# Implementation Plan
@@ -993,12 +993,12 @@ Short.
         (tmp_path / "plan.md").write_text(plan_content)
 
         with pytest.raises(ValidationError, match="Approach section is too short"):
-            require_plan_md_for_implement(mock_issue)
+            require_spec_md_for_implement(mock_issue)
 
     @patch('agenttree.hooks._get_issue_dir')
-    def test_require_plan_md_for_implement_ignores_html_comments(self, mock_get_issue_dir, mock_issue, tmp_path):
+    def test_require_spec_md_for_implement_ignores_html_comments(self, mock_get_issue_dir, mock_issue, tmp_path):
         """Should ignore HTML comments when counting Approach content length."""
-        from agenttree.hooks import require_plan_md_for_implement, ValidationError
+        from agenttree.hooks import require_spec_md_for_implement, ValidationError
 
         mock_get_issue_dir.return_value = tmp_path
         plan_content = """# Implementation Plan
@@ -1014,7 +1014,7 @@ Too short
         (tmp_path / "plan.md").write_text(plan_content)
 
         with pytest.raises(ValidationError, match="Approach section is too short"):
-            require_plan_md_for_implement(mock_issue)
+            require_spec_md_for_implement(mock_issue)
 
 
 class TestMissingHooks:
@@ -1052,12 +1052,13 @@ class TestMissingHooks:
 class TestActionHooks:
     """Tests for post-transition action hooks."""
 
+    @patch('agenttree.hooks.is_running_in_container', return_value=False)
     @patch('agenttree.hooks.get_current_branch')
     @patch('agenttree.hooks.push_branch_to_remote')
     @patch('agenttree.github.create_pr')
     @patch('agenttree.issues.update_issue_metadata')
     def test_create_pull_request_success(
-        self, mock_update_metadata, mock_create_pr, mock_push, mock_get_branch, mock_issue
+        self, mock_update_metadata, mock_create_pr, mock_push, mock_get_branch, mock_in_container, mock_issue
     ):
         """Should create PR successfully."""
         from agenttree.hooks import create_pull_request_hook
@@ -1085,19 +1086,24 @@ class TestActionHooks:
         assert call_args.kwargs['branch'] == "agenttree-agent-1-work"
         assert call_args.kwargs['base'] == "main"
 
-        # Should update issue metadata
-        mock_update_metadata.assert_called_once_with(
+        # Should update issue metadata twice:
+        # 1. First call with just branch
+        # 2. Second call with PR info
+        assert mock_update_metadata.call_count == 2
+        # Verify the final call has PR info
+        mock_update_metadata.assert_called_with(
             "023",
             pr_number=123,
             pr_url="https://github.com/owner/repo/pull/123",
             branch="agenttree-agent-1-work"
         )
 
+    @patch('agenttree.hooks.is_running_in_container', return_value=False)
     @patch('agenttree.hooks.get_current_branch')
     @patch('agenttree.hooks.push_branch_to_remote')
     @patch('agenttree.github.create_pr')
     def test_create_pull_request_handles_push_failure(
-        self, mock_create_pr, mock_push, mock_get_branch, mock_issue
+        self, mock_create_pr, mock_push, mock_get_branch, mock_in_container, mock_issue
     ):
         """Should handle push failure gracefully."""
         from agenttree.hooks import create_pull_request_hook

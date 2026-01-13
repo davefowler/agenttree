@@ -1466,20 +1466,35 @@ def stage_status(issue_id: Optional[str]) -> None:
 
 @main.command("begin")
 @click.argument("stage", type=click.Choice([s.value for s in Stage]))
-@click.option("--issue", "-i", "issue_id", required=True, help="Issue ID")
-def stage_begin(stage: str, issue_id: str) -> None:
+@click.option("--issue", "-i", "issue_id", required=False, help="Issue ID (auto-detected from branch if not provided)")
+def stage_begin(stage: str, issue_id: Optional[str]) -> None:
     """Begin working on a stage. Returns stage instructions.
 
     Examples:
-        agenttree begin problem --issue 001
-        agenttree begin research --issue 002
+        agenttree begin define --issue 001
+        agenttree begin research  # Auto-detects issue from branch
     """
+    from agenttree.issues import get_issue_from_branch
+
+    # Auto-detect issue from branch if not provided
+    if not issue_id:
+        issue_id = get_issue_from_branch()
+        if not issue_id:
+            console.print("[red]No issue ID provided and couldn't detect from branch name[/red]")
+            console.print("[dim]Use --issue <ID> or run from a branch like 'issue-042-slug'[/dim]")
+            sys.exit(1)
+        console.print(f"[dim]Detected issue {issue_id} from branch[/dim]")
+
     issue = get_issue_func(issue_id)
     if not issue:
         console.print(f"[red]Issue {issue_id} not found[/red]")
         sys.exit(1)
 
     target_stage = Stage(stage)
+
+    # Map legacy stage names to new ones
+    if target_stage == Stage.PROBLEM:
+        target_stage = Stage.DEFINE
 
     # Validate: can't begin review stages or terminal stages directly
     if target_stage in HUMAN_REVIEW_STAGES:
@@ -1509,8 +1524,11 @@ def stage_begin(stage: str, issue_id: str) -> None:
         stage_str += f".{substage}"
     console.print(f"[green]✓ Started {stage_str}[/green]")
 
-    # Load and display skill
-    skill = load_skill(target_stage, substage)
+    # Determine if this is first agent entry (should include AGENTS.md system prompt)
+    is_first_stage = target_stage == Stage.DEFINE and from_stage == Stage.BACKLOG
+
+    # Load and display skill with Jinja rendering
+    skill = load_skill(target_stage, substage, issue=updated, include_system=is_first_stage)
     if skill:
         console.print(f"\n{'='*60}")
         console.print(f"[bold cyan]Stage Instructions: {target_stage.value.upper()}[/bold cyan]")
@@ -1529,13 +1547,27 @@ def stage_begin(stage: str, issue_id: str) -> None:
 
 
 @main.command("next")
-@click.option("--issue", "-i", "issue_id", required=True, help="Issue ID")
-def stage_next(issue_id: str) -> None:
+@click.option("--issue", "-i", "issue_id", required=False, help="Issue ID (auto-detected from branch if not provided)")
+@click.option("--reassess", is_flag=True, help="Go back to plan_assess for another review cycle")
+def stage_next(issue_id: Optional[str], reassess: bool) -> None:
     """Move to the next substage or stage.
 
     Examples:
         agenttree next --issue 001
+        agenttree next  # Auto-detects issue from branch
+        agenttree next --reassess  # Cycle back to plan_assess from plan_revise
     """
+    from agenttree.issues import get_issue_from_branch
+
+    # Auto-detect issue from branch if not provided
+    if not issue_id:
+        issue_id = get_issue_from_branch()
+        if not issue_id:
+            console.print("[red]No issue ID provided and couldn't detect from branch name[/red]")
+            console.print("[dim]Use --issue <ID> or run from a branch like 'issue-042-slug'[/dim]")
+            sys.exit(1)
+        console.print(f"[dim]Detected issue {issue_id} from branch[/dim]")
+
     issue = get_issue_func(issue_id)
     if not issue:
         console.print(f"[red]Issue {issue_id} not found[/red]")
@@ -1549,10 +1581,19 @@ def stage_next(issue_id: str) -> None:
         console.print(f"[yellow]Issue is marked as not doing[/yellow]")
         return
 
-    # Calculate next stage
-    next_stage, next_substage, is_human_review = get_next_stage(
-        issue.stage, issue.substage
-    )
+    # Handle --reassess flag for plan revision cycling
+    if reassess:
+        if issue.stage != Stage.PLAN_REVISE:
+            console.print(f"[red]--reassess only works from plan_revise stage[/red]")
+            sys.exit(1)
+        next_stage = Stage.PLAN_ASSESS
+        next_substage = None
+        is_human_review = False
+    else:
+        # Calculate next stage
+        next_stage, next_substage, is_human_review = get_next_stage(
+            issue.stage, issue.substage
+        )
 
     # Check if we're already at the next stage (no change)
     if next_stage == issue.stage and next_substage == issue.substage:
@@ -1587,8 +1628,11 @@ def stage_next(issue_id: str) -> None:
         console.print(f"[dim]You will receive instructions when the review is complete.[/dim]")
         return
 
-    # Load and display skill for next stage
-    skill = load_skill(next_stage, next_substage)
+    # Determine if this is first agent entry (should include AGENTS.md system prompt)
+    is_first_stage = next_stage == Stage.DEFINE and from_stage == Stage.BACKLOG
+
+    # Load and display skill for next stage with Jinja rendering
+    skill = load_skill(next_stage, next_substage, issue=updated, include_system=is_first_stage)
     if skill:
         console.print(f"\n{'='*60}")
         header = f"Stage Instructions: {next_stage.value.upper()}"

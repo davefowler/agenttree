@@ -15,6 +15,7 @@ source = { editable = "." }
 dependencies = [
     { name = "click" },
     { name = "filelock" },
+    { name = "jinja2" },
     { name = "pydantic" },
     { name = "pyyaml" },
     { name = "rich" },
@@ -56,6 +57,12 @@ web = [
     { name = "websockets" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "agenttree", extras = ["dev", "web", "ml"], marker = "extra == 'all'" },
@@ -64,6 +71,7 @@ requires-dist = [
     { name = "click", specifier = ">=8.1.0" },
     { name = "fastapi", marker = "extra == 'web'", specifier = ">=0.109.0" },
     { name = "filelock", specifier = ">=3.0.0" },
+    { name = "jinja2", specifier = ">=3.1.0" },
     { name = "jinja2", marker = "extra == 'web'", specifier = ">=3.1.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.0.0" },
     { name = "pydantic", specifier = ">=2.0.0" },
@@ -79,6 +87,12 @@ requires-dist = [
     { name = "websockets", marker = "extra == 'web'", specifier = ">=12.0" },
 ]
 provides-extras = ["dev", "web", "ml", "all"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "pytest", specifier = ">=9.0.2" },
+    { name = "pytest-cov", specifier = ">=7.0.0" },
+]
 
 [[package]]
 name = "annotated-doc"

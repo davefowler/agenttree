@@ -183,6 +183,9 @@ class ContainerRuntime:
         if oauth_token:
             cmd.extend(["-e", f"CLAUDE_CODE_OAUTH_TOKEN={oauth_token}"])
 
+        # Set container indicator env var for reliable container detection
+        cmd.extend(["-e", "AGENTTREE_CONTAINER=1"])
+
         if additional_args:
             cmd.extend(additional_args)
 

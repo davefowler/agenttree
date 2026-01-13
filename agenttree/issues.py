@@ -24,11 +24,31 @@ class Priority(str, Enum):
 
 
 class Stage(str, Enum):
-    """Workflow stages."""
+    """Workflow stages.
+
+    Flow: backlog → define → problem_review → research → plan → plan_assess
+          → plan_revise → plan_review → implement → implementation_review → accepted
+
+    Stage naming: stages are verbs (what you do), outputs are nouns (what you create)
+    - define stage → creates problem.md
+    - research stage → creates research.md
+    - plan stage → creates spec.md
+    - plan_assess stage → creates spec_review.md
+    - implement.code_review substage → creates review.md
+    """
     BACKLOG = "backlog"
-    PROBLEM = "problem"
+    # Define stage: agent defines the problem → problem.md
+    DEFINE = "define"
+    PROBLEM = "problem"  # Legacy alias for DEFINE (backward compat)
     PROBLEM_REVIEW = "problem_review"
+    # Research stage: agent explores codebase → research.md
     RESEARCH = "research"
+    # Plan stage: agent creates implementation spec → spec.md
+    PLAN = "plan"
+    # Plan assess: agent critically reviews its own plan → spec_review.md
+    PLAN_ASSESS = "plan_assess"
+    # Plan revise: agent revises plan based on assessment (can cycle)
+    PLAN_REVISE = "plan_revise"
     PLAN_REVIEW = "plan_review"
     IMPLEMENT = "implement"
     IMPLEMENTATION_REVIEW = "implementation_review"
@@ -341,18 +361,24 @@ def get_issue_dir(issue_id: str) -> Optional[Path]:
 # Issues marked NOT_DOING cannot progress via get_next_stage().
 STAGE_ORDER = [
     Stage.BACKLOG,
-    Stage.PROBLEM,
+    Stage.DEFINE,      # Agent defines the problem → problem.md
     Stage.PROBLEM_REVIEW,
-    Stage.RESEARCH,
+    Stage.RESEARCH,    # Agent explores codebase → research.md
+    Stage.PLAN,        # Agent creates implementation spec → spec.md
+    Stage.PLAN_ASSESS, # Agent critically reviews plan → spec_review.md
+    Stage.PLAN_REVISE, # Agent revises based on assessment
     Stage.PLAN_REVIEW,
     Stage.IMPLEMENT,
     Stage.IMPLEMENTATION_REVIEW,
     Stage.ACCEPTED,
 ]
 
+# Substages within stages - agent moves through these sequentially
 STAGE_SUBSTAGES = {
-    Stage.PROBLEM: ["draft", "refine"],
-    Stage.RESEARCH: ["explore", "plan", "spec"],
+    Stage.DEFINE: ["draft", "refine"],
+    Stage.PROBLEM: ["draft", "refine"],  # Legacy alias
+    Stage.RESEARCH: ["explore", "document"],
+    Stage.PLAN: ["draft", "refine"],
     Stage.IMPLEMENT: ["setup", "test", "code", "debug", "code_review", "address_review"],
 }
 
@@ -360,6 +386,27 @@ HUMAN_REVIEW_STAGES = {
     Stage.PROBLEM_REVIEW,
     Stage.PLAN_REVIEW,
     Stage.IMPLEMENTATION_REVIEW,
+}
+
+# Map legacy stage names to new skill files
+STAGE_SKILL_MAP = {
+    Stage.PROBLEM: "define",  # Legacy "problem" stage uses "define.md" skill
+    Stage.DEFINE: "define",
+    Stage.RESEARCH: "research",
+    Stage.PLAN: "plan",
+    Stage.PLAN_ASSESS: "plan_assess",
+    Stage.PLAN_REVISE: "plan_revise",
+    Stage.IMPLEMENT: "implement",
+}
+
+# Map stages to the documents they create
+STAGE_OUTPUT_MAP = {
+    Stage.DEFINE: "problem.md",
+    Stage.PROBLEM: "problem.md",
+    Stage.RESEARCH: "research.md",
+    Stage.PLAN: "spec.md",
+    Stage.PLAN_ASSESS: "spec_review.md",
+    Stage.PLAN_REVISE: "spec.md",  # Revises the spec
 }
 
 
@@ -574,31 +621,126 @@ def update_issue_metadata(
     return issue
 
 
-def load_skill(stage: Stage, substage: Optional[str] = None) -> Optional[str]:
-    """Load skill/instructions for a stage.
+def get_issue_from_branch() -> Optional[str]:
+    """Get issue ID from current git branch name.
+
+    Parses branch names like:
+    - issue-042-add-dark-mode → "042"
+    - 042-add-dark-mode → "042"
+    - feature/042-fix-bug → "042"
+
+    Returns:
+        Issue ID string or None if not found
+    """
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        branch = result.stdout.strip()
+    except subprocess.CalledProcessError:
+        return None
+
+    # Try various patterns
+    patterns = [
+        r'issue-(\d+)',      # issue-042-slug
+        r'^(\d{3})-',        # 042-slug
+        r'/(\d{3})-',        # feature/042-slug
+        r'-(\d{3})-',        # prefix-042-slug
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, branch)
+        if match:
+            return match.group(1)
+
+    return None
+
+
+def load_skill(
+    stage: Stage,
+    substage: Optional[str] = None,
+    issue: Optional["Issue"] = None,
+    include_system: bool = False,
+) -> Optional[str]:
+    """Load skill/instructions for a stage, rendered with Jinja if issue provided.
 
     Args:
         stage: Stage to load skill for
         substage: Optional substage for more specific skill
+        issue: Optional Issue object for Jinja context
+        include_system: If True, prepend AGENTS.md system prompt (for first stage)
 
     Returns:
-        Skill content as string, or None if not found
+        Skill content as string (rendered if issue provided), or None if not found
     """
+    from jinja2 import Template
+
     # Sync before reading
     agents_path = get_agenttrees_path()
     sync_agents_repo(agents_path, pull_only=True)
 
     skills_path = agents_path / "skills"
 
+    # Get the skill file name (use STAGE_SKILL_MAP for mapping)
+    skill_name = STAGE_SKILL_MAP.get(stage, stage.value)
+
     # Try substage-specific skill first
+    skill_content = None
     if substage:
-        substage_skill = skills_path / f"{stage.value}-{substage}.md"
+        substage_skill = skills_path / f"{skill_name}-{substage}.md"
         if substage_skill.exists():
-            return substage_skill.read_text()
+            skill_content = substage_skill.read_text()
 
     # Fall back to stage skill
-    stage_skill = skills_path / f"{stage.value}.md"
-    if stage_skill.exists():
-        return stage_skill.read_text()
+    if skill_content is None:
+        stage_skill = skills_path / f"{skill_name}.md"
+        if stage_skill.exists():
+            skill_content = stage_skill.read_text()
 
-    return None
+    if skill_content is None:
+        return None
+
+    # Prepend system prompt if requested
+    if include_system:
+        system_path = skills_path / "AGENTS.md"
+        if system_path.exists():
+            system_content = system_path.read_text()
+            skill_content = system_content + "\n\n---\n\n" + skill_content
+
+    # If no issue provided, return raw content
+    if issue is None:
+        return skill_content
+
+    # Build Jinja context
+    issue_dir = get_issue_dir(issue.id)
+    context = {
+        "issue_id": issue.id,
+        "issue_title": issue.title,
+        "issue_dir": str(issue_dir) if issue_dir else "",
+        "issue_dir_rel": f".agenttrees/issues/{issue.id}-{issue.slug}" if issue_dir else "",
+        "stage": stage.value,
+        "substage": substage or "",
+    }
+
+    # Load document contents if they exist
+    if issue_dir:
+        for doc_name in ["problem.md", "research.md", "spec.md", "spec_review.md", "review.md"]:
+            doc_path = issue_dir / doc_name
+            var_name = doc_name.replace(".md", "_md").replace("-", "_")
+            if doc_path.exists():
+                context[var_name] = doc_path.read_text()
+            else:
+                context[var_name] = ""
+
+    # Render with Jinja
+    try:
+        template = Template(skill_content)
+        return template.render(**context)
+    except Exception as e:
+        # If rendering fails, return raw content
+        return skill_content

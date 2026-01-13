@@ -787,11 +787,17 @@ def require_pr_approval(issue: Issue):
 def is_running_in_container() -> bool:
     """Check if we're running inside a container.
 
+    Checks for AGENTTREE_CONTAINER env var (set by agenttree when launching)
+    as well as common container indicators.
+
     Returns:
         True if running in a container, False otherwise
     """
     import os
-    # Check for container indicators
+    # Check for agenttree-specific env var first (most reliable)
+    if os.environ.get("AGENTTREE_CONTAINER") == "1":
+        return True
+    # Fall back to common container indicators
     return (
         os.path.exists("/.dockerenv") or
         os.path.exists("/run/.containerenv") or
@@ -1055,17 +1061,45 @@ def _copy_template(template_name: str, dest_path: Path, issue: Issue) -> bool:
 
 
 @on_enter(Stage.RESEARCH)
-def create_plan_md_on_research(issue: Issue):
-    """Auto-create plan.md when entering research stage.
+def create_research_md_on_research(issue: Issue):
+    """Auto-create research.md when entering research stage.
 
     Args:
         issue: Issue entering research stage
     """
     issue_dir = _get_issue_dir(issue)
-    plan_path = issue_dir / "plan.md"
+    research_path = issue_dir / "research.md"
 
-    if _copy_template("plan.md", plan_path, issue):
-        console.print(f"[dim]Created plan.md in issue directory[/dim]")
+    if _copy_template("research.md", research_path, issue):
+        console.print(f"[dim]Created research.md in issue directory[/dim]")
+
+
+@on_enter(Stage.PLAN)
+def create_spec_md_on_plan(issue: Issue):
+    """Auto-create spec.md when entering plan stage.
+
+    Args:
+        issue: Issue entering plan stage
+    """
+    issue_dir = _get_issue_dir(issue)
+    spec_path = issue_dir / "spec.md"
+
+    if _copy_template("spec.md", spec_path, issue):
+        console.print(f"[dim]Created spec.md in issue directory[/dim]")
+
+
+@on_enter(Stage.PLAN_ASSESS)
+def create_spec_review_md_on_plan_assess(issue: Issue):
+    """Auto-create spec_review.md when entering plan_assess stage.
+
+    Args:
+        issue: Issue entering plan_assess stage
+    """
+    issue_dir = _get_issue_dir(issue)
+    spec_review_path = issue_dir / "spec_review.md"
+
+    if _copy_template("spec_review.md", spec_review_path, issue):
+        console.print(f"[dim]Created spec_review.md in issue directory[/dim]")
 
 
 @on_enter(Stage.IMPLEMENT, substage="code_review")
@@ -1086,28 +1120,34 @@ def create_review_md_on_code_review(issue: Issue):
 
 
 @pre_transition(Stage.PLAN_REVIEW, Stage.IMPLEMENT)
-def require_plan_md_for_implement(issue: Issue):
-    """Require that plan.md exists and has content before implementing.
+def require_spec_md_for_implement(issue: Issue):
+    """Require that spec.md exists and has content before implementing.
 
-    Blocks transition if plan.md doesn't exist or is mostly empty.
+    Blocks transition if spec.md doesn't exist or is mostly empty.
 
     Args:
         issue: Issue being transitioned
 
     Raises:
-        ValidationError: If plan.md doesn't exist or is incomplete
+        ValidationError: If spec.md doesn't exist or is incomplete
     """
     issue_dir = _get_issue_dir(issue)
+
+    # Check for spec.md (new name) or plan.md (legacy)
+    spec_path = issue_dir / "spec.md"
     plan_path = issue_dir / "plan.md"
 
-    if not plan_path.exists():
+    if spec_path.exists():
+        content = spec_path.read_text()
+        file_name = "spec.md"
+    elif plan_path.exists():
+        content = plan_path.read_text()
+        file_name = "plan.md"
+    else:
         raise ValidationError(
-            "plan.md not found. Complete the research stage and fill out plan.md "
+            "spec.md not found. Complete the plan stage and fill out spec.md "
             "before moving to implementation."
         )
-
-    # Check if plan has meaningful content (beyond just template)
-    content = plan_path.read_text()
 
     # Look for filled-in sections - at least Approach should have content
     approach_section = "## Approach"
@@ -1125,6 +1165,6 @@ def require_plan_md_for_implement(issue: Issue):
 
         if len(approach_content) < 20:  # Minimum 20 chars of actual content
             raise ValidationError(
-                "plan.md Approach section is too short. Describe your implementation "
+                f"{file_name} Approach section is too short. Describe your implementation "
                 "approach before moving to implementation stage."
             )
