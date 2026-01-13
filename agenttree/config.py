@@ -14,26 +14,80 @@ class ToolConfig(BaseModel):
     skip_permissions: bool = False  # Add --dangerously-skip-permissions to command
 
 
+class SubstageConfig(BaseModel):
+    """Configuration for a workflow substage."""
+
+    name: str
+    output: Optional[str] = None  # Document created by this substage
+    skill: Optional[str] = None   # Override skill file path
+    validators: list[str] = Field(default_factory=list)
+
+
 class StageConfig(BaseModel):
     """Configuration for a workflow stage."""
 
     name: str
-    substages: list[str] = Field(default_factory=list)
+    output: Optional[str] = None  # Document created by this stage
+    skill: Optional[str] = None   # Override skill file path
     human_review: bool = False
     triggers_merge: bool = False
+    terminal: bool = False  # Cannot progress from here
+    substages: Dict[str, SubstageConfig] = Field(default_factory=dict)
+
+    def substage_order(self) -> list[str]:
+        """Get ordered list of substage names."""
+        return list(self.substages.keys())
+
+    def get_substage(self, name: str) -> Optional[SubstageConfig]:
+        """Get a substage by name."""
+        return self.substages.get(name)
 
 
-# Default stages if not configured
+# Default stages if not configured in .agenttree.yaml
 DEFAULT_STAGES = [
     StageConfig(name="backlog"),
-    StageConfig(name="problem", substages=["draft", "refine"]),
+    StageConfig(
+        name="define",
+        output="problem.md",
+        substages={
+            "draft": SubstageConfig(name="draft"),
+            "refine": SubstageConfig(name="refine"),
+        }
+    ),
     StageConfig(name="problem_review", human_review=True),
-    StageConfig(name="research", substages=["explore", "plan", "spec"]),
+    StageConfig(
+        name="research",
+        output="research.md",
+        substages={
+            "explore": SubstageConfig(name="explore"),
+            "document": SubstageConfig(name="document"),
+        }
+    ),
+    StageConfig(
+        name="plan",
+        output="spec.md",
+        substages={
+            "draft": SubstageConfig(name="draft"),
+            "refine": SubstageConfig(name="refine"),
+        }
+    ),
+    StageConfig(name="plan_assess", output="spec_review.md"),
+    StageConfig(name="plan_revise", output="spec.md"),
     StageConfig(name="plan_review", human_review=True),
-    StageConfig(name="implement", substages=["setup", "test", "code", "debug", "code_review", "address_review"]),
+    StageConfig(
+        name="implement",
+        substages={
+            "setup": SubstageConfig(name="setup"),
+            "test": SubstageConfig(name="test"),
+            "code": SubstageConfig(name="code"),
+            "debug": SubstageConfig(name="debug"),
+            "code_review": SubstageConfig(name="code_review", output="review.md", validators=["require_commits"]),
+            "address_review": SubstageConfig(name="address_review"),
+        }
+    ),
     StageConfig(name="implementation_review", human_review=True),
     StageConfig(name="accepted", triggers_merge=True),
-    StageConfig(name="not_doing"),
+    StageConfig(name="not_doing", terminal=True),
 ]
 
 
@@ -200,6 +254,179 @@ class Config(BaseModel):
             List of stage names that require human review
         """
         return [stage.name for stage in self.stages if stage.human_review]
+
+    def substages_for(self, stage_name: str) -> list[str]:
+        """Get ordered list of substage names for a stage.
+
+        Args:
+            stage_name: Name of the stage
+
+        Returns:
+            List of substage names (empty if no substages)
+        """
+        stage = self.get_stage(stage_name)
+        if stage is None:
+            return []
+        return stage.substage_order()
+
+    def skill_path(self, stage_name: str, substage: Optional[str] = None) -> str:
+        """Get the skill file path for a stage/substage.
+
+        Convention: skills/{stage}.md or skills/{stage}/{substage}.md
+        Can be overridden with explicit skill property in config.
+
+        Args:
+            stage_name: Name of the stage
+            substage: Optional substage name
+
+        Returns:
+            Relative path to skill file (from .agenttrees/)
+        """
+        stage = self.get_stage(stage_name)
+
+        # Check for explicit override
+        if substage and stage:
+            substage_config = stage.get_substage(substage)
+            if substage_config and substage_config.skill:
+                return f"skills/{substage_config.skill}"
+        if stage and stage.skill:
+            return f"skills/{stage.skill}"
+
+        # Use convention: skills/{stage}/{substage}.md or skills/{stage}.md
+        if substage:
+            return f"skills/{stage_name}/{substage}.md"
+        return f"skills/{stage_name}.md"
+
+    def output_for(self, stage_name: str, substage: Optional[str] = None) -> Optional[str]:
+        """Get the output document name for a stage/substage.
+
+        Args:
+            stage_name: Name of the stage
+            substage: Optional substage name
+
+        Returns:
+            Document name (e.g., "problem.md") or None
+        """
+        stage = self.get_stage(stage_name)
+        if stage is None:
+            return None
+
+        # Check substage output first
+        if substage:
+            substage_config = stage.get_substage(substage)
+            if substage_config and substage_config.output:
+                return substage_config.output
+
+        # Fall back to stage output
+        return stage.output
+
+    def validators_for(self, stage_name: str, substage: Optional[str] = None) -> list[str]:
+        """Get validators for a stage/substage.
+
+        Args:
+            stage_name: Name of the stage
+            substage: Optional substage name
+
+        Returns:
+            List of validator names
+        """
+        stage = self.get_stage(stage_name)
+        if stage is None:
+            return []
+
+        if substage:
+            substage_config = stage.get_substage(substage)
+            if substage_config:
+                return substage_config.validators
+
+        return []
+
+    def is_terminal(self, stage_name: str) -> bool:
+        """Check if a stage is terminal (cannot progress further).
+
+        Args:
+            stage_name: Name of the stage
+
+        Returns:
+            True if terminal, False otherwise
+        """
+        stage = self.get_stage(stage_name)
+        return stage.terminal if stage else False
+
+    def get_next_stage(
+        self,
+        current_stage: str,
+        current_substage: Optional[str] = None,
+    ) -> tuple[str, Optional[str], bool]:
+        """Calculate the next stage/substage.
+
+        Args:
+            current_stage: Current stage name
+            current_substage: Current substage (if any)
+
+        Returns:
+            Tuple of (next_stage, next_substage, is_human_review)
+        """
+        stage_config = self.get_stage(current_stage)
+        if stage_config is None or stage_config.terminal:
+            return current_stage, current_substage, False
+
+        substages = stage_config.substage_order()
+
+        # If we have substages, try to advance within them
+        if substages and current_substage:
+            try:
+                idx = substages.index(current_substage)
+                if idx < len(substages) - 1:
+                    # Move to next substage
+                    return current_stage, substages[idx + 1], False
+            except ValueError:
+                pass  # substage not found, move to next stage
+
+        # Move to next stage
+        stage_names = self.get_stage_names()
+        try:
+            stage_idx = stage_names.index(current_stage)
+            if stage_idx < len(stage_names) - 1:
+                next_stage_name = stage_names[stage_idx + 1]
+                next_stage = self.get_stage(next_stage_name)
+                if next_stage:
+                    next_substages = next_stage.substage_order()
+                    next_substage = next_substages[0] if next_substages else None
+                    return next_stage_name, next_substage, next_stage.human_review
+        except ValueError:
+            pass
+
+        # Already at end
+        return current_stage, current_substage, False
+
+    def format_stage(self, stage: str, substage: Optional[str] = None) -> str:
+        """Format stage/substage as a display string.
+
+        Args:
+            stage: Stage name
+            substage: Optional substage name
+
+        Returns:
+            Formatted string like "implement/code_review" or "backlog"
+        """
+        if substage:
+            return f"{stage}/{substage}"
+        return stage
+
+    def parse_stage(self, stage_str: str) -> tuple[str, Optional[str]]:
+        """Parse a stage string into stage and substage.
+
+        Args:
+            stage_str: String like "implement/code_review" or "backlog"
+
+        Returns:
+            Tuple of (stage, substage) where substage may be None
+        """
+        if "/" in stage_str:
+            parts = stage_str.split("/", 1)
+            return parts[0], parts[1]
+        return stage_str, None
 
 
 def find_config_file(start_path: Path) -> Optional[Path]:
