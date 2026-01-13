@@ -1,6 +1,6 @@
 """Agents repository management for AgentTree.
 
-Manages the .agenttrees/ git repository (separate from main project).
+Manages the _agenttree/ git repository (separate from main project).
 """
 
 import os
@@ -38,10 +38,10 @@ def sync_agents_repo(
     pull_only: bool = False,
     commit_message: Optional[str] = None,
 ) -> bool:
-    """Sync .agenttrees repo with remote.
+    """Sync _agenttree repo with remote.
 
     Args:
-        agents_dir: Path to .agenttrees directory
+        agents_dir: Path to _agenttree directory
         pull_only: If True, only pull changes (for read operations)
         commit_message: Commit message for write operations
 
@@ -94,11 +94,11 @@ def sync_agents_repo(
                 return False
             elif "conflict" in result.stderr.lower():
                 # Merge conflict - print error and fail
-                print(f"Warning: Merge conflict in .agenttrees repo: {result.stderr}")
+                print(f"Warning: Merge conflict in _agenttree repo: {result.stderr}")
                 return False
             else:
                 # Other error - print warning but continue
-                print(f"Warning: Failed to pull .agenttrees repo: {result.stderr}")
+                print(f"Warning: Failed to pull _agenttree repo: {result.stderr}")
                 return False
 
         # If pull-only, we're done
@@ -127,7 +127,7 @@ def sync_agents_repo(
         print("Warning: Git operation timed out")
         return False
     except Exception as e:
-        print(f"Warning: Error syncing .agenttrees repo: {e}")
+        print(f"Warning: Error syncing _agenttree repo: {e}")
         return False
 
 
@@ -140,7 +140,7 @@ def check_pending_prs(agents_dir: Path) -> int:
     Bails early if running inside a container (containers can't push anyway).
 
     Args:
-        agents_dir: Path to .agenttrees directory
+        agents_dir: Path to _agenttree directory
 
     Returns:
         Number of PRs created
@@ -184,7 +184,7 @@ def check_pending_prs(agents_dir: Path) -> int:
 
 
 class AgentsRepository:
-    """Manages the .agenttrees/ git repository."""
+    """Manages the _agenttree/ git repository."""
 
     def __init__(self, project_path: Path):
         """Initialize agents repository manager.
@@ -193,12 +193,12 @@ class AgentsRepository:
             project_path: Path to the main project repository
         """
         self.project_path = project_path
-        self.agents_path = project_path / ".agenttrees"
+        self.agents_path = project_path / "_agenttree"
         self.project_name = project_path.name
 
     def ensure_repo(self) -> None:
-        """Ensure .agenttrees/ repo exists, create if needed."""
-        # Check if .agenttrees/.git exists
+        """Ensure _agenttree/ repo exists, create if needed."""
+        # Check if _agenttree/.git exists
         if (self.agents_path / ".git").exists():
             return
 
@@ -286,7 +286,7 @@ class AgentsRepository:
         )
         username = result.stdout.strip()
 
-        print(f"Cloning {repo_name} to .agenttrees/")
+        print(f"Cloning {repo_name} to _agenttree/")
 
         # Clone
         subprocess.run(
@@ -299,7 +299,7 @@ class AgentsRepository:
 
     def _initialize_structure(self) -> None:
         """Create initial folder structure and templates."""
-        print("Initializing .agenttrees/ structure...")
+        print("Initializing _agenttree/ structure...")
 
         # Create directories
         (self.agents_path / "templates").mkdir(exist_ok=True)
@@ -335,7 +335,7 @@ class AgentsRepository:
         )
         subprocess.run(["git", "push"], cwd=self.agents_path, check=True)
 
-        print("✓ .agenttrees/ repository initialized")
+        print("✓ _agenttree/ repository initialized")
 
     def _create_readme(self) -> None:
         """Create main README."""
@@ -654,7 +654,7 @@ Work on the **oldest** task first. When done, it moves to `tasks/archive/`.
 
 ## Documentation Structure
 
-Your work is tracked in this `.agenttrees/` repository (separate from main code).
+Your work is tracked in this `_agenttree/` repository (separate from main code).
 
 ### During Development
 
@@ -715,15 +715,15 @@ See [README.md](README.md) for structure overview.
         )
 
     def _add_to_gitignore(self) -> None:
-        """Add .agenttrees/ and .worktrees/ to parent .gitignore."""
+        """Add _agenttree/ and .worktrees/ to parent .gitignore."""
         gitignore = self.project_path / ".gitignore"
 
         entries_to_add = []
 
         if gitignore.exists():
             content = gitignore.read_text()
-            if ".agenttrees/" not in content:
-                entries_to_add.append(".agenttrees/")
+            if "_agenttree/" not in content:
+                entries_to_add.append("_agenttree/")
             if ".worktrees/" not in content:
                 entries_to_add.append(".worktrees/")
 
@@ -733,8 +733,8 @@ See [README.md](README.md) for structure overview.
                     for entry in entries_to_add:
                         f.write(f"{entry}\n")
         else:
-            gitignore.write_text("# AgentTree directories\n.agenttrees/\n.worktrees/\n")
-            entries_to_add = [".agenttrees/", ".worktrees/"]
+            gitignore.write_text("# AgentTree directories\n_agenttree/\n.worktrees/\n")
+            entries_to_add = ["_agenttree/", ".worktrees/"]
 
         if entries_to_add:
             print(f"✓ Added {', '.join(entries_to_add)} to .gitignore")

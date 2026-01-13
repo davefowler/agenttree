@@ -281,7 +281,7 @@ class Config(BaseModel):
             substage: Optional substage name
 
         Returns:
-            Relative path to skill file (from .agenttrees/)
+            Relative path to skill file (from _agenttree/)
         """
         stage = self.get_stage(stage_name)
 

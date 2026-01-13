@@ -1125,9 +1125,9 @@ def _copy_template(template_name: str, dest_path: Path, issue: Issue) -> bool:
     if dest_path.exists():
         return False  # Don't overwrite existing files
 
-    from agenttree.issues import get_agenttrees_path
+    from agenttree.issues import get_agenttree_path
 
-    template_path = get_agenttrees_path() / "templates" / template_name
+    template_path = get_agenttree_path() / "templates" / template_name
     if not template_path.exists():
         console.print(f"[yellow]Warning: Template {template_name} not found[/yellow]")
         return False

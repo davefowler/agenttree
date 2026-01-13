@@ -395,7 +395,7 @@ class TmuxManager:
             # Build issue-specific startup prompt
             startup_prompt = (
                 f"You are working on issue #{issue_id}. "
-                f"Read your task: cat .agenttrees/issues/{issue_id}-*/problem.md && "
+                f"Read your task: cat _agenttree/issues/{issue_id}-*/problem.md && "
                 f"agenttree status --issue {issue_id}"
             )
             send_keys(session_name, startup_prompt)
