@@ -737,18 +737,6 @@ def start_agent(
     console.print(f"  agenttree agents")
 
 
-# Alias: 'dispatch' is deprecated, use 'start' instead
-@main.command(name="dispatch", hidden=True)
-@click.argument("issue_id", type=str)
-@click.option("--tool", help="AI tool to use (default: from config)")
-@click.option("--force", is_flag=True, help="Force dispatch even if agent already exists")
-@click.pass_context
-def dispatch(ctx, issue_id: str, tool: Optional[str], force: bool) -> None:
-    """[DEPRECATED] Use 'agenttree start' instead."""
-    console.print("[yellow]Note: 'dispatch' is deprecated, use 'agenttree start' instead[/yellow]")
-    ctx.invoke(start_agent, issue_id=issue_id, tool=tool, force=force)
-
-
 @main.command("agents")
 def agents_status() -> None:
     """Show status of all active issue agents."""
