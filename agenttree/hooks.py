@@ -44,7 +44,7 @@ from rich.console import Console
 
 from agenttree.issues import (
     Issue,
-    PROBLEM,
+    DEFINE,
     RESEARCH,
     PLAN,
     PLAN_ASSESS,
@@ -662,7 +662,7 @@ def generate_commit_message(issue: Issue, stage: str) -> str:
         Formatted commit message
     """
     stage_prefixes = {
-        PROBLEM: "Problem statement",
+        DEFINE: "Define problem",
         RESEARCH: "Research",
         IMPLEMENT: "Implement",
         ACCEPTED: "Complete",

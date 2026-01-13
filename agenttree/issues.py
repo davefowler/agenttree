@@ -27,7 +27,6 @@ class Priority(str, Enum):
 # Full stage configuration is loaded from .agenttree.yaml via config.py
 BACKLOG = "backlog"
 DEFINE = "define"
-PROBLEM = "problem"  # Legacy alias for DEFINE
 PROBLEM_REVIEW = "problem_review"
 RESEARCH = "research"
 PLAN = "plan"
@@ -362,7 +361,6 @@ STAGE_ORDER = [
 
 STAGE_SUBSTAGES = {
     DEFINE: ["draft", "refine"],
-    PROBLEM: ["draft", "refine"],  # Legacy alias
     RESEARCH: ["explore", "document"],
     PLAN: ["draft", "refine"],
     IMPLEMENT: ["setup", "test", "code", "debug", "code_review", "address_review"],
@@ -635,13 +633,8 @@ def load_skill(
 
     config = load_config()
 
-    # Resolve "problem" to "define" for legacy compatibility
-    resolved_stage = stage
-    if stage == PROBLEM:
-        resolved_stage = DEFINE
-
     # Get skill path from config
-    skill_rel_path = config.skill_path(resolved_stage, substage)
+    skill_rel_path = config.skill_path(stage, substage)
     skill_path = agents_path / skill_rel_path
 
     skill_content = None
@@ -653,13 +646,13 @@ def load_skill(
         # Try legacy naming convention: {stage}-{substage}.md
         skills_dir = agents_path / "skills"
         if substage:
-            legacy_path = skills_dir / f"{resolved_stage}-{substage}.md"
+            legacy_path = skills_dir / f"{stage}-{substage}.md"
             if legacy_path.exists():
                 skill_content = legacy_path.read_text()
 
         # Fall back to stage skill without substage
         if skill_content is None:
-            stage_skill = skills_dir / f"{resolved_stage}.md"
+            stage_skill = skills_dir / f"{stage}.md"
             if stage_skill.exists():
                 skill_content = stage_skill.read_text()
 

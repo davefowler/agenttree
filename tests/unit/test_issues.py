@@ -22,7 +22,6 @@ from agenttree.issues import (
     # Stage constants (strings, not enum)
     BACKLOG,
     DEFINE,
-    PROBLEM,
     PROBLEM_REVIEW,
     RESEARCH,
     PLAN,
@@ -174,11 +173,11 @@ class TestIssueCRUD:
 
     def test_create_issue_with_custom_stage(self, temp_agenttrees):
         """Test creating an issue with a custom starting stage."""
-        issue = create_issue("Test Issue", stage=PROBLEM)
+        issue = create_issue("Test Issue", stage=DEFINE)
 
         assert issue.id == "001"
         assert issue.title == "Test Issue"
-        assert issue.stage == PROBLEM
+        assert issue.stage == DEFINE
 
         # Check history entry
         assert len(issue.history) == 1
@@ -232,7 +231,7 @@ class TestStageTransitions:
     def test_get_next_stage_define_to_review(self):
         """define.refine -> problem_review (human review)"""
         next_stage, next_substage, is_review = get_next_stage(DEFINE, "refine")
-        assert next_stage == PROBLEM_REVIEW
+        assert next_stage == DEFINE_REVIEW
         assert next_substage is None
         assert is_review is True
 
@@ -356,9 +355,9 @@ class TestUpdateIssueStage:
         issue = create_issue("Test Issue")
         assert issue.stage == BACKLOG
 
-        updated = update_issue_stage("001", PROBLEM, "draft")
+        updated = update_issue_stage("001", DEFINE, "draft")
         assert updated is not None
-        assert updated.stage == PROBLEM
+        assert updated.stage == DEFINE
         assert updated.substage == "draft"
 
     def test_update_issue_stage_adds_history(self, temp_agenttrees):
@@ -366,7 +365,7 @@ class TestUpdateIssueStage:
         issue = create_issue("Test Issue")
         assert len(issue.history) == 1
 
-        updated = update_issue_stage("001", PROBLEM, "draft", agent=1)
+        updated = update_issue_stage("001", DEFINE, "draft", agent=1)
         assert len(updated.history) == 2
         assert updated.history[-1].stage == "problem"
         assert updated.history[-1].substage == "draft"
@@ -374,16 +373,12 @@ class TestUpdateIssueStage:
 
     def test_update_issue_stage_not_found(self, temp_agenttrees):
         """Return None for non-existent issue."""
-        result = update_issue_stage("999", PROBLEM)
+        result = update_issue_stage("999", DEFINE)
         assert result is None
 
 
 class TestLoadSkill:
-    """Tests for load_skill function.
-
-    Note: Skill files are mapped via STAGE_SKILL_MAP:
-    - PROBLEM and DEFINE both map to "define.md"
-    """
+    """Tests for load_skill function."""
 
     @pytest.fixture
     def temp_agenttrees_with_skills(self, monkeypatch, tmp_path):
@@ -405,11 +400,6 @@ class TestLoadSkill:
         )
 
         return agenttrees_path
-
-    def test_load_stage_skill(self, temp_agenttrees_with_skills):
-        """Load skill for stage (PROBLEM maps to define.md via STAGE_SKILL_MAP)."""
-        skill = load_skill(PROBLEM)
-        assert skill == "# Define Skill"
 
     def test_load_define_stage_skill(self, temp_agenttrees_with_skills):
         """Load skill for DEFINE stage."""

@@ -31,7 +31,6 @@ from agenttree.issues import (
     # Stage constants (strings)
     BACKLOG,
     DEFINE,
-    PROBLEM,
     PLAN_ASSESS,
     PLAN_REVISE,
     ACCEPTED,
@@ -1499,10 +1498,6 @@ def stage_begin(stage: str, issue_id: Optional[str]) -> None:
         sys.exit(1)
 
     target_stage = stage
-
-    # Map legacy stage names to new ones
-    if target_stage == PROBLEM:
-        target_stage = DEFINE
 
     # Validate: can't begin review stages or terminal stages directly
     if target_stage in HUMAN_REVIEW_STAGES:
