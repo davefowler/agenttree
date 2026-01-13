@@ -103,7 +103,7 @@ def init(worktrees_dir: Optional[str], project: Optional[str]) -> None:
 
     # Create worktree-setup.sh template
     setup_script = scripts_dir / "worktree-setup.sh"
-    setup_template = """#!/bin/bash
+    setup_template = r"""#!/bin/bash
 # AgentTree Worktree Setup Script
 #
 # 🤖 AI AGENT: This script runs when setting up your worktree.
@@ -260,7 +260,7 @@ echo "and push the changes so future agents can benefit!"
     templates_dir = repo_path / ".agenttrees" / "templates"
     templates_dir.mkdir(parents=True, exist_ok=True)
     agent_guide = templates_dir / "AGENT_GUIDE.md"
-    agent_guide_template = """# AgentTree Agent Guide
+    agent_guide_template = r"""# AgentTree Agent Guide
 
 Welcome, Agent! 👋
 

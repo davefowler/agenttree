@@ -1052,12 +1052,13 @@ class TestMissingHooks:
 class TestActionHooks:
     """Tests for post-transition action hooks."""
 
+    @patch('agenttree.hooks.is_running_in_container', return_value=False)
     @patch('agenttree.hooks.get_current_branch')
     @patch('agenttree.hooks.push_branch_to_remote')
     @patch('agenttree.github.create_pr')
     @patch('agenttree.issues.update_issue_metadata')
     def test_create_pull_request_success(
-        self, mock_update_metadata, mock_create_pr, mock_push, mock_get_branch, mock_issue
+        self, mock_update_metadata, mock_create_pr, mock_push, mock_get_branch, mock_in_container, mock_issue
     ):
         """Should create PR successfully."""
         from agenttree.hooks import create_pull_request_hook
@@ -1097,11 +1098,12 @@ class TestActionHooks:
             branch="agenttree-agent-1-work"
         )
 
+    @patch('agenttree.hooks.is_running_in_container', return_value=False)
     @patch('agenttree.hooks.get_current_branch')
     @patch('agenttree.hooks.push_branch_to_remote')
     @patch('agenttree.github.create_pr')
     def test_create_pull_request_handles_push_failure(
-        self, mock_create_pr, mock_push, mock_get_branch, mock_issue
+        self, mock_create_pr, mock_push, mock_get_branch, mock_in_container, mock_issue
     ):
         """Should handle push failure gracefully."""
         from agenttree.hooks import create_pull_request_hook
