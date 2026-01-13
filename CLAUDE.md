@@ -33,6 +33,8 @@
 - Tests should be in `tests/unit/` or `tests/integration/`
 - Use descriptive variable names
 - Keep functions focused and single-purpose
+- **No legacy/backward compatibility code** - This project is pre-launch. Don't add aliases, fallbacks, or compatibility shims for old behavior. Just change/remove the code directly.
+- **Don't obscure errors** - Let errors surface clearly. No "graceful" failures that swallow exceptions or hide problems. If something breaks, it should break loudly so we can fix it.
 
 ## Testing
 
