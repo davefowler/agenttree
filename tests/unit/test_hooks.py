@@ -821,12 +821,12 @@ class TestValidationHooks:
         with pytest.raises(ValidationError, match="No PR number found"):
             require_pr_approval(mock_issue)
 
-    @patch('agenttree.hooks._get_issue_dir')
-    def test_require_review_md_for_pr_success(self, mock_get_issue_dir, mock_issue, tmp_path):
-        """Should pass when review.md exists with empty Critical Issues section."""
-        from agenttree.hooks import require_review_md_for_pr
+    @patch('agenttree.issues.get_issue_dir')
+    def test_validate_document_section_must_be_empty_success(self, mock_get_issue_dir, mock_issue, tmp_path):
+        """Should pass when section with must_be_empty rule is empty."""
+        from agenttree.hooks import validate_document, ValidationError
+        from agenttree.config import DocumentValidator, SectionRule
 
-        # Setup: Create review.md with empty Critical Issues section
         mock_get_issue_dir.return_value = tmp_path
         review_content = """# Code Review - Issue #023
 
@@ -842,24 +842,36 @@ class TestValidationHooks:
 """
         (tmp_path / "review.md").write_text(review_content)
 
-        # Should not raise
-        require_review_md_for_pr(mock_issue)
+        validator = DocumentValidator(
+            file="review.md",
+            sections={"## Critical Issues": SectionRule(must_be_empty=True)},
+        )
 
-    @patch('agenttree.hooks._get_issue_dir')
-    def test_require_review_md_for_pr_fails_missing_file(self, mock_get_issue_dir, mock_issue, tmp_path):
-        """Should block transition when review.md doesn't exist."""
-        from agenttree.hooks import require_review_md_for_pr, ValidationError
+        # Should not raise
+        validate_document(mock_issue, validator)
+
+    @patch('agenttree.issues.get_issue_dir')
+    def test_validate_document_file_not_found(self, mock_get_issue_dir, mock_issue, tmp_path):
+        """Should fail when file doesn't exist."""
+        from agenttree.hooks import validate_document, ValidationError
+        from agenttree.config import DocumentValidator, SectionRule
 
         mock_get_issue_dir.return_value = tmp_path
         # Don't create review.md
 
-        with pytest.raises(ValidationError, match="review.md not found"):
-            require_review_md_for_pr(mock_issue)
+        validator = DocumentValidator(
+            file="review.md",
+            sections={"## Critical Issues": SectionRule(must_be_empty=True)},
+        )
 
-    @patch('agenttree.hooks._get_issue_dir')
-    def test_require_review_md_for_pr_fails_unchecked_items(self, mock_get_issue_dir, mock_issue, tmp_path):
-        """Should block transition when Critical Issues has unchecked items."""
-        from agenttree.hooks import require_review_md_for_pr, ValidationError
+        with pytest.raises(ValidationError, match="review.md not found"):
+            validate_document(mock_issue, validator)
+
+    @patch('agenttree.issues.get_issue_dir')
+    def test_validate_document_section_not_empty_fails(self, mock_get_issue_dir, mock_issue, tmp_path):
+        """Should fail when section has items but must_be_empty is true."""
+        from agenttree.hooks import validate_document, ValidationError
+        from agenttree.config import DocumentValidator, SectionRule
 
         mock_get_issue_dir.return_value = tmp_path
         review_content = """# Code Review - Issue #023
@@ -874,13 +886,19 @@ class TestValidationHooks:
 """
         (tmp_path / "review.md").write_text(review_content)
 
-        with pytest.raises(ValidationError, match="Critical Issues"):
-            require_review_md_for_pr(mock_issue)
+        validator = DocumentValidator(
+            file="review.md",
+            sections={"## Critical Issues": SectionRule(must_be_empty=True)},
+        )
 
-    @patch('agenttree.hooks._get_issue_dir')
-    def test_require_review_md_for_pr_fails_checked_items(self, mock_get_issue_dir, mock_issue, tmp_path):
-        """Should block transition when Critical Issues has checked items (should be removed, not checked)."""
-        from agenttree.hooks import require_review_md_for_pr, ValidationError
+        with pytest.raises(ValidationError, match="must be empty"):
+            validate_document(mock_issue, validator)
+
+    @patch('agenttree.issues.get_issue_dir')
+    def test_validate_document_section_checked_items_fails(self, mock_get_issue_dir, mock_issue, tmp_path):
+        """Should fail when section has checked items (should be removed, not checked)."""
+        from agenttree.hooks import validate_document, ValidationError
+        from agenttree.config import DocumentValidator, SectionRule
 
         mock_get_issue_dir.return_value = tmp_path
         review_content = """# Code Review - Issue #023
@@ -895,13 +913,19 @@ class TestValidationHooks:
 """
         (tmp_path / "review.md").write_text(review_content)
 
-        with pytest.raises(ValidationError, match="Critical Issues"):
-            require_review_md_for_pr(mock_issue)
+        validator = DocumentValidator(
+            file="review.md",
+            sections={"## Critical Issues": SectionRule(must_be_empty=True)},
+        )
 
-    @patch('agenttree.hooks._get_issue_dir')
-    def test_require_review_md_for_pr_success_only_comments(self, mock_get_issue_dir, mock_issue, tmp_path):
-        """Should pass when Critical Issues section only has HTML comments."""
-        from agenttree.hooks import require_review_md_for_pr
+        with pytest.raises(ValidationError, match="must be empty"):
+            validate_document(mock_issue, validator)
+
+    @patch('agenttree.issues.get_issue_dir')
+    def test_validate_document_section_only_comments_passes(self, mock_get_issue_dir, mock_issue, tmp_path):
+        """Should pass when section only has HTML comments."""
+        from agenttree.hooks import validate_document, ValidationError
+        from agenttree.config import DocumentValidator, SectionRule
 
         mock_get_issue_dir.return_value = tmp_path
         review_content = """# Code Review - Issue #023
@@ -917,8 +941,13 @@ class TestValidationHooks:
 """
         (tmp_path / "review.md").write_text(review_content)
 
+        validator = DocumentValidator(
+            file="review.md",
+            sections={"## Critical Issues": SectionRule(must_be_empty=True)},
+        )
+
         # Should not raise
-        require_review_md_for_pr(mock_issue)
+        validate_document(mock_issue, validator)
 
     @patch('agenttree.hooks._get_issue_dir')
     def test_require_spec_md_for_implement_success(self, mock_get_issue_dir, mock_issue, tmp_path):
@@ -1022,6 +1051,214 @@ Too short
 
         with pytest.raises(ValidationError, match="Approach section is too short"):
             require_spec_md_for_implement(mock_issue)
+
+
+class TestDocumentValidation:
+    """Tests for the generic document validation system."""
+
+    @pytest.fixture
+    def mock_issue(self):
+        """Create a mock Issue object."""
+        return Issue(
+            id="023",
+            slug="test-issue",
+            title="Test Issue",
+            created="2026-01-11T12:00:00Z",
+            updated="2026-01-11T12:00:00Z",
+            stage=IMPLEMENT,
+            substage="wrapup",
+        )
+
+    @patch('agenttree.issues.get_issue_dir')
+    def test_validate_field_success(self, mock_get_issue_dir, mock_issue, tmp_path):
+        """Should pass when fields meet validation rules."""
+        from agenttree.hooks import validate_document, ValidationError
+        from agenttree.config import DocumentValidator, SectionRule, FieldRule
+
+        mock_get_issue_dir.return_value = tmp_path
+        review_content = """# Implementation Summary
+
+## Self-Assessment Scores
+
+```yaml
+scores:
+  correctness: 8
+  test_coverage: 7
+  code_quality: 8
+  spec_alignment: 9
+  documentation: 7
+```
+"""
+        (tmp_path / "review.md").write_text(review_content)
+
+        validator = DocumentValidator(
+            file="review.md",
+            sections={"## Self-Assessment Scores": SectionRule(has_yaml=True)},
+            fields={
+                "scores.correctness": FieldRule(type="float", min=1, max=10),
+                "scores.test_coverage": FieldRule(type="float", min=1, max=10),
+            },
+        )
+
+        # Should not raise
+        validate_document(mock_issue, validator)
+
+    @patch('agenttree.issues.get_issue_dir')
+    def test_validate_field_below_min_fails(self, mock_get_issue_dir, mock_issue, tmp_path):
+        """Should fail when field value is below minimum."""
+        from agenttree.hooks import validate_document, ValidationError
+        from agenttree.config import DocumentValidator, FieldRule
+
+        mock_get_issue_dir.return_value = tmp_path
+        review_content = """# Summary
+
+```yaml
+scores:
+  correctness: 0
+```
+"""
+        (tmp_path / "review.md").write_text(review_content)
+
+        validator = DocumentValidator(
+            file="review.md",
+            fields={"scores.correctness": FieldRule(type="float", min=1, max=10)},
+        )
+
+        with pytest.raises(ValidationError, match="must be >= 1"):
+            validate_document(mock_issue, validator)
+
+    @patch('agenttree.issues.get_issue_dir')
+    def test_validate_field_above_max_fails(self, mock_get_issue_dir, mock_issue, tmp_path):
+        """Should fail when field value is above maximum."""
+        from agenttree.hooks import validate_document, ValidationError
+        from agenttree.config import DocumentValidator, FieldRule
+
+        mock_get_issue_dir.return_value = tmp_path
+        review_content = """# Summary
+
+```yaml
+scores:
+  correctness: 15
+```
+"""
+        (tmp_path / "review.md").write_text(review_content)
+
+        validator = DocumentValidator(
+            file="review.md",
+            fields={"scores.correctness": FieldRule(type="float", min=1, max=10)},
+        )
+
+        with pytest.raises(ValidationError, match="must be <= 10"):
+            validate_document(mock_issue, validator)
+
+    @patch('agenttree.issues.get_issue_dir')
+    def test_validate_field_missing_required_fails(self, mock_get_issue_dir, mock_issue, tmp_path):
+        """Should fail when required field is missing."""
+        from agenttree.hooks import validate_document, ValidationError
+        from agenttree.config import DocumentValidator, FieldRule
+
+        mock_get_issue_dir.return_value = tmp_path
+        review_content = """# Summary
+
+```yaml
+scores:
+  correctness: 8
+```
+"""
+        (tmp_path / "review.md").write_text(review_content)
+
+        validator = DocumentValidator(
+            file="review.md",
+            fields={"scores.missing_field": FieldRule(type="float", required=True)},
+        )
+
+        with pytest.raises(ValidationError, match="not found"):
+            validate_document(mock_issue, validator)
+
+    @patch('agenttree.issues.get_issue_dir')
+    def test_validate_rule_mean_success(self, mock_get_issue_dir, mock_issue, tmp_path):
+        """Should pass when mean rule is satisfied."""
+        from agenttree.hooks import validate_document, ValidationError
+        from agenttree.config import DocumentValidator, SectionRule
+
+        mock_get_issue_dir.return_value = tmp_path
+        review_content = """# Summary
+
+## Self-Assessment Scores
+
+```yaml
+scores:
+  correctness: 8
+  test_coverage: 7
+  code_quality: 8
+  spec_alignment: 9
+  documentation: 8
+```
+"""
+        (tmp_path / "review.md").write_text(review_content)
+
+        validator = DocumentValidator(
+            file="review.md",
+            sections={"## Self-Assessment Scores": SectionRule(has_yaml=True)},
+            rules=["mean(scores.*) >= 7.0"],
+        )
+
+        # Should not raise (mean is 8.0)
+        validate_document(mock_issue, validator)
+
+    @patch('agenttree.issues.get_issue_dir')
+    def test_validate_rule_mean_fails(self, mock_get_issue_dir, mock_issue, tmp_path):
+        """Should fail when mean is below threshold."""
+        from agenttree.hooks import validate_document, ValidationError
+        from agenttree.config import DocumentValidator, SectionRule
+
+        mock_get_issue_dir.return_value = tmp_path
+        review_content = """# Summary
+
+## Self-Assessment Scores
+
+```yaml
+scores:
+  correctness: 5
+  test_coverage: 4
+  code_quality: 5
+  spec_alignment: 6
+  documentation: 5
+```
+"""
+        (tmp_path / "review.md").write_text(review_content)
+
+        validator = DocumentValidator(
+            file="review.md",
+            sections={"## Self-Assessment Scores": SectionRule(has_yaml=True)},
+            rules=["mean(scores.*) >= 7.0"],
+        )
+
+        with pytest.raises(ValidationError, match="Rule.*failed"):
+            validate_document(mock_issue, validator)
+
+    @patch('agenttree.issues.get_issue_dir')
+    def test_validate_section_min_length(self, mock_get_issue_dir, mock_issue, tmp_path):
+        """Should fail when section is too short."""
+        from agenttree.hooks import validate_document, ValidationError
+        from agenttree.config import DocumentValidator, SectionRule
+
+        mock_get_issue_dir.return_value = tmp_path
+        content = """# Spec
+
+## Approach
+
+Short
+"""
+        (tmp_path / "spec.md").write_text(content)
+
+        validator = DocumentValidator(
+            file="spec.md",
+            sections={"## Approach": SectionRule(min_length=50)},
+        )
+
+        with pytest.raises(ValidationError, match="too short"):
+            validate_document(mock_issue, validator)
 
 
 class TestMissingHooks:
