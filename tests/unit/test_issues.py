@@ -12,7 +12,7 @@ from agenttree.issues import (
     create_issue,
     list_issues,
     get_issue,
-    get_agenttrees_path,
+    get_agenttree_path,
     get_next_stage,
     update_issue_stage,
     load_skill,
@@ -95,8 +95,8 @@ class TestIssueCRUD:
 
     @pytest.fixture
     def temp_agenttrees(self, monkeypatch, tmp_path):
-        """Create a temporary .agenttrees directory."""
-        agenttrees_path = tmp_path / ".agenttrees"
+        """Create a temporary _agenttree directory."""
+        agenttrees_path = tmp_path / "_agenttree"
         agenttrees_path.mkdir()
         (agenttrees_path / "issues").mkdir()
         (agenttrees_path / "templates").mkdir()
@@ -105,9 +105,9 @@ class TestIssueCRUD:
         template = agenttrees_path / "templates" / "problem.md"
         template.write_text("# Problem Statement\n\n")
 
-        # Monkeypatch get_agenttrees_path to return our temp dir
+        # Monkeypatch get_agenttree_path to return our temp dir
         monkeypatch.setattr(
-            "agenttree.issues.get_agenttrees_path",
+            "agenttree.issues.get_agenttree_path",
             lambda: agenttrees_path
         )
 
@@ -339,8 +339,8 @@ class TestUpdateIssueStage:
 
     @pytest.fixture
     def temp_agenttrees(self, monkeypatch, tmp_path):
-        """Create a temporary .agenttrees directory."""
-        agenttrees_path = tmp_path / ".agenttrees"
+        """Create a temporary _agenttree directory."""
+        agenttrees_path = tmp_path / "_agenttree"
         agenttrees_path.mkdir()
         (agenttrees_path / "issues").mkdir()
         (agenttrees_path / "templates").mkdir()
@@ -349,9 +349,9 @@ class TestUpdateIssueStage:
         template = agenttrees_path / "templates" / "problem.md"
         template.write_text("# Problem Statement\n\n")
 
-        # Monkeypatch get_agenttrees_path to return our temp dir
+        # Monkeypatch get_agenttree_path to return our temp dir
         monkeypatch.setattr(
-            "agenttree.issues.get_agenttrees_path",
+            "agenttree.issues.get_agenttree_path",
             lambda: agenttrees_path
         )
 
@@ -389,8 +389,8 @@ class TestLoadSkill:
 
     @pytest.fixture
     def temp_agenttrees_with_skills(self, monkeypatch, tmp_path):
-        """Create a temporary .agenttrees directory with skills."""
-        agenttrees_path = tmp_path / ".agenttrees"
+        """Create a temporary _agenttree directory with skills."""
+        agenttrees_path = tmp_path / "_agenttree"
         agenttrees_path.mkdir()
         (agenttrees_path / "issues").mkdir()
         (agenttrees_path / "skills").mkdir()
@@ -400,9 +400,9 @@ class TestLoadSkill:
         (agenttrees_path / "skills" / "implement.md").write_text("# Implement Skill")
         (agenttrees_path / "skills" / "implement-test.md").write_text("# Test Substage Skill")
 
-        # Monkeypatch get_agenttrees_path to return our temp dir
+        # Monkeypatch get_agenttree_path to return our temp dir
         monkeypatch.setattr(
-            "agenttree.issues.get_agenttrees_path",
+            "agenttree.issues.get_agenttree_path",
             lambda: agenttrees_path
         )
 

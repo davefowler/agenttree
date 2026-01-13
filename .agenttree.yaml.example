@@ -31,7 +31,7 @@ tools:
   claude:
     command: claude
     startup_prompt: |
-      Read your task from the .agenttrees/issues/ directory.
+      Read your task from the _agenttree/issues/ directory.
       Check issue.yaml for your current stage and follow the stage instructions.
 
   # Aider configuration (alternative)

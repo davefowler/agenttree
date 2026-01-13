@@ -50,5 +50,5 @@ TASK.md
 Thumbs.db
 
 # AgentTree issue tracking (separate git repo)
-.agenttrees/
+_agenttree/
 .worktrees/

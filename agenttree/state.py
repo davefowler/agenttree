@@ -57,7 +57,7 @@ class ActiveAgent:
 
 def get_state_path() -> Path:
     """Get path to state file."""
-    return Path.cwd() / ".agenttrees" / "state.yaml"
+    return Path.cwd() / "_agenttree" / "state.yaml"
 
 
 def get_state_lock_path() -> Path:
