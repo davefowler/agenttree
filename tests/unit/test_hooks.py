@@ -7,7 +7,14 @@ from unittest.mock import Mock, patch, MagicMock, call
 
 import pytest
 
-from agenttree.issues import Issue, Stage, Priority
+from agenttree.issues import (
+    Issue,
+    Priority,
+    IMPLEMENT,
+    IMPLEMENTATION_REVIEW,
+    RESEARCH,
+    PROBLEM_REVIEW,
+)
 
 
 class TestValidationError:
@@ -54,9 +61,9 @@ class TestHookRegistry:
         def my_hook(issue):
             pass
 
-        registry.register_pre_transition(Stage.IMPLEMENT, Stage.IMPLEMENTATION_REVIEW, my_hook)
+        registry.register_pre_transition(IMPLEMENT, IMPLEMENTATION_REVIEW, my_hook)
 
-        key = (Stage.IMPLEMENT, Stage.IMPLEMENTATION_REVIEW)
+        key = (IMPLEMENT, IMPLEMENTATION_REVIEW)
         assert key in registry.pre_transition
         assert my_hook in registry.pre_transition[key]
 
@@ -72,10 +79,10 @@ class TestHookRegistry:
         def hook2(issue):
             pass
 
-        registry.register_pre_transition(Stage.IMPLEMENT, Stage.IMPLEMENTATION_REVIEW, hook1)
-        registry.register_pre_transition(Stage.IMPLEMENT, Stage.IMPLEMENTATION_REVIEW, hook2)
+        registry.register_pre_transition(IMPLEMENT, IMPLEMENTATION_REVIEW, hook1)
+        registry.register_pre_transition(IMPLEMENT, IMPLEMENTATION_REVIEW, hook2)
 
-        key = (Stage.IMPLEMENT, Stage.IMPLEMENTATION_REVIEW)
+        key = (IMPLEMENT, IMPLEMENTATION_REVIEW)
         assert len(registry.pre_transition[key]) == 2
         assert hook1 in registry.pre_transition[key]
         assert hook2 in registry.pre_transition[key]
@@ -89,9 +96,9 @@ class TestHookRegistry:
         def my_hook(issue):
             pass
 
-        registry.register_post_transition(Stage.IMPLEMENT, Stage.IMPLEMENTATION_REVIEW, my_hook)
+        registry.register_post_transition(IMPLEMENT, IMPLEMENTATION_REVIEW, my_hook)
 
-        key = (Stage.IMPLEMENT, Stage.IMPLEMENTATION_REVIEW)
+        key = (IMPLEMENT, IMPLEMENTATION_REVIEW)
         assert key in registry.post_transition
         assert my_hook in registry.post_transition[key]
 
@@ -104,10 +111,10 @@ class TestHookRegistry:
         def my_hook(issue):
             pass
 
-        registry.register_on_enter(Stage.RESEARCH, my_hook)
+        registry.register_on_enter(RESEARCH, my_hook)
 
-        assert Stage.RESEARCH in registry.on_enter
-        assert my_hook in registry.on_enter[Stage.RESEARCH]
+        assert RESEARCH in registry.on_enter
+        assert my_hook in registry.on_enter[RESEARCH]
 
     def test_register_on_exit_hook(self):
         """Should register an on-exit hook."""
@@ -118,10 +125,10 @@ class TestHookRegistry:
         def my_hook(issue):
             pass
 
-        registry.register_on_exit(Stage.IMPLEMENT, my_hook)
+        registry.register_on_exit(IMPLEMENT, my_hook)
 
-        assert Stage.IMPLEMENT in registry.on_exit
-        assert my_hook in registry.on_exit[Stage.IMPLEMENT]
+        assert IMPLEMENT in registry.on_exit
+        assert my_hook in registry.on_exit[IMPLEMENT]
 
     def test_execute_pre_transition_success(self):
         """Should execute pre-transition hooks successfully."""
@@ -137,11 +144,11 @@ class TestHookRegistry:
         def hook2(issue):
             executed.append("hook2")
 
-        registry.register_pre_transition(Stage.IMPLEMENT, Stage.IMPLEMENTATION_REVIEW, hook1)
-        registry.register_pre_transition(Stage.IMPLEMENT, Stage.IMPLEMENTATION_REVIEW, hook2)
+        registry.register_pre_transition(IMPLEMENT, IMPLEMENTATION_REVIEW, hook1)
+        registry.register_pre_transition(IMPLEMENT, IMPLEMENTATION_REVIEW, hook2)
 
         issue = Mock(spec=Issue)
-        registry.execute_pre_transition(issue, Stage.IMPLEMENT, Stage.IMPLEMENTATION_REVIEW)
+        registry.execute_pre_transition(issue, IMPLEMENT, IMPLEMENTATION_REVIEW)
 
         assert executed == ["hook1", "hook2"]
 
@@ -154,12 +161,12 @@ class TestHookRegistry:
         def failing_hook(issue):
             raise ValidationError("Validation failed")
 
-        registry.register_pre_transition(Stage.IMPLEMENT, Stage.IMPLEMENTATION_REVIEW, failing_hook)
+        registry.register_pre_transition(IMPLEMENT, IMPLEMENTATION_REVIEW, failing_hook)
 
         issue = Mock(spec=Issue)
 
         with pytest.raises(ValidationError, match="Validation failed"):
-            registry.execute_pre_transition(issue, Stage.IMPLEMENT, Stage.IMPLEMENTATION_REVIEW)
+            registry.execute_pre_transition(issue, IMPLEMENT, IMPLEMENTATION_REVIEW)
 
     def test_execute_pre_transition_no_hooks(self):
         """Should handle case where no hooks are registered."""
@@ -169,7 +176,7 @@ class TestHookRegistry:
         issue = Mock(spec=Issue)
 
         # Should not raise any errors
-        registry.execute_pre_transition(issue, Stage.IMPLEMENT, Stage.IMPLEMENTATION_REVIEW)
+        registry.execute_pre_transition(issue, IMPLEMENT, IMPLEMENTATION_REVIEW)
 
     def test_execute_post_transition_success(self):
         """Should execute post-transition hooks successfully."""
@@ -185,11 +192,11 @@ class TestHookRegistry:
         def hook2(issue):
             executed.append("hook2")
 
-        registry.register_post_transition(Stage.IMPLEMENT, Stage.IMPLEMENTATION_REVIEW, hook1)
-        registry.register_post_transition(Stage.IMPLEMENT, Stage.IMPLEMENTATION_REVIEW, hook2)
+        registry.register_post_transition(IMPLEMENT, IMPLEMENTATION_REVIEW, hook1)
+        registry.register_post_transition(IMPLEMENT, IMPLEMENTATION_REVIEW, hook2)
 
         issue = Mock(spec=Issue)
-        registry.execute_post_transition(issue, Stage.IMPLEMENT, Stage.IMPLEMENTATION_REVIEW)
+        registry.execute_post_transition(issue, IMPLEMENT, IMPLEMENTATION_REVIEW)
 
         assert executed == ["hook1", "hook2"]
 
@@ -208,13 +215,13 @@ class TestHookRegistry:
         def success_hook(issue):
             executed.append("success_hook")
 
-        registry.register_post_transition(Stage.IMPLEMENT, Stage.IMPLEMENTATION_REVIEW, failing_hook)
-        registry.register_post_transition(Stage.IMPLEMENT, Stage.IMPLEMENTATION_REVIEW, success_hook)
+        registry.register_post_transition(IMPLEMENT, IMPLEMENTATION_REVIEW, failing_hook)
+        registry.register_post_transition(IMPLEMENT, IMPLEMENTATION_REVIEW, success_hook)
 
         issue = Mock(spec=Issue)
 
         # Should not raise, but should execute both hooks
-        registry.execute_post_transition(issue, Stage.IMPLEMENT, Stage.IMPLEMENTATION_REVIEW)
+        registry.execute_post_transition(issue, IMPLEMENT, IMPLEMENTATION_REVIEW)
 
         assert "failing_hook" in executed
         assert "success_hook" in executed
@@ -230,10 +237,10 @@ class TestHookRegistry:
         def hook1(issue):
             executed.append("hook1")
 
-        registry.register_on_enter(Stage.RESEARCH, hook1)
+        registry.register_on_enter(RESEARCH, hook1)
 
         issue = Mock(spec=Issue)
-        registry.execute_on_enter(issue, Stage.RESEARCH)
+        registry.execute_on_enter(issue, RESEARCH)
 
         assert executed == ["hook1"]
 
@@ -248,10 +255,10 @@ class TestHookRegistry:
         def hook1(issue):
             executed.append("hook1")
 
-        registry.register_on_exit(Stage.IMPLEMENT, hook1)
+        registry.register_on_exit(IMPLEMENT, hook1)
 
         issue = Mock(spec=Issue)
-        registry.execute_on_exit(issue, Stage.IMPLEMENT)
+        registry.execute_on_exit(issue, IMPLEMENT)
 
         assert executed == ["hook1"]
 
@@ -293,10 +300,10 @@ class TestHelperFunctions:
         def on_enter_hook(issue):
             execution_order.append("on_enter")
 
-        registry.register_on_exit(Stage.IMPLEMENT, on_exit_hook)
-        registry.register_pre_transition(Stage.IMPLEMENT, Stage.IMPLEMENTATION_REVIEW, pre_hook)
-        registry.register_post_transition(Stage.IMPLEMENT, Stage.IMPLEMENTATION_REVIEW, post_hook)
-        registry.register_on_enter(Stage.IMPLEMENTATION_REVIEW, on_enter_hook)
+        registry.register_on_exit(IMPLEMENT, on_exit_hook)
+        registry.register_pre_transition(IMPLEMENT, IMPLEMENTATION_REVIEW, pre_hook)
+        registry.register_post_transition(IMPLEMENT, IMPLEMENTATION_REVIEW, post_hook)
+        registry.register_on_enter(IMPLEMENTATION_REVIEW, on_enter_hook)
 
         # Patch the global registry
         import agenttree.hooks
@@ -305,7 +312,7 @@ class TestHelperFunctions:
 
         try:
             mock_issue = Mock(spec=Issue)
-            execute_transition_hooks(mock_issue, Stage.IMPLEMENT, Stage.IMPLEMENTATION_REVIEW)
+            execute_transition_hooks(mock_issue, IMPLEMENT, IMPLEMENTATION_REVIEW)
 
             assert execution_order == ["on_exit", "pre", "post", "on_enter"]
         finally:
@@ -320,7 +327,7 @@ class TestHelperFunctions:
         def failing_pre_hook(issue):
             raise ValidationError("Blocked!")
 
-        registry.register_pre_transition(Stage.IMPLEMENT, Stage.IMPLEMENTATION_REVIEW, failing_pre_hook)
+        registry.register_pre_transition(IMPLEMENT, IMPLEMENTATION_REVIEW, failing_pre_hook)
 
         import agenttree.hooks
         original_registry = agenttree.hooks._registry
@@ -329,7 +336,7 @@ class TestHelperFunctions:
         try:
             mock_issue = Mock(spec=Issue)
             with pytest.raises(ValidationError, match="Blocked!"):
-                execute_transition_hooks(mock_issue, Stage.IMPLEMENT, Stage.IMPLEMENTATION_REVIEW)
+                execute_transition_hooks(mock_issue, IMPLEMENT, IMPLEMENTATION_REVIEW)
         finally:
             agenttree.hooks._registry = original_registry
 
@@ -344,11 +351,11 @@ class TestHookDecorators:
         # Clear registry for this test
         _registry.pre_transition.clear()
 
-        @pre_transition(Stage.IMPLEMENT, Stage.IMPLEMENTATION_REVIEW)
+        @pre_transition(IMPLEMENT, IMPLEMENTATION_REVIEW)
         def my_hook(issue):
             pass
 
-        key = (Stage.IMPLEMENT, Stage.IMPLEMENTATION_REVIEW)
+        key = (IMPLEMENT, IMPLEMENTATION_REVIEW)
         assert key in _registry.pre_transition
         assert my_hook in _registry.pre_transition[key]
 
@@ -359,11 +366,11 @@ class TestHookDecorators:
         # Clear registry for this test
         _registry.post_transition.clear()
 
-        @post_transition(Stage.IMPLEMENT, Stage.IMPLEMENTATION_REVIEW)
+        @post_transition(IMPLEMENT, IMPLEMENTATION_REVIEW)
         def my_hook(issue):
             pass
 
-        key = (Stage.IMPLEMENT, Stage.IMPLEMENTATION_REVIEW)
+        key = (IMPLEMENT, IMPLEMENTATION_REVIEW)
         assert key in _registry.post_transition
         assert my_hook in _registry.post_transition[key]
 
@@ -374,12 +381,12 @@ class TestHookDecorators:
         # Clear registry for this test
         _registry.on_enter.clear()
 
-        @on_enter(Stage.RESEARCH)
+        @on_enter(RESEARCH)
         def my_hook(issue):
             pass
 
-        assert Stage.RESEARCH in _registry.on_enter
-        assert my_hook in _registry.on_enter[Stage.RESEARCH]
+        assert RESEARCH in _registry.on_enter
+        assert my_hook in _registry.on_enter[RESEARCH]
 
     def test_on_exit_decorator(self):
         """Should register hook via decorator."""
@@ -388,12 +395,12 @@ class TestHookDecorators:
         # Clear registry for this test
         _registry.on_exit.clear()
 
-        @on_exit(Stage.IMPLEMENT)
+        @on_exit(IMPLEMENT)
         def my_hook(issue):
             pass
 
-        assert Stage.IMPLEMENT in _registry.on_exit
-        assert my_hook in _registry.on_exit[Stage.IMPLEMENT]
+        assert IMPLEMENT in _registry.on_exit
+        assert my_hook in _registry.on_exit[IMPLEMENT]
 
 
 @pytest.fixture
@@ -405,7 +412,7 @@ def mock_issue():
         title="Test Issue",
         created="2026-01-11T12:00:00Z",
         updated="2026-01-11T12:00:00Z",
-        stage=Stage.IMPLEMENT,
+        stage=IMPLEMENT,
         substage="code",
         branch="agenttree-agent-1-work",
     )
@@ -714,7 +721,7 @@ class TestGitUtilities:
             returncode=0
         )
 
-        result = auto_commit_changes(Mock(), Stage.IMPLEMENT)
+        result = auto_commit_changes(Mock(), IMPLEMENT)
 
         assert result is False
         # Should only call git status, not git add or commit
@@ -735,10 +742,10 @@ class TestGitUtilities:
             title="Test Issue",
             created="2026-01-11T12:00:00Z",
             updated="2026-01-11T12:00:00Z",
-            stage=Stage.IMPLEMENT,
+            stage=IMPLEMENT,
         )
 
-        result = auto_commit_changes(issue, Stage.IMPLEMENT)
+        result = auto_commit_changes(issue, IMPLEMENT)
 
         assert result is True
         # Should call git add -A and git commit
@@ -753,7 +760,7 @@ class TestGitUtilities:
         """Should generate appropriate commit message."""
         from agenttree.hooks import generate_commit_message
 
-        msg = generate_commit_message(mock_issue, Stage.IMPLEMENT)
+        msg = generate_commit_message(mock_issue, IMPLEMENT)
 
         assert "Implement" in msg
         assert "#023" in msg
@@ -1032,10 +1039,10 @@ class TestMissingHooks:
 
         This hook is mentioned in issue #038 problem.md but was never implemented.
         """
-        from agenttree.hooks import _registry, Stage
+        from agenttree.hooks import _registry
 
         # Check if this hook is registered for the expected transition
-        key = (Stage.PROBLEM_REVIEW, Stage.RESEARCH)
+        key = (PROBLEM_REVIEW, RESEARCH)
         hooks_for_transition = _registry.pre_transition.get(key, [])
 
         # Get hook names

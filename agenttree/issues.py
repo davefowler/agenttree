@@ -23,37 +23,20 @@ class Priority(str, Enum):
     CRITICAL = "critical"
 
 
-class Stage(str, Enum):
-    """Workflow stages.
-
-    Flow: backlog → define → problem_review → research → plan → plan_assess
-          → plan_revise → plan_review → implement → implementation_review → accepted
-
-    Stage naming: stages are verbs (what you do), outputs are nouns (what you create)
-    - define stage → creates problem.md
-    - research stage → creates research.md
-    - plan stage → creates spec.md
-    - plan_assess stage → creates spec_review.md
-    - implement.code_review substage → creates review.md
-    """
-    BACKLOG = "backlog"
-    # Define stage: agent defines the problem → problem.md
-    DEFINE = "define"
-    PROBLEM = "problem"  # Legacy alias for DEFINE (backward compat)
-    PROBLEM_REVIEW = "problem_review"
-    # Research stage: agent explores codebase → research.md
-    RESEARCH = "research"
-    # Plan stage: agent creates implementation spec → spec.md
-    PLAN = "plan"
-    # Plan assess: agent critically reviews its own plan → spec_review.md
-    PLAN_ASSESS = "plan_assess"
-    # Plan revise: agent revises plan based on assessment (can cycle)
-    PLAN_REVISE = "plan_revise"
-    PLAN_REVIEW = "plan_review"
-    IMPLEMENT = "implement"
-    IMPLEMENTATION_REVIEW = "implementation_review"
-    ACCEPTED = "accepted"
-    NOT_DOING = "not_doing"
+# Stage constants for convenience (stages are now config-driven strings)
+# Full stage configuration is loaded from .agenttree.yaml via config.py
+BACKLOG = "backlog"
+DEFINE = "define"
+PROBLEM_REVIEW = "problem_review"
+RESEARCH = "research"
+PLAN = "plan"
+PLAN_ASSESS = "plan_assess"
+PLAN_REVISE = "plan_revise"
+PLAN_REVIEW = "plan_review"
+IMPLEMENT = "implement"
+IMPLEMENTATION_REVIEW = "implementation_review"
+ACCEPTED = "accepted"
+NOT_DOING = "not_doing"
 
 
 class HistoryEntry(BaseModel):
@@ -72,7 +55,7 @@ class Issue(BaseModel):
     created: str
     updated: str
 
-    stage: Stage = Stage.BACKLOG
+    stage: str = BACKLOG
     substage: Optional[str] = None
 
     assigned_agent: Optional[int] = None
@@ -135,7 +118,7 @@ def create_issue(
     title: str,
     priority: Priority = Priority.MEDIUM,
     labels: Optional[list[str]] = None,
-    stage: Stage = Stage.BACKLOG,
+    stage: str = BACKLOG,
     problem: Optional[str] = None,
     context: Optional[str] = None,
     solutions: Optional[str] = None,
@@ -183,7 +166,7 @@ def create_issue(
         priority=priority,
         labels=labels or [],
         history=[
-            HistoryEntry(stage=stage.value, timestamp=now)
+            HistoryEntry(stage=stage, timestamp=now)
         ]
     )
 
@@ -241,7 +224,7 @@ def create_issue(
 
 
 def list_issues(
-    stage: Optional[Stage] = None,
+    stage: Optional[str] = None,
     priority: Optional[Priority] = None,
     assigned_agent: Optional[int] = None,
 ) -> list[Issue]:
@@ -356,105 +339,65 @@ def get_issue_dir(issue_id: str) -> Optional[Path]:
     return None
 
 
-# Stage workflow definitions
-# Note: NOT_DOING is intentionally excluded - it's a terminal state outside the normal workflow.
-# Issues marked NOT_DOING cannot progress via get_next_stage().
+# Stage workflow definitions are now config-driven via .agenttree.yaml
+# These compatibility constants are provided for backward compatibility with tests
+# but the actual workflow logic uses Config.get_next_stage()
+
+# Legacy compatibility: stage lists now derived from Config
+# NOTE: For most use cases, import and use load_config() from agenttree.config
 STAGE_ORDER = [
-    Stage.BACKLOG,
-    Stage.DEFINE,      # Agent defines the problem → problem.md
-    Stage.PROBLEM_REVIEW,
-    Stage.RESEARCH,    # Agent explores codebase → research.md
-    Stage.PLAN,        # Agent creates implementation spec → spec.md
-    Stage.PLAN_ASSESS, # Agent critically reviews plan → spec_review.md
-    Stage.PLAN_REVISE, # Agent revises based on assessment
-    Stage.PLAN_REVIEW,
-    Stage.IMPLEMENT,
-    Stage.IMPLEMENTATION_REVIEW,
-    Stage.ACCEPTED,
+    BACKLOG,
+    DEFINE,
+    PROBLEM_REVIEW,
+    RESEARCH,
+    PLAN,
+    PLAN_ASSESS,
+    PLAN_REVISE,
+    PLAN_REVIEW,
+    IMPLEMENT,
+    IMPLEMENTATION_REVIEW,
+    ACCEPTED,
 ]
 
-# Substages within stages - agent moves through these sequentially
 STAGE_SUBSTAGES = {
-    Stage.DEFINE: ["draft", "refine"],
-    Stage.PROBLEM: ["draft", "refine"],  # Legacy alias
-    Stage.RESEARCH: ["explore", "document"],
-    Stage.PLAN: ["draft", "refine"],
-    Stage.IMPLEMENT: ["setup", "test", "code", "debug", "code_review", "address_review"],
+    DEFINE: ["draft", "refine"],
+    RESEARCH: ["explore", "document"],
+    PLAN: ["draft", "refine"],
+    IMPLEMENT: ["setup", "test", "code", "debug", "code_review", "address_review"],
 }
 
 HUMAN_REVIEW_STAGES = {
-    Stage.PROBLEM_REVIEW,
-    Stage.PLAN_REVIEW,
-    Stage.IMPLEMENTATION_REVIEW,
-}
-
-# Map legacy stage names to new skill files
-STAGE_SKILL_MAP = {
-    Stage.PROBLEM: "define",  # Legacy "problem" stage uses "define.md" skill
-    Stage.DEFINE: "define",
-    Stage.RESEARCH: "research",
-    Stage.PLAN: "plan",
-    Stage.PLAN_ASSESS: "plan_assess",
-    Stage.PLAN_REVISE: "plan_revise",
-    Stage.IMPLEMENT: "implement",
-}
-
-# Map stages to the documents they create
-STAGE_OUTPUT_MAP = {
-    Stage.DEFINE: "problem.md",
-    Stage.PROBLEM: "problem.md",
-    Stage.RESEARCH: "research.md",
-    Stage.PLAN: "spec.md",
-    Stage.PLAN_ASSESS: "spec_review.md",
-    Stage.PLAN_REVISE: "spec.md",  # Revises the spec
+    PROBLEM_REVIEW,
+    PLAN_REVIEW,
+    IMPLEMENTATION_REVIEW,
 }
 
 
 def get_next_stage(
-    current_stage: Stage,
+    current_stage: str,
     current_substage: Optional[str] = None,
-) -> tuple[Stage, Optional[str], bool]:
+) -> tuple[str, Optional[str], bool]:
     """Calculate the next stage/substage.
 
+    Delegates to Config.get_next_stage() for config-driven workflow.
+
     Args:
-        current_stage: Current stage
+        current_stage: Current stage name (string)
         current_substage: Current substage (if any)
 
     Returns:
         Tuple of (next_stage, next_substage, is_human_review)
         is_human_review is True if the next stage requires human approval
     """
-    substages = STAGE_SUBSTAGES.get(current_stage, [])
+    from agenttree.config import load_config
 
-    # If we have substages, try to advance within them
-    if substages and current_substage:
-        try:
-            idx = substages.index(current_substage)
-            if idx < len(substages) - 1:
-                # Move to next substage
-                return current_stage, substages[idx + 1], False
-        except ValueError:
-            pass  # substage not found, move to next stage
-
-    # Move to next stage
-    try:
-        stage_idx = STAGE_ORDER.index(current_stage)
-        if stage_idx < len(STAGE_ORDER) - 1:
-            next_stage = STAGE_ORDER[stage_idx + 1]
-            next_substages = STAGE_SUBSTAGES.get(next_stage, [])
-            next_substage = next_substages[0] if next_substages else None
-            is_human_review = next_stage in HUMAN_REVIEW_STAGES
-            return next_stage, next_substage, is_human_review
-    except ValueError:
-        pass
-
-    # Already at end
-    return current_stage, current_substage, False
+    config = load_config()
+    return config.get_next_stage(current_stage, current_substage)
 
 
 def update_issue_stage(
     issue_id: str,
-    stage: Stage,
+    stage: str,
     substage: Optional[str] = None,
     agent: Optional[int] = None,
 ) -> Optional[Issue]:
@@ -462,7 +405,7 @@ def update_issue_stage(
 
     Args:
         issue_id: Issue ID
-        stage: New stage
+        stage: New stage (string)
         substage: New substage (optional)
         agent: Agent number making the change (optional)
 
@@ -494,7 +437,7 @@ def update_issue_stage(
 
     # Add history entry
     history_entry = HistoryEntry(
-        stage=stage.value,
+        stage=stage,
         substage=substage,
         timestamp=now,
         agent=agent,
@@ -507,7 +450,7 @@ def update_issue_stage(
         yaml.dump(data, f, default_flow_style=False, sort_keys=False)
 
     # Sync after updating stage
-    stage_str = stage.value
+    stage_str = stage
     if substage:
         stage_str += f".{substage}"
     sync_agents_repo(agents_path, pull_only=False, commit_message=f"Update issue {issue_id} to stage {stage_str}")
@@ -662,15 +605,18 @@ def get_issue_from_branch() -> Optional[str]:
 
 
 def load_skill(
-    stage: Stage,
+    stage: str,
     substage: Optional[str] = None,
     issue: Optional["Issue"] = None,
     include_system: bool = False,
 ) -> Optional[str]:
     """Load skill/instructions for a stage, rendered with Jinja if issue provided.
 
+    Uses Config.skill_path() for resolving skill file locations.
+    Convention: skills/{stage}.md or skills/{stage}/{substage}.md
+
     Args:
-        stage: Stage to load skill for
+        stage: Stage name (string) to load skill for
         substage: Optional substage for more specific skill
         issue: Optional Issue object for Jinja context
         include_system: If True, prepend AGENTS.md system prompt (for first stage)
@@ -679,35 +625,43 @@ def load_skill(
         Skill content as string (rendered if issue provided), or None if not found
     """
     from jinja2 import Template
+    from agenttree.config import load_config
 
     # Sync before reading
     agents_path = get_agenttrees_path()
     sync_agents_repo(agents_path, pull_only=True)
 
-    skills_path = agents_path / "skills"
+    config = load_config()
 
-    # Get the skill file name (use STAGE_SKILL_MAP for mapping)
-    skill_name = STAGE_SKILL_MAP.get(stage, stage.value)
+    # Get skill path from config
+    skill_rel_path = config.skill_path(stage, substage)
+    skill_path = agents_path / skill_rel_path
 
-    # Try substage-specific skill first
     skill_content = None
-    if substage:
-        substage_skill = skills_path / f"{skill_name}-{substage}.md"
-        if substage_skill.exists():
-            skill_content = substage_skill.read_text()
 
-    # Fall back to stage skill
-    if skill_content is None:
-        stage_skill = skills_path / f"{skill_name}.md"
-        if stage_skill.exists():
-            skill_content = stage_skill.read_text()
+    # Try the config-specified path first
+    if skill_path.exists():
+        skill_content = skill_path.read_text()
+    else:
+        # Try legacy naming convention: {stage}-{substage}.md
+        skills_dir = agents_path / "skills"
+        if substage:
+            legacy_path = skills_dir / f"{stage}-{substage}.md"
+            if legacy_path.exists():
+                skill_content = legacy_path.read_text()
+
+        # Fall back to stage skill without substage
+        if skill_content is None:
+            stage_skill = skills_dir / f"{stage}.md"
+            if stage_skill.exists():
+                skill_content = stage_skill.read_text()
 
     if skill_content is None:
         return None
 
     # Prepend system prompt if requested
     if include_system:
-        system_path = skills_path / "AGENTS.md"
+        system_path = agents_path / "skills" / "AGENTS.md"
         if system_path.exists():
             system_content = system_path.read_text()
             skill_content = system_content + "\n\n---\n\n" + skill_content
@@ -723,7 +677,7 @@ def load_skill(
         "issue_title": issue.title,
         "issue_dir": str(issue_dir) if issue_dir else "",
         "issue_dir_rel": f".agenttrees/issues/{issue.id}-{issue.slug}" if issue_dir else "",
-        "stage": stage.value,
+        "stage": stage,
         "substage": substage or "",
     }
 
@@ -741,6 +695,6 @@ def load_skill(
     try:
         template = Template(skill_content)
         return template.render(**context)
-    except Exception as e:
+    except Exception:
         # If rendering fails, return raw content
         return skill_content

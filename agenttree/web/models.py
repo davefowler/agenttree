@@ -10,9 +10,12 @@ class StageEnum(str, Enum):
     """Kanban stages."""
 
     BACKLOG = "backlog"
-    PROBLEM = "problem"
+    DEFINE = "define"
     PROBLEM_REVIEW = "problem_review"
     RESEARCH = "research"
+    PLAN = "plan"
+    PLAN_ASSESS = "plan_assess"
+    PLAN_REVISE = "plan_revise"
     PLAN_REVIEW = "plan_review"
     IMPLEMENT = "implement"
     IMPLEMENTATION_REVIEW = "implementation_review"
