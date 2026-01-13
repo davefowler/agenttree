@@ -101,8 +101,9 @@ def sync_agents_repo(
                 print(f"Warning: Failed to pull _agenttree repo: {result.stderr}")
                 return False
 
-        # If pull-only, we're done
+        # If pull-only, check for pending PRs and we're done
         if pull_only:
+            check_pending_prs(agents_dir)
             return True
 
         # Push changes (local commits + any we just made)
@@ -120,6 +121,9 @@ def sync_agents_repo(
             else:
                 print(f"Warning: Failed to push changes: {push_result.stderr}")
             return False
+
+        # After successful sync, check for issues needing PRs
+        check_pending_prs(agents_dir)
 
         return True
 
