@@ -73,19 +73,19 @@ class HookRegistry:
     def __init__(self):
         """Initialize empty hook dictionaries."""
         # Pre-transition: key = (from_stage, to_stage), value = list of hooks
-        self.pre_transition: Dict[Tuple[Stage, Stage], List[Callable]] = {}
+        self.pre_transition: Dict[Tuple[str, str], List[Callable]] = {}
 
         # Post-transition: key = (from_stage, to_stage), value = list of hooks
-        self.post_transition: Dict[Tuple[Stage, Stage], List[Callable]] = {}
+        self.post_transition: Dict[Tuple[str, str], List[Callable]] = {}
 
         # On-enter: key = stage, value = list of hooks
-        self.on_enter: Dict[Stage, List[Callable]] = {}
+        self.on_enter: Dict[str, List[Callable]] = {}
 
         # On-enter substage: key = (stage, substage), value = list of hooks
-        self.on_enter_substage: Dict[Tuple[Stage, str], List[Callable]] = {}
+        self.on_enter_substage: Dict[Tuple[str, str], List[Callable]] = {}
 
         # On-exit: key = stage, value = list of hooks
-        self.on_exit: Dict[Stage, List[Callable]] = {}
+        self.on_exit: Dict[str, List[Callable]] = {}
 
     def register_pre_transition(
         self, from_stage: str, to_stage: str, func: Callable
