@@ -137,12 +137,19 @@ def check_pending_prs(agents_dir: Path) -> int:
     Called from host (sync, web server, etc.) to create PRs for issues
     where agents couldn't push from containers.
 
+    Bails early if running inside a container (containers can't push anyway).
+
     Args:
         agents_dir: Path to .agenttrees directory
 
     Returns:
         Number of PRs created
     """
+    # Bail early if running in a container - no point checking since we can't push
+    from agenttree.hooks import is_running_in_container
+    if is_running_in_container():
+        return 0
+
     issues_dir = agents_dir / "issues"
     if not issues_dir.exists():
         return 0

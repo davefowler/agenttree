@@ -1,64 +1,69 @@
-# AgentTree - Claude Instructions
+# AgentTree - Project Conventions
 
-## CRITICAL: Follow the Workflow
+## Tech Stack
 
-**You MUST follow the staged workflow. You cannot skip stages.**
+- **Language:** Python 3.12+
+- **Package Manager:** uv
+- **Testing:** pytest with pytest-cov
+- **CLI:** Typer
+- **Type Checking:** mypy (strict mode)
 
-### First: Check Your Stage
-```bash
-agenttree status --issue <ID>
-```
+## Architecture
 
-Your work depends on your current stage. Don't start coding if you're at `backlog` or `problem`.
+- CLI entry point: `agenttree/cli.py`
+- Core workflow: `agenttree/workflow.py`
+- Issue management: `agenttree/issues.py`
+- Agent repository: `agenttree/agents_repo.py`
+- Docker container support: `agenttree/container.py`
 
-### Progress with `agenttree next`
-```bash
-agenttree next --issue <ID>
-```
+## Commands
 
-**This command handles everything automatically:**
-- Commits your changes
-- Pushes to the branch
-- Creates PRs when needed
-- Moves to the next stage
+- `uv run pytest` - Run all tests
+- `uv run pytest tests/unit` - Run unit tests only
+- `uv run pytest tests/integration` - Run integration tests only
+- `uv run mypy agenttree` - Type check the codebase
+- `uv sync` - Install/sync dependencies
 
-**DO NOT manually run:** `git push`, `git commit`, or `gh pr create`. The workflow handles this.
+## Code Style
 
-## Stages (Must Follow In Order)
+- Use type hints for all function signatures
+- Follow existing patterns in the codebase
+- Tests should be in `tests/unit/` or `tests/integration/`
+- Use descriptive variable names
+- Keep functions focused and single-purpose
 
-| Stage | What You Do | What Happens on `next` |
-|-------|-------------|------------------------|
-| **backlog** | Nothing yet | → problem |
-| **problem** | Write problem.md | → problem_review (waits for human) |
-| **problem_review** | Wait | Human approves → research |
-| **research** | Write plan.md | → plan_review (waits for human) |
-| **plan_review** | Wait | Human approves → implement |
-| **implement** | Write tests, then code | Auto-commits, pushes, creates PR → implementation_review |
-| **implementation_review** | Wait | Human approves PR → accepted (auto-merges) |
-| **accepted** | Done! | Cleanup |
+## Testing
 
-## Stage Instructions
+- Write tests for new features and bug fixes
+- Use fixtures defined in `tests/conftest.py`
+- Mock external dependencies (git, docker, filesystem)
+- Aim for high coverage on core workflow logic
 
-Each stage has a skill file with detailed instructions:
-- `.agenttrees/skills/problem.md`
-- `.agenttrees/skills/research.md`
-- `.agenttrees/skills/implement.md`
+## Workflow
 
-**Read the skill file for your current stage before doing any work.**
+1. Read existing code before making changes
+2. Run tests after changes: `uv run pytest`
+3. Type check before committing: `uv run mypy agenttree`
+4. Keep changes focused and avoid over-engineering
+5. Don't add features beyond what's requested
 
-## Issue Structure
+## Project-Specific Notes
 
-Each issue has a directory: `.agenttrees/issues/<ID>-<slug>/`
-- `issue.yaml` - Status, stage, metadata
-- `problem.md` - Problem statement (fill this out in problem stage!)
-- `plan.md` - Implementation plan (created in research stage)
-- `review.md` - Self-review before PR (created in implement.code_review)
-- `research.md` - Research notes (if you do external research)
+- Issues are stored in `.agenttrees/issues/` as YAML and markdown files
+- Stage instructions use Jinja2 templates in `.agenttrees/skills/`
+- The workflow supports both local and containerized agent execution
+- Hooks can be configured in `.agenttree.yaml` for stage transitions
 
-**ALL documentation for your issue goes in this folder, NOT in the worktree root.**
+---
 
-## Key Files
+## About AgentTree
 
-- `.agenttree.yaml` - Project configuration
-- `.agenttrees/` - Issues, skills, templates (separate git repo)
-- `.worktrees/` - Agent worktrees
+This project uses AgentTree, a workflow system for AI agents working on software development tasks. It provides structured stages (define → research → plan → implement), automated validation, and human review checkpoints.
+
+**For detailed workflow documentation, see:** [`.agenttrees/skills/overview.md`](.agenttrees/skills/overview.md)
+
+**Key commands:**
+- `agenttree issue create "title"` - Create a new issue
+- `agenttree start <id>` - Dispatch an agent to work on an issue
+- `agenttree status` - Show status of issues and agents
+- `agenttree next` - Get instructions for current stage (used by agents)

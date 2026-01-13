@@ -195,25 +195,30 @@ class TestIssueCRUD:
 
 
 class TestStageTransitions:
-    """Tests for stage transition functions."""
+    """Tests for stage transition functions.
+
+    New stage flow:
+    backlog -> define -> problem_review -> research -> plan -> plan_assess ->
+    plan_revise -> plan_review -> implement -> implementation_review -> accepted
+    """
 
     def test_get_next_stage_from_backlog(self):
-        """Backlog -> problem.draft"""
+        """Backlog -> define.draft"""
         next_stage, next_substage, is_review = get_next_stage(Stage.BACKLOG, None)
-        assert next_stage == Stage.PROBLEM
+        assert next_stage == Stage.DEFINE
         assert next_substage == "draft"
         assert is_review is False
 
-    def test_get_next_stage_within_problem_substages(self):
-        """problem.draft -> problem.refine"""
-        next_stage, next_substage, is_review = get_next_stage(Stage.PROBLEM, "draft")
-        assert next_stage == Stage.PROBLEM
+    def test_get_next_stage_within_define_substages(self):
+        """define.draft -> define.refine"""
+        next_stage, next_substage, is_review = get_next_stage(Stage.DEFINE, "draft")
+        assert next_stage == Stage.DEFINE
         assert next_substage == "refine"
         assert is_review is False
 
-    def test_get_next_stage_problem_to_review(self):
-        """problem.refine -> problem_review (human review)"""
-        next_stage, next_substage, is_review = get_next_stage(Stage.PROBLEM, "refine")
+    def test_get_next_stage_define_to_review(self):
+        """define.refine -> problem_review (human review)"""
+        next_stage, next_substage, is_review = get_next_stage(Stage.DEFINE, "refine")
         assert next_stage == Stage.PROBLEM_REVIEW
         assert next_substage is None
         assert is_review is True
@@ -226,15 +231,36 @@ class TestStageTransitions:
         assert is_review is False
 
     def test_get_next_stage_within_research_substages(self):
-        """research.explore -> research.plan"""
+        """research.explore -> research.document"""
         next_stage, next_substage, is_review = get_next_stage(Stage.RESEARCH, "explore")
         assert next_stage == Stage.RESEARCH
-        assert next_substage == "plan"
+        assert next_substage == "document"
         assert is_review is False
 
-    def test_get_next_stage_research_to_plan_review(self):
-        """research.spec -> plan_review (human review)"""
-        next_stage, next_substage, is_review = get_next_stage(Stage.RESEARCH, "spec")
+    def test_get_next_stage_research_to_plan(self):
+        """research.document -> plan.draft (not directly to plan_review)"""
+        next_stage, next_substage, is_review = get_next_stage(Stage.RESEARCH, "document")
+        assert next_stage == Stage.PLAN
+        assert next_substage == "draft"
+        assert is_review is False
+
+    def test_get_next_stage_plan_to_plan_assess(self):
+        """plan.refine -> plan_assess"""
+        next_stage, next_substage, is_review = get_next_stage(Stage.PLAN, "refine")
+        assert next_stage == Stage.PLAN_ASSESS
+        assert next_substage is None
+        assert is_review is False
+
+    def test_get_next_stage_plan_assess_to_plan_revise(self):
+        """plan_assess -> plan_revise"""
+        next_stage, next_substage, is_review = get_next_stage(Stage.PLAN_ASSESS, None)
+        assert next_stage == Stage.PLAN_REVISE
+        assert next_substage is None
+        assert is_review is False
+
+    def test_get_next_stage_plan_revise_to_plan_review(self):
+        """plan_revise -> plan_review (human review)"""
+        next_stage, next_substage, is_review = get_next_stage(Stage.PLAN_REVISE, None)
         assert next_stage == Stage.PLAN_REVIEW
         assert next_substage is None
         assert is_review is True
@@ -246,9 +272,16 @@ class TestStageTransitions:
         assert next_substage == "code"
         assert is_review is False
 
-    def test_get_next_stage_implement_to_review(self):
-        """implement.code_review -> implementation_review (human review)"""
+    def test_get_next_stage_implement_code_review_to_address_review(self):
+        """implement.code_review -> implement.address_review"""
         next_stage, next_substage, is_review = get_next_stage(Stage.IMPLEMENT, "code_review")
+        assert next_stage == Stage.IMPLEMENT
+        assert next_substage == "address_review"
+        assert is_review is False
+
+    def test_get_next_stage_implement_to_review(self):
+        """implement.address_review -> implementation_review (human review)"""
+        next_stage, next_substage, is_review = get_next_stage(Stage.IMPLEMENT, "address_review")
         assert next_stage == Stage.IMPLEMENTATION_REVIEW
         assert next_substage is None
         assert is_review is True
@@ -333,7 +366,11 @@ class TestUpdateIssueStage:
 
 
 class TestLoadSkill:
-    """Tests for load_skill function."""
+    """Tests for load_skill function.
+
+    Note: Skill files are mapped via STAGE_SKILL_MAP:
+    - Stage.PROBLEM and Stage.DEFINE both map to "define.md"
+    """
 
     @pytest.fixture
     def temp_agenttrees_with_skills(self, monkeypatch, tmp_path):
@@ -343,8 +380,8 @@ class TestLoadSkill:
         (agenttrees_path / "issues").mkdir()
         (agenttrees_path / "skills").mkdir()
 
-        # Create some skill files
-        (agenttrees_path / "skills" / "problem.md").write_text("# Problem Skill")
+        # Create some skill files (using new naming convention)
+        (agenttrees_path / "skills" / "define.md").write_text("# Define Skill")
         (agenttrees_path / "skills" / "implement.md").write_text("# Implement Skill")
         (agenttrees_path / "skills" / "implement-test.md").write_text("# Test Substage Skill")
 
@@ -357,9 +394,14 @@ class TestLoadSkill:
         return agenttrees_path
 
     def test_load_stage_skill(self, temp_agenttrees_with_skills):
-        """Load skill for stage."""
+        """Load skill for stage (PROBLEM maps to define.md via STAGE_SKILL_MAP)."""
         skill = load_skill(Stage.PROBLEM)
-        assert skill == "# Problem Skill"
+        assert skill == "# Define Skill"
+
+    def test_load_define_stage_skill(self, temp_agenttrees_with_skills):
+        """Load skill for DEFINE stage."""
+        skill = load_skill(Stage.DEFINE)
+        assert skill == "# Define Skill"
 
     def test_load_substage_skill(self, temp_agenttrees_with_skills):
         """Load skill for substage (falls back to stage skill)."""
