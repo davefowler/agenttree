@@ -1419,8 +1419,7 @@ def stage_status(issue_id: Optional[str]) -> None:
     # Try to get issue from argument or agent context
     if not issue_id:
         # TODO: Read from .agenttree-agent file when in agent worktree
-        console.print("[yellow]No issue specified. Use --issue flag or run from agent worktree.[/yellow]")
-        console.print("[dim]Showing all active issues:[/dim]\n")
+        console.print("[dim]Showing all active issues (use --issue ID for details):[/dim]\n")
 
         # Show all non-backlog, non-accepted issues
         active_issues = [
