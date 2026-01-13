@@ -659,16 +659,25 @@ def generate_commit_message(issue: Issue, stage: str) -> str:
         stage: Current stage
 
     Returns:
-        Formatted commit message
+        Formatted commit message with GitHub issue linking
     """
     stage_prefixes = {
-        DEFINE: "Define problem",
-        RESEARCH: "Research",
+        DEFINE: "Define problem for",
+        RESEARCH: "Research for",
+        PLAN: "Plan for",
         IMPLEMENT: "Implement",
         ACCEPTED: "Complete",
     }
-    prefix = stage_prefixes.get(stage, stage.replace("_", " ").title())
-    return f"{prefix} #{issue.id}: {issue.title}"
+    prefix = stage_prefixes.get(stage, stage.replace("_", " ").title() + " for")
+
+    # Build message with issue reference
+    message = f"{prefix} issue #{issue.id}: {issue.title}"
+
+    # Add GitHub issue linking if we have a linked GitHub issue
+    if issue.github_issue:
+        message += f"\n\nFixes #{issue.github_issue}"
+
+    return message
 
 
 def auto_commit_changes(issue: Issue, stage: str) -> bool:
