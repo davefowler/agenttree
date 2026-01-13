@@ -1195,14 +1195,14 @@ def issue_create(
             title=title,
             priority=Priority(priority),
             labels=list(label) if label else None,
-            stage=Stage(stage),
+            stage=stage,
             problem=problem,
             context=context,
             solutions=solutions,
         )
         console.print(f"[green]✓ Created issue {issue.id}: {issue.title}[/green]")
         console.print(f"[dim]  .agenttrees/issues/{issue.id}-{issue.slug}/[/dim]")
-        console.print(f"[dim]  Stage: {issue.stage.value}[/dim]")
+        console.print(f"[dim]  Stage: {issue.stage}[/dim]")
         console.print(f"\n[dim]Dispatch an agent: agenttree start {issue.id}[/dim]")
 
     except Exception as e:
@@ -1213,8 +1213,7 @@ def issue_create(
 @issue.command("list")
 @click.option(
     "--stage", "-s",
-    type=click.Choice([s.value for s in Stage]),
-    help="Filter by stage"
+    help="Filter by stage (e.g., backlog, define, implement)"
 )
 @click.option(
     "--priority", "-p",
@@ -1240,7 +1239,7 @@ def issue_list(stage: Optional[str], priority: Optional[str], agent: Optional[in
         agenttree issue list -s implement -p high
         agenttree issue list --json
     """
-    stage_filter = Stage(stage) if stage else None
+    stage_filter = stage if stage else None
     priority_filter = Priority(priority) if priority else None
 
     issues = list_issues_func(
@@ -1267,7 +1266,7 @@ def issue_list(stage: Optional[str], priority: Optional[str], agent: Optional[in
 
     for issue in issues:
         agent_str = f"Agent {issue.assigned_agent}" if issue.assigned_agent else "-"
-        stage_str = issue.stage.value
+        stage_str = issue.stage
         if issue.substage:
             stage_str += f".{issue.substage}"
 
@@ -1311,7 +1310,7 @@ def issue_show(issue_id: str) -> None:
     console.print(f"\n[bold cyan]Issue {issue.id}: {issue.title}[/bold cyan]\n")
 
     # Basic info
-    console.print(f"[bold]Stage:[/bold] {issue.stage.value}", end="")
+    console.print(f"[bold]Stage:[/bold] {issue.stage}", end="")
     if issue.substage:
         console.print(f".{issue.substage}")
     else:
@@ -1441,7 +1440,7 @@ def stage_status(issue_id: Optional[str]) -> None:
         table.add_column("Agent", style="green")
 
         for issue in active_issues:
-            stage_str = issue.stage.value
+            stage_str = issue.stage
             if issue.substage:
                 stage_str += f".{issue.substage}"
             agent_str = f"Agent {issue.assigned_agent}" if issue.assigned_agent else "-"
@@ -1456,7 +1455,7 @@ def stage_status(issue_id: Optional[str]) -> None:
         sys.exit(1)
 
     console.print(f"\n[bold cyan]Issue {issue.id}: {issue.title}[/bold cyan]")
-    console.print(f"[bold]Stage:[/bold] {issue.stage.value}", end="")
+    console.print(f"[bold]Stage:[/bold] {issue.stage}", end="")
     if issue.substage:
         console.print(f".{issue.substage}")
     else:
@@ -1472,10 +1471,12 @@ def stage_status(issue_id: Optional[str]) -> None:
 
 
 @main.command("begin")
-@click.argument("stage", type=click.Choice([s.value for s in Stage]))
+@click.argument("stage")
 @click.option("--issue", "-i", "issue_id", required=False, help="Issue ID (auto-detected from branch if not provided)")
 def stage_begin(stage: str, issue_id: Optional[str]) -> None:
     """Begin working on a stage. Returns stage instructions.
+
+    Valid stages: backlog, define, research, plan, implement, etc.
 
     Examples:
         agenttree begin define --issue 001
@@ -1497,7 +1498,7 @@ def stage_begin(stage: str, issue_id: Optional[str]) -> None:
         console.print(f"[red]Issue {issue_id} not found[/red]")
         sys.exit(1)
 
-    target_stage = Stage(stage)
+    target_stage = stage
 
     # Map legacy stage names to new ones
     if target_stage == PROBLEM:
@@ -1508,7 +1509,7 @@ def stage_begin(stage: str, issue_id: Optional[str]) -> None:
         console.print(f"[red]Cannot begin review stages directly. Use 'agenttree next' to transition.[/red]")
         sys.exit(1)
     if target_stage in (ACCEPTED, NOT_DOING):
-        console.print(f"[red]Cannot begin terminal stages ({target_stage.value})[/red]")
+        console.print(f"[red]Cannot begin terminal stages ({target_stage})[/red]")
         sys.exit(1)
 
     # Get substages for this stage
@@ -1526,7 +1527,7 @@ def stage_begin(stage: str, issue_id: Optional[str]) -> None:
     # Note: We skip pre_transition hooks since begin allows arbitrary stage jumps
     execute_post_hooks(updated, from_stage, target_stage, substage)
 
-    stage_str = target_stage.value
+    stage_str = target_stage
     if substage:
         stage_str += f".{substage}"
     console.print(f"[green]✓ Started {stage_str}[/green]")
@@ -1538,11 +1539,11 @@ def stage_begin(stage: str, issue_id: Optional[str]) -> None:
     skill = load_skill(target_stage, substage, issue=updated, include_system=is_first_stage)
     if skill:
         console.print(f"\n{'='*60}")
-        console.print(f"[bold cyan]Stage Instructions: {target_stage.value.upper()}[/bold cyan]")
+        console.print(f"[bold cyan]Stage Instructions: {target_stage.upper()}[/bold cyan]")
         console.print(f"{'='*60}\n")
         console.print(skill)
     else:
-        console.print(f"\n[dim]No skill file found for {target_stage.value}[/dim]")
+        console.print(f"\n[dim]No skill file found for {target_stage}[/dim]")
 
     # Show relevant files
     issue_dir = get_issue_dir(issue_id)
@@ -1624,7 +1625,7 @@ def stage_next(issue_id: Optional[str], reassess: bool) -> None:
     # Execute post-hooks (after stage updated)
     execute_post_hooks(updated, from_stage, next_stage, next_substage)
 
-    stage_str = next_stage.value
+    stage_str = next_stage
     if next_substage:
         stage_str += f".{next_substage}"
     console.print(f"[green]✓ Moved to {stage_str}[/green]")
@@ -1642,7 +1643,7 @@ def stage_next(issue_id: Optional[str], reassess: bool) -> None:
     skill = load_skill(next_stage, next_substage, issue=updated, include_system=is_first_stage)
     if skill:
         console.print(f"\n{'='*60}")
-        header = f"Stage Instructions: {next_stage.value.upper()}"
+        header = f"Stage Instructions: {next_stage.upper()}"
         if next_substage:
             header += f" ({next_substage})"
         console.print(f"[bold cyan]{header}[/bold cyan]")
