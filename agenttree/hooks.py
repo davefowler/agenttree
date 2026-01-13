@@ -765,6 +765,89 @@ def require_review_md_for_pr(issue: Issue):
             )
 
 
+@pre_transition(IMPLEMENT, IMPLEMENTATION_REVIEW)
+def require_wrapup_score(issue: Issue):
+    """Require that implementation wrapup scores meet the threshold.
+
+    Blocks transition if:
+    - review.md doesn't have a Self-Assessment Scores section
+    - Average score is below threshold (default 7.0)
+
+    Args:
+        issue: Issue being transitioned
+
+    Raises:
+        ValidationError: If scores are missing or below threshold
+    """
+    import re
+    import yaml
+
+    issue_dir = _get_issue_dir(issue)
+    review_path = issue_dir / "review.md"
+
+    if not review_path.exists():
+        raise ValidationError(
+            "review.md not found. Complete the wrapup substage before creating a PR."
+        )
+
+    content = review_path.read_text()
+
+    # Find the Self-Assessment Scores YAML block
+    # Look for ```yaml ... ``` after "Self-Assessment Scores"
+    scores_match = re.search(
+        r'###?\s*Self-Assessment Scores.*?```yaml\s*\n(.*?)```',
+        content,
+        re.DOTALL | re.IGNORECASE
+    )
+
+    if not scores_match:
+        raise ValidationError(
+            "Self-Assessment Scores not found in review.md. "
+            "Complete the wrapup substage and add your self-assessment scores."
+        )
+
+    try:
+        scores_yaml = yaml.safe_load(scores_match.group(1))
+    except Exception as e:
+        raise ValidationError(f"Invalid YAML in Self-Assessment Scores: {e}")
+
+    if not scores_yaml or "scores" not in scores_yaml:
+        raise ValidationError(
+            "Self-Assessment Scores section is missing 'scores' data. "
+            "Add scores for: correctness, test_coverage, code_quality, spec_alignment, documentation"
+        )
+
+    scores = scores_yaml["scores"]
+    required_fields = ["correctness", "test_coverage", "code_quality", "spec_alignment", "documentation"]
+
+    missing = [f for f in required_fields if f not in scores]
+    if missing:
+        raise ValidationError(
+            f"Missing score fields: {', '.join(missing)}. "
+            "All five criteria must be scored."
+        )
+
+    # Calculate average
+    try:
+        values = [float(scores[f]) for f in required_fields]
+        average = sum(values) / len(values)
+    except (TypeError, ValueError) as e:
+        raise ValidationError(f"Invalid score values: {e}. Scores must be numbers 1-10.")
+
+    threshold = float(scores_yaml.get("threshold", 7.0))
+
+    if average < threshold:
+        raise ValidationError(
+            f"Implementation score ({average:.1f}) is below threshold ({threshold}). "
+            f"Scores: correctness={scores['correctness']}, test_coverage={scores['test_coverage']}, "
+            f"code_quality={scores['code_quality']}, spec_alignment={scores['spec_alignment']}, "
+            f"documentation={scores['documentation']}. "
+            "Improve your implementation or adjust scores if they were too harsh."
+        )
+
+    console.print(f"[green]Implementation score: {average:.1f}/10 (threshold: {threshold})[/green]")
+
+
 @pre_transition(IMPLEMENTATION_REVIEW, ACCEPTED)
 def require_pr_approval(issue: Issue):
     """Require that PR is approved before merging.
