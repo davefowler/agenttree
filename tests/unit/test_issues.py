@@ -181,7 +181,7 @@ class TestIssueCRUD:
 
         # Check history entry
         assert len(issue.history) == 1
-        assert issue.history[0].stage == "problem"
+        assert issue.history[0].stage == "define"
 
     def test_create_issue_with_research_stage(self, temp_agenttrees):
         """Test creating an issue starting at research stage."""
@@ -231,7 +231,7 @@ class TestStageTransitions:
     def test_get_next_stage_define_to_review(self):
         """define.refine -> problem_review (human review)"""
         next_stage, next_substage, is_review = get_next_stage(DEFINE, "refine")
-        assert next_stage == DEFINE_REVIEW
+        assert next_stage == PROBLEM_REVIEW
         assert next_substage is None
         assert is_review is True
 
@@ -367,7 +367,7 @@ class TestUpdateIssueStage:
 
         updated = update_issue_stage("001", DEFINE, "draft", agent=1)
         assert len(updated.history) == 2
-        assert updated.history[-1].stage == "problem"
+        assert updated.history[-1].stage == "define"
         assert updated.history[-1].substage == "draft"
         assert updated.history[-1].agent == 1
 
