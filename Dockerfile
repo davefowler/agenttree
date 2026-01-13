@@ -17,6 +17,15 @@ RUN apt-get update && apt-get install -y \
 # Install Claude CLI
 RUN npm install -g @anthropic-ai/claude-code
 
+# Install agenttree runtime dependencies (for dogfooding - symlink approach)
+RUN pip install --break-system-packages \
+    click>=8.1.0 \
+    pyyaml>=6.0 \
+    pydantic>=2.0.0 \
+    rich>=13.0.0 \
+    filelock>=3.0.0 \
+    jinja2>=3.1.0
+
 # Create non-root user (Claude CLI refuses --dangerously-skip-permissions as root)
 RUN useradd -m -s /bin/bash agent && \
     echo "agent ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
@@ -34,6 +43,15 @@ RUN mkdir -p /home/agent/.claude && \
     echo '{"hasCompletedOnboarding":true}' > /home/agent/.claude.json && \
     echo '{"theme":"dark"}' > /home/agent/.claude/settings.json
 
+# Create agenttree wrapper script (avoids slow pip install for dogfooding)
+COPY --chown=agent:agent <<'EOF' /home/agent/agenttree-wrapper.sh
+#!/bin/bash
+# Wrapper for agenttree CLI when working on agenttree itself
+# Uses PYTHONPATH instead of pip install -e for instant startup
+PYTHONPATH=/workspace exec python3 -c "import sys; sys.argv[0]='agenttree'; from agenttree.cli import main; main()" "$@"
+EOF
+RUN chmod +x /home/agent/agenttree-wrapper.sh
+
 # Create entrypoint script that sets up environment
 COPY --chown=agent:agent <<'EOF' /home/agent/entrypoint.sh
 #!/bin/bash
@@ -49,18 +67,13 @@ if [ -f /home/agent/.claude-host/settings.json ]; then
     cp /home/agent/.claude-host/settings.json /home/agent/.claude/settings.json
 fi
 
-# Set up agenttree - only do editable install if workspace IS agenttree
-# (for self-development). Other projects would need agenttree from PyPI.
+# Set up agenttree - use symlink approach for instant startup when dogfooding
 AGENTTREE_PATH=""
 if [ -f /workspace/pyproject.toml ] && grep -q 'name = "agenttree"' /workspace/pyproject.toml; then
-    # Working on agenttree itself - install from workspace (editable)
-    if [ ! -d /home/agent/.agenttree-venv ]; then
-        python3 -m venv /home/agent/.agenttree-venv
-    fi
-    if ! /home/agent/.agenttree-venv/bin/pip install -q -e "/workspace[dev]" 2>&1; then
-        echo "Warning: Failed to install agenttree dependencies" >&2
-    fi
-    AGENTTREE_PATH="/home/agent/.agenttree-venv/bin:"
+    # Working on agenttree itself - symlink wrapper to PATH instead of pip install
+    mkdir -p /home/agent/bin
+    ln -sf /home/agent/agenttree-wrapper.sh /home/agent/bin/agenttree
+    AGENTTREE_PATH="/home/agent/bin:"
 fi
 
 # Use exec env to ensure PATH persists to child processes

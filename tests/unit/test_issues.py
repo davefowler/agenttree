@@ -291,9 +291,16 @@ class TestStageTransitions:
         assert next_substage == "address_review"
         assert is_review is False
 
-    def test_get_next_stage_implement_to_review(self):
-        """implement.address_review -> implementation_review (human review)"""
+    def test_get_next_stage_implement_to_wrapup(self):
+        """implement.address_review -> implement.wrapup"""
         next_stage, next_substage, is_review = get_next_stage(IMPLEMENT, "address_review")
+        assert next_stage == IMPLEMENT
+        assert next_substage == "wrapup"
+        assert is_review is False
+
+    def test_get_next_stage_wrapup_to_review(self):
+        """implement.wrapup -> implementation_review (human review)"""
+        next_stage, next_substage, is_review = get_next_stage(IMPLEMENT, "wrapup")
         assert next_stage == IMPLEMENTATION_REVIEW
         assert next_substage is None
         assert is_review is True
