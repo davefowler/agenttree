@@ -5,16 +5,17 @@
 - **Language:** Python 3.12+
 - **Package Manager:** uv
 - **Testing:** pytest with pytest-cov
-- **CLI:** Typer
+- **CLI:** Click
 - **Type Checking:** mypy (strict mode)
 
 ## Architecture
 
 - CLI entry point: `agenttree/cli.py`
-- Core workflow: `agenttree/workflow.py`
+- Hook system (stage transitions): `agenttree/hooks.py`
 - Issue management: `agenttree/issues.py`
 - Agent repository: `agenttree/agents_repo.py`
 - Docker container support: `agenttree/container.py`
+- Agent state management: `agenttree/state.py`
 
 ## Commands
 
