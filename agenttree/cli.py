@@ -36,7 +36,7 @@ from agenttree.issues import (
     ACCEPTED,
     NOT_DOING,
 )
-from agenttree.hooks import execute_pre_hooks, execute_post_hooks, ValidationError
+from agenttree.hooks import execute_pre_hooks, execute_post_hooks, ValidationError, run_validators
 
 console = Console()
 
@@ -1602,6 +1602,15 @@ def stage_next(issue_id: Optional[str], reassess: bool) -> None:
     if next_stage == issue.stage and next_substage == issue.substage:
         console.print(f"[yellow]Already at final stage[/yellow]")
         return
+
+    # Run config-driven validators for current substage
+    config = load_config()
+    validators = config.validators_for(issue.stage, issue.substage)
+    try:
+        run_validators(issue, validators)
+    except ValidationError as e:
+        console.print(f"[red]Cannot proceed: {e}[/red]")
+        sys.exit(1)
 
     # Execute pre-hooks (can block with ValidationError)
     from_stage = issue.stage

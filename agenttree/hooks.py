@@ -38,10 +38,12 @@ Hook Execution Order:
 import re
 import subprocess
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
+import yaml as yaml_lib
 from rich.console import Console
 
+from agenttree.config import DocumentValidator, FieldRule, SectionRule
 from agenttree.issues import (
     Issue,
     DEFINE,
@@ -61,6 +63,374 @@ class ValidationError(Exception):
     """Raised when pre-hook validation fails to block a stage transition."""
 
     pass
+
+
+# =============================================================================
+# Generic Document Validation
+# =============================================================================
+
+
+def _extract_section_content(content: str, section_header: str) -> Optional[str]:
+    """Extract content from a markdown section.
+
+    Args:
+        content: Full markdown content
+        section_header: Section header (e.g., "## Critical Issues")
+
+    Returns:
+        Section content (without header), or None if not found
+    """
+    # Escape special regex chars in header, but allow flexible whitespace
+    header_pattern = re.escape(section_header).replace(r"\ ", r"\s+")
+    # Match the header and capture content until next section or end
+    pattern = rf'{header_pattern}[^\n]*\n(.*?)(?=\n##|\n---|\Z)'
+    match = re.search(pattern, content, re.DOTALL | re.IGNORECASE)
+    if match:
+        return match.group(1)
+    return None
+
+
+def _extract_yaml_from_section(content: str, section_header: str) -> Optional[Dict[str, Any]]:
+    """Extract YAML block from a markdown section.
+
+    Args:
+        content: Full markdown content
+        section_header: Section header containing the YAML block
+
+    Returns:
+        Parsed YAML dict, or None if not found
+    """
+    # Find YAML block after section header
+    header_pattern = re.escape(section_header).replace(r"\ ", r"\s+")
+    pattern = rf'{header_pattern}.*?```yaml\s*\n(.*?)```'
+    match = re.search(pattern, content, re.DOTALL | re.IGNORECASE)
+    if match:
+        try:
+            return yaml_lib.safe_load(match.group(1))
+        except yaml_lib.YAMLError:
+            return None
+    return None
+
+
+def _extract_yaml_from_content(content: str) -> Optional[Dict[str, Any]]:
+    """Extract first YAML block from markdown content.
+
+    Args:
+        content: Full markdown content
+
+    Returns:
+        Parsed YAML dict, or None if not found
+    """
+    match = re.search(r'```yaml\s*\n(.*?)```', content, re.DOTALL)
+    if match:
+        try:
+            return yaml_lib.safe_load(match.group(1))
+        except yaml_lib.YAMLError:
+            return None
+    return None
+
+
+def _get_nested_value(data: Dict[str, Any], path: str) -> Any:
+    """Get a nested value from a dict using dot notation.
+
+    Args:
+        data: Dictionary to traverse
+        path: Dot-separated path (e.g., "scores.correctness")
+
+    Returns:
+        Value at path
+
+    Raises:
+        KeyError: If path doesn't exist
+    """
+    keys = path.split(".")
+    value = data
+    for key in keys:
+        if isinstance(value, dict):
+            value = value[key]
+        else:
+            raise KeyError(f"Cannot traverse into non-dict at '{key}'")
+    return value
+
+
+def _validate_section(
+    content: str,
+    section_header: str,
+    rule: SectionRule,
+    file_name: str,
+) -> None:
+    """Validate a single markdown section.
+
+    Args:
+        content: Full markdown content
+        section_header: Section header to validate
+        rule: Validation rules for the section
+        file_name: File name for error messages
+
+    Raises:
+        ValidationError: If validation fails
+    """
+    section_content = _extract_section_content(content, section_header)
+
+    if section_content is None:
+        raise ValidationError(
+            f"Section '{section_header}' not found in {file_name}."
+        )
+
+    # Remove HTML comments for content checks
+    clean_content = re.sub(r'<!--.*?-->', '', section_content, flags=re.DOTALL).strip()
+
+    # Check must_be_empty
+    if rule.must_be_empty:
+        # Check for any list items (- [ ] or - [x] or just -)
+        if re.search(r'-\s*(\[[x ]\])?\s*\S', clean_content, re.IGNORECASE):
+            raise ValidationError(
+                f"Section '{section_header}' in {file_name} must be empty. "
+                "Remove all items before proceeding."
+            )
+
+    # Check min_length
+    if rule.min_length > 0 and len(clean_content) < rule.min_length:
+        raise ValidationError(
+            f"Section '{section_header}' in {file_name} is too short "
+            f"(minimum {rule.min_length} characters required)."
+        )
+
+    # Check has_yaml
+    if rule.has_yaml:
+        if not re.search(r'```yaml\s*\n.*?```', section_content, re.DOTALL):
+            raise ValidationError(
+                f"Section '{section_header}' in {file_name} must contain a YAML block."
+            )
+
+
+def _validate_field(
+    yaml_data: Dict[str, Any],
+    field_path: str,
+    rule: FieldRule,
+    file_name: str,
+) -> None:
+    """Validate a single YAML field.
+
+    Args:
+        yaml_data: Parsed YAML data
+        field_path: Dot-notation path to field
+        rule: Validation rules for the field
+        file_name: File name for error messages
+
+    Raises:
+        ValidationError: If validation fails
+    """
+    try:
+        value = _get_nested_value(yaml_data, field_path)
+    except KeyError:
+        if rule.required:
+            raise ValidationError(
+                f"Required field '{field_path}' not found in {file_name}."
+            )
+        return
+
+    # Type validation
+    if rule.type == "float":
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            raise ValidationError(
+                f"Field '{field_path}' in {file_name} must be a number, got: {value}"
+            )
+
+        # Range validation for numeric types
+        if rule.min is not None and value < rule.min:
+            raise ValidationError(
+                f"Field '{field_path}' in {file_name} must be >= {rule.min}, got: {value}"
+            )
+        if rule.max is not None and value > rule.max:
+            raise ValidationError(
+                f"Field '{field_path}' in {file_name} must be <= {rule.max}, got: {value}"
+            )
+
+    elif rule.type == "int":
+        try:
+            value = int(value)
+        except (TypeError, ValueError):
+            raise ValidationError(
+                f"Field '{field_path}' in {file_name} must be an integer, got: {value}"
+            )
+
+        if rule.min is not None and value < rule.min:
+            raise ValidationError(
+                f"Field '{field_path}' in {file_name} must be >= {rule.min}, got: {value}"
+            )
+        if rule.max is not None and value > rule.max:
+            raise ValidationError(
+                f"Field '{field_path}' in {file_name} must be <= {rule.max}, got: {value}"
+            )
+
+    elif rule.type == "str" and rule.pattern:
+        if not re.match(rule.pattern, str(value)):
+            raise ValidationError(
+                f"Field '{field_path}' in {file_name} must match pattern '{rule.pattern}', got: {value}"
+            )
+
+
+def _evaluate_rule(
+    yaml_data: Dict[str, Any],
+    rule_expr: str,
+    file_name: str,
+) -> None:
+    """Evaluate a computed rule expression.
+
+    Supports:
+    - mean(path.*) >= value - average of all values under path
+    - sum(path.*) >= value - sum of all values under path
+
+    Args:
+        yaml_data: Parsed YAML data
+        rule_expr: Rule expression (e.g., "mean(scores.*) >= 7.0")
+        file_name: File name for error messages
+
+    Raises:
+        ValidationError: If rule fails
+    """
+    # Parse rule: function(path) operator value
+    match = re.match(r'(\w+)\(([^)]+)\)\s*(>=|<=|>|<|==)\s*([\d.]+)', rule_expr)
+    if not match:
+        raise ValidationError(f"Invalid rule expression: {rule_expr}")
+
+    func_name, path_pattern, operator, threshold_str = match.groups()
+    threshold = float(threshold_str)
+
+    # Get values matching the path pattern
+    if path_pattern.endswith(".*"):
+        base_path = path_pattern[:-2]
+        try:
+            parent = _get_nested_value(yaml_data, base_path)
+            if not isinstance(parent, dict):
+                raise ValidationError(
+                    f"Path '{base_path}' in {file_name} is not a dictionary."
+                )
+            values = [float(v) for v in parent.values()]
+        except KeyError:
+            raise ValidationError(
+                f"Path '{base_path}' not found in {file_name}."
+            )
+    else:
+        try:
+            values = [float(_get_nested_value(yaml_data, path_pattern))]
+        except KeyError:
+            raise ValidationError(
+                f"Path '{path_pattern}' not found in {file_name}."
+            )
+
+    # Calculate result
+    if func_name == "mean":
+        result = sum(values) / len(values) if values else 0
+    elif func_name == "sum":
+        result = sum(values)
+    elif func_name == "min":
+        result = min(values) if values else 0
+    elif func_name == "max":
+        result = max(values) if values else 0
+    else:
+        raise ValidationError(f"Unknown function '{func_name}' in rule: {rule_expr}")
+
+    # Evaluate comparison
+    comparisons = {
+        ">=": result >= threshold,
+        "<=": result <= threshold,
+        ">": result > threshold,
+        "<": result < threshold,
+        "==": result == threshold,
+    }
+
+    if not comparisons[operator]:
+        raise ValidationError(
+            f"Rule '{rule_expr}' failed in {file_name}: "
+            f"{func_name}={result:.2f}, required {operator} {threshold}"
+        )
+
+    console.print(
+        f"[green]✓ {file_name}: {func_name}={result:.1f} (threshold: {operator}{threshold})[/green]"
+    )
+
+
+def validate_document(issue: Issue, validator: DocumentValidator) -> None:
+    """Validate a document against section and field rules.
+
+    This is the main entry point for generic document validation.
+
+    Args:
+        issue: Issue being validated
+        validator: DocumentValidator configuration
+
+    Raises:
+        ValidationError: If any validation fails
+    """
+    from agenttree.issues import get_issue_dir
+
+    issue_dir = get_issue_dir(issue.id)
+    if not issue_dir:
+        raise ValidationError(f"Issue directory not found for issue {issue.id}")
+
+    file_path = issue_dir / validator.file
+
+    if not file_path.exists():
+        raise ValidationError(
+            f"{validator.file} not found. Please create it before proceeding."
+        )
+
+    content = file_path.read_text()
+
+    # Validate sections
+    for section_header, rule in validator.sections.items():
+        _validate_section(content, section_header, rule, validator.file)
+
+    # Validate fields (need YAML data)
+    if validator.fields or validator.rules:
+        # Find YAML data - check sections with has_yaml first, then any YAML block
+        yaml_data = None
+        for section_header, rule in validator.sections.items():
+            if rule.has_yaml:
+                yaml_data = _extract_yaml_from_section(content, section_header)
+                break
+
+        if yaml_data is None:
+            yaml_data = _extract_yaml_from_content(content)
+
+        if yaml_data is None and (validator.fields or validator.rules):
+            raise ValidationError(
+                f"No YAML block found in {validator.file}, but field validation is required."
+            )
+
+        # Validate individual fields
+        for field_path, rule in validator.fields.items():
+            _validate_field(yaml_data, field_path, rule, validator.file)
+
+        # Evaluate computed rules
+        for rule_expr in validator.rules:
+            _evaluate_rule(yaml_data, rule_expr, validator.file)
+
+
+def run_validators(
+    issue: Issue,
+    validators: List[Union[str, DocumentValidator]],
+) -> None:
+    """Run all validators for a substage.
+
+    Args:
+        issue: Issue being validated
+        validators: List of validators (strings for named hooks, DocumentValidator for documents)
+
+    Raises:
+        ValidationError: If any validation fails
+    """
+    for validator in validators:
+        if isinstance(validator, DocumentValidator):
+            validate_document(issue, validator)
+        elif isinstance(validator, str):
+            # Named hook - these are registered pre-transition hooks
+            # They'll be called separately by the hook system
+            pass  # Named hooks are handled by the hook registry
 
 
 class HookRegistry:
@@ -719,133 +1089,8 @@ def require_commits_for_review(issue: Issue):
         )
 
 
-@pre_transition(IMPLEMENT, IMPLEMENTATION_REVIEW)
-def require_review_md_for_pr(issue: Issue):
-    """Require that review.md exists with no unresolved Critical Issues before creating PR.
-
-    Blocks transition if:
-    - review.md doesn't exist in issue directory
-    - Critical Issues section contains any items (checked or unchecked)
-
-    Args:
-        issue: Issue being transitioned
-
-    Raises:
-        ValidationError: If review.md is missing or has unresolved critical issues
-    """
-    import re
-
-    issue_dir = _get_issue_dir(issue)
-    review_path = issue_dir / "review.md"
-
-    if not review_path.exists():
-        raise ValidationError(
-            "review.md not found. Complete the code_review substage and fill out review.md "
-            "before creating a PR. Run 'agenttree next' from implement.debug to enter code_review."
-        )
-
-    content = review_path.read_text()
-
-    # Find the Critical Issues section
-    # Match variations like "## Critical Issues" or "## Critical Issues (Blocking)"
-    critical_match = re.search(r'##\s*Critical Issues.*?\n(.*?)(?=\n##|\n---|\Z)', content, re.DOTALL | re.IGNORECASE)
-
-    if critical_match:
-        critical_section = critical_match.group(1)
-
-        # Remove HTML comments
-        critical_section = re.sub(r'<!--.*?-->', '', critical_section, flags=re.DOTALL)
-
-        # Check for any list items (- [ ] or - [x])
-        if re.search(r'-\s*\[[x ]\]', critical_section, re.IGNORECASE):
-            raise ValidationError(
-                "Critical Issues section in review.md is not empty. "
-                "Fix all critical issues and remove them from the list before creating a PR. "
-                "(Fixed issues should be removed, not checked off.)"
-            )
-
-
-@pre_transition(IMPLEMENT, IMPLEMENTATION_REVIEW)
-def require_wrapup_score(issue: Issue):
-    """Require that implementation wrapup scores meet the threshold.
-
-    Blocks transition if:
-    - review.md doesn't have a Self-Assessment Scores section
-    - Average score is below threshold (default 7.0)
-
-    Args:
-        issue: Issue being transitioned
-
-    Raises:
-        ValidationError: If scores are missing or below threshold
-    """
-    import re
-    import yaml
-
-    issue_dir = _get_issue_dir(issue)
-    review_path = issue_dir / "review.md"
-
-    if not review_path.exists():
-        raise ValidationError(
-            "review.md not found. Complete the wrapup substage before creating a PR."
-        )
-
-    content = review_path.read_text()
-
-    # Find the Self-Assessment Scores YAML block
-    # Look for ```yaml ... ``` after "Self-Assessment Scores"
-    scores_match = re.search(
-        r'###?\s*Self-Assessment Scores.*?```yaml\s*\n(.*?)```',
-        content,
-        re.DOTALL | re.IGNORECASE
-    )
-
-    if not scores_match:
-        raise ValidationError(
-            "Self-Assessment Scores not found in review.md. "
-            "Complete the wrapup substage and add your self-assessment scores."
-        )
-
-    try:
-        scores_yaml = yaml.safe_load(scores_match.group(1))
-    except Exception as e:
-        raise ValidationError(f"Invalid YAML in Self-Assessment Scores: {e}")
-
-    if not scores_yaml or "scores" not in scores_yaml:
-        raise ValidationError(
-            "Self-Assessment Scores section is missing 'scores' data. "
-            "Add scores for: correctness, test_coverage, code_quality, spec_alignment, documentation"
-        )
-
-    scores = scores_yaml["scores"]
-    required_fields = ["correctness", "test_coverage", "code_quality", "spec_alignment", "documentation"]
-
-    missing = [f for f in required_fields if f not in scores]
-    if missing:
-        raise ValidationError(
-            f"Missing score fields: {', '.join(missing)}. "
-            "All five criteria must be scored."
-        )
-
-    # Calculate average
-    try:
-        values = [float(scores[f]) for f in required_fields]
-        average = sum(values) / len(values)
-    except (TypeError, ValueError) as e:
-        raise ValidationError(f"Invalid score values: {e}. Scores must be numbers 1-10.")
-
-    threshold = float(scores_yaml.get("threshold", 7.0))
-
-    if average < threshold:
-        raise ValidationError(
-            f"Implementation score ({average:.1f}) is below threshold ({threshold}). "
-            f"Scores: correctness={scores['correctness']}, test_coverage={scores['test_coverage']}, "
-            f"code_quality={scores['code_quality']}, spec_alignment={scores['spec_alignment']}, "
-            f"documentation={scores['documentation']}. "
-            "Improve your implementation or adjust scores if they were too harsh."
-        )
-
-    console.print(f"[green]Implementation score: {average:.1f}/10 (threshold: {threshold})[/green]")
+# Note: require_review_md_for_pr and require_wrapup_score are now handled by
+# DocumentValidator in config.py. See DEFAULT_STAGES for the validation rules.
 
 
 @pre_transition(IMPLEMENTATION_REVIEW, ACCEPTED)

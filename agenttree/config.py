@@ -1,7 +1,7 @@
 """Configuration management for AgentTree."""
 
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, List, Literal, Optional, Union
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -14,13 +14,69 @@ class ToolConfig(BaseModel):
     skip_permissions: bool = False  # Add --dangerously-skip-permissions to command
 
 
+# =============================================================================
+# Document Validation Models
+# =============================================================================
+
+
+class SectionRule(BaseModel):
+    """Validation rules for a markdown section."""
+
+    min_length: int = 0  # Minimum content length (excluding comments)
+    must_be_empty: bool = False  # Section must have no list items
+    has_yaml: bool = False  # Section must contain a ```yaml block
+
+
+class FieldRule(BaseModel):
+    """Validation rules for a YAML field."""
+
+    type: Literal["str", "int", "float", "bool", "list"] = "str"
+    min: Optional[float] = None  # Minimum value (for numeric types)
+    max: Optional[float] = None  # Maximum value (for numeric types)
+    pattern: Optional[str] = None  # Regex pattern (for str type)
+    required: bool = True  # Field must exist
+
+
+class DocumentValidator(BaseModel):
+    """Configuration for document validation.
+
+    Example:
+        validators:
+          - type: require_document
+            file: review.md
+            sections:
+              "## Critical Issues":
+                must_be_empty: true
+              "## Summary":
+                min_length: 20
+            fields:
+              "scores.correctness":
+                type: float
+                min: 1
+                max: 10
+            rules:
+              - "mean(scores.*) >= 7.0"
+    """
+
+    type: Literal["require_document"] = "require_document"
+    file: str  # File to validate (e.g., "review.md")
+    sections: Dict[str, SectionRule] = Field(default_factory=dict)
+    fields: Dict[str, FieldRule] = Field(default_factory=dict)
+    rules: List[str] = Field(default_factory=list)  # Computed expressions
+
+
 class SubstageConfig(BaseModel):
-    """Configuration for a workflow substage."""
+    """Configuration for a workflow substage.
+
+    Validators can be:
+    - A string: references a named hook (e.g., "require_commits")
+    - A DocumentValidator: validates document sections/fields
+    """
 
     name: str
     output: Optional[str] = None  # Document created by this substage
     skill: Optional[str] = None   # Override skill file path
-    validators: list[str] = Field(default_factory=list)
+    validators: List[Union[str, DocumentValidator]] = Field(default_factory=list)
 
 
 class StageConfig(BaseModel):
@@ -81,9 +137,39 @@ DEFAULT_STAGES = [
             "test": SubstageConfig(name="test"),
             "code": SubstageConfig(name="code"),
             "debug": SubstageConfig(name="debug"),
-            "code_review": SubstageConfig(name="code_review", output="review.md", validators=["require_commits"]),
+            "code_review": SubstageConfig(
+                name="code_review",
+                output="review.md",
+                validators=[
+                    "require_commits",
+                    DocumentValidator(
+                        file="review.md",
+                        sections={
+                            "## Critical Issues": SectionRule(must_be_empty=True),
+                        },
+                    ),
+                ],
+            ),
             "address_review": SubstageConfig(name="address_review"),
-            "wrapup": SubstageConfig(name="wrapup", validators=["require_wrapup_score"]),
+            "wrapup": SubstageConfig(
+                name="wrapup",
+                validators=[
+                    DocumentValidator(
+                        file="review.md",
+                        sections={
+                            "## Self-Assessment Scores": SectionRule(has_yaml=True),
+                        },
+                        fields={
+                            "scores.correctness": FieldRule(type="float", min=1, max=10),
+                            "scores.test_coverage": FieldRule(type="float", min=1, max=10),
+                            "scores.code_quality": FieldRule(type="float", min=1, max=10),
+                            "scores.spec_alignment": FieldRule(type="float", min=1, max=10),
+                            "scores.documentation": FieldRule(type="float", min=1, max=10),
+                        },
+                        rules=["mean(scores.*) >= 7.0"],
+                    ),
+                ],
+            ),
         }
     ),
     StageConfig(name="implementation_review", human_review=True),
@@ -321,7 +407,9 @@ class Config(BaseModel):
         # Fall back to stage output
         return stage.output
 
-    def validators_for(self, stage_name: str, substage: Optional[str] = None) -> list[str]:
+    def validators_for(
+        self, stage_name: str, substage: Optional[str] = None
+    ) -> List[Union[str, "DocumentValidator"]]:
         """Get validators for a stage/substage.
 
         Args:
@@ -329,7 +417,7 @@ class Config(BaseModel):
             substage: Optional substage name
 
         Returns:
-            List of validator names
+            List of validators (strings for named hooks, DocumentValidator for document validation)
         """
         stage = self.get_stage(stage_name)
         if stage is None:
