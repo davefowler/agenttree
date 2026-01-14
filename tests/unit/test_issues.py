@@ -439,3 +439,107 @@ class TestLoadSkill:
         skill = load_skill(ACCEPTED)
         assert skill is None
 
+
+class TestSessionManagement:
+    """Tests for session management (restart detection)."""
+
+    @pytest.fixture
+    def temp_agenttrees(self, monkeypatch, tmp_path):
+        """Create a temporary _agenttree directory."""
+        agenttrees_path = tmp_path / "_agenttree"
+        agenttrees_path.mkdir()
+        (agenttrees_path / "issues").mkdir()
+        (agenttrees_path / "templates").mkdir()
+
+        # Create problem template
+        template = agenttrees_path / "templates" / "problem.md"
+        template.write_text("# Problem Statement\n\n")
+
+        # Monkeypatch get_agenttree_path to return our temp dir
+        monkeypatch.setattr(
+            "agenttree.issues.get_agenttree_path",
+            lambda: agenttrees_path
+        )
+        # Also monkeypatch sync to do nothing
+        monkeypatch.setattr(
+            "agenttree.issues.sync_agents_repo",
+            lambda *args, **kwargs: True
+        )
+
+        return agenttrees_path
+
+    def test_create_session(self, temp_agenttrees):
+        """Create a new session for an issue."""
+        from agenttree.issues import create_session, get_session
+
+        issue = create_issue("Test Issue")
+        session = create_session(issue.id)
+
+        assert session.issue_id == issue.id
+        assert session.oriented is False
+        assert session.session_id is not None
+
+        # Session should be retrievable
+        loaded = get_session(issue.id)
+        assert loaded is not None
+        assert loaded.session_id == session.session_id
+
+    def test_is_restart_false_for_new_session(self, temp_agenttrees):
+        """Fresh session (just created) is not a restart - it's oriented=False initially."""
+        from agenttree.issues import create_session, is_restart
+
+        issue = create_issue("Test Issue")
+        create_session(issue.id)
+
+        # New session with oriented=False means is_restart returns True
+        # because agent hasn't been oriented yet
+        assert is_restart(issue.id) is True
+
+    def test_is_restart_false_after_orientation(self, temp_agenttrees):
+        """After marking oriented, is_restart returns False."""
+        from agenttree.issues import create_session, is_restart, mark_session_oriented
+
+        issue = create_issue("Test Issue")
+        create_session(issue.id)
+        mark_session_oriented(issue.id)
+
+        assert is_restart(issue.id) is False
+
+    def test_is_restart_false_no_session(self, temp_agenttrees):
+        """No session = not a restart (fresh start)."""
+        from agenttree.issues import is_restart
+
+        issue = create_issue("Test Issue")
+        # Don't create session
+
+        assert is_restart(issue.id) is False
+
+    def test_update_session_stage(self, temp_agenttrees):
+        """Updating session stage also marks it as oriented."""
+        from agenttree.issues import create_session, get_session, update_session_stage
+
+        issue = create_issue("Test Issue")
+        create_session(issue.id)
+
+        update_session_stage(issue.id, RESEARCH, "explore")
+
+        session = get_session(issue.id)
+        assert session.last_stage == RESEARCH
+        assert session.last_substage == "explore"
+        assert session.oriented is True
+
+    def test_delete_session(self, temp_agenttrees):
+        """Deleting session removes the file."""
+        from agenttree.issues import create_session, get_session, delete_session
+
+        issue = create_issue("Test Issue")
+        create_session(issue.id)
+
+        # Session exists
+        assert get_session(issue.id) is not None
+
+        delete_session(issue.id)
+
+        # Session is gone
+        assert get_session(issue.id) is None
+

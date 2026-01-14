@@ -28,6 +28,13 @@ from agenttree.issues import (
     update_issue_stage,
     assign_agent,
     load_skill,
+    # Session management
+    create_session,
+    get_session,
+    is_restart,
+    mark_session_oriented,
+    update_session_stage,
+    delete_session,
     # Stage constants (strings)
     BACKLOG,
     DEFINE,
@@ -36,7 +43,12 @@ from agenttree.issues import (
     ACCEPTED,
     NOT_DOING,
 )
-from agenttree.hooks import execute_pre_hooks, execute_post_hooks, ValidationError
+from agenttree.hooks import (
+    execute_pre_hooks,
+    execute_post_hooks,
+    ValidationError,
+    is_running_in_container,
+)
 
 console = Console()
 
@@ -716,7 +728,6 @@ def start_agent(
     console.print(f"[green]✓ Dispatching agent for issue #{issue.id}: {issue.title}[/green]")
 
     # Create session for restart detection
-    from agenttree.issues import create_session
     create_session(issue.id)
 
     # Start agent in tmux (always in container)
@@ -1588,7 +1599,6 @@ def stage_next(issue_id: Optional[str], reassess: bool) -> None:
         return
 
     # Block agents from advancing past human review gates
-    from agenttree.hooks import is_running_in_container
     if issue.stage in HUMAN_REVIEW_STAGES and is_running_in_container():
         console.print(f"\n[yellow]⏳ Waiting for human approval[/yellow]")
         console.print(f"[dim]Stage '{issue.stage}' requires human review.[/dim]")
@@ -1596,7 +1606,6 @@ def stage_next(issue_id: Optional[str], reassess: bool) -> None:
         return
 
     # Check for restart and re-orient if needed
-    from agenttree.issues import is_restart, get_session, create_session, mark_session_oriented
     session = get_session(issue_id)
     if session is None:
         # No session exists - create one (fresh start or legacy case)
@@ -1613,7 +1622,6 @@ def stage_next(issue_id: Optional[str], reassess: bool) -> None:
         console.print(f"[bold]Current stage:[/bold] {stage_str}")
 
         # Show existing files
-        from agenttree.issues import get_issue_dir
         issue_dir = get_issue_dir(issue_id)
         if issue_dir:
             existing_files = [f.name for f in issue_dir.iterdir() if f.is_file() and not f.name.startswith('.')]
@@ -1681,7 +1689,6 @@ def stage_next(issue_id: Optional[str], reassess: bool) -> None:
         sys.exit(1)
 
     # Update session to track stage advancement
-    from agenttree.issues import update_session_stage
     update_session_stage(issue_id, next_stage, next_substage)
 
     # Execute post-hooks (after stage updated)
@@ -1724,9 +1731,6 @@ def approve_issue(issue_id: str) -> None:
     Example:
         agenttree approve 042
     """
-    from agenttree.hooks import is_running_in_container
-    from agenttree.issues import update_session_stage
-
     # Block if in container
     if is_running_in_container():
         console.print(f"[red]Error: 'approve' cannot be run from inside a container[/red]")
@@ -1789,9 +1793,6 @@ def defer_issue(issue_id: str) -> None:
     Example:
         agenttree defer 042
     """
-    from agenttree.hooks import is_running_in_container
-    from agenttree.issues import delete_session
-
     # Block if in container
     if is_running_in_container():
         console.print(f"[red]Error: 'defer' cannot be run from inside a container[/red]")

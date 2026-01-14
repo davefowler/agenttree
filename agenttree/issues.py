@@ -770,10 +770,14 @@ def save_session(session: AgentSession) -> None:
     """Save session state."""
     session_path = get_session_path(session.issue_id)
     if not session_path:
+        print(f"Warning: Could not find issue directory for {session.issue_id}, session not saved")
         return
 
-    with open(session_path, "w") as f:
-        yaml.dump(session.model_dump(mode="json"), f, default_flow_style=False, sort_keys=False)
+    try:
+        with open(session_path, "w") as f:
+            yaml.dump(session.model_dump(mode="json"), f, default_flow_style=False, sort_keys=False)
+    except Exception as e:
+        print(f"Warning: Failed to save session for {session.issue_id}: {e}")
 
 
 def update_session_stage(issue_id: str, stage: str, substage: Optional[str] = None) -> None:
