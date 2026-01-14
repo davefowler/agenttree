@@ -67,7 +67,8 @@ class TestIssueModel:
             updated="2026-01-11T12:00:00Z",
         )
         assert issue.id == "001"
-        assert issue.stage == BACKLOG
+        assert issue.stage == DEFINE  # New issues start at define stage
+        assert issue.substage == "draft"  # With draft substage
         assert issue.priority == Priority.MEDIUM
 
     def test_issue_with_all_fields(self):
@@ -119,7 +120,8 @@ class TestIssueCRUD:
         assert issue.id == "001"
         assert issue.title == "Test Issue"
         assert issue.priority == Priority.HIGH
-        assert issue.stage == BACKLOG
+        assert issue.stage == DEFINE  # New issues start at define stage
+        assert issue.substage == "draft"  # With draft substage
 
         # Check files created
         issue_dir = temp_agenttrees / "issues" / "001-test-issue"
@@ -198,12 +200,14 @@ class TestIssueCRUD:
         assert issue.stage == IMPLEMENT
         assert issue.history[0].stage == "implement"
 
-    def test_create_issue_defaults_to_backlog(self, temp_agenttrees):
-        """Test that not providing a stage defaults to backlog."""
+    def test_create_issue_defaults_to_define(self, temp_agenttrees):
+        """Test that not providing a stage defaults to define.draft."""
         issue = create_issue("Default Stage Issue")
 
-        assert issue.stage == BACKLOG
-        assert issue.history[0].stage == "backlog"
+        assert issue.stage == DEFINE
+        assert issue.substage == "draft"
+        assert issue.history[0].stage == "define"
+        assert issue.history[0].substage == "draft"
 
 
 class TestStageTransitions:
@@ -367,22 +371,22 @@ class TestUpdateIssueStage:
     def test_update_issue_stage(self, temp_agenttrees):
         """Update issue stage."""
         issue = create_issue("Test Issue")
-        assert issue.stage == BACKLOG
+        assert issue.stage == DEFINE  # New issues start at define
 
-        updated = update_issue_stage("001", DEFINE, "draft")
+        updated = update_issue_stage("001", RESEARCH, "explore")
         assert updated is not None
-        assert updated.stage == DEFINE
-        assert updated.substage == "draft"
+        assert updated.stage == RESEARCH
+        assert updated.substage == "explore"
 
     def test_update_issue_stage_adds_history(self, temp_agenttrees):
         """Updating stage adds history entry."""
         issue = create_issue("Test Issue")
         assert len(issue.history) == 1
 
-        updated = update_issue_stage("001", DEFINE, "draft", agent=1)
+        updated = update_issue_stage("001", RESEARCH, "explore", agent=1)
         assert len(updated.history) == 2
-        assert updated.history[-1].stage == "define"
-        assert updated.history[-1].substage == "draft"
+        assert updated.history[-1].stage == "research"
+        assert updated.history[-1].substage == "explore"
         assert updated.history[-1].agent == 1
 
     def test_update_issue_stage_not_found(self, temp_agenttrees):

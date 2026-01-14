@@ -55,8 +55,8 @@ class Issue(BaseModel):
     created: str
     updated: str
 
-    stage: str = BACKLOG
-    substage: Optional[str] = None
+    stage: str = DEFINE
+    substage: Optional[str] = "draft"
 
     assigned_agent: Optional[int] = None
     branch: Optional[str] = None
@@ -118,7 +118,8 @@ def create_issue(
     title: str,
     priority: Priority = Priority.MEDIUM,
     labels: Optional[list[str]] = None,
-    stage: str = BACKLOG,
+    stage: str = DEFINE,
+    substage: Optional[str] = None,
     problem: Optional[str] = None,
     context: Optional[str] = None,
     solutions: Optional[str] = None,
@@ -129,7 +130,8 @@ def create_issue(
         title: Issue title
         priority: Issue priority
         labels: Optional list of labels
-        stage: Starting stage for the issue (default: BACKLOG)
+        stage: Starting stage for the issue (default: DEFINE)
+        substage: Starting substage (default: "draft" for define stage)
         problem: Problem statement text (fills problem.md)
         context: Context/background text (fills problem.md)
         solutions: Possible solutions text (fills problem.md)
@@ -137,6 +139,9 @@ def create_issue(
     Returns:
         The created Issue object
     """
+    # Default substage for define stage
+    if stage == DEFINE and substage is None:
+        substage = "draft"
     # Sync before and after writing
     agents_path = get_agenttree_path()
     sync_agents_repo(agents_path, pull_only=True)
@@ -163,10 +168,11 @@ def create_issue(
         created=now,
         updated=now,
         stage=stage,
+        substage=substage,
         priority=priority,
         labels=labels or [],
         history=[
-            HistoryEntry(stage=stage, timestamp=now)
+            HistoryEntry(stage=stage, substage=substage, timestamp=now)
         ]
     )
 
@@ -698,3 +704,126 @@ def load_skill(
     except Exception:
         # If rendering fails, return raw content
         return skill_content
+
+
+# =============================================================================
+# Session Management (for restart detection)
+# =============================================================================
+
+class AgentSession(BaseModel):
+    """Tracks agent session state for restart detection."""
+    session_id: str  # Unique ID per agent start
+    issue_id: str
+    started_at: str
+    last_stage: str
+    last_substage: Optional[str] = None
+    last_advanced_at: str
+    oriented: bool = False  # True if agent has been oriented in this session
+
+
+def get_session_path(issue_id: str) -> Optional[Path]:
+    """Get path to session file for an issue."""
+    issue = get_issue(issue_id)
+    if not issue:
+        return None
+
+    issues_path = get_issues_path()
+    # Find issue directory
+    for d in issues_path.iterdir():
+        if d.is_dir() and d.name.startswith(f"{issue_id}-"):
+            return d / ".agent_session.yaml"
+    return None
+
+
+def get_session(issue_id: str) -> Optional[AgentSession]:
+    """Load session state for an issue."""
+    session_path = get_session_path(issue_id)
+    if not session_path or not session_path.exists():
+        return None
+
+    try:
+        with open(session_path) as f:
+            data = yaml.safe_load(f)
+            return AgentSession(**data)
+    except Exception:
+        return None
+
+
+def create_session(issue_id: str) -> AgentSession:
+    """Create a new session for an issue."""
+    import uuid
+
+    issue = get_issue(issue_id)
+    if not issue:
+        raise ValueError(f"Issue {issue_id} not found")
+
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    session = AgentSession(
+        session_id=str(uuid.uuid4())[:8],
+        issue_id=issue_id,
+        started_at=now,
+        last_stage=issue.stage,
+        last_substage=issue.substage,
+        last_advanced_at=now,
+        oriented=False,
+    )
+
+    save_session(session)
+    return session
+
+
+def save_session(session: AgentSession) -> None:
+    """Save session state."""
+    session_path = get_session_path(session.issue_id)
+    if not session_path:
+        return
+
+    with open(session_path, "w") as f:
+        yaml.dump(session.model_dump(mode="json"), f, default_flow_style=False, sort_keys=False)
+
+
+def update_session_stage(issue_id: str, stage: str, substage: Optional[str] = None) -> None:
+    """Update session after stage advancement."""
+    session = get_session(issue_id)
+    if not session:
+        return
+
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    session.last_stage = stage
+    session.last_substage = substage
+    session.last_advanced_at = now
+    session.oriented = True  # After advancing, agent is oriented
+    save_session(session)
+
+
+def mark_session_oriented(issue_id: str) -> None:
+    """Mark that agent has been oriented in this session."""
+    session = get_session(issue_id)
+    if not session:
+        return
+
+    session.oriented = True
+    save_session(session)
+
+
+def is_restart(issue_id: str) -> bool:
+    """Check if this is a restart (session exists but not oriented).
+
+    Returns True if:
+    - Session exists AND agent hasn't been oriented in this session
+
+    Returns False if:
+    - No session exists (fresh start)
+    - Session exists and agent has been oriented
+    """
+    session = get_session(issue_id)
+    if not session:
+        return False  # No session = fresh start
+    return not session.oriented
+
+
+def delete_session(issue_id: str) -> None:
+    """Delete session file (e.g., when agent is destroyed)."""
+    session_path = get_session_path(issue_id)
+    if session_path and session_path.exists():
+        session_path.unlink()

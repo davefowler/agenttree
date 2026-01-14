@@ -715,6 +715,10 @@ def start_agent(
 
     console.print(f"[green]✓ Dispatching agent for issue #{issue.id}: {issue.title}[/green]")
 
+    # Create session for restart detection
+    from agenttree.issues import create_session
+    create_session(issue.id)
+
     # Start agent in tmux (always in container)
     tool_name = tool or config.default_tool
     runtime = get_container_runtime()
@@ -1152,9 +1156,9 @@ def issue() -> None:
 )
 @click.option(
     "--stage", "-s",
-    type=click.Choice(["backlog", "problem", "research", "implement"]),
-    default="backlog",
-    help="Starting stage for the issue (default: backlog)"
+    type=click.Choice(["backlog", "define", "research", "implement"]),
+    default="define",
+    help="Starting stage for the issue (default: define)"
 )
 @click.option(
     "--problem",
@@ -1583,6 +1587,67 @@ def stage_next(issue_id: Optional[str], reassess: bool) -> None:
         console.print(f"[yellow]Issue is marked as not doing[/yellow]")
         return
 
+    # Block agents from advancing past human review gates
+    from agenttree.hooks import is_running_in_container
+    if issue.stage in HUMAN_REVIEW_STAGES and is_running_in_container():
+        console.print(f"\n[yellow]⏳ Waiting for human approval[/yellow]")
+        console.print(f"[dim]Stage '{issue.stage}' requires human review.[/dim]")
+        console.print(f"[dim]A human will run 'agenttree approve {issue.id}' when ready.[/dim]")
+        return
+
+    # Check for restart and re-orient if needed
+    from agenttree.issues import is_restart, get_session, create_session, mark_session_oriented
+    session = get_session(issue_id)
+    if session is None:
+        # No session exists - create one (fresh start or legacy case)
+        create_session(issue_id)
+        session = get_session(issue_id)
+
+    if is_restart(issue_id):
+        # This is a restart - re-orient the agent instead of advancing
+        console.print(f"\n[cyan]🔄 Session restart detected[/cyan]")
+        console.print(f"[dim]Resuming work on issue #{issue.id}: {issue.title}[/dim]\n")
+
+        stage_str = issue.stage
+        if issue.substage:
+            stage_str += f".{issue.substage}"
+        console.print(f"[bold]Current stage:[/bold] {stage_str}")
+
+        # Show existing files
+        from agenttree.issues import get_issue_dir
+        issue_dir = get_issue_dir(issue_id)
+        if issue_dir:
+            existing_files = [f.name for f in issue_dir.iterdir() if f.is_file() and not f.name.startswith('.')]
+            if existing_files:
+                console.print(f"[bold]Existing work:[/bold] {', '.join(existing_files)}")
+
+        # Show uncommitted changes if any
+        import subprocess
+        try:
+            result = subprocess.run(
+                ["git", "diff", "--stat", "--cached", "HEAD"],
+                capture_output=True, text=True, timeout=5
+            )
+            if result.stdout.strip():
+                console.print(f"\n[bold]Uncommitted changes:[/bold]")
+                console.print(result.stdout[:500])
+        except Exception:
+            pass
+
+        # Load and display current stage instructions
+        skill = load_skill(issue.stage, issue.substage, issue=issue)
+        if skill:
+            console.print(f"\n{'='*60}")
+            console.print(f"[bold cyan]Continue working on: {issue.stage.upper()}[/bold cyan]")
+            console.print(f"{'='*60}\n")
+            console.print(skill)
+
+        console.print(f"\n[dim]When ready to advance, run 'agenttree next' again.[/dim]")
+
+        # Mark as oriented so next call will advance
+        mark_session_oriented(issue_id)
+        return
+
     # Handle --reassess flag for plan revision cycling
     if reassess:
         if issue.stage != PLAN_REVISE:
@@ -1616,6 +1681,10 @@ def stage_next(issue_id: Optional[str], reassess: bool) -> None:
         console.print(f"[red]Failed to update issue[/red]")
         sys.exit(1)
 
+    # Update session to track stage advancement
+    from agenttree.issues import update_session_stage
+    update_session_stage(issue_id, next_stage, next_substage)
+
     # Execute post-hooks (after stage updated)
     execute_post_hooks(updated, from_stage, next_stage, next_substage)
 
@@ -1643,6 +1712,120 @@ def stage_next(issue_id: Optional[str], reassess: bool) -> None:
         console.print(f"[bold cyan]{header}[/bold cyan]")
         console.print(f"{'='*60}\n")
         console.print(skill)
+
+
+@main.command("approve")
+@click.argument("issue_id", type=str)
+def approve_issue(issue_id: str) -> None:
+    """Approve an issue at a human review stage.
+
+    Only works at human review stages (problem_review, plan_review, implementation_review).
+    Cannot be run from inside a container - humans only.
+
+    Example:
+        agenttree approve 042
+    """
+    from agenttree.hooks import is_running_in_container
+    from agenttree.issues import update_session_stage
+
+    # Block if in container
+    if is_running_in_container():
+        console.print(f"[red]Error: 'approve' cannot be run from inside a container[/red]")
+        console.print(f"[dim]This command is for human reviewers only.[/dim]")
+        sys.exit(1)
+
+    # Normalize issue ID
+    issue_id_normalized = issue_id.lstrip("0") or "0"
+    issue = get_issue_func(issue_id_normalized)
+    if not issue:
+        console.print(f"[red]Issue {issue_id} not found[/red]")
+        sys.exit(1)
+
+    # Check if at human review stage
+    if issue.stage not in HUMAN_REVIEW_STAGES:
+        console.print(f"[red]Issue is at '{issue.stage}', not a human review stage[/red]")
+        console.print(f"[dim]Human review stages: {', '.join(HUMAN_REVIEW_STAGES)}[/dim]")
+        sys.exit(1)
+
+    # Calculate next stage
+    next_stage, next_substage, _ = get_next_stage(issue.stage, issue.substage)
+
+    # Execute pre-hooks
+    from_stage = issue.stage
+    try:
+        execute_pre_hooks(issue, from_stage, next_stage)
+    except ValidationError as e:
+        console.print(f"[red]Cannot approve: {e}[/red]")
+        sys.exit(1)
+
+    # Update issue stage
+    updated = update_issue_stage(issue_id_normalized, next_stage, next_substage)
+    if not updated:
+        console.print(f"[red]Failed to update issue[/red]")
+        sys.exit(1)
+
+    # Update session
+    update_session_stage(issue_id_normalized, next_stage, next_substage)
+
+    # Execute post-hooks
+    execute_post_hooks(updated, from_stage, next_stage, next_substage)
+
+    stage_str = next_stage
+    if next_substage:
+        stage_str += f".{next_substage}"
+    console.print(f"[green]✓ Approved! Issue #{issue.id} moved to {stage_str}[/green]")
+
+    # Notify agent to continue (if active)
+    console.print(f"\n[dim]Notify the agent to continue:[/dim]")
+    console.print(f"  agenttree send {issue.id} 'Your work was approved! Run agenttree next for instructions.'")
+
+
+@main.command("defer")
+@click.argument("issue_id", type=str)
+def defer_issue(issue_id: str) -> None:
+    """Move an issue to backlog (defer for later).
+
+    This removes the issue from active work. Any running agent should be stopped.
+
+    Example:
+        agenttree defer 042
+    """
+    from agenttree.hooks import is_running_in_container
+    from agenttree.issues import delete_session
+
+    # Block if in container
+    if is_running_in_container():
+        console.print(f"[red]Error: 'defer' cannot be run from inside a container[/red]")
+        console.print(f"[dim]This command is for human reviewers only.[/dim]")
+        sys.exit(1)
+
+    # Normalize issue ID
+    issue_id_normalized = issue_id.lstrip("0") or "0"
+    issue = get_issue_func(issue_id_normalized)
+    if not issue:
+        console.print(f"[red]Issue {issue_id} not found[/red]")
+        sys.exit(1)
+
+    if issue.stage == BACKLOG:
+        console.print(f"[yellow]Issue is already in backlog[/yellow]")
+        return
+
+    if issue.stage == ACCEPTED:
+        console.print(f"[yellow]Issue is already accepted, cannot defer[/yellow]")
+        return
+
+    # Move to backlog
+    updated = update_issue_stage(issue_id_normalized, BACKLOG, None)
+    if not updated:
+        console.print(f"[red]Failed to update issue[/red]")
+        sys.exit(1)
+
+    # Delete session (agent should be stopped)
+    delete_session(issue_id_normalized)
+
+    console.print(f"[green]✓ Issue #{issue.id} moved to backlog[/green]")
+    console.print(f"\n[dim]Stop the agent if running:[/dim]")
+    console.print(f"  agenttree kill {issue.id}")
 
 
 # =============================================================================
