@@ -48,6 +48,11 @@ def sync_agents_repo(
     Returns:
         True if sync succeeded, False otherwise
     """
+    # Skip sync in containers - no SSH access, host handles syncing
+    from agenttree.hooks import is_running_in_container
+    if is_running_in_container():
+        return False
+
     # Check if directory exists and is a git repo
     if not agents_dir.exists() or not (agents_dir / ".git").exists():
         return False
