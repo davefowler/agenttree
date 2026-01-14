@@ -298,9 +298,16 @@ class TestStageTransitions:
         assert next_substage == "wrapup"
         assert is_review is False
 
-    def test_get_next_stage_wrapup_to_review(self):
-        """implement.wrapup -> implementation_review (human review)"""
+    def test_get_next_stage_wrapup_to_feedback(self):
+        """implement.wrapup -> implement.feedback"""
         next_stage, next_substage, is_review = get_next_stage(IMPLEMENT, "wrapup")
+        assert next_stage == IMPLEMENT
+        assert next_substage == "feedback"
+        assert is_review is False
+
+    def test_get_next_stage_feedback_to_review(self):
+        """implement.feedback -> implementation_review (human review)"""
+        next_stage, next_substage, is_review = get_next_stage(IMPLEMENT, "feedback")
         assert next_stage == IMPLEMENTATION_REVIEW
         assert next_substage is None
         assert is_review is True

@@ -84,6 +84,7 @@ DEFAULT_STAGES = [
             "code_review": SubstageConfig(name="code_review", output="review.md", validators=["require_commits"]),
             "address_review": SubstageConfig(name="address_review"),
             "wrapup": SubstageConfig(name="wrapup", validators=["require_wrapup_score"]),
+            "feedback": SubstageConfig(name="feedback", output="feedback.md"),
         }
     ),
     StageConfig(name="implementation_review", human_review=True),
