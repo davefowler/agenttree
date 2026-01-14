@@ -723,16 +723,10 @@ class AgentSession(BaseModel):
 
 def get_session_path(issue_id: str) -> Optional[Path]:
     """Get path to session file for an issue."""
-    issue = get_issue(issue_id)
-    if not issue:
+    issue_dir = get_issue_dir(issue_id)
+    if not issue_dir:
         return None
-
-    issues_path = get_issues_path()
-    # Find issue directory
-    for d in issues_path.iterdir():
-        if d.is_dir() and d.name.startswith(f"{issue_id}-"):
-            return d / ".agent_session.yaml"
-    return None
+    return issue_dir / ".agent_session.yaml"
 
 
 def get_session(issue_id: str) -> Optional[AgentSession]:
