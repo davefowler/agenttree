@@ -151,7 +151,9 @@ class HookRegistry:
     ):
         """Execute all pre-transition hooks.
 
-        Raises ValidationError if any hook fails, which blocks the transition.
+        Runs all hooks and collects ValidationError exceptions, then raises
+        a single combined error if any hooks failed. This allows agents to
+        see all missing requirements at once instead of one at a time.
 
         Args:
             issue: Issue being transitioned
@@ -159,11 +161,23 @@ class HookRegistry:
             to_stage: str transitioning to
 
         Raises:
-            ValidationError: If validation fails
+            ValidationError: If any validation fails (combined message if multiple)
         """
         key = (from_stage, to_stage)
+        errors: list[str] = []
+
         for hook in self.pre_transition.get(key, []):
-            hook(issue)  # Can raise ValidationError to block transition
+            try:
+                hook(issue)
+            except ValidationError as e:
+                errors.append(str(e))
+
+        if errors:
+            if len(errors) == 1:
+                raise ValidationError(errors[0])
+            else:
+                numbered = "\n".join(f"  {i+1}. {err}" for i, err in enumerate(errors))
+                raise ValidationError(f"Multiple validation errors:\n{numbered}")
 
     def execute_post_transition(
         self, issue: Issue, from_stage: str, to_stage: str
