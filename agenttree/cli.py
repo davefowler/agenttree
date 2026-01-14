@@ -1600,8 +1600,7 @@ def stage_next(issue_id: Optional[str], reassess: bool) -> None:
     session = get_session(issue_id)
     if session is None:
         # No session exists - create one (fresh start or legacy case)
-        create_session(issue_id)
-        session = get_session(issue_id)
+        session = create_session(issue_id)
 
     if is_restart(issue_id):
         # This is a restart - re-orient the agent instead of advancing
@@ -1621,11 +1620,11 @@ def stage_next(issue_id: Optional[str], reassess: bool) -> None:
             if existing_files:
                 console.print(f"[bold]Existing work:[/bold] {', '.join(existing_files)}")
 
-        # Show uncommitted changes if any
+        # Show uncommitted changes if any (both staged and unstaged)
         import subprocess
         try:
             result = subprocess.run(
-                ["git", "diff", "--stat", "--cached", "HEAD"],
+                ["git", "diff", "--stat", "HEAD"],
                 capture_output=True, text=True, timeout=5
             )
             if result.stdout.strip():
