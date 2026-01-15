@@ -378,25 +378,16 @@ async def start_issue(request: Request, issue_id: str):
     get_current_user()  # Check auth if enabled
 
     try:
-        # Run agenttree start in background
-        result = subprocess.run(
+        # Run agenttree start in background (don't wait for completion)
+        subprocess.Popen(
             ["uv", "run", "agenttree", "start", issue_id],
-            capture_output=True,
-            text=True,
-            timeout=30,
-            cwd=Path.cwd()
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            cwd=Path.cwd(),
+            start_new_session=True  # Detach from parent process
         )
-
-        if result.returncode == 0:
-            status = f"Agent started for issue #{issue_id}"
-            success = True
-        else:
-            status = f"Failed to start: {result.stderr[:200]}"
-            success = False
-
-    except subprocess.TimeoutExpired:
-        status = "Command timed out"
-        success = False
+        status = f"Starting agent for issue #{issue_id}..."
+        success = True
     except Exception as e:
         status = f"Error: {str(e)}"
         success = False
