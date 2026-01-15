@@ -43,6 +43,15 @@
 - Mock external dependencies (git, docker, filesystem)
 - Aim for high coverage on core workflow logic
 
+## Frontend Development
+
+When working on web UI (HTML, CSS, templates):
+- **Use Playwright MCP to review your work** - Don't commit CSS/layout changes without visually verifying them
+- Run the web server: `uv run python -m agenttree.web.app`
+- Use Playwright to screenshot pages: "use playwright to screenshot http://localhost:8080/kanban"
+- Check for layout issues, color contrast, responsive behavior
+- The web app uses a vintage green color palette - maintain consistency
+
 ## Workflow
 
 1. Read existing code before making changes
