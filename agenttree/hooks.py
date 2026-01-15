@@ -1284,3 +1284,51 @@ def require_spec_md_for_implement(issue: Issue):
                 f"{file_name} Approach section is too short. Describe your implementation "
                 "approach before moving to implementation stage."
             )
+
+
+@on_enter(ACCEPTED)
+def check_and_start_blocked_issues(issue: Issue):
+    """Check for blocked issues that can now be started when a dependency completes.
+
+    When an issue reaches ACCEPTED stage, scan all backlog issues that depend on it.
+    For each, check if ALL dependencies are now met, and if so, auto-start them.
+
+    This hook only runs on the host (not in containers) since agent dispatch
+    requires host-level git and container operations.
+
+    Args:
+        issue: Issue that just reached ACCEPTED stage
+    """
+    # Only run on host
+    if is_running_in_container():
+        return
+
+    from agenttree.issues import get_blocked_issues, check_dependencies_met, BACKLOG
+
+    blocked = get_blocked_issues(issue.id)
+    if not blocked:
+        return
+
+    console.print(f"\n[cyan]Checking blocked issues after #{issue.id} completed...[/cyan]")
+
+    for blocked_issue in blocked:
+        # Check if ALL dependencies are now met
+        all_met, unmet = check_dependencies_met(blocked_issue)
+        if all_met:
+            console.print(f"[green]→ Issue #{blocked_issue.id} ready to start (all dependencies met)[/green]")
+            try:
+                # Use subprocess to call agenttree start (safer than importing CLI)
+                result = subprocess.run(
+                    ["agenttree", "start", blocked_issue.id],
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+                if result.returncode == 0:
+                    console.print(f"[green]✓ Started agent for issue #{blocked_issue.id}[/green]")
+                else:
+                    console.print(f"[yellow]Could not start issue #{blocked_issue.id}: {result.stderr}[/yellow]")
+            except Exception as e:
+                console.print(f"[yellow]Failed to start issue #{blocked_issue.id}: {e}[/yellow]")
+        else:
+            console.print(f"[dim]→ Issue #{blocked_issue.id} still blocked by: {', '.join(unmet)}[/dim]")

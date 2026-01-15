@@ -13,7 +13,7 @@ from agenttree.issues import (
     IMPLEMENT,
     IMPLEMENTATION_REVIEW,
     RESEARCH,
-    PROBLEM_REVIEW,
+    DEFINE,
 )
 
 
@@ -1154,15 +1154,16 @@ class TestMissingHooks:
     def test_require_problem_md_for_research_not_implemented(self):
         """Document that require_problem_md_for_research hook doesn't exist.
 
-        Expected behavior: Should block PROBLEM_REVIEW -> RESEARCH transition
+        Expected behavior: Should block DEFINE -> RESEARCH transition
         when problem.md is missing or empty.
 
         This hook is mentioned in issue #038 problem.md but was never implemented.
+        Note: PROBLEM_REVIEW stage was removed - agents go directly from DEFINE to RESEARCH.
         """
         from agenttree.hooks import _registry
 
         # Check if this hook is registered for the expected transition
-        key = (PROBLEM_REVIEW, RESEARCH)
+        key = (DEFINE, RESEARCH)
         hooks_for_transition = _registry.pre_transition.get(key, [])
 
         # Get hook names

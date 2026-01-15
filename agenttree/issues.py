@@ -27,7 +27,6 @@ class Priority(str, Enum):
 # Full stage configuration is loaded from .agenttree.yaml via config.py
 BACKLOG = "backlog"
 DEFINE = "define"
-PROBLEM_REVIEW = "problem_review"
 RESEARCH = "research"
 PLAN = "plan"
 PLAN_ASSESS = "plan_assess"
@@ -63,6 +62,9 @@ class Issue(BaseModel):
 
     labels: list[str] = Field(default_factory=list)
     priority: Priority = Priority.MEDIUM
+
+    # Dependencies: list of issue IDs that must be completed (accepted stage) before this issue can start
+    dependencies: list[str] = Field(default_factory=list)
 
     github_issue: Optional[int] = None
     pr_number: Optional[int] = None
@@ -123,6 +125,7 @@ def create_issue(
     problem: Optional[str] = None,
     context: Optional[str] = None,
     solutions: Optional[str] = None,
+    dependencies: Optional[list[str]] = None,
 ) -> Issue:
     """Create a new issue.
 
@@ -135,6 +138,7 @@ def create_issue(
         problem: Problem statement text (fills problem.md)
         context: Context/background text (fills problem.md)
         solutions: Possible solutions text (fills problem.md)
+        dependencies: Optional list of issue IDs that must be completed first
 
     Returns:
         The created Issue object
@@ -159,6 +163,13 @@ def create_issue(
     issue_dir = issues_path / dir_name
     issue_dir.mkdir(exist_ok=True)
 
+    # Normalize dependencies (ensure they're padded to 3 digits)
+    normalized_deps: list[str] = []
+    if dependencies:
+        for dep in dependencies:
+            dep_num = dep.lstrip("0") or "0"
+            normalized_deps.append(f"{int(dep_num):03d}")
+
     # Create issue object
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     issue = Issue(
@@ -171,6 +182,7 @@ def create_issue(
         substage=substage,
         priority=priority,
         labels=labels or [],
+        dependencies=normalized_deps,
         history=[
             HistoryEntry(stage=stage, substage=substage, timestamp=now)
         ]
@@ -345,6 +357,76 @@ def get_issue_dir(issue_id: str) -> Optional[Path]:
     return None
 
 
+def check_dependencies_met(issue: Issue) -> tuple[bool, list[str]]:
+    """Check if all dependencies for an issue are met.
+
+    A dependency is met when the dependent issue is in the ACCEPTED stage.
+
+    Args:
+        issue: Issue to check dependencies for
+
+    Returns:
+        Tuple of (all_met, unmet_ids) where:
+        - all_met: True if all dependencies are met
+        - unmet_ids: List of issue IDs that are not yet completed
+    """
+    if not issue.dependencies:
+        return True, []
+
+    unmet = []
+    for dep_id in issue.dependencies:
+        dep_issue = get_issue(dep_id)
+        if dep_issue is None:
+            # Dependency doesn't exist - treat as unmet
+            unmet.append(dep_id)
+        elif dep_issue.stage != ACCEPTED:
+            unmet.append(dep_id)
+
+    return len(unmet) == 0, unmet
+
+
+def get_blocked_issues(completed_issue_id: str) -> list[Issue]:
+    """Get all issues in backlog that were waiting on a completed issue.
+
+    Args:
+        completed_issue_id: ID of the issue that was just completed
+
+    Returns:
+        List of issues that have this issue as a dependency
+    """
+    # Normalize the ID for comparison
+    normalized_id = completed_issue_id.lstrip("0") or "0"
+
+    blocked = []
+    for issue in list_issues(stage=BACKLOG):
+        # Check if this issue depends on the completed issue
+        for dep_id in issue.dependencies:
+            dep_normalized = dep_id.lstrip("0") or "0"
+            if dep_normalized == normalized_id:
+                blocked.append(issue)
+                break
+
+    return blocked
+
+
+def get_ready_issues() -> list[Issue]:
+    """Get all issues in backlog that have all dependencies met and can be started.
+
+    Returns:
+        List of issues that are ready to start
+    """
+    ready = []
+    for issue in list_issues(stage=BACKLOG):
+        if issue.dependencies:
+            all_met, _ = check_dependencies_met(issue)
+            if all_met:
+                ready.append(issue)
+        # Issues without dependencies in backlog can also be started
+        # but they were likely put there intentionally, so don't auto-start
+
+    return ready
+
+
 # Stage workflow definitions are now config-driven via .agenttree.yaml
 # These compatibility constants are provided for backward compatibility with tests
 # but the actual workflow logic uses Config.get_next_stage()
@@ -354,7 +436,6 @@ def get_issue_dir(issue_id: str) -> Optional[Path]:
 STAGE_ORDER = [
     BACKLOG,
     DEFINE,
-    PROBLEM_REVIEW,
     RESEARCH,
     PLAN,
     PLAN_ASSESS,
@@ -373,7 +454,6 @@ STAGE_SUBSTAGES = {
 }
 
 HUMAN_REVIEW_STAGES = {
-    PROBLEM_REVIEW,
     PLAN_REVIEW,
     IMPLEMENTATION_REVIEW,
 }

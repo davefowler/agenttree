@@ -11,7 +11,6 @@ class StageEnum(str, Enum):
 
     BACKLOG = "backlog"
     DEFINE = "define"
-    PROBLEM_REVIEW = "problem_review"
     RESEARCH = "research"
     PLAN = "plan"
     PLAN_ASSESS = "plan_assess"
