@@ -1,3 +1,9 @@
+{% if success %}
 <div style="margin-top: 10px; padding: 10px; background: #3fb95020; border-radius: 6px; font-size: 13px; color: #3fb950;">
     ✓ {{ status }}
 </div>
+{% else %}
+<div style="margin-top: 10px; padding: 10px; background: #f8514920; border-radius: 6px; font-size: 13px; color: #f85149;">
+    ✗ {{ status }}
+</div>
+{% endif %}

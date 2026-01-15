@@ -30,14 +30,15 @@
 
     <div class="detail-actions">
         {% if issue.url %}
-        <a href="{{ issue.url }}" target="_blank" class="btn btn-primary">View on GitHub</a>
+        <a href="{{ issue.url }}" target="_blank" class="btn">View on GitHub</a>
         {% endif %}
-        <button class="btn"
-                hx-post="/agent/1/dispatch"
-                hx-vals='{"issue_number": {{ issue.number }}}'
-                hx-swap="none">
-            Dispatch to Agent
+        <button class="btn btn-primary"
+                hx-post="/api/issues/{{ issue.number }}/start"
+                hx-target="#dispatch-status-{{ issue.number }}"
+                hx-swap="innerHTML">
+            Start Agent
         </button>
+        <span id="dispatch-status-{{ issue.number }}"></span>
     </div>
 
     <div class="detail-timestamps">
