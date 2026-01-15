@@ -967,24 +967,27 @@ def cleanup_issue_agent(issue: Issue) -> None:
     except Exception as e:
         console.print(f"[yellow]  Warning: Could not stop tmux session: {e}[/yellow]")
 
-    # Stop container (if running)
+    # Stop container (if running) - use detected runtime (container/docker/podman)
     try:
-        result = subprocess.run(
-            ["docker", "stop", agent.container],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if result.returncode == 0:
-            console.print(f"[dim]  Stopped container: {agent.container}[/dim]")
+        from agenttree.container import get_container_runtime
+        runtime = get_container_runtime()
+        if runtime.runtime:
+            result = subprocess.run(
+                [runtime.runtime, "stop", agent.container],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if result.returncode == 0:
+                console.print(f"[dim]  Stopped container: {agent.container}[/dim]")
 
-        # Remove container
-        subprocess.run(
-            ["docker", "rm", agent.container],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+            # Remove container
+            subprocess.run(
+                [runtime.runtime, "rm", agent.container],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
     except Exception as e:
         console.print(f"[yellow]  Warning: Could not stop container: {e}[/yellow]")
 
