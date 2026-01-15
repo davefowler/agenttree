@@ -1207,7 +1207,19 @@ def issue() -> None:
     "--solutions",
     help="Possible solutions (fills problem.md)"
 )
+@click.option(
+    "--depends-on", "-d",
+    multiple=True,
+    help="Issue ID that must be completed first (can be used multiple times)"
+)
+@click.option(
+    "--no-auto-start",
+    is_flag=True,
+    help="Don't auto-start an agent (just create the issue)"
+)
+@click.pass_context
 def issue_create(
+    ctx: click.Context,
     title: str,
     priority: str,
     label: tuple,
@@ -1215,6 +1227,8 @@ def issue_create(
     problem: Optional[str],
     context: Optional[str],
     solutions: Optional[str],
+    depends_on: tuple,
+    no_auto_start: bool,
 ) -> None:
     """Create a new issue.
 
@@ -1222,26 +1236,82 @@ def issue_create(
     - issue.yaml (metadata)
     - problem.md (from template or provided content)
 
+    By default, an agent is automatically dispatched to start working on the issue.
+    Use --no-auto-start to create the issue without dispatching an agent.
+
+    Issues with unmet dependencies are placed in backlog and auto-started when
+    all dependencies are completed.
+
     Example:
         agenttree issue create "Fix login validation"
         agenttree issue create "Add dark mode" -p high -l ui -l feature
         agenttree issue create "Quick fix" --stage implement
         agenttree issue create "Bug" --problem "The login fails" --context "On Chrome only"
+        agenttree issue create "Manual issue" --no-auto-start
+        agenttree issue create "Feature B" --depends-on 053 --depends-on 060
     """
+    from agenttree.issues import check_dependencies_met
+
+    dependencies = list(depends_on) if depends_on else None
+
+    # If dependencies are specified, check if they're all met
+    # If not, force the issue to backlog stage
+    effective_stage = stage
+    has_unmet_deps = False
+
+    if dependencies:
+        # Create a temporary issue object just to check dependencies
+        # We'll use the normalized deps for the check
+        normalized_deps = []
+        for dep in dependencies:
+            dep_num = dep.lstrip("0") or "0"
+            normalized_deps.append(f"{int(dep_num):03d}")
+
+        # Check each dependency
+        unmet = []
+        for dep_id in normalized_deps:
+            dep_issue = get_issue_func(dep_id)
+            if dep_issue is None or dep_issue.stage != "accepted":
+                unmet.append(dep_id)
+
+        if unmet:
+            has_unmet_deps = True
+            effective_stage = "backlog"
+            console.print(f"[yellow]Dependencies not met: {', '.join(unmet)}[/yellow]")
+            console.print(f"[dim]Issue will be placed in backlog until dependencies complete[/dim]")
+
     try:
         issue = create_issue_func(
             title=title,
             priority=Priority(priority),
             labels=list(label) if label else None,
-            stage=stage,
+            stage=effective_stage,
             problem=problem,
             context=context,
             solutions=solutions,
+            dependencies=dependencies,
         )
         console.print(f"[green]✓ Created issue {issue.id}: {issue.title}[/green]")
         console.print(f"[dim]  _agenttree/issues/{issue.id}-{issue.slug}/[/dim]")
         console.print(f"[dim]  Stage: {issue.stage}[/dim]")
-        console.print(f"\n[dim]Dispatch an agent: agenttree start {issue.id}[/dim]")
+        if issue.dependencies:
+            console.print(f"[dim]  Dependencies: {', '.join(issue.dependencies)}[/dim]")
+
+        # Auto-start agent unless disabled or issue has unmet dependencies
+        if no_auto_start:
+            console.print(f"\n[dim]Dispatch an agent: agenttree start {issue.id}[/dim]")
+        elif has_unmet_deps:
+            console.print(f"\n[yellow]Issue blocked by dependencies - will auto-start when deps complete[/yellow]")
+        elif effective_stage == "backlog":
+            console.print(f"\n[dim]Issue in backlog - dispatch manually: agenttree start {issue.id}[/dim]")
+        else:
+            console.print(f"\n[cyan]Auto-starting agent for issue #{issue.id}...[/cyan]")
+            try:
+                ctx.invoke(start_agent, issue_id=issue.id, tool=None, force=False)
+            except SystemExit:
+                # start_agent may exit on error, but we've already created the issue
+                console.print(f"[yellow]Issue created but agent failed to start[/yellow]")
+                console.print(f"[dim]Try manually: agenttree start {issue.id}[/dim]")
 
     except Exception as e:
         console.print(f"[red]Error creating issue: {e}[/red]")
@@ -1362,6 +1432,15 @@ def issue_show(issue_id: str) -> None:
     if issue.labels:
         console.print(f"[bold]Labels:[/bold] {', '.join(issue.labels)}")
 
+    if issue.dependencies:
+        from agenttree.issues import check_dependencies_met
+        all_met, unmet = check_dependencies_met(issue)
+        deps_str = ", ".join(issue.dependencies)
+        if all_met:
+            console.print(f"[bold]Dependencies:[/bold] {deps_str} [green](all met)[/green]")
+        else:
+            console.print(f"[bold]Dependencies:[/bold] {deps_str} [yellow](waiting on: {', '.join(unmet)})[/yellow]")
+
     if issue.branch:
         console.print(f"[bold]Branch:[/bold] {issue.branch}")
 
@@ -1440,6 +1519,62 @@ def issue_doc(doc_type: str, issue_id: str) -> None:
 
     console.print(f"\n[bold]Path:[/bold] {doc_file}")
     console.print(f"\n[dim]Write your {doc_type} documentation to this file.[/dim]")
+
+
+@issue.command("check-deps")
+def issue_check_deps() -> None:
+    """Check all blocked issues and their dependency status.
+
+    Shows issues in backlog that have dependencies and whether
+    those dependencies are met or still pending.
+
+    Example:
+        agenttree issue check-deps
+    """
+    from agenttree.issues import check_dependencies_met, get_ready_issues
+
+    blocked_issues = list_issues_func(stage="backlog")
+
+    if not blocked_issues:
+        console.print("[dim]No issues in backlog[/dim]")
+        return
+
+    # Filter to only issues with dependencies
+    issues_with_deps = [i for i in blocked_issues if i.dependencies]
+
+    if not issues_with_deps:
+        console.print("[dim]No issues in backlog with dependencies[/dim]")
+        return
+
+    table = Table(title="Blocked Issues in Backlog")
+    table.add_column("ID", style="cyan")
+    table.add_column("Title", style="white")
+    table.add_column("Dependencies", style="yellow")
+    table.add_column("Status", style="magenta")
+
+    for issue in issues_with_deps:
+        all_met, unmet = check_dependencies_met(issue)
+        deps_str = ", ".join(issue.dependencies)
+
+        if all_met:
+            status = "[green]✓ Ready to start[/green]"
+        else:
+            status = f"[red]Blocked by: {', '.join(unmet)}[/red]"
+
+        table.add_row(
+            issue.id,
+            issue.title[:35] + ("..." if len(issue.title) > 35 else ""),
+            deps_str,
+            status,
+        )
+
+    console.print(table)
+
+    # Show ready issues
+    ready = get_ready_issues()
+    if ready:
+        console.print(f"\n[green]Ready to start: {', '.join(i.id for i in ready)}[/green]")
+        console.print("[dim]These will auto-start when their dependencies are accepted[/dim]")
 
 
 # =============================================================================
@@ -1749,7 +1884,7 @@ def stage_next(issue_id: Optional[str], reassess: bool) -> None:
 def approve_issue(issue_id: str) -> None:
     """Approve an issue at a human review stage.
 
-    Only works at human review stages (problem_review, plan_review, implementation_review).
+    Only works at human review stages (plan_review, implementation_review).
     Cannot be run from inside a container - humans only.
 
     Example:
