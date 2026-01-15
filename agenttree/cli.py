@@ -647,8 +647,6 @@ def preflight() -> None:
     - agenttree CLI is accessible
     - Test runner (pytest) is available
     """
-    from agenttree.preflight import run_preflight
-
     console.print("[bold]Running preflight checks...[/bold]\n")
 
     results = run_preflight()
