@@ -17,44 +17,51 @@
             background: #1e3a2f;
             color: #e8e4d9;
             line-height: 1.6;
-            overflow-x: auto;
+            overflow: hidden;
+            height: 100vh;
         }
 
         header {
             background: #2d4a3e;
             border-bottom: 1px solid #4a7c6f;
-            padding: 20px;
+            padding: 10px 20px;
             position: sticky;
             top: 0;
             z-index: 100;
         }
 
-        .container {
-            max-width: 1600px;
-            margin: 0 auto;
+        .header-row {
+            display: flex;
+            align-items: center;
+            gap: 30px;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
 
         h1 {
             color: #a8d5ba;
-            font-size: 28px;
+            font-size: 20px;
             font-weight: 600;
+            margin: 0;
         }
 
         .subtitle {
-            color: #8eb89c;
-            font-size: 14px;
-            margin-top: 5px;
+            display: none;
         }
 
         .tabs {
             display: flex;
             gap: 0;
-            margin-top: 20px;
-            border-bottom: 1px solid #4a7c6f;
+            border-bottom: none;
+            margin: 0;
         }
 
         .tab {
-            padding: 10px 20px;
+            padding: 8px 16px;
             color: #8eb89c;
             text-decoration: none;
             border-bottom: 2px solid transparent;
@@ -76,9 +83,9 @@
         .kanban-board {
             display: flex;
             gap: 15px;
-            padding: 20px;
+            padding: 15px;
             overflow-x: auto;
-            min-height: calc(100vh - 150px);
+            height: calc(100vh - 60px);
         }
 
         .kanban-column {
@@ -88,7 +95,7 @@
             border-radius: 6px;
             display: flex;
             flex-direction: column;
-            max-height: calc(100vh - 180px);
+            max-height: calc(100vh - 90px);
         }
 
         .column-header {
@@ -339,9 +346,8 @@
 </head>
 <body>
     <header>
-        <div class="container">
-            <h1>🌳 AgentTree Dashboard</h1>
-            <div class="subtitle">Multi-agent development framework</div>
+        <div class="header-row">
+            <h1>🌳 AgentTree</h1>
             <nav class="tabs">
                 <a href="/" class="tab">Dashboard</a>
                 <a href="/kanban" class="tab active">Kanban</a>
