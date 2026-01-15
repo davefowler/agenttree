@@ -233,6 +233,7 @@ def list_issues(
     stage: Optional[str] = None,
     priority: Optional[Priority] = None,
     assigned_agent: Optional[int] = None,
+    sync: bool = True,
 ) -> list[Issue]:
     """List issues, optionally filtered.
 
@@ -240,13 +241,15 @@ def list_issues(
         stage: Filter by stage
         priority: Filter by priority
         assigned_agent: Filter by assigned agent
+        sync: If True, sync with remote before reading (default True for CLI, False for web)
 
     Returns:
         List of Issue objects
     """
-    # Sync before reading
-    agents_path = get_agenttree_path()
-    sync_agents_repo(agents_path, pull_only=True)
+    # Sync before reading (skip for web UI to avoid latency)
+    if sync:
+        agents_path = get_agenttree_path()
+        sync_agents_repo(agents_path, pull_only=True)
 
     issues_path = get_issues_path()
     if not issues_path.exists():
@@ -283,18 +286,20 @@ def list_issues(
     return issues
 
 
-def get_issue(issue_id: str) -> Optional[Issue]:
+def get_issue(issue_id: str, sync: bool = True) -> Optional[Issue]:
     """Get a single issue by ID.
 
     Args:
         issue_id: Issue ID (e.g., "001" or "001-fix-login")
+        sync: If True, sync with remote before reading (default True for CLI, False for web)
 
     Returns:
         Issue object or None if not found
     """
-    # Sync before reading
-    agents_path = get_agenttree_path()
-    sync_agents_repo(agents_path, pull_only=True)
+    # Sync before reading (skip for web UI to avoid latency)
+    if sync:
+        agents_path = get_agenttree_path()
+        sync_agents_repo(agents_path, pull_only=True)
 
     issues_path = get_issues_path()
     if not issues_path.exists():

@@ -1,7 +1,44 @@
+/* CSS Variables for theming */
+:root, [data-theme="light"] {
+    --bg-primary: #e8f4ec;
+    --bg-secondary: #d5ebe0;
+    --bg-card: #ffffff;
+    --bg-card-alt: #f5faf7;
+    --border-color: #a8d5ba;
+    --border-light: #c8e4d0;
+    --text-primary: #1e3a2f;
+    --text-secondary: #3d6b5a;
+    --text-accent: #2d5a4a;
+    --text-card: #1e3a2f;
+    --text-muted: #5d8a6b;
+    --btn-bg: #c8e4d0;
+    --btn-bg-hover: #a8d5ba;
+    --btn-bg-active: #8ec4a6;
+    --badge-bg: #d5ebe0;
+    --badge-text: #2d5a4a;
+}
+
+[data-theme="dark"] {
+    --bg-primary: #0a0a0a;
+    --bg-secondary: #141414;
+    --bg-card: #1a1a1a;
+    --bg-card-alt: #222222;
+    --border-color: #2d5a4a;
+    --border-light: #333333;
+    --text-primary: #e0e0e0;
+    --text-secondary: #6fbf8a;
+    --text-accent: #4ade80;
+    --text-card: #e0e0e0;
+    --text-muted: #888888;
+    --btn-bg: #1a3a2a;
+    --btn-bg-hover: #2d5a4a;
+    --btn-bg-active: #3d6b5a;
+    --badge-bg: #1a3a2a;
+    --badge-text: #4ade80;
+}
+
 /* Shared header styles */
 header {
-    background: #2d4a3e;
-    border-bottom: 1px solid #4a7c6f;
     padding: 10px 20px;
     position: sticky;
     top: 0;
@@ -15,7 +52,7 @@ header {
 }
 
 header h1 {
-    color: #a8d5ba;
+    color: var(--text-accent);
     font-size: 20px;
     font-weight: 600;
     margin: 0;
@@ -30,7 +67,7 @@ header h1 {
 
 .tab {
     padding: 8px 16px;
-    color: #8eb89c;
+    color: var(--text-secondary);
     text-decoration: none;
     border-bottom: 2px solid transparent;
     transition: all 0.2s;
@@ -39,13 +76,13 @@ header h1 {
 }
 
 .tab:hover {
-    color: #e8e4d9;
-    border-bottom-color: #4a7c6f;
+    color: var(--text-primary);
+    border-bottom-color: var(--border-color);
 }
 
 .tab.active {
-    color: #a8d5ba;
-    border-bottom-color: #a8d5ba;
+    color: var(--text-accent);
+    border-bottom-color: var(--text-accent);
 }
 
 .stage-toggle {
@@ -57,20 +94,36 @@ header h1 {
 
 .toggle-btn {
     padding: 6px 12px;
-    background: #3d6b5a;
-    border: 1px solid #4a7c6f;
+    background: var(--btn-bg);
+    border: 1px solid var(--border-color);
     border-radius: 4px;
-    color: #e8e4d9;
+    color: var(--text-primary);
     font-size: 13px;
     cursor: pointer;
     transition: all 0.2s;
 }
 
 .toggle-btn:hover {
-    background: #4a7c6f;
+    background: var(--btn-bg-hover);
 }
 
 .toggle-btn.active {
-    background: #5d8a6b;
-    border-color: #6b9a7a;
+    background: var(--btn-bg-active);
+    border-color: var(--text-accent);
+}
+
+.theme-toggle {
+    margin-left: auto;
+    background: var(--btn-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 6px 10px;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 16px;
+    line-height: 1;
+}
+
+.theme-toggle:hover {
+    background: var(--btn-bg-hover);
 }

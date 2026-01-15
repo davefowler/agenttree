@@ -46,6 +46,8 @@ class Issue(IssueBase):
     stage: StageEnum = StageEnum.BACKLOG
     status: IssueStatus = IssueStatus.OPEN
     url: Optional[str] = None
+    pr_url: Optional[str] = None
+    pr_number: Optional[int] = None
     assigned_agent: Optional[int] = None
     created_at: datetime
     updated_at: datetime

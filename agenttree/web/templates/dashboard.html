@@ -14,8 +14,8 @@
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #1e3a2f;
-            color: #e8e4d9;
+            background: var(--bg-primary);
+            color: var(--text-primary);
             line-height: 1.6;
         }
 
@@ -35,16 +35,16 @@
         }
 
         .agent-card {
-            background: #f8f6f0;
-            border: 1px solid #4a7c6f;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
             border-radius: 6px;
             padding: 20px;
             transition: border-color 0.2s;
-            color: #2d4a3e;
+            color: var(--text-card);
         }
 
         .agent-card:hover {
-            border-color: #5d8a6b;
+            border-color: var(--text-accent);
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
         }
 
@@ -54,13 +54,13 @@
             align-items: center;
             margin-bottom: 15px;
             padding-bottom: 15px;
-            border-bottom: 1px solid #d4d0c4;
+            border-bottom: 1px solid var(--border-light);
         }
 
         .agent-title {
             font-size: 18px;
             font-weight: 600;
-            color: #2d4a3e;
+            color: var(--text-card);
         }
 
         .status-badge {
@@ -72,13 +72,13 @@
         }
 
         .status-idle {
-            background: #e8f4ec;
-            color: #4a7c6f;
+            background: var(--badge-bg);
+            color: var(--badge-text);
         }
 
         .status-working {
-            background: #d4eedd;
-            color: #2d6b4a;
+            background: var(--badge-bg);
+            color: var(--text-accent);
         }
 
         .status-error {
@@ -98,17 +98,17 @@
         }
 
         .info-label {
-            color: #6b8f7a;
+            color: var(--text-muted);
         }
 
         .info-value {
-            color: #2d4a3e;
+            color: var(--text-card);
             font-family: 'SF Mono', Monaco, monospace;
         }
 
         .tmux-container {
-            background: #1e3a2f;
-            border: 1px solid #4a7c6f;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
             border-radius: 6px;
             padding: 15px;
             margin: 15px 0;
@@ -121,7 +121,7 @@
             font-size: 12px;
             line-height: 1.4;
             white-space: pre-wrap;
-            color: #a8d5ba;
+            color: var(--text-accent);
         }
 
         .actions {
@@ -132,9 +132,9 @@
 
         .btn {
             padding: 8px 16px;
-            border: 1px solid #4a7c6f;
-            background: #3d6b5a;
-            color: #f8f6f0;
+            border: 1px solid var(--border-color);
+            background: var(--btn-bg);
+            color: var(--text-primary);
             border-radius: 6px;
             font-size: 14px;
             cursor: pointer;
@@ -142,19 +142,18 @@
         }
 
         .btn:hover {
-            background: #4a7c6f;
-            border-color: #5d8a6b;
+            background: var(--btn-bg-hover);
         }
 
         .btn-primary {
-            background: #5d8a6b;
-            border-color: #5d8a6b;
-            color: #f8f6f0;
+            background: var(--btn-bg-active);
+            border-color: var(--btn-bg-active);
+            color: var(--text-primary);
         }
 
         .btn-primary:hover {
-            background: #6b9a7a;
-            border-color: #6b9a7a;
+            background: var(--text-accent);
+            border-color: var(--text-accent);
         }
 
         .input-group {
@@ -168,10 +167,10 @@
         textarea {
             flex: 1;
             padding: 8px 12px;
-            background: #f8f6f0;
-            border: 1px solid #4a7c6f;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
             border-radius: 6px;
-            color: #2d4a3e;
+            color: var(--text-card);
             font-size: 14px;
             font-family: inherit;
         }
@@ -179,7 +178,7 @@
         input:focus,
         textarea:focus {
             outline: none;
-            border-color: #5d8a6b;
+            border-color: var(--text-accent);
         }
 
         textarea {
@@ -190,7 +189,7 @@
         .refresh-indicator {
             display: inline-block;
             margin-left: 10px;
-            color: #a8d5ba;
+            color: var(--text-accent);
             animation: spin 1s linear infinite;
         }
 
@@ -201,9 +200,9 @@
         .footer {
             text-align: center;
             padding: 20px;
-            color: #8eb89c;
+            color: var(--text-secondary);
             font-size: 12px;
-            border-top: 1px solid #4a7c6f;
+            border-top: 1px solid var(--border-color);
             margin-top: 30px;
         }
 

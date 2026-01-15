@@ -975,6 +975,17 @@ def create_pull_request_hook(issue: Issue):
 
     console.print(f"[green]✓ PR created: {pr.url}[/green]")
 
+    # Request Cursor code review
+    try:
+        subprocess.run(
+            ["gh", "pr", "comment", str(pr.number), "--body", "@cursor do a code review"],
+            capture_output=True,
+            check=True,
+        )
+        console.print(f"[dim]Requested Cursor code review[/dim]")
+    except Exception:
+        pass  # Non-critical
+
 
 def ensure_pr_for_issue(issue_id: str) -> bool:
     """Ensure a PR exists for an issue at implementation_review stage.
@@ -1044,8 +1055,32 @@ def ensure_pr_for_issue(issue_id: str) -> bool:
         pr = create_pr(title=title, body=body, branch=issue.branch, base="main")
         update_issue_metadata(issue.id, pr_number=pr.number, pr_url=pr.url)
         console.print(f"[green]✓ PR #{pr.number} created for issue #{issue_id}[/green]")
+
+        # Request Cursor code review
+        try:
+            subprocess.run(
+                ["gh", "pr", "comment", str(pr.number), "--body", "@cursor do a code review"],
+                capture_output=True,
+                check=True,
+            )
+            console.print(f"[dim]Requested Cursor code review[/dim]")
+        except Exception:
+            pass  # Non-critical, don't fail if comment fails
+
         return True
     except Exception as e:
+        error_msg = str(e)
+        # Check if PR already exists - extract PR URL and update issue
+        if "already exists" in error_msg:
+            # Try to extract PR URL from error message
+            import re
+            match = re.search(r'https://github\.com/[^/]+/[^/]+/pull/(\d+)', error_msg)
+            if match:
+                pr_number = int(match.group(1))
+                pr_url = match.group(0)
+                update_issue_metadata(issue.id, pr_number=pr_number, pr_url=pr_url)
+                console.print(f"[green]✓ PR #{pr_number} already exists for issue #{issue_id}[/green]")
+                return True
         console.print(f"[red]Failed to create PR: {e}[/red]")
         return False
 

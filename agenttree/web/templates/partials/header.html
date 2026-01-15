@@ -1,6 +1,6 @@
 <header>
     <div class="header-row">
-        <h1>🌳 AgentTree</h1>
+        <h1>🤖🌳 AgentTree</h1>
         <nav class="tabs">
             <a href="/" class="tab {{ 'active' if active_page == 'dashboard' else '' }}">Dashboard</a>
             <a href="/kanban" class="tab {{ 'active' if active_page == 'kanban' else '' }}">Kanban</a>
@@ -13,5 +13,38 @@
             <button class="toggle-btn" onclick="setStageView('all')" id="toggle-all">All Stages</button>
         </div>
         {% endif %}
+        <button class="theme-toggle" onclick="toggleTheme()" title="Toggle light/dark theme">
+            <span class="theme-icon">🌙</span>
+        </button>
     </div>
 </header>
+<script>
+    // Theme toggle functionality
+    function toggleTheme() {
+        const html = document.documentElement;
+        const currentTheme = html.getAttribute('data-theme');
+        const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+        html.setAttribute('data-theme', newTheme);
+        localStorage.setItem('theme', newTheme);
+        updateThemeIcon(newTheme);
+    }
+
+    function updateThemeIcon(theme) {
+        const icon = document.querySelector('.theme-icon');
+        if (icon) {
+            icon.textContent = theme === 'dark' ? '☀️' : '🌙';
+        }
+    }
+
+    // Apply saved theme on load
+    (function() {
+        const savedTheme = localStorage.getItem('theme') || 'light';
+        document.documentElement.setAttribute('data-theme', savedTheme);
+        // Update icon after DOM is ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => updateThemeIcon(savedTheme));
+        } else {
+            updateThemeIcon(savedTheme);
+        }
+    })();
+</script>

@@ -662,6 +662,7 @@ def start_agent(
         get_issue_names,
     )
     from agenttree.worktree import create_worktree, update_worktree_with_main
+    from agenttree.issues import assign_agent
 
     repo_path = Path.cwd()
     config = load_config(repo_path)
@@ -732,6 +733,18 @@ def start_agent(
             console.print(f"[dim]Creating worktree: {worktree_path.name}[/dim]")
             create_worktree(repo_path, worktree_path, names["branch"])
 
+    # Ensure _agenttree symlink points to main repo (worktrees get empty dir since it's gitignored)
+    worktree_agenttree = worktree_path / "_agenttree"
+    main_agenttree = repo_path / "_agenttree"
+    if main_agenttree.exists():
+        if worktree_agenttree.exists() and not worktree_agenttree.is_symlink():
+            # Remove empty directory created by git
+            import shutil
+            shutil.rmtree(worktree_agenttree)
+        if not worktree_agenttree.exists():
+            worktree_agenttree.symlink_to(main_agenttree)
+            console.print(f"[dim]Linked _agenttree to main repo[/dim]")
+
     # Allocate port
     port = allocate_port(base_port=int(config.port_range.split("-")[0]))
     console.print(f"[dim]Allocated port: {port}[/dim]")
@@ -744,6 +757,9 @@ def start_agent(
         port=port,
         project=config.project,
     )
+
+    # Mark issue as having an assigned agent (for web UI status light)
+    assign_agent(issue.id, int(issue.id))
 
     console.print(f"[green]✓ Dispatching agent for issue #{issue.id}: {issue.title}[/green]")
 
