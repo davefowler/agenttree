@@ -237,8 +237,74 @@ def remove_worktree(repo_path: Path, worktree_path: Path) -> None:
         pass
 
 
+def update_worktree_with_main(worktree_path: Path, base_branch: str = "main") -> bool:
+    """Update worktree to include latest main while preserving agent's work.
+
+    This is used when restarting an agent to ensure they have the latest
+    agenttree CLI code while keeping their implementation work.
+
+    Args:
+        worktree_path: Path to the worktree
+        base_branch: Name of the base branch (default: "main")
+
+    Returns:
+        True if update succeeded, False if there are conflicts to resolve
+    """
+    # 1. Commit any uncommitted work
+    status = subprocess.run(
+        ["git", "status", "--porcelain"],
+        cwd=worktree_path,
+        capture_output=True,
+        text=True,
+    )
+    if status.stdout.strip():
+        subprocess.run(["git", "add", "-A"], cwd=worktree_path, check=True)
+        subprocess.run(
+            ["git", "commit", "-m", "WIP: uncommitted work before restart"],
+            cwd=worktree_path,
+            check=True,
+        )
+
+    # 2. Fetch latest from origin
+    subprocess.run(["git", "fetch", "origin"], cwd=worktree_path, check=True)
+
+    # 3. Pull latest of this branch (in case of remote changes)
+    subprocess.run(
+        ["git", "pull", "--rebase", "--autostash"],
+        cwd=worktree_path,
+        capture_output=True,  # Don't fail if no upstream
+    )
+
+    # 4. Try to rebase onto main (cleaner history)
+    result = subprocess.run(
+        ["git", "rebase", f"origin/{base_branch}"],
+        cwd=worktree_path,
+        capture_output=True,
+    )
+    if result.returncode == 0:
+        return True
+
+    # 5. Rebase failed - abort and try merge instead
+    subprocess.run(
+        ["git", "rebase", "--abort"],
+        cwd=worktree_path,
+        capture_output=True,
+    )
+
+    result = subprocess.run(
+        ["git", "merge", f"origin/{base_branch}", "-m", "Merge main for latest tooling"],
+        cwd=worktree_path,
+        capture_output=True,
+    )
+    if result.returncode == 0:
+        return True
+
+    # 6. Merge also has conflicts - agent will need to resolve
+    return False
+
+
 def reset_worktree(worktree_path: Path, base_branch: str = "main") -> None:
-    """Reset worktree to latest version of base branch.
+    """Reset worktree to latest version of base branch (DESTRUCTIVE).
 
     Args:
         worktree_path: Path to the worktree

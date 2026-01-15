@@ -661,7 +661,7 @@ def start_agent(
         create_agent_for_issue,
         get_issue_names,
     )
-    from agenttree.worktree import create_worktree
+    from agenttree.worktree import create_worktree, update_worktree_with_main
 
     repo_path = Path.cwd()
     config = load_config(repo_path)
@@ -701,16 +701,36 @@ def start_agent(
     worktree_path.parent.mkdir(parents=True, exist_ok=True)
 
     if worktree_path.exists():
-        if force:
-            console.print(f"[yellow]Removing existing worktree...[/yellow]")
-            from agenttree.worktree import remove_worktree
-            remove_worktree(repo_path, worktree_path)
+        # Worktree exists - this is a restart scenario
+        # Update with latest main to get newest CLI code while preserving agent's work
+        console.print(f"[cyan]Updating existing worktree with latest main...[/cyan]")
+        update_success = update_worktree_with_main(worktree_path)
+        if update_success:
+            console.print(f"[green]✓ Worktree updated successfully[/green]")
         else:
-            console.print(f"[dim]Using existing worktree at {worktree_path}[/dim]")
+            console.print(f"[yellow]⚠ Merge conflicts detected - agent will need to resolve[/yellow]")
+    else:
+        # No worktree - check if branch exists (agent worked on this before but worktree was removed)
+        branch_exists = subprocess.run(
+            ["git", "rev-parse", "--verify", names["branch"]],
+            cwd=repo_path,
+            capture_output=True,
+        ).returncode == 0
 
-    if not worktree_path.exists():
-        console.print(f"[dim]Creating worktree: {worktree_path.name}[/dim]")
-        create_worktree(repo_path, worktree_path, names["branch"])
+        if branch_exists:
+            # Branch exists - create worktree from it, then update with main
+            console.print(f"[dim]Creating worktree from existing branch: {names['branch']}[/dim]")
+            create_worktree(repo_path, worktree_path, names["branch"])
+            console.print(f"[cyan]Updating with latest main...[/cyan]")
+            update_success = update_worktree_with_main(worktree_path)
+            if update_success:
+                console.print(f"[green]✓ Worktree updated successfully[/green]")
+            else:
+                console.print(f"[yellow]⚠ Merge conflicts detected - agent will need to resolve[/yellow]")
+        else:
+            # Fresh start - create new worktree from main
+            console.print(f"[dim]Creating worktree: {worktree_path.name}[/dim]")
+            create_worktree(repo_path, worktree_path, names["branch"])
 
     # Allocate port
     port = allocate_port(base_port=int(config.port_range.split("-")[0]))
