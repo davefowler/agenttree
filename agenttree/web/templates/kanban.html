@@ -163,6 +163,55 @@
             margin-bottom: 10px;
             cursor: pointer;
             transition: all 0.2s;
+            position: relative;
+        }
+
+        .agent-light {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: all 0.2s;
+            z-index: 10;
+        }
+
+        .agent-light.off {
+            background: #c4c0b4;
+            border: 2px solid #a8a498;
+            box-shadow: inset 0 1px 3px rgba(0,0,0,0.2);
+        }
+
+        .agent-light.off:hover {
+            background: #b8e4c8;
+            border-color: #6b9a7a;
+            box-shadow: 0 0 6px rgba(107, 154, 122, 0.5);
+        }
+
+        .agent-light.on {
+            background: #4ade80;
+            border: 2px solid #22c55e;
+            box-shadow: 0 0 8px rgba(74, 222, 128, 0.6), 0 0 16px rgba(74, 222, 128, 0.3);
+            animation: pulse-glow 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse-glow {
+            0%, 100% { box-shadow: 0 0 8px rgba(74, 222, 128, 0.6), 0 0 16px rgba(74, 222, 128, 0.3); }
+            50% { box-shadow: 0 0 12px rgba(74, 222, 128, 0.8), 0 0 24px rgba(74, 222, 128, 0.5); }
+        }
+
+        .agent-light.starting {
+            background: #fbbf24;
+            border: 2px solid #f59e0b;
+            box-shadow: 0 0 8px rgba(251, 191, 36, 0.6);
+            animation: blink 0.5s ease-in-out infinite;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
         }
 
         .kanban-card:hover {
@@ -403,14 +452,15 @@
                 <div class="kanban-card"
                      data-issue="{{ issue.number }}"
                      data-stage="{{ issue.stage.value }}"
+                     data-has-agent="{{ 'true' if issue.assigned_agent else 'false' }}"
                      draggable="true"
                      onclick="openIssueModal({{ issue.number }})">
+                    <div class="agent-light {{ 'on' if issue.assigned_agent else 'off' }}"
+                         onclick="event.stopPropagation(); toggleAgent('{{ issue.number }}', this)"
+                         title="{{ 'Agent running - click to view' if issue.assigned_agent else 'Click to start agent' }}"></div>
                     <div class="card-number">#{{ issue.number }}</div>
                     <div class="card-title">{{ issue.title }}</div>
                     <div class="card-badges">
-                        {% if issue.assigned_agent %}
-                        <span class="badge badge-agent">Agent {{ issue.assigned_agent }}</span>
-                        {% endif %}
                         {% for label in issue.labels[:2] %}
                         {% if not label.startswith('stage-') %}
                         <span class="badge">{{ label }}</span>
@@ -561,6 +611,47 @@
         // Apply saved preference on load
         const savedView = localStorage.getItem('kanbanStageView') || 'review';
         setStageView(savedView);
+
+        // Agent light toggle
+        async function toggleAgent(issueNumber, lightElement) {
+            const isOn = lightElement.classList.contains('on');
+
+            if (isOn) {
+                // Agent is running - open the modal to show details
+                openIssueModal(issueNumber);
+                return;
+            }
+
+            // Start the agent
+            lightElement.classList.remove('off');
+            lightElement.classList.add('starting');
+            lightElement.title = 'Starting agent...';
+
+            try {
+                const response = await fetch(`/api/issues/${issueNumber}/start`, {
+                    method: 'POST'
+                });
+
+                if (response.ok) {
+                    // Switch to "on" state after a brief delay
+                    setTimeout(() => {
+                        lightElement.classList.remove('starting');
+                        lightElement.classList.add('on');
+                        lightElement.title = 'Agent running - click to view';
+                    }, 2000);
+                } else {
+                    // Revert to off state on error
+                    lightElement.classList.remove('starting');
+                    lightElement.classList.add('off');
+                    lightElement.title = 'Failed to start - click to retry';
+                }
+            } catch (error) {
+                console.error('Error starting agent:', error);
+                lightElement.classList.remove('starting');
+                lightElement.classList.add('off');
+                lightElement.title = 'Error - click to retry';
+            }
+        }
     </script>
 </body>
 </html>
