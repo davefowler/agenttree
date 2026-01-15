@@ -1322,7 +1322,7 @@ def require_spec_md_for_implement(issue: Issue):
 
 
 @on_enter(ACCEPTED)
-def check_and_start_blocked_issues(issue: Issue):
+def check_and_start_blocked_issues(issue: Issue) -> None:
     """Check for blocked issues that can now be started when a dependency completes.
 
     When an issue reaches ACCEPTED stage, scan all backlog issues that depend on it.

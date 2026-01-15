@@ -336,6 +336,134 @@ class TestStageTransitions:
         assert is_review is False
 
 
+class TestDependencies:
+    """Tests for dependency-related functions."""
+
+    @pytest.fixture
+    def temp_agenttrees_deps(self, monkeypatch, tmp_path):
+        """Create a temporary _agenttree directory with issues."""
+        agenttrees_path = tmp_path / "_agenttree"
+        agenttrees_path.mkdir()
+        issues_path = agenttrees_path / "issues"
+        issues_path.mkdir()
+        (agenttrees_path / "templates").mkdir()
+
+        # Create problem template
+        template = agenttrees_path / "templates" / "problem.md"
+        template.write_text("# Problem Statement\n\n")
+
+        # Monkeypatch get_agenttree_path to return our temp dir
+        monkeypatch.setattr(
+            "agenttree.issues.get_agenttree_path",
+            lambda: agenttrees_path
+        )
+
+        # Disable sync to avoid git operations
+        monkeypatch.setattr("agenttree.issues.sync_agents_repo", lambda *args, **kwargs: True)
+
+        return agenttrees_path
+
+    def test_check_dependencies_met_no_deps(self, temp_agenttrees_deps):
+        """Issue with no dependencies should return all_met=True."""
+        from agenttree.issues import check_dependencies_met
+
+        issue = create_issue("No deps issue")
+        all_met, unmet = check_dependencies_met(issue)
+
+        assert all_met is True
+        assert unmet == []
+
+    def test_check_dependencies_met_with_completed_dep(self, temp_agenttrees_deps):
+        """Issue with completed dependency should return all_met=True."""
+        from agenttree.issues import check_dependencies_met, update_issue_stage
+
+        # Create dependency issue and mark as accepted
+        dep_issue = create_issue("Dependency Issue")
+        update_issue_stage(dep_issue.id, ACCEPTED, None)
+
+        # Create issue with dependency
+        dependent_issue = create_issue("Dependent Issue", dependencies=[dep_issue.id])
+
+        all_met, unmet = check_dependencies_met(dependent_issue)
+
+        assert all_met is True
+        assert unmet == []
+
+    def test_check_dependencies_met_with_incomplete_dep(self, temp_agenttrees_deps):
+        """Issue with incomplete dependency should return all_met=False."""
+        from agenttree.issues import check_dependencies_met
+
+        # Create dependency issue (starts at define stage)
+        dep_issue = create_issue("Dependency Issue")
+
+        # Create issue with dependency
+        dependent_issue = create_issue("Dependent Issue", dependencies=[dep_issue.id])
+
+        all_met, unmet = check_dependencies_met(dependent_issue)
+
+        assert all_met is False
+        assert dep_issue.id in unmet
+
+    def test_check_dependencies_met_with_nonexistent_dep(self, temp_agenttrees_deps):
+        """Issue with nonexistent dependency should return all_met=False."""
+        from agenttree.issues import check_dependencies_met
+
+        issue = create_issue("Test Issue", dependencies=["999"])
+
+        all_met, unmet = check_dependencies_met(issue)
+
+        assert all_met is False
+        assert "999" in unmet
+
+    def test_get_blocked_issues(self, temp_agenttrees_deps):
+        """get_blocked_issues should return issues in backlog waiting on a dependency."""
+        from agenttree.issues import get_blocked_issues
+
+        # Create completed issue
+        completed = create_issue("Completed Issue")
+
+        # Create blocked issue in backlog with dependency
+        blocked = create_issue("Blocked Issue", stage=BACKLOG, dependencies=[completed.id])
+
+        # Get issues blocked by completed issue
+        blocked_issues = get_blocked_issues(completed.id)
+
+        assert len(blocked_issues) == 1
+        assert blocked_issues[0].id == blocked.id
+
+    def test_get_blocked_issues_empty(self, temp_agenttrees_deps):
+        """get_blocked_issues should return empty list if no blocked issues."""
+        from agenttree.issues import get_blocked_issues
+
+        issue = create_issue("No dependents")
+        blocked_issues = get_blocked_issues(issue.id)
+
+        assert blocked_issues == []
+
+    def test_get_ready_issues(self, temp_agenttrees_deps):
+        """get_ready_issues should return backlog issues with all deps met."""
+        from agenttree.issues import get_ready_issues, update_issue_stage
+
+        # Create dependency and mark as accepted
+        dep = create_issue("Dependency")
+        update_issue_stage(dep.id, ACCEPTED, None)
+
+        # Create blocked issue in backlog
+        blocked = create_issue("Blocked Issue", stage=BACKLOG, dependencies=[dep.id])
+
+        ready = get_ready_issues()
+
+        assert len(ready) == 1
+        assert ready[0].id == blocked.id
+
+    def test_create_issue_with_dependencies(self, temp_agenttrees_deps):
+        """create_issue should normalize and store dependencies."""
+        issue = create_issue("Test Issue", dependencies=["1", "02", "003"])
+
+        # Dependencies should be normalized to 3-digit format
+        assert issue.dependencies == ["001", "002", "003"]
+
+
 class TestUpdateIssueStage:
     """Tests for update_issue_stage function."""
 
