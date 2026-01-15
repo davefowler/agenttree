@@ -50,6 +50,11 @@ class Issue(IssueBase):
     created_at: datetime
     updated_at: datetime
 
+    @property
+    def is_review(self) -> bool:
+        """Check if issue is in a review stage."""
+        return "review" in self.stage.value.lower()
+
 
 class IssueUpdate(BaseModel):
     """Issue update request."""
