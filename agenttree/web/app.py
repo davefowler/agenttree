@@ -514,7 +514,7 @@ async def health_check():
 
 
 def run_server(
-    host: str = "127.0.0.1",
+    host: str = "0.0.0.0",
     port: int = 8080,
     config_path: Optional[Path] = None
 ):
