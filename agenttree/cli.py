@@ -1693,7 +1693,7 @@ def stage_begin(stage: str, issue_id: Optional[str]) -> None:
 
     # Run on_enter hooks (e.g., create plan.md for research stage)
     # Note: We skip pre_transition hooks since begin allows arbitrary stage jumps
-    execute_post_hooks(updated, from_stage, target_stage, substage)
+    execute_post_hooks(updated, target_stage, substage)
 
     stage_str = target_stage
     if substage:
@@ -1835,8 +1835,9 @@ def stage_next(issue_id: Optional[str], reassess: bool) -> None:
 
     # Execute pre-hooks (can block with ValidationError)
     from_stage = issue.stage
+    from_substage = issue.substage
     try:
-        execute_pre_hooks(issue, from_stage, next_stage)
+        execute_pre_hooks(issue, from_stage, from_substage)
     except ValidationError as e:
         console.print(f"[red]Cannot proceed: {e}[/red]")
         sys.exit(1)
@@ -1851,7 +1852,7 @@ def stage_next(issue_id: Optional[str], reassess: bool) -> None:
     update_session_stage(issue_id, next_stage, next_substage)
 
     # Execute post-hooks (after stage updated)
-    execute_post_hooks(updated, from_stage, next_stage, next_substage)
+    execute_post_hooks(updated, next_stage, next_substage)
 
     stage_str = next_stage
     if next_substage:
@@ -1914,8 +1915,9 @@ def approve_issue(issue_id: str) -> None:
 
     # Execute pre-hooks
     from_stage = issue.stage
+    from_substage = issue.substage
     try:
-        execute_pre_hooks(issue, from_stage, next_stage)
+        execute_pre_hooks(issue, from_stage, from_substage)
     except ValidationError as e:
         console.print(f"[red]Cannot approve: {e}[/red]")
         sys.exit(1)
@@ -1929,8 +1931,8 @@ def approve_issue(issue_id: str) -> None:
     # Update session
     update_session_stage(issue_id_normalized, next_stage, next_substage)
 
-    # Execute post-hooks
-    execute_post_hooks(updated, from_stage, next_stage, next_substage)
+    # Execute post-hooks (after stage updated)
+    execute_post_hooks(updated, next_stage, next_substage)
 
     stage_str = next_stage
     if next_substage:
