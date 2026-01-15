@@ -70,7 +70,7 @@ class HookRegistry:
     register and execute hooks.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize empty hook dictionaries."""
         # Pre-transition: key = (from_stage, to_stage), value = list of hooks
         self.pre_transition: Dict[Tuple[str, str], List[Callable]] = {}
@@ -89,7 +89,7 @@ class HookRegistry:
 
     def register_pre_transition(
         self, from_stage: str, to_stage: str, func: Callable
-    ):
+    ) -> None:
         """Register a pre-transition hook.
 
         Args:
@@ -104,7 +104,7 @@ class HookRegistry:
 
     def register_post_transition(
         self, from_stage: str, to_stage: str, func: Callable
-    ):
+    ) -> None:
         """Register a post-transition hook.
 
         Args:
@@ -117,7 +117,7 @@ class HookRegistry:
             self.post_transition[key] = []
         self.post_transition[key].append(func)
 
-    def register_on_enter(self, stage: str, func: Callable, substage: Optional[str] = None):
+    def register_on_enter(self, stage: str, func: Callable, substage: Optional[str] = None) -> None:
         """Register an on-enter hook.
 
         Args:
@@ -135,7 +135,7 @@ class HookRegistry:
                 self.on_enter[stage] = []
             self.on_enter[stage].append(func)
 
-    def register_on_exit(self, stage: str, func: Callable):
+    def register_on_exit(self, stage: str, func: Callable) -> None:
         """Register an on-exit hook.
 
         Args:
@@ -148,7 +148,7 @@ class HookRegistry:
 
     def execute_pre_transition(
         self, issue: Issue, from_stage: str, to_stage: str
-    ):
+    ) -> None:
         """Execute all pre-transition hooks.
 
         Runs all hooks and collects ValidationError exceptions, then raises
@@ -181,7 +181,7 @@ class HookRegistry:
 
     def execute_post_transition(
         self, issue: Issue, from_stage: str, to_stage: str
-    ):
+    ) -> None:
         """Execute all post-transition hooks.
 
         Logs errors but doesn't block - stage has already changed.
@@ -199,7 +199,7 @@ class HookRegistry:
                 # Log error but don't fail - stage already changed
                 console.print(f"[yellow]Warning: Post-transition hook failed: {e}[/yellow]")
 
-    def execute_on_enter(self, issue: Issue, stage: str, substage: Optional[str] = None):
+    def execute_on_enter(self, issue: Issue, stage: str, substage: Optional[str] = None) -> None:
         """Execute all on-enter hooks for a stage/substage.
 
         Logs errors but doesn't block.
@@ -225,7 +225,7 @@ class HookRegistry:
                 except Exception as e:
                     console.print(f"[yellow]Warning: On-enter substage hook failed: {e}[/yellow]")
 
-    def execute_on_exit(self, issue: Issue, stage: str):
+    def execute_on_exit(self, issue: Issue, stage: str) -> None:
         """Execute all on-exit hooks for a stage.
 
         Logs errors but doesn't block.
@@ -342,7 +342,7 @@ def execute_transition_hooks(
 # Decorator functions for registering hooks
 
 
-def pre_transition(from_stage: str, to_stage: str):
+def pre_transition(from_stage: str, to_stage: str) -> Callable[[Callable], Callable]:
     """Decorator to register a pre-transition hook.
 
     Pre-transition hooks run before a stage transition and can block it
@@ -362,14 +362,14 @@ def pre_transition(from_stage: str, to_stage: str):
         Decorator function
     """
 
-    def decorator(func: Callable):
+    def decorator(func: Callable) -> Callable:
         _registry.register_pre_transition(from_stage, to_stage, func)
         return func
 
     return decorator
 
 
-def post_transition(from_stage: str, to_stage: str):
+def post_transition(from_stage: str, to_stage: str) -> Callable[[Callable], Callable]:
     """Decorator to register a post-transition hook.
 
     Post-transition hooks run after a successful stage transition.
@@ -389,14 +389,14 @@ def post_transition(from_stage: str, to_stage: str):
         Decorator function
     """
 
-    def decorator(func: Callable):
+    def decorator(func: Callable) -> Callable:
         _registry.register_post_transition(from_stage, to_stage, func)
         return func
 
     return decorator
 
 
-def on_enter(stage: str, substage: Optional[str] = None):
+def on_enter(stage: str, substage: Optional[str] = None) -> Callable[[Callable], Callable]:
     """Decorator to register an on-enter hook.
 
     On-enter hooks run when entering a stage to set up the environment.
@@ -421,14 +421,14 @@ def on_enter(stage: str, substage: Optional[str] = None):
         Decorator function
     """
 
-    def decorator(func: Callable):
+    def decorator(func: Callable) -> Callable:
         _registry.register_on_enter(stage, func, substage)
         return func
 
     return decorator
 
 
-def on_exit(stage: str):
+def on_exit(stage: str) -> Callable[[Callable], Callable]:
     """Decorator to register an on-exit hook.
 
     On-exit hooks run when leaving a stage to clean up.
@@ -446,7 +446,7 @@ def on_exit(stage: str):
         Decorator function
     """
 
-    def decorator(func: Callable):
+    def decorator(func: Callable) -> Callable:
         _registry.register_on_exit(stage, func)
         return func
 
@@ -725,7 +725,7 @@ def auto_commit_changes(issue: Issue, stage: str) -> bool:
 
 
 @pre_transition(IMPLEMENT, IMPLEMENTATION_REVIEW)
-def require_commits_for_review(issue: Issue):
+def require_commits_for_review(issue: Issue) -> None:
     """Require that there are commits to push before creating PR.
 
     Blocks transition if there are no commits to push.
@@ -743,7 +743,7 @@ def require_commits_for_review(issue: Issue):
 
 
 @pre_transition(IMPLEMENT, IMPLEMENTATION_REVIEW)
-def require_review_md_for_pr(issue: Issue):
+def require_review_md_for_pr(issue: Issue) -> None:
     """Require that review.md exists with no unresolved Critical Issues before creating PR.
 
     Blocks transition if:
@@ -789,7 +789,7 @@ def require_review_md_for_pr(issue: Issue):
 
 
 @pre_transition(IMPLEMENT, IMPLEMENTATION_REVIEW)
-def require_wrapup_score(issue: Issue):
+def require_wrapup_score(issue: Issue) -> None:
     """Require that implementation wrapup scores meet the threshold.
 
     Blocks transition if:
@@ -872,7 +872,7 @@ def require_wrapup_score(issue: Issue):
 
 
 @pre_transition(IMPLEMENTATION_REVIEW, ACCEPTED)
-def require_pr_approval(issue: Issue):
+def require_pr_approval(issue: Issue) -> None:
     """Require that PR is approved before merging.
 
     Blocks transition if PR doesn't exist or is not approved.
@@ -922,7 +922,7 @@ def is_running_in_container() -> bool:
 
 
 @post_transition(IMPLEMENT, IMPLEMENTATION_REVIEW)
-def create_pull_request_hook(issue: Issue):
+def create_pull_request_hook(issue: Issue) -> None:
     """Create PR when transitioning to implementation review.
 
     If running in a container (no push access), only commits locally.
@@ -1051,7 +1051,7 @@ def ensure_pr_for_issue(issue_id: str) -> bool:
 
 
 @post_transition(IMPLEMENTATION_REVIEW, ACCEPTED)
-def merge_pull_request_hook(issue: Issue):
+def merge_pull_request_hook(issue: Issue) -> None:
     """Merge PR when transitioning to accepted.
 
     Args:
@@ -1071,7 +1071,7 @@ def merge_pull_request_hook(issue: Issue):
 
 
 @post_transition(IMPLEMENTATION_REVIEW, ACCEPTED)
-def cleanup_issue_agent_hook(issue: Issue):
+def cleanup_issue_agent_hook(issue: Issue) -> None:
     """Clean up agent resources when issue is accepted.
 
     Stops container, removes worktree, frees port.
@@ -1177,7 +1177,7 @@ def _copy_template(template_name: str, dest_path: Path, issue: Issue) -> bool:
 
 
 @on_enter(RESEARCH)
-def create_research_md_on_research(issue: Issue):
+def create_research_md_on_research(issue: Issue) -> None:
     """Auto-create research.md when entering research stage.
 
     Args:
@@ -1191,7 +1191,7 @@ def create_research_md_on_research(issue: Issue):
 
 
 @on_enter(PLAN)
-def create_spec_md_on_plan(issue: Issue):
+def create_spec_md_on_plan(issue: Issue) -> None:
     """Auto-create spec.md when entering plan stage.
 
     Args:
@@ -1205,7 +1205,7 @@ def create_spec_md_on_plan(issue: Issue):
 
 
 @on_enter(PLAN_ASSESS)
-def create_spec_review_md_on_plan_assess(issue: Issue):
+def create_spec_review_md_on_plan_assess(issue: Issue) -> None:
     """Auto-create spec_review.md when entering plan_assess stage.
 
     Args:
@@ -1219,7 +1219,7 @@ def create_spec_review_md_on_plan_assess(issue: Issue):
 
 
 @on_enter(IMPLEMENT, substage="code_review")
-def create_review_md_on_code_review(issue: Issue):
+def create_review_md_on_code_review(issue: Issue) -> None:
     """Auto-create review.md when entering code_review substage.
 
     Args:
@@ -1236,7 +1236,7 @@ def create_review_md_on_code_review(issue: Issue):
 
 
 @pre_transition(PLAN_REVIEW, IMPLEMENT)
-def require_spec_md_for_implement(issue: Issue):
+def require_spec_md_for_implement(issue: Issue) -> None:
     """Require that spec.md exists and has content before implementing.
 
     Blocks transition if spec.md doesn't exist or is mostly empty.
@@ -1287,7 +1287,7 @@ def require_spec_md_for_implement(issue: Issue):
 
 
 @on_enter(ACCEPTED)
-def check_and_start_blocked_issues(issue: Issue):
+def check_and_start_blocked_issues(issue: Issue) -> None:
     """Check for blocked issues that can now be started when a dependency completes.
 
     When an issue reaches ACCEPTED stage, scan all backlog issues that depend on it.
