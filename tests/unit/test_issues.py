@@ -22,7 +22,6 @@ from agenttree.issues import (
     # Stage constants (strings, not enum)
     BACKLOG,
     DEFINE,
-    PROBLEM_REVIEW,
     RESEARCH,
     PLAN,
     PLAN_ASSESS,
@@ -213,8 +212,8 @@ class TestIssueCRUD:
 class TestStageTransitions:
     """Tests for stage transition functions.
 
-    New stage flow:
-    backlog -> define -> problem_review -> research -> plan -> plan_assess ->
+    Stage flow (no problem_review gate):
+    backlog -> define -> research -> plan -> plan_assess ->
     plan_revise -> plan_review -> implement -> implementation_review -> accepted
     """
 
@@ -232,16 +231,9 @@ class TestStageTransitions:
         assert next_substage == "refine"
         assert is_review is False
 
-    def test_get_next_stage_define_to_review(self):
-        """define.refine -> problem_review (human review)"""
+    def test_get_next_stage_define_to_research(self):
+        """define.refine -> research.explore (no problem_review gate)"""
         next_stage, next_substage, is_review = get_next_stage(DEFINE, "refine")
-        assert next_stage == PROBLEM_REVIEW
-        assert next_substage is None
-        assert is_review is True
-
-    def test_get_next_stage_from_problem_review(self):
-        """problem_review -> research.explore"""
-        next_stage, next_substage, is_review = get_next_stage(PROBLEM_REVIEW, None)
         assert next_stage == RESEARCH
         assert next_substage == "explore"
         assert is_review is False
@@ -332,10 +324,9 @@ class TestStageTransitions:
 
     def test_human_review_stages(self):
         """Verify HUMAN_REVIEW_STAGES contains expected stages."""
-        assert PROBLEM_REVIEW in HUMAN_REVIEW_STAGES
         assert PLAN_REVIEW in HUMAN_REVIEW_STAGES
         assert IMPLEMENTATION_REVIEW in HUMAN_REVIEW_STAGES
-        assert len(HUMAN_REVIEW_STAGES) == 3
+        assert len(HUMAN_REVIEW_STAGES) == 2
 
     def test_get_next_stage_not_doing_stays_not_doing(self):
         """NOT_DOING is a terminal state - stays at NOT_DOING."""
