@@ -15,7 +15,9 @@ from datetime import datetime
 
 from agenttree.config import load_config
 from agenttree.worktree import WorktreeManager
-from agenttree.github import get_issue
+from agenttree.github import get_issue as get_github_issue
+from agenttree import issues as issue_crud
+from agenttree.web.models import StageEnum, KanbanBoard, Issue as WebIssue, IssueMoveRequest
 
 # Get the directory where this file is located
 BASE_DIR = Path(__file__).resolve().parent
@@ -151,6 +153,42 @@ class AgentManager:
 agent_manager = AgentManager()
 
 
+def convert_issue_to_web(issue: issue_crud.Issue) -> WebIssue:
+    """Convert an issue_crud.Issue to a web Issue model."""
+    # Map stage string to StageEnum
+    try:
+        stage = StageEnum(issue.stage)
+    except ValueError:
+        stage = StageEnum.BACKLOG
+
+    return WebIssue(
+        number=int(issue.id),
+        title=issue.title,
+        body="",  # Loaded separately from problem.md
+        labels=issue.labels,
+        assignees=[],
+        stage=stage,
+        assigned_agent=issue.assigned_agent,
+        created_at=datetime.fromisoformat(issue.created.replace("Z", "+00:00")),
+        updated_at=datetime.fromisoformat(issue.updated.replace("Z", "+00:00")),
+    )
+
+
+def get_kanban_board() -> KanbanBoard:
+    """Build a kanban board from issues."""
+    # Initialize all stages with empty lists
+    stages: Dict[StageEnum, List[WebIssue]] = {stage: [] for stage in StageEnum}
+
+    # Get all issues and organize by stage
+    issues = issue_crud.list_issues()
+    for issue in issues:
+        web_issue = convert_issue_to_web(issue)
+        if web_issue.stage in stages:
+            stages[web_issue.stage].append(web_issue)
+
+    return KanbanBoard(stages=stages, total_issues=len(issues))
+
+
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
     """Main dashboard page."""
@@ -159,6 +197,60 @@ async def dashboard(request: Request):
     return templates.TemplateResponse(
         "dashboard.html",
         {"request": request, "agents": agents, "user": user}
+    )
+
+
+@app.get("/kanban", response_class=HTMLResponse)
+async def kanban(request: Request):
+    """Kanban board page."""
+    get_current_user()  # Check auth if enabled
+    board = get_kanban_board()
+    return templates.TemplateResponse(
+        "kanban.html",
+        {"request": request, "board": board, "stages": list(StageEnum)}
+    )
+
+
+@app.get("/flow", response_class=HTMLResponse)
+async def flow(request: Request):
+    """Flow view page."""
+    get_current_user()  # Check auth if enabled
+    issues = issue_crud.list_issues()
+    web_issues = [convert_issue_to_web(i) for i in issues]
+    # Sort by stage order and then by number
+    web_issues.sort(key=lambda x: (list(StageEnum).index(x.stage), x.number))
+    selected_issue = web_issues[0] if web_issues else None
+
+    # Load body content for selected issue
+    if selected_issue and issues:
+        raw_issue = issues[0]
+        issue_dir = issue_crud.get_issue_dir(raw_issue.id)
+        if issue_dir:
+            problem_path = issue_dir / "problem.md"
+            if problem_path.exists():
+                selected_issue.body = problem_path.read_text()
+
+    return templates.TemplateResponse(
+        "flow.html",
+        {
+            "request": request,
+            "issues": web_issues,
+            "selected_issue": selected_issue,
+            "issue": selected_issue,  # issue_detail.html expects 'issue'
+        }
+    )
+
+
+@app.get("/flow/issues", response_class=HTMLResponse)
+async def flow_issues(request: Request):
+    """Flow issues list (HTMX endpoint)."""
+    get_current_user()  # Check auth if enabled
+    issues = issue_crud.list_issues()
+    web_issues = [convert_issue_to_web(i) for i in issues]
+    web_issues.sort(key=lambda x: (list(StageEnum).index(x.stage), x.number))
+    return templates.TemplateResponse(
+        "partials/flow_issues_list.html",
+        {"request": request, "issues": web_issues}
     )
 
 
@@ -239,7 +331,7 @@ async def dispatch_task(
             # Create task content
             if issue_number:
                 try:
-                    issue = get_issue(issue_number)
+                    issue = get_github_issue(issue_number)
                     task_content = f"""# Task: {issue.title}
 
 **Issue:** [#{issue.number}]({issue.url})
@@ -277,6 +369,76 @@ async def dispatch_task(
             "agent_num": agent_num,
             "status": status
         }
+    )
+
+
+@app.post("/api/issues/{issue_id}/move")
+async def move_issue(issue_id: str, move_request: IssueMoveRequest):
+    """Move an issue to a new stage."""
+    get_current_user()  # Check auth if enabled
+
+    # Update the issue stage
+    updated_issue = issue_crud.update_issue_stage(
+        issue_id=issue_id,
+        stage=move_request.stage.value,
+        substage=None,  # Clear substage when moving manually
+    )
+
+    if not updated_issue:
+        raise HTTPException(status_code=404, detail=f"Issue {issue_id} not found")
+
+    return {"success": True, "stage": move_request.stage.value}
+
+
+@app.get("/api/issues/{issue_id}/detail", response_class=HTMLResponse)
+async def issue_detail(request: Request, issue_id: str):
+    """Get issue detail HTML (for modal)."""
+    get_current_user()  # Check auth if enabled
+
+    issue = issue_crud.get_issue(issue_id)
+    if not issue:
+        raise HTTPException(status_code=404, detail=f"Issue {issue_id} not found")
+
+    # Load problem.md content
+    issue_dir = issue_crud.get_issue_dir(issue_id)
+    problem_content = ""
+    if issue_dir:
+        problem_path = issue_dir / "problem.md"
+        if problem_path.exists():
+            problem_content = problem_path.read_text()
+
+    web_issue = convert_issue_to_web(issue)
+    web_issue.body = problem_content
+
+    return templates.TemplateResponse(
+        "partials/issue_detail.html",
+        {"request": request, "issue": web_issue}
+    )
+
+
+@app.get("/flow/issue/{issue_id}", response_class=HTMLResponse)
+async def flow_issue_detail(request: Request, issue_id: str):
+    """Get issue detail for flow view (HTMX endpoint)."""
+    get_current_user()  # Check auth if enabled
+
+    issue = issue_crud.get_issue(issue_id)
+    if not issue:
+        raise HTTPException(status_code=404, detail=f"Issue {issue_id} not found")
+
+    # Load problem.md content
+    issue_dir = issue_crud.get_issue_dir(issue_id)
+    problem_content = ""
+    if issue_dir:
+        problem_path = issue_dir / "problem.md"
+        if problem_path.exists():
+            problem_content = problem_path.read_text()
+
+    web_issue = convert_issue_to_web(issue)
+    web_issue.body = problem_content
+
+    return templates.TemplateResponse(
+        "partials/issue_detail.html",
+        {"request": request, "issue": web_issue}
     )
 
 
