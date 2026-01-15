@@ -1915,8 +1915,9 @@ def approve_issue(issue_id: str) -> None:
 
     # Execute pre-hooks
     from_stage = issue.stage
+    from_substage = issue.substage
     try:
-        execute_pre_hooks(issue, from_stage, next_stage)
+        execute_pre_hooks(issue, from_stage, from_substage)
     except ValidationError as e:
         console.print(f"[red]Cannot approve: {e}[/red]")
         sys.exit(1)
@@ -1930,8 +1931,8 @@ def approve_issue(issue_id: str) -> None:
     # Update session
     update_session_stage(issue_id_normalized, next_stage, next_substage)
 
-    # Execute post-hooks
-    execute_post_hooks(updated, from_stage, next_stage, next_substage)
+    # Execute post-hooks (after stage updated)
+    execute_post_hooks(updated, next_stage, next_substage)
 
     stage_str = next_stage
     if next_substage:

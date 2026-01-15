@@ -945,7 +945,7 @@ def ensure_pr_for_issue(issue_id: str) -> bool:
 def cleanup_issue_agent(issue: Issue) -> None:
     """Clean up agent resources when issue is accepted.
 
-    Stops container, removes worktree, frees port.
+    Stops tmux session, stops container, frees port.
 
     Args:
         issue: Issue that was transitioned to accepted
