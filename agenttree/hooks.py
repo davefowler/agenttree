@@ -544,6 +544,11 @@ def execute_enter_hooks(issue: "Issue", stage: str, substage: Optional[str] = No
         for error in errors:
             console.print(f"[yellow]Warning: {error}[/yellow]")
 
+    # Special handling for ACCEPTED stage - cleanup agent and check blocked issues
+    if stage == ACCEPTED:
+        cleanup_issue_agent(issue)
+        check_and_start_blocked_issues(issue)
+
 
 # Aliases for backward compatibility during transition
 execute_pre_hooks = execute_exit_hooks
@@ -935,6 +940,57 @@ def ensure_pr_for_issue(issue_id: str) -> bool:
                 return True
         console.print(f"[red]Failed to create PR: {e}[/red]")
         return False
+
+
+def cleanup_issue_agent(issue: Issue) -> None:
+    """Clean up agent resources when issue is accepted.
+
+    Stops container, removes worktree, frees port.
+
+    Args:
+        issue: Issue that was transitioned to accepted
+    """
+    from agenttree.state import get_active_agent, unregister_agent
+
+    agent = get_active_agent(issue.id)
+    if not agent:
+        return  # No agent to clean up
+
+    console.print(f"[dim]Cleaning up agent for issue #{issue.id}...[/dim]")
+
+    # Stop tmux session
+    try:
+        from agenttree.tmux import kill_session, session_exists
+        if session_exists(agent.tmux_session):
+            kill_session(agent.tmux_session)
+            console.print(f"[dim]  Stopped tmux session: {agent.tmux_session}[/dim]")
+    except Exception as e:
+        console.print(f"[yellow]  Warning: Could not stop tmux session: {e}[/yellow]")
+
+    # Stop container (if running)
+    try:
+        result = subprocess.run(
+            ["docker", "stop", agent.container],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode == 0:
+            console.print(f"[dim]  Stopped container: {agent.container}[/dim]")
+
+        # Remove container
+        subprocess.run(
+            ["docker", "rm", agent.container],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except Exception as e:
+        console.print(f"[yellow]  Warning: Could not stop container: {e}[/yellow]")
+
+    # Unregister agent (frees port)
+    unregister_agent(issue.id)
+    console.print(f"[green]✓ Agent cleaned up for issue #{issue.id}[/green]")
 
 
 def check_and_start_blocked_issues(issue: Issue) -> None:
