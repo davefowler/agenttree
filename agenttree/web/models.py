@@ -27,7 +27,17 @@ class IssueStatus(str, Enum):
     """Issue status."""
 
     OPEN = "open"
+    IN_PROGRESS = "in_progress"
     CLOSED = "closed"
+
+
+class Priority(str, Enum):
+    """Issue priority levels."""
+
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
 
 
 class IssueBase(BaseModel):
@@ -44,18 +54,32 @@ class Issue(IssueBase):
     """Full issue model."""
 
     stage: StageEnum = StageEnum.BACKLOG
+    substage: Optional[str] = None
     status: IssueStatus = IssueStatus.OPEN
+    priority: Priority = Priority.MEDIUM
     url: Optional[str] = None
     assigned_agent: Optional[int] = None
+    branch: Optional[str] = None
+    github_issue: Optional[int] = None
+    pr_number: Optional[int] = None
+    pr_url: Optional[str] = None
     created_at: datetime
     updated_at: datetime
+
+    @property
+    def is_review(self) -> bool:
+        """Check if issue is in a review stage."""
+        return "review" in self.stage.value.lower()
 
 
 class IssueUpdate(BaseModel):
     """Issue update request."""
 
+    title: Optional[str] = None
     stage: Optional[StageEnum] = None
     status: Optional[IssueStatus] = None
+    priority: Optional[Priority] = None
+    labels: Optional[List[str]] = None
     assigned_agent: Optional[int] = None
 
 

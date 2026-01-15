@@ -1,32 +1,129 @@
 <!-- Shared issue detail template - used by both kanban modal and flow panel -->
-<div class="issue-detail">
+<div class="issue-detail" id="issue-detail-{{ issue.number }}">
     <div class="detail-header">
-        <div class="detail-title">
-            #{{ issue.number }}: {{ issue.title }}
+        <div class="detail-title-row">
+            <span class="detail-number">#{{ issue.number }}:</span>
+            <span class="detail-title" id="title-text-{{ issue.number }}">{{ issue.title }}</span>
         </div>
-        <div class="detail-meta">
-            <span>Stage: {{ issue.stage.value.replace('_', ' ').title() }}</span>
-            <span>Status: {{ issue.status.value.title() }}</span>
-            {% if issue.assignees %}
-            <span>Assignees: {{ ', '.join(issue.assignees) }}</span>
-            {% endif %}
-            {% if issue.assigned_agent %}
-            <span>Agent: {{ issue.assigned_agent }}</span>
-            {% endif %}
+
+        <div class="detail-controls">
+            <!-- Stage dropdown -->
+            <div class="control-group">
+                <label>Stage:</label>
+                <select class="detail-select"
+                        onchange="updateIssueField('{{ issue.number }}', 'stage', this.value)">
+                    {% for stage in stages %}
+                    <option value="{{ stage.value }}" {% if stage == issue.stage %}selected{% endif %}>
+                        {{ stage.value.replace('_', ' ').title() }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <!-- Status display (derived from stage/agent) -->
+            <div class="control-group">
+                <label>Status:</label>
+                <span class="status-badge status-{{ issue.status.value }}">
+                    {{ issue.status.value.replace('_', ' ').title() }}
+                </span>
+            </div>
+
+            <!-- Priority dropdown -->
+            <div class="control-group">
+                <label>Priority:</label>
+                <select class="detail-select priority-select priority-{{ issue.priority.value }}"
+                        onchange="updateIssueField('{{ issue.number }}', 'priority', this.value); this.className='detail-select priority-select priority-' + this.value;">
+                    {% for priority in priorities %}
+                    <option value="{{ priority.value }}" {% if priority == issue.priority %}selected{% endif %}>
+                        {{ priority.value.title() }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
         </div>
     </div>
+
+    <!-- Labels section -->
+    <div class="detail-labels-section">
+        <label>Labels:</label>
+        <div class="labels-container" id="labels-container-{{ issue.number }}">
+            {% for label in issue.labels %}
+            <span class="label-chip">
+                {{ label }}
+                <button class="label-remove" onclick="removeLabel('{{ issue.number }}', '{{ label }}')">&times;</button>
+            </span>
+            {% endfor %}
+            <button class="label-add" onclick="showAddLabel('{{ issue.number }}')">+ Add</button>
+            <input type="text" class="label-input" id="label-input-{{ issue.number }}"
+                   placeholder="Label name"
+                   style="display: none;"
+                   onkeydown="if(event.key==='Enter'){addLabel('{{ issue.number }}', this.value); this.value=''; this.style.display='none';}"
+                   onblur="this.style.display='none';">
+        </div>
+    </div>
+
+    <!-- More details expandable section -->
+    <details class="more-details">
+        <summary>More details...</summary>
+        <div class="details-grid">
+            {% if issue.substage %}
+            <div class="detail-item">
+                <span class="detail-label">Substage:</span>
+                <span class="detail-value">{{ issue.substage }}</span>
+            </div>
+            {% endif %}
+
+            {% if issue.assigned_agent %}
+            <div class="detail-item">
+                <span class="detail-label">Agent:</span>
+                <span class="detail-value agent-badge">Agent #{{ issue.assigned_agent }}</span>
+            </div>
+            {% endif %}
+
+            {% if issue.branch %}
+            <div class="detail-item">
+                <span class="detail-label">Branch:</span>
+                <span class="detail-value"><code>{{ issue.branch }}</code></span>
+            </div>
+            {% endif %}
+
+            {% if issue.github_issue %}
+            <div class="detail-item">
+                <span class="detail-label">GitHub Issue:</span>
+                <span class="detail-value">
+                    <a href="https://github.com/issue/{{ issue.github_issue }}" target="_blank">#{{ issue.github_issue }}</a>
+                </span>
+            </div>
+            {% endif %}
+
+            {% if issue.pr_number %}
+            <div class="detail-item">
+                <span class="detail-label">Pull Request:</span>
+                <span class="detail-value">
+                    {% if issue.pr_url %}
+                    <a href="{{ issue.pr_url }}" target="_blank">#{{ issue.pr_number }}</a>
+                    {% else %}
+                    #{{ issue.pr_number }}
+                    {% endif %}
+                </span>
+            </div>
+            {% endif %}
+
+            <div class="detail-item">
+                <span class="detail-label">Created:</span>
+                <span class="detail-value">{{ issue.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
+            </div>
+
+            <div class="detail-item">
+                <span class="detail-label">Updated:</span>
+                <span class="detail-value">{{ issue.updated_at.strftime('%Y-%m-%d %H:%M') }}</span>
+            </div>
+        </div>
+    </details>
 
     <div class="detail-body">
         {{ issue.body if issue.body else "No description provided." }}
     </div>
-
-    {% if issue.labels %}
-    <div class="detail-labels">
-        {% for label in issue.labels %}
-        <span class="label">{{ label }}</span>
-        {% endfor %}
-    </div>
-    {% endif %}
 
     <div class="detail-actions">
         {% if issue.url %}
@@ -35,14 +132,376 @@
         <button class="btn btn-primary"
                 hx-post="/api/issues/{{ issue.number }}/start"
                 hx-target="#dispatch-status-{{ issue.number }}"
-                hx-swap="innerHTML">
-            Start Agent
+                hx-swap="innerHTML"
+                {% if issue.assigned_agent %}disabled title="Agent already assigned"{% endif %}>
+            {% if issue.assigned_agent %}Agent Running{% else %}Start Agent{% endif %}
         </button>
         <span id="dispatch-status-{{ issue.number }}"></span>
     </div>
-
-    <div class="detail-timestamps">
-        <small>Created: {{ issue.created_at.strftime('%Y-%m-%d %H:%M') }}</small>
-        <small>Updated: {{ issue.updated_at.strftime('%Y-%m-%d %H:%M') }}</small>
-    </div>
 </div>
+
+<style>
+    .detail-title-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 15px;
+    }
+
+    .detail-number {
+        color: #6b8f7a;
+        font-size: 20px;
+        font-weight: 600;
+    }
+
+    .detail-title {
+        font-size: 20px;
+        font-weight: 600;
+        color: #2d4a3e;
+    }
+
+    .detail-controls {
+        display: flex;
+        gap: 20px;
+        flex-wrap: wrap;
+        align-items: center;
+        margin-bottom: 15px;
+        padding-bottom: 15px;
+        border-bottom: 1px solid #d4d0c4;
+    }
+
+    .control-group {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .control-group label {
+        font-size: 13px;
+        color: #6b8f7a;
+        font-weight: 500;
+    }
+
+    .detail-select {
+        padding: 6px 10px;
+        border: 1px solid #d4d0c4;
+        border-radius: 4px;
+        background: #fff;
+        color: #2d4a3e;
+        font-size: 13px;
+        cursor: pointer;
+        min-width: 120px;
+    }
+
+    .detail-select:hover {
+        border-color: #4a7c6f;
+    }
+
+    .detail-select:focus {
+        outline: none;
+        border-color: #5d8a6b;
+        box-shadow: 0 0 0 2px rgba(93, 138, 107, 0.2);
+    }
+
+    .status-badge {
+        padding: 4px 10px;
+        border-radius: 12px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+
+    .status-open {
+        background: #e8f4ec;
+        color: #2d6b4a;
+    }
+
+    .status-in_progress {
+        background: #fff3cd;
+        color: #856404;
+    }
+
+    .status-closed {
+        background: #f0f0f0;
+        color: #666;
+    }
+
+    .priority-select.priority-critical {
+        border-color: #dc3545;
+        color: #dc3545;
+    }
+
+    .priority-select.priority-high {
+        border-color: #fd7e14;
+        color: #fd7e14;
+    }
+
+    .priority-select.priority-medium {
+        border-color: #4a7c6f;
+        color: #2d4a3e;
+    }
+
+    .priority-select.priority-low {
+        border-color: #6c757d;
+        color: #6c757d;
+    }
+
+    .detail-labels-section {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 15px;
+        flex-wrap: wrap;
+    }
+
+    .detail-labels-section > label {
+        font-size: 13px;
+        color: #6b8f7a;
+        font-weight: 500;
+    }
+
+    .labels-container {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        align-items: center;
+    }
+
+    .label-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 4px 10px;
+        background: #d4eedd;
+        color: #2d6b4a;
+        border-radius: 12px;
+        font-size: 12px;
+        font-weight: 500;
+    }
+
+    .label-remove {
+        background: none;
+        border: none;
+        color: #2d6b4a;
+        cursor: pointer;
+        font-size: 14px;
+        padding: 0 2px;
+        opacity: 0.7;
+    }
+
+    .label-remove:hover {
+        opacity: 1;
+    }
+
+    .label-add {
+        padding: 4px 10px;
+        background: #f0f0f0;
+        border: 1px dashed #ccc;
+        border-radius: 12px;
+        color: #666;
+        font-size: 12px;
+        cursor: pointer;
+    }
+
+    .label-add:hover {
+        background: #e8f4ec;
+        border-color: #4a7c6f;
+        color: #2d6b4a;
+    }
+
+    .label-input {
+        padding: 4px 10px;
+        border: 1px solid #4a7c6f;
+        border-radius: 12px;
+        font-size: 12px;
+        width: 120px;
+    }
+
+    .more-details {
+        margin-bottom: 15px;
+        border: 1px solid #d4d0c4;
+        border-radius: 6px;
+        background: #fafaf8;
+    }
+
+    .more-details summary {
+        padding: 10px 15px;
+        cursor: pointer;
+        color: #6b8f7a;
+        font-size: 13px;
+        font-weight: 500;
+    }
+
+    .more-details summary:hover {
+        color: #2d4a3e;
+    }
+
+    .details-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: 12px;
+        padding: 15px;
+        padding-top: 5px;
+    }
+
+    .detail-item {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+    }
+
+    .detail-item .detail-label {
+        font-size: 11px;
+        color: #6b8f7a;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .detail-item .detail-value {
+        font-size: 13px;
+        color: #2d4a3e;
+    }
+
+    .detail-item .detail-value code {
+        background: #eae8e0;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-size: 12px;
+    }
+
+    .detail-item .detail-value a {
+        color: #4a7c6f;
+        text-decoration: none;
+    }
+
+    .detail-item .detail-value a:hover {
+        color: #2d6b4a;
+        text-decoration: underline;
+    }
+
+    .agent-badge {
+        background: #d4eedd;
+        color: #2d6b4a;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-weight: 500;
+    }
+
+    .detail-body {
+        background: #eae8e0;
+        border: 1px solid #d4d0c4;
+        border-radius: 6px;
+        padding: 20px;
+        margin-bottom: 20px;
+        white-space: pre-wrap;
+        line-height: 1.6;
+        font-size: 14px;
+        max-height: 400px;
+        overflow-y: auto;
+    }
+
+    .detail-actions {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+    }
+
+    .btn {
+        padding: 8px 16px;
+        border: 1px solid #4a7c6f;
+        background: #3d6b5a;
+        color: #f8f6f0;
+        border-radius: 6px;
+        font-size: 14px;
+        cursor: pointer;
+        transition: all 0.2s;
+        text-decoration: none;
+        display: inline-block;
+    }
+
+    .btn:hover:not(:disabled) {
+        background: #4a7c6f;
+        border-color: #5d8a6b;
+    }
+
+    .btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+
+    .btn-primary {
+        background: #5d8a6b;
+        border-color: #5d8a6b;
+        color: #f8f6f0;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+        background: #6b9a7a;
+        border-color: #6b9a7a;
+    }
+</style>
+
+<script>
+    async function updateIssueField(issueNumber, field, value) {
+        const payload = {};
+        payload[field] = value;
+
+        try {
+            const response = await fetch(`/api/issues/${issueNumber}`, {
+                method: 'PATCH',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                console.error('Failed to update issue');
+                alert('Failed to update issue. Please try again.');
+            }
+        } catch (error) {
+            console.error('Error updating issue:', error);
+            alert('Error updating issue. Please try again.');
+        }
+    }
+
+    function showAddLabel(issueNumber) {
+        const input = document.getElementById(`label-input-${issueNumber}`);
+        input.style.display = 'inline-block';
+        input.focus();
+    }
+
+    async function addLabel(issueNumber, label) {
+        if (!label.trim()) return;
+
+        // Get current labels
+        const container = document.getElementById(`labels-container-${issueNumber}`);
+        const currentLabels = Array.from(container.querySelectorAll('.label-chip'))
+            .map(chip => chip.textContent.replace('×', '').trim());
+
+        // Add new label if not duplicate
+        if (!currentLabels.includes(label.trim())) {
+            const newLabels = [...currentLabels, label.trim()];
+            await updateIssueField(issueNumber, 'labels', newLabels);
+
+            // Refresh the issue detail to show updated labels
+            htmx.ajax('GET', `/api/issues/${issueNumber}/detail`, {
+                target: `#issue-detail-${issueNumber}`,
+                swap: 'outerHTML'
+            });
+        }
+    }
+
+    async function removeLabel(issueNumber, labelToRemove) {
+        // Get current labels
+        const container = document.getElementById(`labels-container-${issueNumber}`);
+        const currentLabels = Array.from(container.querySelectorAll('.label-chip'))
+            .map(chip => chip.textContent.replace('×', '').trim())
+            .filter(label => label !== labelToRemove);
+
+        await updateIssueField(issueNumber, 'labels', currentLabels);
+
+        // Refresh the issue detail to show updated labels
+        htmx.ajax('GET', `/api/issues/${issueNumber}/detail`, {
+            target: `#issue-detail-${issueNumber}`,
+            swap: 'outerHTML'
+        });
+    }
+</script>

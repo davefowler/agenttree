@@ -17,7 +17,7 @@ from agenttree.config import load_config
 from agenttree.worktree import WorktreeManager
 from agenttree.github import get_issue as get_github_issue
 from agenttree import issues as issue_crud
-from agenttree.web.models import StageEnum, KanbanBoard, Issue as WebIssue, IssueMoveRequest
+from agenttree.web.models import StageEnum, KanbanBoard, Issue as WebIssue, IssueMoveRequest, IssueUpdate, Priority, IssueStatus
 
 # Get the directory where this file is located
 BASE_DIR = Path(__file__).resolve().parent
@@ -75,7 +75,7 @@ def verify_credentials(credentials: Optional[HTTPBasicCredentials] = Depends(sec
 
 # Favicon routes
 @app.get("/favicon.ico")
-async def favicon():
+async def favicon() -> FileResponse:
     """Serve favicon."""
     return FileResponse(BASE_DIR / "static" / "favicon.svg", media_type="image/svg+xml")
 
@@ -84,7 +84,7 @@ async def favicon():
 @app.get("/apple-touch-icon-precomposed.png")
 @app.get("/apple-touch-icon-120x120.png")
 @app.get("/apple-touch-icon-120x120-precomposed.png")
-async def apple_touch_icon():
+async def apple_touch_icon() -> RedirectResponse:
     """Redirect apple touch icon requests to favicon."""
     return RedirectResponse(url="/favicon.ico")
 
@@ -177,6 +177,20 @@ def convert_issue_to_web(issue: issue_crud.Issue) -> WebIssue:
     except ValueError:
         stage = StageEnum.BACKLOG
 
+    # Map priority string to Priority enum
+    try:
+        priority = Priority(issue.priority.value if hasattr(issue.priority, 'value') else issue.priority)
+    except (ValueError, AttributeError):
+        priority = Priority.MEDIUM
+
+    # Determine status based on stage
+    if issue.assigned_agent:
+        status = IssueStatus.IN_PROGRESS
+    elif stage in (StageEnum.ACCEPTED, StageEnum.NOT_DOING):
+        status = IssueStatus.CLOSED
+    else:
+        status = IssueStatus.OPEN
+
     return WebIssue(
         number=int(issue.id),
         title=issue.title,
@@ -184,7 +198,14 @@ def convert_issue_to_web(issue: issue_crud.Issue) -> WebIssue:
         labels=issue.labels,
         assignees=[],
         stage=stage,
+        substage=issue.substage,
+        status=status,
+        priority=priority,
         assigned_agent=issue.assigned_agent,
+        branch=issue.branch,
+        github_issue=issue.github_issue,
+        pr_number=issue.pr_number,
+        pr_url=issue.pr_url,
         created_at=datetime.fromisoformat(issue.created.replace("Z", "+00:00")),
         updated_at=datetime.fromisoformat(issue.updated.replace("Z", "+00:00")),
     )
@@ -206,9 +227,11 @@ def get_kanban_board() -> KanbanBoard:
 
 
 @app.get("/", response_class=HTMLResponse)
-async def dashboard(request: Request):
+async def dashboard(
+    request: Request,
+    user: Optional[str] = Depends(get_current_user)
+) -> HTMLResponse:
     """Main dashboard page."""
-    user = get_current_user()  # Check auth if enabled
     agents = agent_manager.get_all_agents()
     return templates.TemplateResponse(
         "dashboard.html",
@@ -217,9 +240,11 @@ async def dashboard(request: Request):
 
 
 @app.get("/kanban", response_class=HTMLResponse)
-async def kanban(request: Request):
+async def kanban(
+    request: Request,
+    user: Optional[str] = Depends(get_current_user)
+) -> HTMLResponse:
     """Kanban board page."""
-    get_current_user()  # Check auth if enabled
     board = get_kanban_board()
     return templates.TemplateResponse(
         "kanban.html",
@@ -228,9 +253,11 @@ async def kanban(request: Request):
 
 
 @app.get("/flow", response_class=HTMLResponse)
-async def flow(request: Request):
+async def flow(
+    request: Request,
+    user: Optional[str] = Depends(get_current_user)
+) -> HTMLResponse:
     """Flow view page."""
-    get_current_user()  # Check auth if enabled
     issues = issue_crud.list_issues()
     web_issues = [convert_issue_to_web(i) for i in issues]
     # Sort by stage order and then by number
@@ -253,14 +280,19 @@ async def flow(request: Request):
             "issues": web_issues,
             "selected_issue": selected_issue,
             "issue": selected_issue,  # issue_detail.html expects 'issue'
+            "stages": list(StageEnum),
+            "priorities": list(Priority),
+            "statuses": list(IssueStatus),
         }
     )
 
 
 @app.get("/flow/issues", response_class=HTMLResponse)
-async def flow_issues(request: Request):
+async def flow_issues(
+    request: Request,
+    user: Optional[str] = Depends(get_current_user)
+) -> HTMLResponse:
     """Flow issues list (HTMX endpoint)."""
-    get_current_user()  # Check auth if enabled
     issues = issue_crud.list_issues()
     web_issues = [convert_issue_to_web(i) for i in issues]
     web_issues.sort(key=lambda x: (list(StageEnum).index(x.stage), x.number))
@@ -271,9 +303,11 @@ async def flow_issues(request: Request):
 
 
 @app.get("/agents", response_class=HTMLResponse)
-async def agents_list(request: Request):
+async def agents_list(
+    request: Request,
+    user: Optional[str] = Depends(get_current_user)
+) -> HTMLResponse:
     """Get agents list (HTMX endpoint)."""
-    get_current_user()  # Check auth if enabled
     agents = agent_manager.get_all_agents()
     return templates.TemplateResponse(
         "partials/agents_list.html",
@@ -282,9 +316,12 @@ async def agents_list(request: Request):
 
 
 @app.get("/agent/{agent_num}/tmux", response_class=HTMLResponse)
-async def agent_tmux(request: Request, agent_num: int):
+async def agent_tmux(
+    request: Request,
+    agent_num: int,
+    user: Optional[str] = Depends(get_current_user)
+) -> HTMLResponse:
     """Get tmux output for an agent (HTMX endpoint)."""
-    get_current_user()  # Check auth if enabled
     # Capture tmux output
     try:
         result = subprocess.run(
@@ -308,10 +345,10 @@ async def agent_tmux(request: Request, agent_num: int):
 async def send_to_agent(
     request: Request,
     agent_num: int,
-    message: str = Form(...)
-):
+    message: str = Form(...),
+    user: Optional[str] = Depends(get_current_user)
+) -> HTMLResponse:
     """Send a message to an agent via tmux."""
-    get_current_user()  # Check auth if enabled
     try:
         subprocess.run(
             ["tmux", "send-keys", "-t", f"agent-{agent_num}", message, "Enter"],
@@ -336,7 +373,7 @@ async def dispatch_task(
     issue_number: int = Form(default=None),
     task_description: str = Form(default=None),
     user: Optional[str] = Depends(get_current_user)
-):
+) -> HTMLResponse:
     """Dispatch a task to an agent (adds to queue)."""
     from agenttree.worktree import create_task_file
 
@@ -389,10 +426,12 @@ async def dispatch_task(
 
 
 @app.post("/api/issues/{issue_id}/start", response_class=HTMLResponse)
-async def start_issue(request: Request, issue_id: str):
+async def start_issue(
+    request: Request,
+    issue_id: str,
+    user: Optional[str] = Depends(get_current_user)
+) -> HTMLResponse:
     """Start an agent to work on an issue (calls agenttree start)."""
-    get_current_user()  # Check auth if enabled
-
     try:
         # Run agenttree start in background (don't wait for completion)
         subprocess.Popen(
@@ -415,10 +454,12 @@ async def start_issue(request: Request, issue_id: str):
 
 
 @app.post("/api/issues/{issue_id}/move")
-async def move_issue(issue_id: str, move_request: IssueMoveRequest):
+async def move_issue(
+    issue_id: str,
+    move_request: IssueMoveRequest,
+    user: Optional[str] = Depends(get_current_user)
+) -> dict:
     """Move an issue to a new stage."""
-    get_current_user()  # Check auth if enabled
-
     # Update the issue stage
     updated_issue = issue_crud.update_issue_stage(
         issue_id=issue_id,
@@ -432,11 +473,54 @@ async def move_issue(issue_id: str, move_request: IssueMoveRequest):
     return {"success": True, "stage": move_request.stage.value}
 
 
-@app.get("/api/issues/{issue_id}/detail", response_class=HTMLResponse)
-async def issue_detail(request: Request, issue_id: str):
-    """Get issue detail HTML (for modal)."""
-    get_current_user()  # Check auth if enabled
+@app.patch("/api/issues/{issue_id}")
+async def update_issue(
+    request: Request,
+    issue_id: str,
+    update_request: IssueUpdate,
+    user: Optional[str] = Depends(get_current_user)
+) -> dict:
+    """Update issue fields."""
+    issue = issue_crud.get_issue(issue_id)
+    if not issue:
+        raise HTTPException(status_code=404, detail=f"Issue {issue_id} not found")
 
+    # Handle stage update
+    if update_request.stage is not None:
+        updated = issue_crud.update_issue_stage(
+            issue_id=issue_id,
+            stage=update_request.stage.value,
+            substage=None,  # Clear substage when changing stage manually
+        )
+        if not updated:
+            raise HTTPException(status_code=500, detail="Failed to update stage")
+
+    # Handle other field updates
+    priority = None
+    if update_request.priority is not None:
+        # Map web Priority to issues Priority
+        priority = issue_crud.Priority(update_request.priority.value)
+
+    updated = issue_crud.update_issue(
+        issue_id=issue_id,
+        title=update_request.title,
+        priority=priority,
+        labels=update_request.labels,
+    )
+
+    if not updated:
+        raise HTTPException(status_code=500, detail="Failed to update issue")
+
+    return {"success": True}
+
+
+@app.get("/api/issues/{issue_id}/detail", response_class=HTMLResponse)
+async def issue_detail(
+    request: Request,
+    issue_id: str,
+    user: Optional[str] = Depends(get_current_user)
+) -> HTMLResponse:
+    """Get issue detail HTML (for modal)."""
     issue = issue_crud.get_issue(issue_id)
     if not issue:
         raise HTTPException(status_code=404, detail=f"Issue {issue_id} not found")
@@ -454,15 +538,23 @@ async def issue_detail(request: Request, issue_id: str):
 
     return templates.TemplateResponse(
         "partials/issue_detail.html",
-        {"request": request, "issue": web_issue}
+        {
+            "request": request,
+            "issue": web_issue,
+            "stages": list(StageEnum),
+            "priorities": list(Priority),
+            "statuses": list(IssueStatus),
+        }
     )
 
 
 @app.get("/flow/issue/{issue_id}", response_class=HTMLResponse)
-async def flow_issue_detail(request: Request, issue_id: str):
+async def flow_issue_detail(
+    request: Request,
+    issue_id: str,
+    user: Optional[str] = Depends(get_current_user)
+) -> HTMLResponse:
     """Get issue detail for flow view (HTMX endpoint)."""
-    get_current_user()  # Check auth if enabled
-
     issue = issue_crud.get_issue(issue_id)
     if not issue:
         raise HTTPException(status_code=404, detail=f"Issue {issue_id} not found")
@@ -480,12 +572,18 @@ async def flow_issue_detail(request: Request, issue_id: str):
 
     return templates.TemplateResponse(
         "partials/issue_detail.html",
-        {"request": request, "issue": web_issue}
+        {
+            "request": request,
+            "issue": web_issue,
+            "stages": list(StageEnum),
+            "priorities": list(Priority),
+            "statuses": list(IssueStatus),
+        }
     )
 
 
 @app.websocket("/ws/agent/{agent_num}/tmux")
-async def tmux_websocket(websocket: WebSocket, agent_num: int):
+async def tmux_websocket(websocket: WebSocket, agent_num: int) -> None:
     """WebSocket for live tmux output streaming."""
     await websocket.accept()
 
@@ -515,7 +613,7 @@ async def tmux_websocket(websocket: WebSocket, agent_num: int):
 
 
 @app.get("/health")
-async def health_check():
+async def health_check() -> dict:
     """Health check endpoint."""
     return {"status": "healthy", "service": "agenttree-web"}
 
@@ -524,7 +622,7 @@ def run_server(
     host: str = "0.0.0.0",
     port: int = 8080,
     config_path: Optional[Path] = None
-):
+) -> None:
     """Run the FastAPI server.
 
     Args:
