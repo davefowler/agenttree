@@ -1,0 +1,16 @@
+<!-- Markdown content display partial -->
+<div class="markdown-content">
+    <div class="markdown-rendered" id="markdown-display"></div>
+    <script type="text/template" id="markdown-source">{{ content }}</script>
+    <script>
+        (function() {
+            const source = document.getElementById('markdown-source').textContent;
+            const display = document.getElementById('markdown-display');
+            if (typeof marked !== 'undefined') {
+                display.innerHTML = marked.parse(source);
+            } else {
+                display.innerHTML = '<pre class="markdown-raw">' + source + '</pre>';
+            }
+        })();
+    </script>
+</div>

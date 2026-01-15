@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Flow - AgentTree</title>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -78,7 +79,7 @@
         }
 
         .flow-sidebar {
-            width: 400px;
+            width: 320px;
             background: #2d4a3e;
             border-right: 1px solid #4a7c6f;
             overflow-y: auto;
@@ -88,8 +89,119 @@
         .flow-main {
             flex: 1;
             overflow-y: auto;
-            padding: 20px;
             background: #f8f6f0;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .flow-agent-sidebar {
+            width: 400px;
+            background: #1e3a2f;
+            border-left: 1px solid #4a7c6f;
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .flow-agent-sidebar.collapsed {
+            width: 40px;
+        }
+
+        .agent-sidebar-header {
+            background: #2d4a3e;
+            padding: 12px 15px;
+            border-bottom: 1px solid #4a7c6f;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .agent-sidebar-header h3 {
+            color: #a8d5ba;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .agent-sidebar-toggle {
+            background: none;
+            border: none;
+            color: #8eb89c;
+            cursor: pointer;
+            font-size: 16px;
+            padding: 4px;
+        }
+
+        .agent-sidebar-toggle:hover {
+            color: #a8d5ba;
+        }
+
+        .flow-agent-sidebar.collapsed .agent-sidebar-header h3,
+        .flow-agent-sidebar.collapsed .agent-sidebar-content {
+            display: none;
+        }
+
+        .agent-sidebar-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .agent-status {
+            padding: 10px 15px;
+            background: #2d4a3e;
+            border-bottom: 1px solid #4a7c6f;
+            font-size: 12px;
+        }
+
+        .agent-status .status-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+
+        .agent-status .status-indicator.active {
+            background: #6b9a7a;
+        }
+
+        .agent-status .status-indicator.inactive {
+            background: #8eb89c;
+        }
+
+        .tmux-output {
+            flex: 1;
+            background: #0d1f18;
+            padding: 10px;
+            overflow-y: auto;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 12px;
+            line-height: 1.4;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        .tmux-input-container {
+            padding: 10px;
+            background: #2d4a3e;
+            border-top: 1px solid #4a7c6f;
+        }
+
+        .tmux-input {
+            width: 100%;
+            padding: 8px 12px;
+            background: #1e3a2f;
+            border: 1px solid #4a7c6f;
+            border-radius: 4px;
+            color: #e8e4d9;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 12px;
+        }
+
+        .tmux-input:focus {
+            outline: none;
+            border-color: #a8d5ba;
         }
 
         .issue-item {
@@ -161,6 +273,51 @@
             color: #e8e4d9;
         }
 
+        /* File tabs for issue detail */
+        .file-tabs-container {
+            background: #eae8e0;
+            border-bottom: 1px solid #d4d0c4;
+            padding: 0 20px;
+        }
+
+        .file-tabs {
+            display: flex;
+            gap: 0;
+            overflow-x: auto;
+        }
+
+        .file-tab {
+            padding: 10px 16px;
+            color: #6b8f7a;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+            white-space: nowrap;
+            background: none;
+            border-top: none;
+            border-left: none;
+            border-right: none;
+        }
+
+        .file-tab:hover {
+            color: #2d4a3e;
+            background: #f8f6f0;
+        }
+
+        .file-tab.active {
+            color: #2d4a3e;
+            border-bottom-color: #5d8a6b;
+            background: #f8f6f0;
+        }
+
+        .issue-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+        }
+
         .issue-detail {
             max-width: 900px;
             color: #2d4a3e;
@@ -194,6 +351,116 @@
             margin-bottom: 20px;
             white-space: pre-wrap;
             line-height: 1.6;
+        }
+
+        .markdown-content {
+            background: #fff;
+            border: 1px solid #d4d0c4;
+            border-radius: 6px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .markdown-raw {
+            white-space: pre-wrap;
+            line-height: 1.6;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-size: 14px;
+            color: #2d4a3e;
+            margin: 0;
+        }
+
+        /* Rendered markdown styles */
+        .markdown-rendered {
+            line-height: 1.6;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-size: 14px;
+            color: #2d4a3e;
+        }
+
+        .markdown-rendered h1 {
+            font-size: 24px;
+            font-weight: 600;
+            margin: 0 0 16px 0;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #d4d0c4;
+        }
+
+        .markdown-rendered h2 {
+            font-size: 20px;
+            font-weight: 600;
+            margin: 24px 0 12px 0;
+            padding-bottom: 6px;
+            border-bottom: 1px solid #eae8e0;
+        }
+
+        .markdown-rendered h3 {
+            font-size: 16px;
+            font-weight: 600;
+            margin: 20px 0 10px 0;
+        }
+
+        .markdown-rendered p {
+            margin: 0 0 12px 0;
+        }
+
+        .markdown-rendered ul, .markdown-rendered ol {
+            margin: 0 0 12px 0;
+            padding-left: 24px;
+        }
+
+        .markdown-rendered li {
+            margin-bottom: 4px;
+        }
+
+        .markdown-rendered code {
+            background: #eae8e0;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 13px;
+        }
+
+        .markdown-rendered pre {
+            background: #2d4a3e;
+            color: #e8e4d9;
+            padding: 16px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin: 0 0 16px 0;
+        }
+
+        .markdown-rendered pre code {
+            background: none;
+            padding: 0;
+            color: inherit;
+        }
+
+        .markdown-rendered blockquote {
+            border-left: 4px solid #5d8a6b;
+            margin: 0 0 16px 0;
+            padding: 8px 16px;
+            background: #f8f6f0;
+            color: #6b8f7a;
+        }
+
+        .markdown-rendered a {
+            color: #5d8a6b;
+            text-decoration: none;
+        }
+
+        .markdown-rendered a:hover {
+            text-decoration: underline;
+        }
+
+        .markdown-rendered strong {
+            font-weight: 600;
+        }
+
+        .markdown-rendered hr {
+            border: none;
+            border-top: 1px solid #d4d0c4;
+            margin: 24px 0;
         }
 
         .detail-labels {
@@ -266,6 +533,22 @@
             font-size: 14px;
         }
 
+        .no-agent-message {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            text-align: center;
+            color: #8eb89c;
+            padding: 20px;
+        }
+
+        .no-agent-message p {
+            font-size: 13px;
+            margin-bottom: 10px;
+        }
+
         ::-webkit-scrollbar {
             width: 10px;
             height: 10px;
@@ -283,12 +566,20 @@
         ::-webkit-scrollbar-thumb:hover {
             background: #5d8a6b;
         }
+
+        .flow-main::-webkit-scrollbar-track {
+            background: #eae8e0;
+        }
+
+        .flow-main::-webkit-scrollbar-thumb {
+            background: #c4c0b4;
+        }
     </style>
 </head>
 <body>
     <header>
         <div class="container">
-            <h1>🌳 AgentTree Dashboard</h1>
+            <h1>AgentTree Dashboard</h1>
             <div class="subtitle">Multi-agent development framework</div>
             <nav class="tabs">
                 <a href="/" class="tab">Dashboard</a>
@@ -299,6 +590,7 @@
     </header>
 
     <div class="flow-container">
+        <!-- Left sidebar: Issue list -->
         <div class="flow-sidebar"
              hx-get="/flow/issues"
              hx-trigger="load, every 10s"
@@ -306,34 +598,153 @@
             {% include 'partials/flow_issues_list.html' %}
         </div>
 
+        <!-- Main panel: Issue detail with file tabs -->
         <div class="flow-main" id="issue-detail">
             {% if selected_issue %}
-                {% include 'partials/issue_detail.html' %}
+                {% include 'partials/flow_issue_detail.html' %}
             {% else %}
                 <div class="empty-state">
                     <h2>No issues found</h2>
-                    <p>All caught up! 🎉</p>
+                    <p>All caught up!</p>
                 </div>
             {% endif %}
+        </div>
+
+        <!-- Right sidebar: Agent chat -->
+        <div class="flow-agent-sidebar" id="agent-sidebar">
+            <div class="agent-sidebar-header">
+                <h3>Agent Chat</h3>
+                <button class="agent-sidebar-toggle" onclick="toggleAgentSidebar()">
+                    <span id="sidebar-toggle-icon">&raquo;</span>
+                </button>
+            </div>
+            <div class="agent-sidebar-content" id="agent-sidebar-content">
+                {% if selected_issue and selected_issue.assigned_agent %}
+                <div class="agent-status">
+                    <span class="status-indicator active"></span>
+                    Agent {{ selected_issue.assigned_agent }} assigned
+                </div>
+                <div class="tmux-output" id="tmux-output"
+                     hx-get="/agent/{{ selected_issue.assigned_agent }}/tmux"
+                     hx-trigger="load, every 2s"
+                     hx-swap="innerHTML">
+                    Loading...
+                </div>
+                <div class="tmux-input-container">
+                    <form hx-post="/agent/{{ selected_issue.assigned_agent }}/send"
+                          hx-trigger="submit"
+                          hx-target="#send-status"
+                          hx-swap="innerHTML"
+                          onsubmit="this.reset(); return true;">
+                        <input type="text" name="message" class="tmux-input"
+                               placeholder="Send message to agent..."
+                               autocomplete="off">
+                    </form>
+                    <div id="send-status"></div>
+                </div>
+                {% else %}
+                <div class="no-agent-message">
+                    <p>No agent assigned to this issue</p>
+                    <p>Click "Start Agent" to begin working on this issue</p>
+                </div>
+                {% endif %}
+            </div>
         </div>
     </div>
 
     <script>
+        let currentIssueId = '{{ selected_issue.number if selected_issue else "" }}';
+        let currentAgentNum = '{{ selected_issue.assigned_agent if selected_issue and selected_issue.assigned_agent else "" }}';
+
+        // Toggle agent sidebar
+        function toggleAgentSidebar() {
+            const sidebar = document.getElementById('agent-sidebar');
+            const icon = document.getElementById('sidebar-toggle-icon');
+            sidebar.classList.toggle('collapsed');
+            icon.textContent = sidebar.classList.contains('collapsed') ? '\u00ab' : '\u00bb';
+        }
+
+        // Handle file tab clicks
+        function selectFileTab(issueId, filename) {
+            // Update active tab
+            document.querySelectorAll('.file-tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            event.target.classList.add('active');
+
+            // Load file content
+            htmx.ajax('GET', '/api/issues/' + issueId + '/files/' + filename, {
+                target: '#file-content',
+                swap: 'innerHTML'
+            });
+        }
+
         // Handle issue selection
         document.body.addEventListener('htmx:afterSwap', function(event) {
             if (event.detail.target.classList.contains('flow-sidebar')) {
                 // After sidebar refresh, restore active state
-                const activeIssue = document.querySelector('.issue-item.active');
-                if (activeIssue) {
-                    const issueNumber = activeIssue.dataset.issue;
+                if (currentIssueId) {
                     document.querySelectorAll('.issue-item').forEach(item => {
-                        if (item.dataset.issue === issueNumber) {
+                        if (item.dataset.issue === currentIssueId) {
                             item.classList.add('active');
                         }
                     });
                 }
             }
+
+            // When issue detail is loaded, update agent sidebar
+            if (event.detail.target.id === 'issue-detail') {
+                const newIssueId = event.detail.target.querySelector('[data-issue-id]')?.dataset.issueId;
+                const newAgentNum = event.detail.target.querySelector('[data-agent-num]')?.dataset.agentNum;
+
+                if (newIssueId) {
+                    currentIssueId = newIssueId;
+                }
+                if (newAgentNum !== currentAgentNum) {
+                    currentAgentNum = newAgentNum || '';
+                    updateAgentSidebar(currentAgentNum);
+                }
+            }
         });
+
+        // Update agent sidebar content
+        function updateAgentSidebar(agentNum) {
+            const content = document.getElementById('agent-sidebar-content');
+            if (!agentNum) {
+                content.innerHTML = `
+                    <div class="no-agent-message">
+                        <p>No agent assigned to this issue</p>
+                        <p>Click "Start Agent" to begin working on this issue</p>
+                    </div>
+                `;
+            } else {
+                content.innerHTML = `
+                    <div class="agent-status">
+                        <span class="status-indicator active"></span>
+                        Agent ${agentNum} assigned
+                    </div>
+                    <div class="tmux-output" id="tmux-output"
+                         hx-get="/agent/${agentNum}/tmux"
+                         hx-trigger="load, every 2s"
+                         hx-swap="innerHTML">
+                        Loading...
+                    </div>
+                    <div class="tmux-input-container">
+                        <form hx-post="/agent/${agentNum}/send"
+                              hx-trigger="submit"
+                              hx-target="#send-status"
+                              hx-swap="innerHTML"
+                              onsubmit="this.reset(); return true;">
+                            <input type="text" name="message" class="tmux-input"
+                                   placeholder="Send message to agent..."
+                                   autocomplete="off">
+                        </form>
+                        <div id="send-status"></div>
+                    </div>
+                `;
+                htmx.process(content);
+            }
+        }
 
         // Click handler for issue items
         document.body.addEventListener('click', function(event) {
@@ -344,6 +755,7 @@
                     item.classList.remove('active');
                 });
                 issueItem.classList.add('active');
+                currentIssueId = issueItem.dataset.issue;
             }
         });
     </script>
