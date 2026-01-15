@@ -178,6 +178,126 @@ class TestHookRegistry:
         # Should not raise any errors
         registry.execute_pre_transition(issue, IMPLEMENT, IMPLEMENTATION_REVIEW)
 
+    def test_execute_pre_transition_collects_multiple_errors(self):
+        """Should collect all ValidationErrors from multiple failing hooks."""
+        from agenttree.hooks import HookRegistry, ValidationError
+
+        registry = HookRegistry()
+        executed = []
+
+        def hook1(issue):
+            executed.append("hook1")
+            raise ValidationError("Error from hook1")
+
+        def hook2(issue):
+            executed.append("hook2")
+            raise ValidationError("Error from hook2")
+
+        def hook3(issue):
+            executed.append("hook3")
+            raise ValidationError("Error from hook3")
+
+        registry.register_pre_transition(IMPLEMENT, IMPLEMENTATION_REVIEW, hook1)
+        registry.register_pre_transition(IMPLEMENT, IMPLEMENTATION_REVIEW, hook2)
+        registry.register_pre_transition(IMPLEMENT, IMPLEMENTATION_REVIEW, hook3)
+
+        issue = Mock(spec=Issue)
+
+        with pytest.raises(ValidationError) as exc_info:
+            registry.execute_pre_transition(issue, IMPLEMENT, IMPLEMENTATION_REVIEW)
+
+        # All 3 hooks should have executed
+        assert executed == ["hook1", "hook2", "hook3"]
+
+        # All 3 error messages should appear in the combined exception
+        error_msg = str(exc_info.value)
+        assert "Error from hook1" in error_msg
+        assert "Error from hook2" in error_msg
+        assert "Error from hook3" in error_msg
+
+    def test_execute_pre_transition_single_error_not_wrapped(self):
+        """Single error should not be wrapped in 'Multiple validation errors' format."""
+        from agenttree.hooks import HookRegistry, ValidationError
+
+        registry = HookRegistry()
+
+        def failing_hook(issue):
+            raise ValidationError("Single error message")
+
+        registry.register_pre_transition(IMPLEMENT, IMPLEMENTATION_REVIEW, failing_hook)
+
+        issue = Mock(spec=Issue)
+
+        with pytest.raises(ValidationError) as exc_info:
+            registry.execute_pre_transition(issue, IMPLEMENT, IMPLEMENTATION_REVIEW)
+
+        # Message should be exactly the original, not wrapped
+        assert str(exc_info.value) == "Single error message"
+        assert "Multiple" not in str(exc_info.value)
+
+    def test_execute_pre_transition_partial_failures(self):
+        """Should run all hooks even when some fail, collecting only failures."""
+        from agenttree.hooks import HookRegistry, ValidationError
+
+        registry = HookRegistry()
+        executed = []
+
+        def success_hook1(issue):
+            executed.append("success1")
+
+        def failing_hook(issue):
+            executed.append("failing")
+            raise ValidationError("This hook failed")
+
+        def success_hook2(issue):
+            executed.append("success2")
+
+        registry.register_pre_transition(IMPLEMENT, IMPLEMENTATION_REVIEW, success_hook1)
+        registry.register_pre_transition(IMPLEMENT, IMPLEMENTATION_REVIEW, failing_hook)
+        registry.register_pre_transition(IMPLEMENT, IMPLEMENTATION_REVIEW, success_hook2)
+
+        issue = Mock(spec=Issue)
+
+        with pytest.raises(ValidationError) as exc_info:
+            registry.execute_pre_transition(issue, IMPLEMENT, IMPLEMENTATION_REVIEW)
+
+        # All 3 hooks should have executed
+        assert executed == ["success1", "failing", "success2"]
+
+        # Only the failing hook's message should appear (single error, not wrapped)
+        assert str(exc_info.value) == "This hook failed"
+
+    def test_execute_pre_transition_error_format(self):
+        """Multiple errors should be formatted with numbered list."""
+        from agenttree.hooks import HookRegistry, ValidationError
+
+        registry = HookRegistry()
+
+        def hook1(issue):
+            raise ValidationError("First error")
+
+        def hook2(issue):
+            raise ValidationError("Second error")
+
+        registry.register_pre_transition(IMPLEMENT, IMPLEMENTATION_REVIEW, hook1)
+        registry.register_pre_transition(IMPLEMENT, IMPLEMENTATION_REVIEW, hook2)
+
+        issue = Mock(spec=Issue)
+
+        with pytest.raises(ValidationError) as exc_info:
+            registry.execute_pre_transition(issue, IMPLEMENT, IMPLEMENTATION_REVIEW)
+
+        error_msg = str(exc_info.value)
+
+        # Should have "Multiple validation errors" header
+        assert "Multiple validation errors" in error_msg
+
+        # Should have numbered items
+        assert "1." in error_msg
+        assert "2." in error_msg
+        assert "First error" in error_msg
+        assert "Second error" in error_msg
+
     def test_execute_post_transition_success(self):
         """Should execute post-transition hooks successfully."""
         from agenttree.hooks import HookRegistry
