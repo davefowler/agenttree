@@ -214,7 +214,7 @@ async def dashboard(
     agents = agent_manager.get_all_agents()
     return templates.TemplateResponse(
         "dashboard.html",
-        {"request": request, "agents": agents, "user": user}
+        {"request": request, "agents": agents, "user": user, "active_page": "dashboard"}
     )
 
 
@@ -227,7 +227,7 @@ async def kanban(
     board = get_kanban_board()
     return templates.TemplateResponse(
         "kanban.html",
-        {"request": request, "board": board, "stages": list(StageEnum)}
+        {"request": request, "board": board, "stages": list(StageEnum), "active_page": "kanban"}
     )
 
 
@@ -259,6 +259,7 @@ async def flow(
             "issues": web_issues,
             "selected_issue": selected_issue,
             "issue": selected_issue,  # issue_detail.html expects 'issue'
+            "active_page": "flow",
         }
     )
 

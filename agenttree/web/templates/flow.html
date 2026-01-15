@@ -21,59 +21,11 @@
             overflow: hidden;
         }
 
-        header {
-            background: #2d4a3e;
-            border-bottom: 1px solid #4a7c6f;
-            padding: 20px;
-        }
-
-        .container {
-            max-width: 1600px;
-            margin: 0 auto;
-        }
-
-        h1 {
-            color: #a8d5ba;
-            font-size: 28px;
-            font-weight: 600;
-        }
-
-        .subtitle {
-            color: #8eb89c;
-            font-size: 14px;
-            margin-top: 5px;
-        }
-
-        .tabs {
-            display: flex;
-            gap: 0;
-            margin-top: 20px;
-            border-bottom: 1px solid #4a7c6f;
-        }
-
-        .tab {
-            padding: 10px 20px;
-            color: #8eb89c;
-            text-decoration: none;
-            border-bottom: 2px solid transparent;
-            transition: all 0.2s;
-            font-size: 14px;
-            font-weight: 500;
-        }
-
-        .tab:hover {
-            color: #e8e4d9;
-            border-bottom-color: #4a7c6f;
-        }
-
-        .tab.active {
-            color: #a8d5ba;
-            border-bottom-color: #a8d5ba;
-        }
+        {% include 'partials/header_styles.html' %}
 
         .flow-container {
             display: flex;
-            height: calc(100vh - 150px);
+            height: calc(100vh - 60px);
             overflow: hidden;
         }
 
@@ -286,17 +238,7 @@
     </style>
 </head>
 <body>
-    <header>
-        <div class="container">
-            <h1>🌳 AgentTree Dashboard</h1>
-            <div class="subtitle">Multi-agent development framework</div>
-            <nav class="tabs">
-                <a href="/" class="tab">Dashboard</a>
-                <a href="/kanban" class="tab">Kanban</a>
-                <a href="/flow" class="tab active">Flow</a>
-            </nav>
-        </div>
-    </header>
+    {% include 'partials/header.html' %}
 
     <div class="flow-container">
         <div class="flow-sidebar"

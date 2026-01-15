@@ -21,91 +21,7 @@
             height: 100vh;
         }
 
-        header {
-            background: #2d4a3e;
-            border-bottom: 1px solid #4a7c6f;
-            padding: 10px 20px;
-            position: sticky;
-            top: 0;
-            z-index: 100;
-        }
-
-        .header-row {
-            display: flex;
-            align-items: center;
-            gap: 30px;
-        }
-
-        .brand {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        h1 {
-            color: #a8d5ba;
-            font-size: 20px;
-            font-weight: 600;
-            margin: 0;
-        }
-
-        .subtitle {
-            display: none;
-        }
-
-        .tabs {
-            display: flex;
-            gap: 0;
-            border-bottom: none;
-            margin: 0;
-        }
-
-        .tab {
-            padding: 8px 16px;
-            color: #8eb89c;
-            text-decoration: none;
-            border-bottom: 2px solid transparent;
-            transition: all 0.2s;
-            font-size: 14px;
-            font-weight: 500;
-        }
-
-        .tab:hover {
-            color: #e8e4d9;
-            border-bottom-color: #4a7c6f;
-        }
-
-        .tab.active {
-            color: #a8d5ba;
-            border-bottom-color: #a8d5ba;
-        }
-
-        .stage-toggle {
-            margin-left: auto;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .toggle-btn {
-            padding: 6px 12px;
-            background: #3d6b5a;
-            border: 1px solid #4a7c6f;
-            border-radius: 4px;
-            color: #e8e4d9;
-            font-size: 13px;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .toggle-btn:hover {
-            background: #4a7c6f;
-        }
-
-        .toggle-btn.active {
-            background: #5d8a6b;
-            border-color: #6b9a7a;
-        }
+        {% include 'partials/header_styles.html' %}
 
         .kanban-column.hidden {
             display: none;
@@ -419,20 +335,7 @@
     </style>
 </head>
 <body>
-    <header>
-        <div class="header-row">
-            <h1>🌳 AgentTree</h1>
-            <nav class="tabs">
-                <a href="/" class="tab">Dashboard</a>
-                <a href="/kanban" class="tab active">Kanban</a>
-                <a href="/flow" class="tab">Flow</a>
-            </nav>
-            <div class="stage-toggle">
-                <button class="toggle-btn active" onclick="setStageView('review')" id="toggle-review">Review Stages</button>
-                <button class="toggle-btn" onclick="setStageView('all')" id="toggle-all">All Stages</button>
-            </div>
-        </div>
-    </header>
+    {% include 'partials/header.html' %}
 
     <div class="kanban-board">
         {% for stage in stages %}
@@ -579,11 +482,16 @@
         function setStageView(view) {
             const columns = document.querySelectorAll('.kanban-column');
             const toggleReview = document.getElementById('toggle-review');
+            const toggleNonempty = document.getElementById('toggle-nonempty');
             const toggleAll = document.getElementById('toggle-all');
+
+            // Clear all active states
+            toggleReview.classList.remove('active');
+            toggleNonempty.classList.remove('active');
+            toggleAll.classList.remove('active');
 
             if (view === 'review') {
                 toggleReview.classList.add('active');
-                toggleAll.classList.remove('active');
                 columns.forEach(col => {
                     const stage = col.dataset.stage;
                     if (reviewStages.includes(stage)) {
@@ -592,9 +500,18 @@
                         col.classList.add('hidden');
                     }
                 });
+            } else if (view === 'nonempty') {
+                toggleNonempty.classList.add('active');
+                columns.forEach(col => {
+                    const cardCount = col.querySelectorAll('.kanban-card').length;
+                    if (cardCount > 0) {
+                        col.classList.remove('hidden');
+                    } else {
+                        col.classList.add('hidden');
+                    }
+                });
             } else {
                 toggleAll.classList.add('active');
-                toggleReview.classList.remove('active');
                 columns.forEach(col => col.classList.remove('hidden'));
             }
 

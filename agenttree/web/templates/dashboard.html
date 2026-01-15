@@ -25,24 +25,7 @@
             padding: 20px;
         }
 
-        header {
-            background: #2d4a3e;
-            border-bottom: 1px solid #4a7c6f;
-            padding: 20px;
-            margin-bottom: 30px;
-        }
-
-        h1 {
-            color: #a8d5ba;
-            font-size: 28px;
-            font-weight: 600;
-        }
-
-        .subtitle {
-            color: #8eb89c;
-            font-size: 14px;
-            margin-top: 5px;
-        }
+        {% include 'partials/header_styles.html' %}
 
         .agents-grid {
             display: grid;
@@ -249,46 +232,10 @@
             max-height: 0;
         }
 
-        .tabs {
-            display: flex;
-            gap: 0;
-            margin-top: 20px;
-            border-bottom: 1px solid #4a7c6f;
-        }
-
-        .tab {
-            padding: 10px 20px;
-            color: #8eb89c;
-            text-decoration: none;
-            border-bottom: 2px solid transparent;
-            transition: all 0.2s;
-            font-size: 14px;
-            font-weight: 500;
-        }
-
-        .tab:hover {
-            color: #e8e4d9;
-            border-bottom-color: #4a7c6f;
-        }
-
-        .tab.active {
-            color: #a8d5ba;
-            border-bottom-color: #a8d5ba;
-        }
     </style>
 </head>
 <body>
-    <header>
-        <div class="container">
-            <h1>🌳 AgentTree Dashboard</h1>
-            <div class="subtitle">Multi-agent development framework</div>
-            <nav class="tabs">
-                <a href="/" class="tab active">Dashboard</a>
-                <a href="/kanban" class="tab">Kanban</a>
-                <a href="/flow" class="tab">Flow</a>
-            </nav>
-        </div>
-    </header>
+    {% include 'partials/header.html' %}
 
     <div class="container">
         <div class="agents-grid"

@@ -1,0 +1,76 @@
+/* Shared header styles */
+header {
+    background: #2d4a3e;
+    border-bottom: 1px solid #4a7c6f;
+    padding: 10px 20px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+}
+
+.header-row {
+    display: flex;
+    align-items: center;
+    gap: 30px;
+}
+
+header h1 {
+    color: #a8d5ba;
+    font-size: 20px;
+    font-weight: 600;
+    margin: 0;
+}
+
+.tabs {
+    display: flex;
+    gap: 0;
+    border-bottom: none;
+    margin: 0;
+}
+
+.tab {
+    padding: 8px 16px;
+    color: #8eb89c;
+    text-decoration: none;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.tab:hover {
+    color: #e8e4d9;
+    border-bottom-color: #4a7c6f;
+}
+
+.tab.active {
+    color: #a8d5ba;
+    border-bottom-color: #a8d5ba;
+}
+
+.stage-toggle {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.toggle-btn {
+    padding: 6px 12px;
+    background: #3d6b5a;
+    border: 1px solid #4a7c6f;
+    border-radius: 4px;
+    color: #e8e4d9;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.toggle-btn:hover {
+    background: #4a7c6f;
+}
+
+.toggle-btn.active {
+    background: #5d8a6b;
+    border-color: #6b9a7a;
+}

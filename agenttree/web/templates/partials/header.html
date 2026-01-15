@@ -1,0 +1,17 @@
+<header>
+    <div class="header-row">
+        <h1>🌳 AgentTree</h1>
+        <nav class="tabs">
+            <a href="/" class="tab {{ 'active' if active_page == 'dashboard' else '' }}">Dashboard</a>
+            <a href="/kanban" class="tab {{ 'active' if active_page == 'kanban' else '' }}">Kanban</a>
+            <a href="/flow" class="tab {{ 'active' if active_page == 'flow' else '' }}">Flow</a>
+        </nav>
+        {% if active_page == 'kanban' %}
+        <div class="stage-toggle">
+            <button class="toggle-btn active" onclick="setStageView('review')" id="toggle-review">Review Stages</button>
+            <button class="toggle-btn" onclick="setStageView('nonempty')" id="toggle-nonempty">Non-Empty</button>
+            <button class="toggle-btn" onclick="setStageView('all')" id="toggle-all">All Stages</button>
+        </div>
+        {% endif %}
+    </div>
+</header>
