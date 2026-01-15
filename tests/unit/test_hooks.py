@@ -1046,6 +1046,135 @@ class TestCheckAndStartBlockedIssues:
                     )
 
 
+class TestCleanupIssueAgent:
+    """Tests for cleanup_issue_agent function."""
+
+    def test_no_agent_to_cleanup(self):
+        """Should return early if no agent exists for issue."""
+        from agenttree.hooks import cleanup_issue_agent
+
+        issue = Issue(
+            id="001",
+            slug="test-issue",
+            title="Test Issue",
+            created="2026-01-11T12:00:00Z",
+            updated="2026-01-11T12:00:00Z",
+            stage=ACCEPTED,
+        )
+
+        with patch('agenttree.state.get_active_agent', return_value=None) as mock_get:
+            cleanup_issue_agent(issue)
+            mock_get.assert_called_once_with("001")
+
+    def test_cleanup_stops_tmux_session(self):
+        """Should stop tmux session if it exists."""
+        from agenttree.hooks import cleanup_issue_agent
+
+        issue = Issue(
+            id="001",
+            slug="test-issue",
+            title="Test Issue",
+            created="2026-01-11T12:00:00Z",
+            updated="2026-01-11T12:00:00Z",
+            stage=ACCEPTED,
+        )
+
+        mock_agent = MagicMock()
+        mock_agent.tmux_session = "agenttree-001"
+        mock_agent.container = "agenttree-agent-1"
+
+        with patch('agenttree.state.get_active_agent', return_value=mock_agent):
+            with patch('agenttree.state.unregister_agent'):
+                with patch('agenttree.tmux.session_exists', return_value=True) as mock_exists:
+                    with patch('agenttree.tmux.kill_session') as mock_kill:
+                        with patch('agenttree.container.get_container_runtime') as mock_runtime:
+                            mock_runtime.return_value.runtime = None  # No container runtime
+                            cleanup_issue_agent(issue)
+                            mock_exists.assert_called_once_with("agenttree-001")
+                            mock_kill.assert_called_once_with("agenttree-001")
+
+    def test_cleanup_stops_container_with_runtime(self):
+        """Should use detected container runtime to stop container."""
+        from agenttree.hooks import cleanup_issue_agent
+
+        issue = Issue(
+            id="001",
+            slug="test-issue",
+            title="Test Issue",
+            created="2026-01-11T12:00:00Z",
+            updated="2026-01-11T12:00:00Z",
+            stage=ACCEPTED,
+        )
+
+        mock_agent = MagicMock()
+        mock_agent.tmux_session = "agenttree-001"
+        mock_agent.container = "agenttree-agent-1"
+
+        with patch('agenttree.state.get_active_agent', return_value=mock_agent):
+            with patch('agenttree.state.unregister_agent'):
+                with patch('agenttree.tmux.session_exists', return_value=False):
+                    with patch('agenttree.container.get_container_runtime') as mock_runtime:
+                        mock_runtime.return_value.runtime = "docker"
+                        with patch('subprocess.run') as mock_run:
+                            mock_run.return_value = MagicMock(returncode=0)
+                            cleanup_issue_agent(issue)
+                            # Should call docker stop and docker rm
+                            calls = mock_run.call_args_list
+                            assert any("stop" in str(c) and "docker" in str(c) for c in calls)
+                            assert any("rm" in str(c) and "docker" in str(c) for c in calls)
+
+    def test_cleanup_unregisters_agent(self):
+        """Should unregister agent to free port."""
+        from agenttree.hooks import cleanup_issue_agent
+
+        issue = Issue(
+            id="001",
+            slug="test-issue",
+            title="Test Issue",
+            created="2026-01-11T12:00:00Z",
+            updated="2026-01-11T12:00:00Z",
+            stage=ACCEPTED,
+        )
+
+        mock_agent = MagicMock()
+        mock_agent.tmux_session = "agenttree-001"
+        mock_agent.container = "agenttree-agent-1"
+
+        with patch('agenttree.state.get_active_agent', return_value=mock_agent):
+            with patch('agenttree.state.unregister_agent') as mock_unregister:
+                with patch('agenttree.tmux.session_exists', return_value=False):
+                    with patch('agenttree.container.get_container_runtime') as mock_runtime:
+                        mock_runtime.return_value.runtime = None
+                        cleanup_issue_agent(issue)
+                        mock_unregister.assert_called_once_with("001")
+
+    def test_cleanup_handles_tmux_failure_gracefully(self):
+        """Should continue cleanup even if tmux operations fail."""
+        from agenttree.hooks import cleanup_issue_agent
+
+        issue = Issue(
+            id="001",
+            slug="test-issue",
+            title="Test Issue",
+            created="2026-01-11T12:00:00Z",
+            updated="2026-01-11T12:00:00Z",
+            stage=ACCEPTED,
+        )
+
+        mock_agent = MagicMock()
+        mock_agent.tmux_session = "agenttree-001"
+        mock_agent.container = "agenttree-agent-1"
+
+        with patch('agenttree.state.get_active_agent', return_value=mock_agent):
+            with patch('agenttree.state.unregister_agent') as mock_unregister:
+                with patch('agenttree.tmux.session_exists', side_effect=Exception("tmux error")):
+                    with patch('agenttree.container.get_container_runtime') as mock_runtime:
+                        mock_runtime.return_value.runtime = None
+                        # Should not raise, should continue to unregister
+                        cleanup_issue_agent(issue)
+                        mock_unregister.assert_called_once_with("001")
+
+
 class TestBackwardCompatibility:
     """Tests for backward compatibility aliases."""
 
