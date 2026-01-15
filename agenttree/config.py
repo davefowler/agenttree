@@ -54,7 +54,6 @@ DEFAULT_STAGES = [
             "refine": SubstageConfig(name="refine"),
         }
     ),
-    StageConfig(name="problem_review", human_review=True),
     StageConfig(
         name="research",
         output="research.md",
