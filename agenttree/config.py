@@ -19,8 +19,11 @@ class SubstageConfig(BaseModel):
 
     name: str
     output: Optional[str] = None  # Document created by this substage
+    output_optional: bool = False  # If True, missing output file doesn't error
     skill: Optional[str] = None   # Override skill file path
-    validators: list[str] = Field(default_factory=list)
+    validators: list[str] = Field(default_factory=list)  # Legacy format
+    on_exit: list[dict] = Field(default_factory=list)  # Config-driven hooks
+    on_enter: list[dict] = Field(default_factory=list)  # Hooks run on enter
 
 
 class StageConfig(BaseModel):
@@ -28,11 +31,14 @@ class StageConfig(BaseModel):
 
     name: str
     output: Optional[str] = None  # Document created by this stage
+    output_optional: bool = False  # If True, missing output file doesn't error
     skill: Optional[str] = None   # Override skill file path
     human_review: bool = False
     triggers_merge: bool = False
     terminal: bool = False  # Cannot progress from here
     substages: Dict[str, SubstageConfig] = Field(default_factory=dict)
+    on_exit: list[dict] = Field(default_factory=list)  # Stage-level exit hooks
+    on_enter: list[dict] = Field(default_factory=list)  # Stage-level enter hooks
 
     def substage_order(self) -> list[str]:
         """Get ordered list of substage names."""
@@ -41,6 +47,23 @@ class StageConfig(BaseModel):
     def get_substage(self, name: str) -> Optional[SubstageConfig]:
         """Get a substage by name."""
         return self.substages.get(name)
+
+    def hooks_for(self, substage: Optional[str], event: str) -> list[dict]:
+        """Get hooks for a substage or stage.
+
+        Args:
+            substage: Substage name, or None for stage-level hooks
+            event: "on_exit" or "on_enter"
+
+        Returns:
+            List of hook configurations
+        """
+        if substage:
+            substage_config = self.get_substage(substage)
+            if substage_config:
+                return getattr(substage_config, event, [])
+            return []
+        return getattr(self, event, [])
 
 
 # Default stages if not configured in .agenttree.yaml
@@ -57,6 +80,7 @@ DEFAULT_STAGES = [
     StageConfig(
         name="research",
         output="research.md",
+        on_enter=[{"type": "create_file", "template": "research.md", "dest": "research.md"}],
         substages={
             "explore": SubstageConfig(name="explore"),
             "document": SubstageConfig(name="document"),
@@ -65,29 +89,69 @@ DEFAULT_STAGES = [
     StageConfig(
         name="plan",
         output="spec.md",
+        on_enter=[{"type": "create_file", "template": "spec.md", "dest": "spec.md"}],
         substages={
             "draft": SubstageConfig(name="draft"),
             "refine": SubstageConfig(name="refine"),
         }
     ),
-    StageConfig(name="plan_assess", output="spec_review.md"),
+    StageConfig(
+        name="plan_assess",
+        output="spec_review.md",
+        on_enter=[{"type": "create_file", "template": "spec_review.md", "dest": "spec_review.md"}],
+    ),
     StageConfig(name="plan_revise", output="spec.md"),
-    StageConfig(name="plan_review", human_review=True),
+    StageConfig(
+        name="plan_review",
+        human_review=True,
+        on_exit=[
+            {"type": "file_exists", "file": "spec.md"},
+            {"type": "section_check", "file": "spec.md", "section": "Approach", "expect": "not_empty"},
+        ],
+    ),
     StageConfig(
         name="implement",
+        # on_exit from implement stage (to implementation_review): create PR
+        on_exit=[{"type": "create_pr"}],
         substages={
             "setup": SubstageConfig(name="setup"),
             "test": SubstageConfig(name="test"),
             "code": SubstageConfig(name="code"),
             "debug": SubstageConfig(name="debug"),
-            "code_review": SubstageConfig(name="code_review", output="review.md", validators=["require_commits"]),
+            "code_review": SubstageConfig(
+                name="code_review",
+                output="review.md",
+                on_enter=[{"type": "create_file", "template": "review.md", "dest": "review.md"}],
+            ),
             "address_review": SubstageConfig(name="address_review"),
-            "wrapup": SubstageConfig(name="wrapup", validators=["require_wrapup_score"]),
-            "feedback": SubstageConfig(name="feedback", output="feedback.md"),
-        }
+            "wrapup": SubstageConfig(
+                name="wrapup",
+                on_exit=[
+                    {"type": "file_exists", "file": "review.md"},
+                    {"type": "field_check", "file": "review.md", "path": "average", "min": 7},
+                ],
+            ),
+            "feedback": SubstageConfig(
+                name="feedback",
+                output="feedback.md",
+                on_exit=[
+                    {"type": "has_commits"},
+                    {"type": "file_exists", "file": "review.md"},
+                    {"type": "section_check", "file": "review.md", "section": "Critical Issues", "expect": "empty"},
+                ],
+            ),
+        },
     ),
-    StageConfig(name="implementation_review", human_review=True),
-    StageConfig(name="accepted", triggers_merge=True),
+    StageConfig(
+        name="implementation_review",
+        human_review=True,
+        on_exit=[{"type": "pr_approved"}],
+    ),
+    StageConfig(
+        name="accepted",
+        triggers_merge=True,
+        on_enter=[{"type": "merge_pr"}],
+    ),
     StageConfig(name="not_doing", terminal=True),
 ]
 

@@ -1,4 +1,7 @@
-"""Tests for agenttree.hooks module."""
+"""Tests for agenttree.hooks module.
+
+Tests the config-driven hook system for stage transitions.
+"""
 
 import subprocess
 import tempfile
@@ -14,6 +17,8 @@ from agenttree.issues import (
     IMPLEMENTATION_REVIEW,
     RESEARCH,
     DEFINE,
+    ACCEPTED,
+    BACKLOG,
 )
 
 
@@ -34,493 +39,466 @@ class TestValidationError:
         assert str(error) == "Test message"
 
 
-class TestHookRegistry:
-    """Tests for HookRegistry class."""
+class TestBuiltinValidators:
+    """Tests for run_builtin_validator function."""
 
-    def test_registry_initialization(self):
-        """HookRegistry should initialize with empty hook dictionaries."""
-        from agenttree.hooks import HookRegistry
+    def test_file_exists_success(self, tmp_path):
+        """Should pass when file exists."""
+        from agenttree.hooks import run_builtin_validator
 
-        registry = HookRegistry()
+        (tmp_path / "test.md").write_text("content")
+        hook = {"type": "file_exists", "file": "test.md"}
 
-        assert isinstance(registry.pre_transition, dict)
-        assert isinstance(registry.post_transition, dict)
-        assert isinstance(registry.on_enter, dict)
-        assert isinstance(registry.on_exit, dict)
-        assert len(registry.pre_transition) == 0
-        assert len(registry.post_transition) == 0
-        assert len(registry.on_enter) == 0
-        assert len(registry.on_exit) == 0
+        errors = run_builtin_validator(tmp_path, hook)
+        assert errors == []
 
-    def test_register_pre_transition_hook(self):
-        """Should register a pre-transition hook."""
-        from agenttree.hooks import HookRegistry
+    def test_file_exists_failure(self, tmp_path):
+        """Should return error when file doesn't exist."""
+        from agenttree.hooks import run_builtin_validator
 
-        registry = HookRegistry()
+        hook = {"type": "file_exists", "file": "missing.md"}
 
-        def my_hook(issue):
-            pass
+        errors = run_builtin_validator(tmp_path, hook)
+        assert len(errors) == 1
+        assert "missing.md" in errors[0]
+        assert "does not exist" in errors[0]
 
-        registry.register_pre_transition(IMPLEMENT, IMPLEMENTATION_REVIEW, my_hook)
+    @patch('agenttree.hooks.has_commits_to_push')
+    def test_has_commits_success(self, mock_has_commits, tmp_path):
+        """Should pass when there are commits to push."""
+        from agenttree.hooks import run_builtin_validator
 
-        key = (IMPLEMENT, IMPLEMENTATION_REVIEW)
-        assert key in registry.pre_transition
-        assert my_hook in registry.pre_transition[key]
+        mock_has_commits.return_value = True
+        hook = {"type": "has_commits"}
 
-    def test_register_multiple_pre_transition_hooks(self):
-        """Should register multiple hooks for the same transition."""
-        from agenttree.hooks import HookRegistry
+        errors = run_builtin_validator(tmp_path, hook)
+        assert errors == []
 
-        registry = HookRegistry()
+    @patch('agenttree.hooks.has_commits_to_push')
+    def test_has_commits_failure(self, mock_has_commits, tmp_path):
+        """Should return error when no commits to push."""
+        from agenttree.hooks import run_builtin_validator
 
-        def hook1(issue):
-            pass
+        mock_has_commits.return_value = False
+        hook = {"type": "has_commits"}
 
-        def hook2(issue):
-            pass
+        errors = run_builtin_validator(tmp_path, hook)
+        assert len(errors) == 1
+        assert "No commits" in errors[0]
 
-        registry.register_pre_transition(IMPLEMENT, IMPLEMENTATION_REVIEW, hook1)
-        registry.register_pre_transition(IMPLEMENT, IMPLEMENTATION_REVIEW, hook2)
+    def test_field_check_success(self, tmp_path):
+        """Should pass when field meets minimum threshold."""
+        from agenttree.hooks import run_builtin_validator
 
-        key = (IMPLEMENT, IMPLEMENTATION_REVIEW)
-        assert len(registry.pre_transition[key]) == 2
-        assert hook1 in registry.pre_transition[key]
-        assert hook2 in registry.pre_transition[key]
+        content = """# Review
 
-    def test_register_post_transition_hook(self):
-        """Should register a post-transition hook."""
-        from agenttree.hooks import HookRegistry
+```yaml
+scores:
+  correctness: 8
+  average: 7.5
+```
+"""
+        (tmp_path / "review.md").write_text(content)
+        hook = {"type": "field_check", "file": "review.md", "path": "scores.average", "min": 7}
 
-        registry = HookRegistry()
+        errors = run_builtin_validator(tmp_path, hook)
+        assert errors == []
 
-        def my_hook(issue):
-            pass
+    def test_field_check_below_minimum(self, tmp_path):
+        """Should return error when field is below minimum."""
+        from agenttree.hooks import run_builtin_validator
 
-        registry.register_post_transition(IMPLEMENT, IMPLEMENTATION_REVIEW, my_hook)
+        content = """# Review
 
-        key = (IMPLEMENT, IMPLEMENTATION_REVIEW)
-        assert key in registry.post_transition
-        assert my_hook in registry.post_transition[key]
+```yaml
+scores:
+  average: 5.0
+```
+"""
+        (tmp_path / "review.md").write_text(content)
+        hook = {"type": "field_check", "file": "review.md", "path": "scores.average", "min": 7}
 
-    def test_register_on_enter_hook(self):
-        """Should register an on-enter hook."""
-        from agenttree.hooks import HookRegistry
+        errors = run_builtin_validator(tmp_path, hook)
+        assert len(errors) == 1
+        assert "below minimum" in errors[0]
 
-        registry = HookRegistry()
+    def test_field_check_above_maximum(self, tmp_path):
+        """Should return error when field is above maximum."""
+        from agenttree.hooks import run_builtin_validator
 
-        def my_hook(issue):
-            pass
+        content = """# Review
 
-        registry.register_on_enter(RESEARCH, my_hook)
+```yaml
+count: 15
+```
+"""
+        (tmp_path / "review.md").write_text(content)
+        hook = {"type": "field_check", "file": "review.md", "path": "count", "max": 10}
 
-        assert RESEARCH in registry.on_enter
-        assert my_hook in registry.on_enter[RESEARCH]
+        errors = run_builtin_validator(tmp_path, hook)
+        assert len(errors) == 1
+        assert "above maximum" in errors[0]
 
-    def test_register_on_exit_hook(self):
-        """Should register an on-exit hook."""
-        from agenttree.hooks import HookRegistry
+    def test_field_check_missing_yaml(self, tmp_path):
+        """Should return error when no YAML block found."""
+        from agenttree.hooks import run_builtin_validator
 
-        registry = HookRegistry()
+        (tmp_path / "review.md").write_text("# Review\n\nNo YAML here")
+        hook = {"type": "field_check", "file": "review.md", "path": "scores.average", "min": 7}
 
-        def my_hook(issue):
-            pass
+        errors = run_builtin_validator(tmp_path, hook)
+        assert len(errors) == 1
+        assert "No YAML block found" in errors[0]
 
-        registry.register_on_exit(IMPLEMENT, my_hook)
+    def test_section_check_not_empty_success(self, tmp_path):
+        """Should pass when section has content."""
+        from agenttree.hooks import run_builtin_validator
 
-        assert IMPLEMENT in registry.on_exit
-        assert my_hook in registry.on_exit[IMPLEMENT]
+        content = """# Document
 
-    def test_execute_pre_transition_success(self):
-        """Should execute pre-transition hooks successfully."""
-        from agenttree.hooks import HookRegistry
+## Approach
 
-        registry = HookRegistry()
+This is the approach section with content.
 
-        executed = []
+## Next
+"""
+        (tmp_path / "spec.md").write_text(content)
+        hook = {"type": "section_check", "file": "spec.md", "section": "Approach", "expect": "not_empty"}
 
-        def hook1(issue):
-            executed.append("hook1")
+        errors = run_builtin_validator(tmp_path, hook)
+        assert errors == []
 
-        def hook2(issue):
-            executed.append("hook2")
+    def test_section_check_not_empty_failure(self, tmp_path):
+        """Should return error when section is empty."""
+        from agenttree.hooks import run_builtin_validator
 
-        registry.register_pre_transition(IMPLEMENT, IMPLEMENTATION_REVIEW, hook1)
-        registry.register_pre_transition(IMPLEMENT, IMPLEMENTATION_REVIEW, hook2)
+        content = """# Document
+
+## Approach
+
+<!-- Just a comment -->
+
+## Next
+"""
+        (tmp_path / "spec.md").write_text(content)
+        hook = {"type": "section_check", "file": "spec.md", "section": "Approach", "expect": "not_empty"}
+
+        errors = run_builtin_validator(tmp_path, hook)
+        assert len(errors) == 1
+        assert "is empty" in errors[0]
+
+    def test_section_check_empty_success(self, tmp_path):
+        """Should pass when section is empty (expected)."""
+        from agenttree.hooks import run_builtin_validator
+
+        content = """# Review
+
+## Critical Issues
+
+<!-- Must be empty before PR -->
+
+## Suggestions
+
+- Some suggestion
+"""
+        (tmp_path / "review.md").write_text(content)
+        hook = {"type": "section_check", "file": "review.md", "section": "Critical Issues", "expect": "empty"}
+
+        errors = run_builtin_validator(tmp_path, hook)
+        assert errors == []
+
+    def test_section_check_empty_failure(self, tmp_path):
+        """Should return error when section has items but expected empty."""
+        from agenttree.hooks import run_builtin_validator
+
+        content = """# Review
+
+## Critical Issues
+
+- Security issue found
+
+## Suggestions
+"""
+        (tmp_path / "review.md").write_text(content)
+        hook = {"type": "section_check", "file": "review.md", "section": "Critical Issues", "expect": "empty"}
+
+        errors = run_builtin_validator(tmp_path, hook)
+        assert len(errors) == 1
+        assert "is not empty" in errors[0]
+
+    def test_section_check_all_checked_success(self, tmp_path):
+        """Should pass when all checkboxes are checked."""
+        from agenttree.hooks import run_builtin_validator
+
+        content = """# Checklist
+
+## Test Plan
+
+- [x] Unit tests pass
+- [x] Integration tests pass
+- [x] Manual testing done
+
+## Notes
+"""
+        (tmp_path / "checklist.md").write_text(content)
+        hook = {"type": "section_check", "file": "checklist.md", "section": "Test Plan", "expect": "all_checked"}
+
+        errors = run_builtin_validator(tmp_path, hook)
+        assert errors == []
+
+    def test_section_check_all_checked_failure(self, tmp_path):
+        """Should return error when unchecked items exist."""
+        from agenttree.hooks import run_builtin_validator
+
+        content = """# Checklist
+
+## Test Plan
+
+- [x] Unit tests pass
+- [ ] Integration tests pass
+- [ ] Manual testing done
+
+## Notes
+"""
+        (tmp_path / "checklist.md").write_text(content)
+        hook = {"type": "section_check", "file": "checklist.md", "section": "Test Plan", "expect": "all_checked"}
+
+        errors = run_builtin_validator(tmp_path, hook)
+        assert len(errors) == 1
+        assert "Unchecked items" in errors[0]
+
+    def test_pr_approved_success(self, tmp_path):
+        """Should pass when PR is approved."""
+        from agenttree.hooks import run_builtin_validator
+
+        with patch('agenttree.hooks.get_pr_approval_status', return_value=True):
+            hook = {"type": "pr_approved"}
+            errors = run_builtin_validator(tmp_path, hook, pr_number=123)
+            assert errors == []
+
+    def test_pr_approved_failure(self, tmp_path):
+        """Should return error when PR is not approved."""
+        from agenttree.hooks import run_builtin_validator
+
+        with patch('agenttree.hooks.get_pr_approval_status', return_value=False):
+            hook = {"type": "pr_approved"}
+            errors = run_builtin_validator(tmp_path, hook, pr_number=123)
+            assert len(errors) == 1
+            assert "not approved" in errors[0]
+
+    def test_pr_approved_no_pr_number(self, tmp_path):
+        """Should return error when no PR number available."""
+        from agenttree.hooks import run_builtin_validator
+
+        hook = {"type": "pr_approved"}
+        errors = run_builtin_validator(tmp_path, hook, pr_number=None)
+        assert len(errors) == 1
+        assert "No PR number" in errors[0]
+
+    def test_create_file_action(self, tmp_path):
+        """Should create file from template."""
+        from agenttree.hooks import run_builtin_validator
+
+        # Create templates directory and template file
+        templates_dir = tmp_path / "_agenttree" / "templates"
+        templates_dir.mkdir(parents=True)
+        (templates_dir / "review.md").write_text("# Review Template")
+
+        with patch.object(Path, 'cwd', return_value=tmp_path):
+            issue_dir = tmp_path / "issue"
+            issue_dir.mkdir()
+            hook = {"type": "create_file", "template": "review.md", "dest": "review.md"}
+
+            errors = run_builtin_validator(issue_dir, hook)
+
+        # Note: The create_file action uses absolute path from _agenttree/templates
+        # This test verifies the hook runs without errors
+        assert errors == []
+
+    def test_unknown_hook_type_ignored(self, tmp_path):
+        """Unknown hook types should be ignored silently."""
+        from agenttree.hooks import run_builtin_validator
+
+        hook = {"type": "future_validator"}
+        errors = run_builtin_validator(tmp_path, hook)
+        assert errors == []
+
+
+class TestCommandHooks:
+    """Tests for run_command_hook function."""
+
+    def test_command_success(self, tmp_path):
+        """Should return empty errors on success."""
+        from agenttree.hooks import run_command_hook
+
+        hook = {"command": "echo hello"}
+        errors = run_command_hook(tmp_path, hook)
+        assert errors == []
+
+    def test_command_failure(self, tmp_path):
+        """Should return error message on failure."""
+        from agenttree.hooks import run_command_hook
+
+        hook = {"command": "exit 1"}
+        errors = run_command_hook(tmp_path, hook)
+        assert len(errors) == 1
+
+    def test_command_timeout(self, tmp_path):
+        """Should return error on timeout."""
+        from agenttree.hooks import run_command_hook
+
+        hook = {"command": "sleep 10", "timeout": 0.1}
+        errors = run_command_hook(tmp_path, hook)
+        assert len(errors) == 1
+        assert "timed out" in errors[0]
+
+    def test_command_variable_substitution(self, tmp_path):
+        """Should substitute template variables in command."""
+        from agenttree.hooks import run_command_hook
+
+        # Create a file to verify the variable substitution worked
+        hook = {"command": "echo {{issue_id}} > output.txt"}
+        errors = run_command_hook(tmp_path, hook, issue_id="123")
+        assert errors == []
+
+        output = (tmp_path / "output.txt").read_text().strip()
+        assert output == "123"
+
+
+class TestExecuteHooks:
+    """Tests for execute_hooks function."""
+
+    def test_execute_hooks_collects_all_errors(self, tmp_path):
+        """Should collect errors from all hooks."""
+        from agenttree.hooks import execute_hooks
+        from agenttree.config import SubstageConfig
+
+        config = SubstageConfig(
+            name="test",
+            on_exit=[
+                {"type": "file_exists", "file": "missing1.md"},
+                {"type": "file_exists", "file": "missing2.md"},
+            ]
+        )
+
+        errors = execute_hooks(tmp_path, "test", config, "on_exit")
+        assert len(errors) == 2
+
+    def test_execute_hooks_checks_output_file_on_exit(self, tmp_path):
+        """Should check output file exists when not optional."""
+        from agenttree.hooks import execute_hooks
+        from agenttree.config import SubstageConfig
+
+        config = SubstageConfig(
+            name="test",
+            output="required.md",
+            output_optional=False,
+            on_exit=[],
+        )
+
+        errors = execute_hooks(tmp_path, "test", config, "on_exit")
+        assert len(errors) == 1
+        assert "required.md" in errors[0]
+
+    def test_execute_hooks_skips_optional_output_check(self, tmp_path):
+        """Should skip output check when output_optional is True."""
+        from agenttree.hooks import execute_hooks
+        from agenttree.config import SubstageConfig
+
+        config = SubstageConfig(
+            name="test",
+            output="optional.md",
+            output_optional=True,
+            on_exit=[],
+        )
+
+        errors = execute_hooks(tmp_path, "test", config, "on_exit")
+        assert errors == []
+
+
+class TestExecuteExitHooks:
+    """Tests for execute_exit_hooks function."""
+
+    @patch('agenttree.hooks.execute_hooks')
+    @patch('agenttree.config.load_config')
+    @patch('agenttree.issues.get_issue_dir')
+    def test_raises_validation_error_on_failure(
+        self, mock_get_dir, mock_load_config, mock_execute_hooks
+    ):
+        """Should raise ValidationError when hooks fail."""
+        from agenttree.hooks import execute_exit_hooks, ValidationError
+        from agenttree.config import Config, StageConfig, SubstageConfig
+
+        config = Config()
+        mock_load_config.return_value = config
+        mock_get_dir.return_value = Path("/tmp/issue")
+        mock_execute_hooks.return_value = ["Error 1"]
 
         issue = Mock(spec=Issue)
-        registry.execute_pre_transition(issue, IMPLEMENT, IMPLEMENTATION_REVIEW)
+        issue.id = "123"
+        issue.title = "Test"
+        issue.branch = "test-branch"
+        issue.pr_number = None
 
-        assert executed == ["hook1", "hook2"]
+        with pytest.raises(ValidationError, match="Error 1"):
+            execute_exit_hooks(issue, "implement", "code")
 
-    def test_execute_pre_transition_validation_error(self):
-        """Should raise ValidationError if a pre-hook fails."""
-        from agenttree.hooks import HookRegistry, ValidationError
+    @patch('agenttree.hooks.execute_hooks')
+    @patch('agenttree.config.load_config')
+    @patch('agenttree.issues.get_issue_dir')
+    def test_multiple_errors_formatted(
+        self, mock_get_dir, mock_load_config, mock_execute_hooks
+    ):
+        """Should format multiple errors with numbered list."""
+        from agenttree.hooks import execute_exit_hooks, ValidationError
+        from agenttree.config import Config
 
-        registry = HookRegistry()
-
-        def failing_hook(issue):
-            raise ValidationError("Validation failed")
-
-        registry.register_pre_transition(IMPLEMENT, IMPLEMENTATION_REVIEW, failing_hook)
-
-        issue = Mock(spec=Issue)
-
-        with pytest.raises(ValidationError, match="Validation failed"):
-            registry.execute_pre_transition(issue, IMPLEMENT, IMPLEMENTATION_REVIEW)
-
-    def test_execute_pre_transition_no_hooks(self):
-        """Should handle case where no hooks are registered."""
-        from agenttree.hooks import HookRegistry
-
-        registry = HookRegistry()
-        issue = Mock(spec=Issue)
-
-        # Should not raise any errors
-        registry.execute_pre_transition(issue, IMPLEMENT, IMPLEMENTATION_REVIEW)
-
-    def test_execute_pre_transition_collects_multiple_errors(self):
-        """Should collect all ValidationErrors from multiple failing hooks."""
-        from agenttree.hooks import HookRegistry, ValidationError
-
-        registry = HookRegistry()
-        executed = []
-
-        def hook1(issue):
-            executed.append("hook1")
-            raise ValidationError("Error from hook1")
-
-        def hook2(issue):
-            executed.append("hook2")
-            raise ValidationError("Error from hook2")
-
-        def hook3(issue):
-            executed.append("hook3")
-            raise ValidationError("Error from hook3")
-
-        registry.register_pre_transition(IMPLEMENT, IMPLEMENTATION_REVIEW, hook1)
-        registry.register_pre_transition(IMPLEMENT, IMPLEMENTATION_REVIEW, hook2)
-        registry.register_pre_transition(IMPLEMENT, IMPLEMENTATION_REVIEW, hook3)
+        config = Config()
+        mock_load_config.return_value = config
+        mock_get_dir.return_value = Path("/tmp/issue")
+        mock_execute_hooks.return_value = ["Error 1", "Error 2"]
 
         issue = Mock(spec=Issue)
+        issue.id = "123"
+        issue.title = "Test"
+        issue.branch = "test-branch"
+        issue.pr_number = None
 
         with pytest.raises(ValidationError) as exc_info:
-            registry.execute_pre_transition(issue, IMPLEMENT, IMPLEMENTATION_REVIEW)
+            execute_exit_hooks(issue, "implement", "code")
 
-        # All 3 hooks should have executed
-        assert executed == ["hook1", "hook2", "hook3"]
-
-        # All 3 error messages should appear in the combined exception
         error_msg = str(exc_info.value)
-        assert "Error from hook1" in error_msg
-        assert "Error from hook2" in error_msg
-        assert "Error from hook3" in error_msg
-
-    def test_execute_pre_transition_single_error_not_wrapped(self):
-        """Single error should not be wrapped in 'Multiple validation errors' format."""
-        from agenttree.hooks import HookRegistry, ValidationError
-
-        registry = HookRegistry()
-
-        def failing_hook(issue):
-            raise ValidationError("Single error message")
-
-        registry.register_pre_transition(IMPLEMENT, IMPLEMENTATION_REVIEW, failing_hook)
-
-        issue = Mock(spec=Issue)
-
-        with pytest.raises(ValidationError) as exc_info:
-            registry.execute_pre_transition(issue, IMPLEMENT, IMPLEMENTATION_REVIEW)
-
-        # Message should be exactly the original, not wrapped
-        assert str(exc_info.value) == "Single error message"
-        assert "Multiple" not in str(exc_info.value)
-
-    def test_execute_pre_transition_partial_failures(self):
-        """Should run all hooks even when some fail, collecting only failures."""
-        from agenttree.hooks import HookRegistry, ValidationError
-
-        registry = HookRegistry()
-        executed = []
-
-        def success_hook1(issue):
-            executed.append("success1")
-
-        def failing_hook(issue):
-            executed.append("failing")
-            raise ValidationError("This hook failed")
-
-        def success_hook2(issue):
-            executed.append("success2")
-
-        registry.register_pre_transition(IMPLEMENT, IMPLEMENTATION_REVIEW, success_hook1)
-        registry.register_pre_transition(IMPLEMENT, IMPLEMENTATION_REVIEW, failing_hook)
-        registry.register_pre_transition(IMPLEMENT, IMPLEMENTATION_REVIEW, success_hook2)
-
-        issue = Mock(spec=Issue)
-
-        with pytest.raises(ValidationError) as exc_info:
-            registry.execute_pre_transition(issue, IMPLEMENT, IMPLEMENTATION_REVIEW)
-
-        # All 3 hooks should have executed
-        assert executed == ["success1", "failing", "success2"]
-
-        # Only the failing hook's message should appear (single error, not wrapped)
-        assert str(exc_info.value) == "This hook failed"
-
-    def test_execute_pre_transition_error_format(self):
-        """Multiple errors should be formatted with numbered list."""
-        from agenttree.hooks import HookRegistry, ValidationError
-
-        registry = HookRegistry()
-
-        def hook1(issue):
-            raise ValidationError("First error")
-
-        def hook2(issue):
-            raise ValidationError("Second error")
-
-        registry.register_pre_transition(IMPLEMENT, IMPLEMENTATION_REVIEW, hook1)
-        registry.register_pre_transition(IMPLEMENT, IMPLEMENTATION_REVIEW, hook2)
-
-        issue = Mock(spec=Issue)
-
-        with pytest.raises(ValidationError) as exc_info:
-            registry.execute_pre_transition(issue, IMPLEMENT, IMPLEMENTATION_REVIEW)
-
-        error_msg = str(exc_info.value)
-
-        # Should have "Multiple validation errors" header
         assert "Multiple validation errors" in error_msg
-
-        # Should have numbered items
         assert "1." in error_msg
         assert "2." in error_msg
-        assert "First error" in error_msg
-        assert "Second error" in error_msg
 
-    def test_execute_post_transition_success(self):
-        """Should execute post-transition hooks successfully."""
-        from agenttree.hooks import HookRegistry
 
-        registry = HookRegistry()
+class TestExecuteEnterHooks:
+    """Tests for execute_enter_hooks function."""
 
-        executed = []
+    @patch('agenttree.hooks.execute_hooks')
+    @patch('agenttree.config.load_config')
+    @patch('agenttree.issues.get_issue_dir')
+    def test_logs_warnings_but_does_not_raise(
+        self, mock_get_dir, mock_load_config, mock_execute_hooks, capsys
+    ):
+        """Should log warnings but not raise on errors."""
+        from agenttree.hooks import execute_enter_hooks
+        from agenttree.config import Config
 
-        def hook1(issue):
-            executed.append("hook1")
-
-        def hook2(issue):
-            executed.append("hook2")
-
-        registry.register_post_transition(IMPLEMENT, IMPLEMENTATION_REVIEW, hook1)
-        registry.register_post_transition(IMPLEMENT, IMPLEMENTATION_REVIEW, hook2)
-
-        issue = Mock(spec=Issue)
-        registry.execute_post_transition(issue, IMPLEMENT, IMPLEMENTATION_REVIEW)
-
-        assert executed == ["hook1", "hook2"]
-
-    def test_execute_post_transition_logs_errors_but_continues(self):
-        """Should log errors in post-hooks but not raise."""
-        from agenttree.hooks import HookRegistry
-
-        registry = HookRegistry()
-
-        executed = []
-
-        def failing_hook(issue):
-            executed.append("failing_hook")
-            raise Exception("Post-hook error")
-
-        def success_hook(issue):
-            executed.append("success_hook")
-
-        registry.register_post_transition(IMPLEMENT, IMPLEMENTATION_REVIEW, failing_hook)
-        registry.register_post_transition(IMPLEMENT, IMPLEMENTATION_REVIEW, success_hook)
+        config = Config()
+        mock_load_config.return_value = config
+        mock_get_dir.return_value = Path("/tmp/issue")
+        mock_execute_hooks.return_value = ["Warning message"]
 
         issue = Mock(spec=Issue)
+        issue.id = "123"
+        issue.title = "Test"
+        issue.branch = "test-branch"
+        issue.pr_number = None
 
-        # Should not raise, but should execute both hooks
-        registry.execute_post_transition(issue, IMPLEMENT, IMPLEMENTATION_REVIEW)
-
-        assert "failing_hook" in executed
-        assert "success_hook" in executed
-
-    def test_execute_on_enter_success(self):
-        """Should execute on-enter hooks successfully."""
-        from agenttree.hooks import HookRegistry
-
-        registry = HookRegistry()
-
-        executed = []
-
-        def hook1(issue):
-            executed.append("hook1")
-
-        registry.register_on_enter(RESEARCH, hook1)
-
-        issue = Mock(spec=Issue)
-        registry.execute_on_enter(issue, RESEARCH)
-
-        assert executed == ["hook1"]
-
-    def test_execute_on_exit_success(self):
-        """Should execute on-exit hooks successfully."""
-        from agenttree.hooks import HookRegistry
-
-        registry = HookRegistry()
-
-        executed = []
-
-        def hook1(issue):
-            executed.append("hook1")
-
-        registry.register_on_exit(IMPLEMENT, hook1)
-
-        issue = Mock(spec=Issue)
-        registry.execute_on_exit(issue, IMPLEMENT)
-
-        assert executed == ["hook1"]
-
-
-class TestHelperFunctions:
-    """Tests for helper functions get_registry and execute_transition_hooks."""
-
-    def test_get_registry_returns_global_registry(self):
-        """Should return the global HookRegistry instance."""
-        from agenttree.hooks import get_registry, _registry
-
-        result = get_registry()
-        assert result is _registry
-
-    def test_get_registry_returns_hookregistry_instance(self):
-        """Should return a HookRegistry instance."""
-        from agenttree.hooks import get_registry, HookRegistry
-
-        result = get_registry()
-        assert isinstance(result, HookRegistry)
-
-    def test_execute_transition_hooks_calls_hooks_in_order(self):
-        """Should execute hooks in correct order: on_exit, pre, post, on_enter."""
-        from agenttree.hooks import execute_transition_hooks, HookRegistry
-
-        # Create a fresh registry for this test
-        registry = HookRegistry()
-        execution_order = []
-
-        def on_exit_hook(issue):
-            execution_order.append("on_exit")
-
-        def pre_hook(issue):
-            execution_order.append("pre")
-
-        def post_hook(issue):
-            execution_order.append("post")
-
-        def on_enter_hook(issue):
-            execution_order.append("on_enter")
-
-        registry.register_on_exit(IMPLEMENT, on_exit_hook)
-        registry.register_pre_transition(IMPLEMENT, IMPLEMENTATION_REVIEW, pre_hook)
-        registry.register_post_transition(IMPLEMENT, IMPLEMENTATION_REVIEW, post_hook)
-        registry.register_on_enter(IMPLEMENTATION_REVIEW, on_enter_hook)
-
-        # Patch the global registry
-        import agenttree.hooks
-        original_registry = agenttree.hooks._registry
-        agenttree.hooks._registry = registry
-
-        try:
-            mock_issue = Mock(spec=Issue)
-            execute_transition_hooks(mock_issue, IMPLEMENT, IMPLEMENTATION_REVIEW)
-
-            assert execution_order == ["on_exit", "pre", "post", "on_enter"]
-        finally:
-            agenttree.hooks._registry = original_registry
-
-    def test_execute_transition_hooks_raises_on_pre_validation_error(self):
-        """Should raise ValidationError if pre-transition hook fails."""
-        from agenttree.hooks import execute_transition_hooks, HookRegistry, ValidationError
-
-        registry = HookRegistry()
-
-        def failing_pre_hook(issue):
-            raise ValidationError("Blocked!")
-
-        registry.register_pre_transition(IMPLEMENT, IMPLEMENTATION_REVIEW, failing_pre_hook)
-
-        import agenttree.hooks
-        original_registry = agenttree.hooks._registry
-        agenttree.hooks._registry = registry
-
-        try:
-            mock_issue = Mock(spec=Issue)
-            with pytest.raises(ValidationError, match="Blocked!"):
-                execute_transition_hooks(mock_issue, IMPLEMENT, IMPLEMENTATION_REVIEW)
-        finally:
-            agenttree.hooks._registry = original_registry
-
-
-class TestHookDecorators:
-    """Tests for hook decorator functions."""
-
-    def test_pre_transition_decorator(self):
-        """Should register hook via decorator."""
-        from agenttree.hooks import pre_transition, _registry
-
-        # Clear registry for this test
-        _registry.pre_transition.clear()
-
-        @pre_transition(IMPLEMENT, IMPLEMENTATION_REVIEW)
-        def my_hook(issue):
-            pass
-
-        key = (IMPLEMENT, IMPLEMENTATION_REVIEW)
-        assert key in _registry.pre_transition
-        assert my_hook in _registry.pre_transition[key]
-
-    def test_post_transition_decorator(self):
-        """Should register hook via decorator."""
-        from agenttree.hooks import post_transition, _registry
-
-        # Clear registry for this test
-        _registry.post_transition.clear()
-
-        @post_transition(IMPLEMENT, IMPLEMENTATION_REVIEW)
-        def my_hook(issue):
-            pass
-
-        key = (IMPLEMENT, IMPLEMENTATION_REVIEW)
-        assert key in _registry.post_transition
-        assert my_hook in _registry.post_transition[key]
-
-    def test_on_enter_decorator(self):
-        """Should register hook via decorator."""
-        from agenttree.hooks import on_enter, _registry
-
-        # Clear registry for this test
-        _registry.on_enter.clear()
-
-        @on_enter(RESEARCH)
-        def my_hook(issue):
-            pass
-
-        assert RESEARCH in _registry.on_enter
-        assert my_hook in _registry.on_enter[RESEARCH]
-
-    def test_on_exit_decorator(self):
-        """Should register hook via decorator."""
-        from agenttree.hooks import on_exit, _registry
-
-        # Clear registry for this test
-        _registry.on_exit.clear()
-
-        @on_exit(IMPLEMENT)
-        def my_hook(issue):
-            pass
-
-        assert IMPLEMENT in _registry.on_exit
-        assert my_hook in _registry.on_exit[IMPLEMENT]
+        # Should not raise
+        execute_enter_hooks(issue, "implement", "code")
 
 
 @pytest.fixture
@@ -887,394 +865,12 @@ class TestGitUtilities:
         assert "Test Issue" in msg
 
 
-class TestValidationHooks:
-    """Tests for pre-transition validation hooks."""
-
-    @patch('agenttree.hooks.has_commits_to_push')
-    def test_require_commits_for_review_success(self, mock_has_commits, mock_issue):
-        """Should pass when commits exist."""
-        from agenttree.hooks import require_commits_for_review
-
-        mock_has_commits.return_value = True
-
-        # Should not raise
-        require_commits_for_review(mock_issue)
-
-    @patch('agenttree.hooks.has_commits_to_push')
-    def test_require_commits_for_review_fails_no_commits(self, mock_has_commits, mock_issue):
-        """Should block transition when no commits to push."""
-        from agenttree.hooks import require_commits_for_review, ValidationError
-
-        mock_has_commits.return_value = False
-
-        with pytest.raises(ValidationError, match="No commits to push"):
-            require_commits_for_review(mock_issue)
-
-    @patch('agenttree.github.is_pr_approved')
-    def test_require_pr_approval_success(self, mock_is_approved, mock_issue):
-        """Should pass when PR is approved."""
-        from agenttree.hooks import require_pr_approval
-
-        mock_is_approved.return_value = True
-        mock_issue.pr_number = 123
-
-        # Should not raise
-        require_pr_approval(mock_issue)
-
-    @patch('agenttree.github.is_pr_approved')
-    def test_require_pr_approval_fails_not_approved(self, mock_is_approved, mock_issue):
-        """Should block transition when PR not approved."""
-        from agenttree.hooks import require_pr_approval, ValidationError
-
-        mock_is_approved.return_value = False
-        mock_issue.pr_number = 123
-
-        with pytest.raises(ValidationError, match="requires approval"):
-            require_pr_approval(mock_issue)
-
-    def test_require_pr_approval_fails_no_pr_number(self, mock_issue):
-        """Should block transition when no PR number found."""
-        from agenttree.hooks import require_pr_approval, ValidationError
-
-        mock_issue.pr_number = None
-
-        with pytest.raises(ValidationError, match="No PR number found"):
-            require_pr_approval(mock_issue)
-
-    @patch('agenttree.hooks._get_issue_dir')
-    def test_require_review_md_for_pr_success(self, mock_get_issue_dir, mock_issue, tmp_path):
-        """Should pass when review.md exists with empty Critical Issues section."""
-        from agenttree.hooks import require_review_md_for_pr
-
-        # Setup: Create review.md with empty Critical Issues section
-        mock_get_issue_dir.return_value = tmp_path
-        review_content = """# Code Review - Issue #023
-
-## Critical Issues (Blocking)
-
-<!-- MUST be empty before creating PR -->
-
----
-
-## Suggestions
-
-- Consider adding more tests
-"""
-        (tmp_path / "review.md").write_text(review_content)
-
-        # Should not raise
-        require_review_md_for_pr(mock_issue)
-
-    @patch('agenttree.hooks._get_issue_dir')
-    def test_require_review_md_for_pr_fails_missing_file(self, mock_get_issue_dir, mock_issue, tmp_path):
-        """Should block transition when review.md doesn't exist."""
-        from agenttree.hooks import require_review_md_for_pr, ValidationError
-
-        mock_get_issue_dir.return_value = tmp_path
-        # Don't create review.md
-
-        with pytest.raises(ValidationError, match="review.md not found"):
-            require_review_md_for_pr(mock_issue)
-
-    @patch('agenttree.hooks._get_issue_dir')
-    def test_require_review_md_for_pr_fails_unchecked_items(self, mock_get_issue_dir, mock_issue, tmp_path):
-        """Should block transition when Critical Issues has unchecked items."""
-        from agenttree.hooks import require_review_md_for_pr, ValidationError
-
-        mock_get_issue_dir.return_value = tmp_path
-        review_content = """# Code Review - Issue #023
-
-## Critical Issues (Blocking)
-
-- [ ] Security: SQL injection vulnerability in user input
-
----
-
-## Suggestions
-"""
-        (tmp_path / "review.md").write_text(review_content)
-
-        with pytest.raises(ValidationError, match="Critical Issues"):
-            require_review_md_for_pr(mock_issue)
-
-    @patch('agenttree.hooks._get_issue_dir')
-    def test_require_review_md_for_pr_fails_checked_items(self, mock_get_issue_dir, mock_issue, tmp_path):
-        """Should block transition when Critical Issues has checked items (should be removed, not checked)."""
-        from agenttree.hooks import require_review_md_for_pr, ValidationError
-
-        mock_get_issue_dir.return_value = tmp_path
-        review_content = """# Code Review - Issue #023
-
-## Critical Issues (Blocking)
-
-- [x] Security: Fixed SQL injection vulnerability
-
----
-
-## Suggestions
-"""
-        (tmp_path / "review.md").write_text(review_content)
-
-        with pytest.raises(ValidationError, match="Critical Issues"):
-            require_review_md_for_pr(mock_issue)
-
-    @patch('agenttree.hooks._get_issue_dir')
-    def test_require_review_md_for_pr_success_only_comments(self, mock_get_issue_dir, mock_issue, tmp_path):
-        """Should pass when Critical Issues section only has HTML comments."""
-        from agenttree.hooks import require_review_md_for_pr
-
-        mock_get_issue_dir.return_value = tmp_path
-        review_content = """# Code Review - Issue #023
-
-## Critical Issues (Blocking)
-
-<!-- MUST be empty before creating PR -->
-<!-- Format: - [ ] Description of critical bug/security issue -->
-
----
-
-## High Priority Issues
-"""
-        (tmp_path / "review.md").write_text(review_content)
-
-        # Should not raise
-        require_review_md_for_pr(mock_issue)
-
-    @patch('agenttree.hooks._get_issue_dir')
-    def test_require_spec_md_for_implement_success(self, mock_get_issue_dir, mock_issue, tmp_path):
-        """Should pass when spec.md (or plan.md) exists with meaningful Approach content."""
-        from agenttree.hooks import require_spec_md_for_implement
-
-        mock_get_issue_dir.return_value = tmp_path
-        plan_content = """# Implementation Plan
-
-## Problem Summary
-
-Brief summary of the problem.
-
-## Approach
-
-This is a meaningful approach description that explains the implementation strategy
-with more than 20 characters of content to pass validation.
-
-## Files to Modify
-
-- file1.py
-- file2.py
-"""
-        (tmp_path / "plan.md").write_text(plan_content)
-
-        # Should not raise (plan.md is accepted as legacy name)
-        require_spec_md_for_implement(mock_issue)
-
-    @patch('agenttree.hooks._get_issue_dir')
-    def test_require_spec_md_for_implement_fails_missing_file(self, mock_get_issue_dir, mock_issue, tmp_path):
-        """Should block transition when spec.md doesn't exist."""
-        from agenttree.hooks import require_spec_md_for_implement, ValidationError
-
-        mock_get_issue_dir.return_value = tmp_path
-        # Don't create spec.md or plan.md
-
-        with pytest.raises(ValidationError, match="spec.md not found"):
-            require_spec_md_for_implement(mock_issue)
-
-    @patch('agenttree.hooks._get_issue_dir')
-    def test_require_spec_md_for_implement_fails_empty_approach(self, mock_get_issue_dir, mock_issue, tmp_path):
-        """Should block transition when Approach section is empty."""
-        from agenttree.hooks import require_spec_md_for_implement, ValidationError
-
-        mock_get_issue_dir.return_value = tmp_path
-        plan_content = """# Implementation Plan
-
-## Problem Summary
-
-Brief summary.
-
-## Approach
-
-<!-- Describe your approach here -->
-
-## Files to Modify
-
-- file1.py
-"""
-        (tmp_path / "plan.md").write_text(plan_content)
-
-        with pytest.raises(ValidationError, match="Approach section is too short"):
-            require_spec_md_for_implement(mock_issue)
-
-    @patch('agenttree.hooks._get_issue_dir')
-    def test_require_spec_md_for_implement_fails_short_approach(self, mock_get_issue_dir, mock_issue, tmp_path):
-        """Should block transition when Approach section has less than 20 chars."""
-        from agenttree.hooks import require_spec_md_for_implement, ValidationError
-
-        mock_get_issue_dir.return_value = tmp_path
-        plan_content = """# Implementation Plan
-
-## Approach
-
-Short.
-
-## Files to Modify
-"""
-        (tmp_path / "plan.md").write_text(plan_content)
-
-        with pytest.raises(ValidationError, match="Approach section is too short"):
-            require_spec_md_for_implement(mock_issue)
-
-    @patch('agenttree.hooks._get_issue_dir')
-    def test_require_spec_md_for_implement_ignores_html_comments(self, mock_get_issue_dir, mock_issue, tmp_path):
-        """Should ignore HTML comments when counting Approach content length."""
-        from agenttree.hooks import require_spec_md_for_implement, ValidationError
-
-        mock_get_issue_dir.return_value = tmp_path
-        plan_content = """# Implementation Plan
-
-## Approach
-
-<!-- This is a very long HTML comment that should be ignored when counting -->
-<!-- Another comment here -->
-Too short
-
-## Files to Modify
-"""
-        (tmp_path / "plan.md").write_text(plan_content)
-
-        with pytest.raises(ValidationError, match="Approach section is too short"):
-            require_spec_md_for_implement(mock_issue)
-
-
-class TestMissingHooks:
-    """Document validation hooks that are mentioned but not implemented.
-
-    This test class serves as documentation for expected hooks that don't
-    exist in the codebase yet. These should be implemented in future issues.
-    """
-
-    def test_require_problem_md_for_research_not_implemented(self):
-        """Document that require_problem_md_for_research hook doesn't exist.
-
-        Expected behavior: Should block DEFINE -> RESEARCH transition
-        when problem.md is missing or empty.
-
-        This hook is mentioned in issue #038 problem.md but was never implemented.
-        Note: PROBLEM_REVIEW stage was removed - agents go directly from DEFINE to RESEARCH.
-        """
-        from agenttree.hooks import _registry
-
-        # Check if this hook is registered for the expected transition
-        key = (DEFINE, RESEARCH)
-        hooks_for_transition = _registry.pre_transition.get(key, [])
-
-        # Get hook names
-        hook_names = [hook.__name__ for hook in hooks_for_transition]
-
-        # Document the gap - this assertion will PASS because the hook doesn't exist
-        # When the hook is implemented, update this test to verify it works
-        assert "require_problem_md_for_research" not in hook_names, (
-            "Hook require_problem_md_for_research has been implemented! "
-            "Update this test to verify its behavior instead of documenting its absence."
-        )
-
-
-class TestActionHooks:
-    """Tests for post-transition action hooks."""
-
-    @patch('agenttree.hooks.is_running_in_container', return_value=False)
-    @patch('agenttree.hooks.get_current_branch')
-    @patch('agenttree.hooks.push_branch_to_remote')
-    @patch('agenttree.github.create_pr')
-    @patch('agenttree.issues.update_issue_metadata')
-    def test_create_pull_request_success(
-        self, mock_update_metadata, mock_create_pr, mock_push, mock_get_branch, mock_in_container, mock_issue
-    ):
-        """Should create PR successfully."""
-        from agenttree.hooks import create_pull_request_hook
-        from agenttree.github import PullRequest
-
-        mock_get_branch.return_value = "agenttree-agent-1-work"
-        mock_create_pr.return_value = PullRequest(
-            number=123,
-            url="https://github.com/owner/repo/pull/123",
-            title="Test PR",
-            branch="agenttree-agent-1-work"
-        )
-
-        create_pull_request_hook(mock_issue)
-
-        # Should push branch
-        mock_push.assert_called_once_with("agenttree-agent-1-work")
-
-        # Should create PR with correct parameters
-        mock_create_pr.assert_called_once()
-        call_args = mock_create_pr.call_args
-        assert "[Issue 023]" in call_args.kwargs['title']
-        assert "Test Issue" in call_args.kwargs['title']
-        assert "Issue #023" in call_args.kwargs['body']
-        assert call_args.kwargs['branch'] == "agenttree-agent-1-work"
-        assert call_args.kwargs['base'] == "main"
-
-        # Should update issue metadata twice:
-        # 1. First call with just branch
-        # 2. Second call with PR info
-        assert mock_update_metadata.call_count == 2
-        # Verify the final call has PR info
-        mock_update_metadata.assert_called_with(
-            "023",
-            pr_number=123,
-            pr_url="https://github.com/owner/repo/pull/123",
-            branch="agenttree-agent-1-work"
-        )
-
-    @patch('agenttree.hooks.is_running_in_container', return_value=False)
-    @patch('agenttree.hooks.get_current_branch')
-    @patch('agenttree.hooks.push_branch_to_remote')
-    @patch('agenttree.github.create_pr')
-    def test_create_pull_request_handles_push_failure(
-        self, mock_create_pr, mock_push, mock_get_branch, mock_in_container, mock_issue
-    ):
-        """Should handle push failure gracefully."""
-        from agenttree.hooks import create_pull_request_hook
-
-        mock_get_branch.return_value = "agenttree-agent-1-work"
-        mock_push.side_effect = subprocess.CalledProcessError(1, 'git push')
-
-        # Should raise the error (post-hooks log but still raise for retry)
-        with pytest.raises(subprocess.CalledProcessError):
-            create_pull_request_hook(mock_issue)
-
-        # Should not create PR if push fails
-        mock_create_pr.assert_not_called()
-
-    @patch('agenttree.github.merge_pr')
-    def test_merge_pull_request_success(self, mock_merge_pr, mock_issue):
-        """Should merge PR successfully."""
-        from agenttree.hooks import merge_pull_request_hook
-
-        mock_issue.pr_number = 123
-
-        merge_pull_request_hook(mock_issue)
-
-        # Should merge PR with squash method
-        mock_merge_pr.assert_called_once_with(123, method="squash")
-
-    def test_merge_pull_request_no_pr_number(self, mock_issue):
-        """Should handle missing PR number gracefully."""
-        from agenttree.hooks import merge_pull_request_hook
-
-        mock_issue.pr_number = None
-
-        # Should not raise, just log warning
-        merge_pull_request_hook(mock_issue)
-
-
 class TestCheckAndStartBlockedIssues:
     """Tests for check_and_start_blocked_issues hook."""
 
     @pytest.fixture
     def accepted_issue(self):
         """Create an issue that just reached ACCEPTED stage."""
-        from agenttree.issues import ACCEPTED
         return Issue(
             id="001",
             slug="completed-issue",
@@ -1287,7 +883,6 @@ class TestCheckAndStartBlockedIssues:
     @pytest.fixture
     def blocked_issue(self):
         """Create an issue blocked in backlog with dependencies."""
-        from agenttree.issues import BACKLOG
         return Issue(
             id="002",
             slug="blocked-issue",
@@ -1409,7 +1004,6 @@ class TestCheckAndStartBlockedIssues:
     ):
         """Should process multiple blocked issues correctly."""
         from agenttree.hooks import check_and_start_blocked_issues
-        from agenttree.issues import BACKLOG
 
         blocked1 = Issue(
             id="002",
@@ -1450,3 +1044,19 @@ class TestCheckAndStartBlockedIssues:
                         text=True,
                         timeout=60,
                     )
+
+
+class TestBackwardCompatibility:
+    """Tests for backward compatibility aliases."""
+
+    def test_execute_pre_hooks_alias(self):
+        """execute_pre_hooks should be aliased to execute_exit_hooks."""
+        from agenttree.hooks import execute_pre_hooks, execute_exit_hooks
+
+        assert execute_pre_hooks is execute_exit_hooks
+
+    def test_execute_post_hooks_alias(self):
+        """execute_post_hooks should be aliased to execute_enter_hooks."""
+        from agenttree.hooks import execute_post_hooks, execute_enter_hooks
+
+        assert execute_post_hooks is execute_enter_hooks
