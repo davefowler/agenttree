@@ -87,8 +87,34 @@ def slugify(text: str) -> str:
 
 
 def get_agenttree_path() -> Path:
-    """Get the path to _agenttree directory."""
-    return Path.cwd() / "_agenttree"
+    """Get the path to _agenttree directory.
+
+    In worktrees, _agenttree is gitignored so we need to find it in the main repo.
+    """
+    cwd = Path.cwd()
+    local_path = cwd / "_agenttree"
+
+    # If local _agenttree has content (or is a symlink), use it
+    if local_path.exists():
+        # Check if it's a symlink or has issues subdirectory
+        if local_path.is_symlink() or (local_path / "issues").exists():
+            return local_path
+
+    # In a worktree, .git is a file pointing to the main repo
+    git_path = cwd / ".git"
+    if git_path.is_file():
+        # Parse gitdir from .git file: "gitdir: /path/to/main/.git/worktrees/xxx"
+        content = git_path.read_text().strip()
+        if content.startswith("gitdir:"):
+            gitdir = Path(content.split(":", 1)[1].strip())
+            # Go up from .git/worktrees/xxx to main repo root
+            main_repo = gitdir.parent.parent.parent
+            main_agenttree = main_repo / "_agenttree"
+            if main_agenttree.exists():
+                return main_agenttree
+
+    # Fallback to local path
+    return local_path
 
 
 def get_issues_path() -> Path:
