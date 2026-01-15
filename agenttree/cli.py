@@ -1939,7 +1939,7 @@ def approve_issue(issue_id: str) -> None:
 
     # Notify agent to continue (if active)
     console.print(f"\n[dim]Notify the agent to continue:[/dim]")
-    console.print(f"  agenttree send {issue.id} 'Your work was approved! Run agenttree next for instructions.'")
+    console.print(f"  agenttree send {issue.id} 'Your work was approved! Run `agenttree next` for instructions.'")
 
 
 @main.command("defer")
