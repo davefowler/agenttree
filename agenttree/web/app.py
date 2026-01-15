@@ -1,7 +1,7 @@
 """Web dashboard for AgentTree using FastAPI + HTMX."""
 
 from fastapi import FastAPI, Request, Form, WebSocket, WebSocketDisconnect, Depends, HTTPException, status
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -71,6 +71,22 @@ def verify_credentials(credentials: Optional[HTTPBasicCredentials] = Depends(sec
         )
 
     return credentials.username
+
+
+# Favicon routes
+@app.get("/favicon.ico")
+async def favicon():
+    """Serve favicon."""
+    return FileResponse(BASE_DIR / "static" / "favicon.svg", media_type="image/svg+xml")
+
+
+@app.get("/apple-touch-icon.png")
+@app.get("/apple-touch-icon-precomposed.png")
+@app.get("/apple-touch-icon-120x120.png")
+@app.get("/apple-touch-icon-120x120-precomposed.png")
+async def apple_touch_icon():
+    """Redirect apple touch icon requests to favicon."""
+    return RedirectResponse(url="/favicon.ico")
 
 
 # Dependency for protected routes
