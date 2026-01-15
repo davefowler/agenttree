@@ -1,44 +1,60 @@
 """Hook system for agenttree stage transitions.
 
-This module provides a comprehensive hook system that allows validation,
+This module provides a config-driven hook system that allows validation,
 automation, setup, and cleanup during workflow stage transitions.
 
-Hook Types:
------------
-1. **Pre-transition hooks** - Validation before stage transitions (can block)
-2. **Post-transition hooks** - Actions after successful transitions
-3. **On-enter hooks** - Setup when entering a stage
-4. **On-exit hooks** - Cleanup when leaving a stage
+Hook Types (configured in config.py DEFAULT_STAGES):
+----------------------------------------------------
+1. **on_exit hooks** - Validation/actions when exiting a stage (can block)
+2. **on_enter hooks** - Setup when entering a stage (logs warnings but doesn't block)
+
+Built-in Validators:
+-------------------
+- file_exists: Check that a file exists
+- has_commits: Check that there are unpushed commits
+- field_check: Check a YAML field value meets min/max threshold
+- section_check: Check a markdown section (empty, not_empty, all_checked)
+- pr_approved: Check that a PR is approved
+
+Built-in Actions:
+----------------
+- create_file: Create a file from a template
+- create_pr: Create a pull request
+- merge_pr: Merge a pull request
 
 Usage:
 ------
-    from agenttree.hooks import pre_transition, post_transition, on_enter, on_exit
-    from agenttree.issues import Issue, IMPLEMENT, IMPLEMENTATION_REVIEW
-    from agenttree.hooks import ValidationError
+    from agenttree.hooks import execute_exit_hooks, execute_enter_hooks, ValidationError
 
-    @pre_transition(IMPLEMENT, IMPLEMENTATION_REVIEW)
-    def require_commits(issue: Issue):
-        if not has_commits_to_push():
-            raise ValidationError("No commits to push")
+    # Execute exit hooks (validation, can block)
+    execute_exit_hooks(issue, stage, substage)
 
-    @post_transition(IMPLEMENT, IMPLEMENTATION_REVIEW)
-    def create_pull_request(issue: Issue):
-        # Create PR automatically
-        ...
+    # Execute enter hooks (setup, logs warnings)
+    execute_enter_hooks(issue, stage, substage)
 
-Hook Execution Order:
---------------------
-1. on_exit - Cleanup from current stage
-2. pre_transition - Validation (BLOCKS if ValidationError raised)
-3. Stage update - The actual transition
-4. post_transition - Actions (logs warnings but doesn't block)
-5. on_enter - Setup for new stage
+Configuration:
+-------------
+Hooks are configured in config.py DEFAULT_STAGES via on_exit and on_enter lists:
+
+    StageConfig(
+        name="implement",
+        on_exit=[{"type": "create_pr"}],
+        substages={
+            "feedback": SubstageConfig(
+                name="feedback",
+                on_exit=[
+                    {"type": "has_commits"},
+                    {"type": "file_exists", "file": "review.md"},
+                ],
+            ),
+        },
+    )
 """
 
 import re
 import subprocess
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from rich.console import Console
 
@@ -47,10 +63,7 @@ from agenttree.issues import (
     DEFINE,
     RESEARCH,
     PLAN,
-    PLAN_ASSESS,
-    PLAN_REVIEW,
     IMPLEMENT,
-    IMPLEMENTATION_REVIEW,
     ACCEPTED,
 )
 
@@ -63,394 +76,478 @@ class ValidationError(Exception):
     pass
 
 
-class HookRegistry:
-    """Central registry for all hooks.
+# =============================================================================
+# Config-Driven Validators (New System)
+# =============================================================================
 
-    Stores hooks for different stage transitions and provides methods to
-    register and execute hooks.
+
+def _action_create_pr(issue_dir: Path, issue_id: str = "", issue_title: str = "", branch: str = "", **kwargs: Any) -> None:
+    """Create PR for an issue (action hook helper).
+
+    If running in a container, commits locally and lets host handle PR creation.
     """
+    from agenttree.issues import update_issue_metadata
 
-    def __init__(self):
-        """Initialize empty hook dictionaries."""
-        # Pre-transition: key = (from_stage, to_stage), value = list of hooks
-        self.pre_transition: Dict[Tuple[str, str], List[Callable]] = {}
+    # Get current branch if not provided
+    if not branch:
+        branch = get_current_branch()
 
-        # Post-transition: key = (from_stage, to_stage), value = list of hooks
-        self.post_transition: Dict[Tuple[str, str], List[Callable]] = {}
+    # Auto-commit any uncommitted changes
+    if has_uncommitted_changes():
+        console.print(f"[dim]Auto-committing uncommitted changes...[/dim]")
+        subprocess.run(
+            ["git", "add", "-A"],
+            capture_output=True,
+            check=False
+        )
+        subprocess.run(
+            ["git", "commit", "-m", f"Issue #{issue_id}: auto-commit before PR"],
+            capture_output=True,
+            check=False
+        )
 
-        # On-enter: key = stage, value = list of hooks
-        self.on_enter: Dict[str, List[Callable]] = {}
+    # Update issue with branch info
+    if issue_id:
+        update_issue_metadata(issue_id, branch=branch)
 
-        # On-enter substage: key = (stage, substage), value = list of hooks
-        self.on_enter_substage: Dict[Tuple[str, str], List[Callable]] = {}
+    # If in container, skip remote operations
+    if is_running_in_container():
+        console.print(f"[yellow]Running in container - PR will be created by host[/yellow]")
+        console.print(f"[dim]Branch: {branch} (committed locally, awaiting push)[/dim]")
+        return
 
-        # On-exit: key = stage, value = list of hooks
-        self.on_exit: Dict[str, List[Callable]] = {}
+    # On host: do the full push/PR
+    from agenttree.github import create_pr
 
-    def register_pre_transition(
-        self, from_stage: str, to_stage: str, func: Callable
-    ):
-        """Register a pre-transition hook.
+    # Push to remote
+    console.print(f"[dim]Pushing {branch} to origin/{branch}...[/dim]")
+    push_branch_to_remote(branch)
 
-        Args:
-            from_stage: str transitioning from
-            to_stage: str transitioning to
-            func: Hook function to register
-        """
-        key = (from_stage, to_stage)
-        if key not in self.pre_transition:
-            self.pre_transition[key] = []
-        self.pre_transition[key].append(func)
+    # Create PR
+    title = f"[Issue {issue_id}] {issue_title}" if issue_id else f"PR for {branch}"
+    body = f"## Summary\n\nImplementation for issue #{issue_id}: {issue_title}\n\n" if issue_id else ""
+    body += "🤖 Generated with [Claude Code](https://claude.com/claude-code)"
 
-    def register_post_transition(
-        self, from_stage: str, to_stage: str, func: Callable
-    ):
-        """Register a post-transition hook.
+    console.print(f"[dim]Creating pull request...[/dim]")
+    pr = create_pr(title=title, body=body, branch=branch, base="main")
 
-        Args:
-            from_stage: str transitioning from
-            to_stage: str transitioning to
-            func: Hook function to register
-        """
-        key = (from_stage, to_stage)
-        if key not in self.post_transition:
-            self.post_transition[key] = []
-        self.post_transition[key].append(func)
+    # Update issue with PR info
+    if issue_id:
+        update_issue_metadata(issue_id, pr_number=pr.number, pr_url=pr.url, branch=branch)
 
-    def register_on_enter(self, stage: str, func: Callable, substage: Optional[str] = None):
-        """Register an on-enter hook.
+    console.print(f"[green]✓ PR created: {pr.url}[/green]")
 
-        Args:
-            stage: str being entered
-            func: Hook function to register
-            substage: Optional substage (if None, runs for entire stage)
-        """
-        if substage:
-            key = (stage, substage)
-            if key not in self.on_enter_substage:
-                self.on_enter_substage[key] = []
-            self.on_enter_substage[key].append(func)
-        else:
-            if stage not in self.on_enter:
-                self.on_enter[stage] = []
-            self.on_enter[stage].append(func)
-
-    def register_on_exit(self, stage: str, func: Callable):
-        """Register an on-exit hook.
-
-        Args:
-            stage: str being exited
-            func: Hook function to register
-        """
-        if stage not in self.on_exit:
-            self.on_exit[stage] = []
-        self.on_exit[stage].append(func)
-
-    def execute_pre_transition(
-        self, issue: Issue, from_stage: str, to_stage: str
-    ):
-        """Execute all pre-transition hooks.
-
-        Runs all hooks and collects ValidationError exceptions, then raises
-        a single combined error if any hooks failed. This allows agents to
-        see all missing requirements at once instead of one at a time.
-
-        Args:
-            issue: Issue being transitioned
-            from_stage: str transitioning from
-            to_stage: str transitioning to
-
-        Raises:
-            ValidationError: If any validation fails (combined message if multiple)
-        """
-        key = (from_stage, to_stage)
-        errors: list[str] = []
-
-        for hook in self.pre_transition.get(key, []):
-            try:
-                hook(issue)
-            except ValidationError as e:
-                errors.append(str(e))
-
-        if errors:
-            if len(errors) == 1:
-                raise ValidationError(errors[0])
-            else:
-                numbered = "\n".join(f"  {i+1}. {err}" for i, err in enumerate(errors))
-                raise ValidationError(f"Multiple validation errors:\n{numbered}")
-
-    def execute_post_transition(
-        self, issue: Issue, from_stage: str, to_stage: str
-    ):
-        """Execute all post-transition hooks.
-
-        Logs errors but doesn't block - stage has already changed.
-
-        Args:
-            issue: Issue that was transitioned
-            from_stage: str transitioned from
-            to_stage: str transitioned to
-        """
-        key = (from_stage, to_stage)
-        for hook in self.post_transition.get(key, []):
-            try:
-                hook(issue)
-            except Exception as e:
-                # Log error but don't fail - stage already changed
-                console.print(f"[yellow]Warning: Post-transition hook failed: {e}[/yellow]")
-
-    def execute_on_enter(self, issue: Issue, stage: str, substage: Optional[str] = None):
-        """Execute all on-enter hooks for a stage/substage.
-
-        Logs errors but doesn't block.
-
-        Args:
-            issue: Issue entering the stage
-            stage: str being entered
-            substage: Optional substage being entered
-        """
-        # Execute stage-level hooks
-        for hook in self.on_enter.get(stage, []):
-            try:
-                hook(issue)
-            except Exception as e:
-                console.print(f"[yellow]Warning: On-enter hook failed: {e}[/yellow]")
-
-        # Execute substage-specific hooks
-        if substage:
-            key = (stage, substage)
-            for hook in self.on_enter_substage.get(key, []):
-                try:
-                    hook(issue)
-                except Exception as e:
-                    console.print(f"[yellow]Warning: On-enter substage hook failed: {e}[/yellow]")
-
-    def execute_on_exit(self, issue: Issue, stage: str):
-        """Execute all on-exit hooks for a stage.
-
-        Logs errors but doesn't block.
-
-        Args:
-            issue: Issue exiting the stage
-            stage: str being exited
-        """
-        for hook in self.on_exit.get(stage, []):
-            try:
-                hook(issue)
-            except Exception as e:
-                console.print(f"[yellow]Warning: On-exit hook failed: {e}[/yellow]")
+    # Request Cursor code review
+    try:
+        subprocess.run(
+            ["gh", "pr", "comment", str(pr.number), "--body", "@cursor do a code review"],
+            capture_output=True,
+            check=True,
+        )
+        console.print(f"[dim]Requested Cursor code review[/dim]")
+    except Exception:
+        pass  # Non-critical
 
 
-# Global registry instance
-_registry = HookRegistry()
+def _action_merge_pr(pr_number: Optional[int], **kwargs: Any) -> None:
+    """Merge PR for an issue (action hook helper)."""
+    if pr_number is None:
+        console.print("[yellow]No PR to merge[/yellow]")
+        return
+
+    # If in container, skip - host will handle
+    if is_running_in_container():
+        console.print(f"[yellow]Running in container - PR will be merged by host[/yellow]")
+        return
+
+    from agenttree.github import merge_pr
+
+    console.print(f"[dim]Merging PR #{pr_number}...[/dim]")
+    merge_pr(pr_number, method="squash")
+    console.print(f"[green]✓ PR #{pr_number} merged[/green]")
 
 
-def get_registry() -> HookRegistry:
-    """Get the global hook registry.
+def get_pr_approval_status(pr_number: int) -> bool:
+    """Check if a PR is approved.
 
-    Useful for testing or inspecting registered hooks.
+    Args:
+        pr_number: GitHub PR number
 
     Returns:
-        The global HookRegistry instance
+        True if PR is approved, False otherwise
     """
-    return _registry
+    try:
+        from agenttree.github import is_pr_approved
+        return is_pr_approved(pr_number)
+    except Exception:
+        return False
 
 
-def execute_pre_hooks(
-    issue: Issue,
-    from_stage: str,
-    to_stage: str,
-) -> None:
-    """Execute hooks that run BEFORE stage update.
+def run_builtin_validator(
+    issue_dir: Path,
+    hook: Dict[str, Any],
+    pr_number: Optional[int] = None,
+    **kwargs: Any
+) -> List[str]:
+    """Run a built-in validator and return errors.
 
-    Execution order:
-    1. on_exit hooks for from_stage
-    2. pre_transition hooks (can raise ValidationError to block)
+    Args:
+        issue_dir: Path to issue directory (worktree)
+        hook: Hook configuration dict with 'type' and parameters
+        pr_number: Optional PR number for pr_approved validator
+        **kwargs: Additional context (unused for now)
 
-    Call this BEFORE updating the issue stage. If ValidationError is raised,
-    the transition should be blocked.
+    Returns:
+        List of error messages (empty if validation passes)
+    """
+    import yaml
+
+    hook_type = hook.get("type")
+    errors: List[str] = []
+
+    if hook_type == "file_exists":
+        file_path = issue_dir / hook["file"]
+        if not file_path.exists():
+            errors.append(f"File '{hook['file']}' does not exist")
+
+    elif hook_type == "has_commits":
+        if not has_commits_to_push():
+            errors.append(
+                "No commits to push. Make code changes and commit them before proceeding."
+            )
+
+    elif hook_type == "field_check":
+        file_path = issue_dir / hook["file"]
+        if not file_path.exists():
+            errors.append(f"File '{hook['file']}' not found for field check")
+        else:
+            content = file_path.read_text()
+            # Extract YAML from markdown code block
+            yaml_match = re.search(r'```yaml\s*\n(.*?)```', content, re.DOTALL)
+            if not yaml_match:
+                errors.append(f"No YAML block found in {hook['file']}")
+            else:
+                try:
+                    data = yaml.safe_load(yaml_match.group(1))
+                    # Navigate nested path like "scores.average"
+                    path_parts = hook["path"].split(".")
+                    value = data
+                    for part in path_parts:
+                        if value is None or not isinstance(value, dict):
+                            value = None
+                            break
+                        value = value.get(part)
+
+                    if value is None:
+                        errors.append(f"Field '{hook['path']}' not found in {hook['file']}")
+                    elif "min" in hook and float(value) < hook["min"]:
+                        errors.append(
+                            f"Field '{hook['path']}' value {value} is below minimum {hook['min']}"
+                        )
+                    elif "max" in hook and float(value) > hook["max"]:
+                        errors.append(
+                            f"Field '{hook['path']}' value {value} is above maximum {hook['max']}"
+                        )
+                except yaml.YAMLError as e:
+                    errors.append(f"Failed to parse YAML in {hook['file']}: {e}")
+
+    elif hook_type == "section_check":
+        file_path = issue_dir / hook["file"]
+        if not file_path.exists():
+            errors.append(f"File '{hook['file']}' not found for section check")
+        else:
+            content = file_path.read_text()
+            section = hook["section"]
+            expect = hook["expect"]
+
+            # Find section content (between ## Section and next ## or end)
+            pattern = rf'^##\s*{re.escape(section)}.*?\n(.*?)(?=\n##|\Z)'
+            section_match = re.search(pattern, content, re.MULTILINE | re.DOTALL)
+
+            if not section_match:
+                errors.append(f"Section '{section}' not found in {hook['file']}")
+            else:
+                section_content = section_match.group(1)
+                # Remove HTML comments
+                section_content = re.sub(r'<!--.*?-->', '', section_content, flags=re.DOTALL)
+
+                if expect == "empty":
+                    # Check for list items
+                    if re.search(r'^\s*[-*]\s+', section_content, re.MULTILINE):
+                        errors.append(
+                            f"Section '{section}' in {hook['file']} is not empty"
+                        )
+                elif expect == "not_empty":
+                    # Check if section has content beyond whitespace
+                    if not section_content.strip():
+                        errors.append(
+                            f"Section '{section}' in {hook['file']} is empty"
+                        )
+                elif expect == "all_checked":
+                    # Find unchecked checkboxes
+                    unchecked = re.findall(r'-\s*\[\s*\]\s*(.*)', section_content)
+                    if unchecked:
+                        items = ", ".join(item.strip() for item in unchecked[:3])
+                        if len(unchecked) > 3:
+                            items += f" (and {len(unchecked) - 3} more)"
+                        errors.append(
+                            f"Unchecked items in '{section}': {items}"
+                        )
+
+    elif hook_type == "pr_approved":
+        if pr_number is None:
+            errors.append("No PR number available to check approval status")
+        elif not get_pr_approval_status(pr_number):
+            errors.append(f"PR #{pr_number} is not approved")
+
+    # Action types (side effects, don't return errors on success)
+    elif hook_type == "create_file":
+        # Create a file from template if it doesn't exist
+        template = hook.get("template")
+        dest = hook.get("dest")
+        if template and dest:
+            template_path = Path("_agenttree/templates") / template
+            dest_path = issue_dir / dest
+            if not dest_path.exists() and template_path.exists():
+                dest_path.write_text(template_path.read_text())
+                console.print(f"[dim]Created {dest} from template[/dim]")
+
+    elif hook_type == "create_pr":
+        # Create PR on transition to implementation_review
+        try:
+            _action_create_pr(issue_dir, **kwargs)
+        except Exception as e:
+            errors.append(f"Failed to create PR: {e}")
+
+    elif hook_type == "merge_pr":
+        # Merge PR on transition to accepted
+        try:
+            _action_merge_pr(pr_number, **kwargs)
+        except Exception as e:
+            errors.append(f"Failed to merge PR: {e}")
+
+    else:
+        # Unknown type - ignore silently (allows for future extensions)
+        pass
+
+    return errors
+
+
+def run_command_hook(
+    issue_dir: Path,
+    hook: Dict[str, Any],
+    issue_id: str = "",
+    issue_title: str = "",
+    branch: str = "",
+    stage: str = "",
+    substage: str = "",
+    **kwargs: Any
+) -> List[str]:
+    """Run a shell command hook and return errors.
+
+    Args:
+        issue_dir: Path to run command in
+        hook: Hook configuration dict with 'command' and optional 'context', 'timeout'
+        issue_id: Issue ID for template variable substitution
+        issue_title: Issue title for template variable substitution
+        branch: Branch name for template variable substitution
+        stage: Current stage for template variable substitution
+        substage: Current substage for template variable substitution
+        **kwargs: Additional template variables
+
+    Returns:
+        List of error messages (empty if command succeeds)
+    """
+    command = hook["command"]
+
+    # Replace template variables
+    command = command.replace("{{issue_id}}", issue_id)
+    command = command.replace("{{issue_title}}", issue_title)
+    command = command.replace("{{branch}}", branch)
+    command = command.replace("{{stage}}", stage)
+    command = command.replace("{{substage}}", substage)
+
+    timeout = hook.get("timeout", 30)  # Default 30 seconds
+    context = hook.get("context", "")
+
+    try:
+        result = subprocess.run(
+            command,
+            shell=True,
+            cwd=issue_dir,
+            capture_output=True,
+            text=True,
+            timeout=timeout
+        )
+
+        if result.returncode != 0:
+            output = result.stdout + result.stderr
+            if context:
+                return [f"{context} failed:\n{output.strip()}"]
+            return [output.strip() or f"Command failed: {command}"]
+
+        return []
+
+    except subprocess.TimeoutExpired:
+        if context:
+            return [f"{context} timed out after {timeout} seconds"]
+        return [f"Command timed out after {timeout} seconds: {command}"]
+
+
+def execute_hooks(
+    issue_dir: Path,
+    stage: str,
+    substage_config: Any,  # SubstageConfig or StageConfig
+    event: str,
+    pr_number: Optional[int] = None,
+    **kwargs: Any
+) -> List[str]:
+    """Execute all hooks for an event and collect errors.
+
+    Args:
+        issue_dir: Path to issue directory
+        stage: Current stage name
+        substage_config: SubstageConfig or StageConfig with hook definitions
+        event: "on_exit" or "on_enter"
+        pr_number: Optional PR number for pr_approved validator
+        **kwargs: Additional context for hooks
+
+    Returns:
+        List of all error messages from failed hooks
+    """
+    errors: List[str] = []
+
+    # Auto-check output file on exit (if not optional)
+    if event == "on_exit":
+        output_file = getattr(substage_config, "output", None)
+        output_optional = getattr(substage_config, "output_optional", False)
+
+        if output_file and not output_optional:
+            file_path = issue_dir / output_file
+            if not file_path.exists():
+                errors.append(f"Required output file '{output_file}' does not exist")
+
+    # Get configured hooks
+    hooks = getattr(substage_config, event, [])
+
+    # Run each hook
+    for hook in hooks:
+        if "type" in hook:
+            # Built-in validator
+            errors.extend(run_builtin_validator(issue_dir, hook, pr_number=pr_number, **kwargs))
+        elif "command" in hook:
+            # Shell command hook
+            errors.extend(run_command_hook(issue_dir, hook, **kwargs))
+
+    return errors
+
+
+def execute_exit_hooks(issue: "Issue", stage: str, substage: Optional[str] = None) -> None:
+    """Execute on_exit hooks for a stage/substage. Raises ValidationError if any fail.
+
+    This is the config-driven replacement for execute_pre_hooks.
 
     Args:
         issue: Issue being transitioned
-        from_stage: str transitioning from
-        to_stage: str transitioning to
+        stage: Current stage name
+        substage: Current substage name (optional)
 
     Raises:
-        ValidationError: If pre_transition validation fails
+        ValidationError: If any validation fails (blocks transition)
     """
-    # 1. Exit current stage
-    _registry.execute_on_exit(issue, from_stage)
+    from agenttree.config import load_config
+    from agenttree.issues import get_issue_dir
 
-    # 2. Pre-transition validation (can block)
-    _registry.execute_pre_transition(issue, from_stage, to_stage)
+    config = load_config()
+    stage_config = config.get_stage(stage)
+    if not stage_config:
+        return  # Unknown stage, skip hooks
+
+    # Get the appropriate config (substage or stage)
+    if substage:
+        hook_config = stage_config.get_substage(substage) or stage_config
+    else:
+        hook_config = stage_config
+
+    # Get issue directory
+    issue_dir = get_issue_dir(issue.id)
+    if not issue_dir:
+        return  # No issue directory, skip hooks
+
+    # Execute hooks
+    errors = execute_hooks(
+        issue_dir,
+        stage,
+        hook_config,
+        "on_exit",
+        pr_number=issue.pr_number,
+        issue_id=issue.id,
+        issue_title=issue.title,
+        branch=issue.branch or "",
+        substage=substage or "",
+    )
+
+    if errors:
+        if len(errors) == 1:
+            raise ValidationError(errors[0])
+        else:
+            msg = "Multiple validation errors:\n"
+            for i, error in enumerate(errors, 1):
+                msg += f"  {i}. {error}\n"
+            raise ValidationError(msg.strip())
 
 
-def execute_post_hooks(
-    issue: Issue,
-    from_stage: str,
-    to_stage: str,
-    to_substage: Optional[str] = None,
-) -> None:
-    """Execute hooks that run AFTER stage update.
+def execute_enter_hooks(issue: "Issue", stage: str, substage: Optional[str] = None) -> None:
+    """Execute on_enter hooks for a stage/substage. Logs warnings but doesn't block.
 
-    Execution order:
-    1. post_transition hooks (logs errors but continues)
-    2. on_enter hooks for to_stage (and substage if provided)
-
-    Call this AFTER the issue stage has been updated in the database.
+    This is the config-driven replacement for execute_post_hooks.
 
     Args:
         issue: Issue that was transitioned
-        from_stage: str transitioned from
-        to_stage: str transitioned to
-        to_substage: Substage being entered (optional)
+        stage: New stage name
+        substage: New substage name (optional)
     """
-    # 1. Post-transition actions
-    _registry.execute_post_transition(issue, from_stage, to_stage)
+    from agenttree.config import load_config
+    from agenttree.issues import get_issue_dir
 
-    # 2. Enter new stage (and substage)
-    _registry.execute_on_enter(issue, to_stage, to_substage)
+    config = load_config()
+    stage_config = config.get_stage(stage)
+    if not stage_config:
+        return  # Unknown stage, skip hooks
 
+    # Get the appropriate config (substage or stage)
+    if substage:
+        hook_config = stage_config.get_substage(substage) or stage_config
+    else:
+        hook_config = stage_config
 
-def execute_transition_hooks(
-    issue: Issue,
-    from_stage: str,
-    to_stage: str,
-    to_substage: Optional[str] = None,
-) -> None:
-    """Execute all hooks for a stage transition (DEPRECATED - use split functions).
+    # Get issue directory
+    issue_dir = get_issue_dir(issue.id)
+    if not issue_dir:
+        return  # No issue directory, skip hooks
 
-    This function is kept for backwards compatibility but doesn't correctly
-    handle the timing of hooks relative to stage updates. New code should use:
-    - execute_pre_hooks() before update_issue_stage()
-    - execute_post_hooks() after update_issue_stage()
+    # Execute hooks
+    errors = execute_hooks(
+        issue_dir,
+        stage,
+        hook_config,
+        "on_enter",
+        pr_number=issue.pr_number,
+        issue_id=issue.id,
+        issue_title=issue.title,
+        branch=issue.branch or "",
+        substage=substage or "",
+    )
 
-    Args:
-        issue: Issue being transitioned
-        from_stage: str transitioning from
-        to_stage: str transitioning to
-        to_substage: Substage being entered (optional)
-
-    Raises:
-        ValidationError: If pre_transition validation fails
-    """
-    execute_pre_hooks(issue, from_stage, to_stage)
-    # Note: str update should happen here in caller - but doesn't with this API
-    execute_post_hooks(issue, from_stage, to_stage, to_substage)
-
-
-# Decorator functions for registering hooks
-
-
-def pre_transition(from_stage: str, to_stage: str):
-    """Decorator to register a pre-transition hook.
-
-    Pre-transition hooks run before a stage transition and can block it
-    by raising ValidationError.
-
-    Example:
-        @pre_transition(IMPLEMENT, IMPLEMENTATION_REVIEW)
-        def require_commits(issue: Issue):
-            if not has_commits():
-                raise ValidationError("No commits to push")
-
-    Args:
-        from_stage: str transitioning from
-        to_stage: str transitioning to
-
-    Returns:
-        Decorator function
-    """
-
-    def decorator(func: Callable):
-        _registry.register_pre_transition(from_stage, to_stage, func)
-        return func
-
-    return decorator
+    # Log warnings but don't block
+    if errors:
+        for error in errors:
+            console.print(f"[yellow]Warning: {error}[/yellow]")
 
 
-def post_transition(from_stage: str, to_stage: str):
-    """Decorator to register a post-transition hook.
-
-    Post-transition hooks run after a successful stage transition.
-    They cannot block the transition (stage has already changed).
-
-    Example:
-        @post_transition(IMPLEMENT, IMPLEMENTATION_REVIEW)
-        def create_pull_request(issue: Issue):
-            # Create PR automatically
-            ...
-
-    Args:
-        from_stage: str transitioning from
-        to_stage: str transitioning to
-
-    Returns:
-        Decorator function
-    """
-
-    def decorator(func: Callable):
-        _registry.register_post_transition(from_stage, to_stage, func)
-        return func
-
-    return decorator
-
-
-def on_enter(stage: str, substage: Optional[str] = None):
-    """Decorator to register an on-enter hook.
-
-    On-enter hooks run when entering a stage to set up the environment.
-    Can optionally target a specific substage.
-
-    Example:
-        @on_enter(RESEARCH)
-        def setup_research(issue: Issue):
-            # Create plan.md from template
-            ...
-
-        @on_enter(IMPLEMENT, substage="code_review")
-        def setup_code_review(issue: Issue):
-            # Create review.md from template
-            ...
-
-    Args:
-        stage: str being entered
-        substage: Optional substage to target (if None, runs for entire stage)
-
-    Returns:
-        Decorator function
-    """
-
-    def decorator(func: Callable):
-        _registry.register_on_enter(stage, func, substage)
-        return func
-
-    return decorator
-
-
-def on_exit(stage: str):
-    """Decorator to register an on-exit hook.
-
-    On-exit hooks run when leaving a stage to clean up.
-
-    Example:
-        @on_exit(IMPLEMENT)
-        def cleanup_implement(issue: Issue):
-            # Archive temporary files
-            ...
-
-    Args:
-        stage: str being exited
-
-    Returns:
-        Decorator function
-    """
-
-    def decorator(func: Callable):
-        _registry.register_on_exit(stage, func)
-        return func
-
-    return decorator
+# Aliases for backward compatibility during transition
+execute_pre_hooks = execute_exit_hooks
+execute_post_hooks = execute_enter_hooks
 
 
 # Git utility functions
@@ -721,185 +818,6 @@ def auto_commit_changes(issue: Issue, stage: str) -> bool:
     return True
 
 
-# Pre-transition validation hooks
-
-
-@pre_transition(IMPLEMENT, IMPLEMENTATION_REVIEW)
-def require_commits_for_review(issue: Issue):
-    """Require that there are commits to push before creating PR.
-
-    Blocks transition if there are no commits to push.
-
-    Args:
-        issue: Issue being transitioned
-
-    Raises:
-        ValidationError: If no commits to push
-    """
-    if not has_commits_to_push():
-        raise ValidationError(
-            "No commits to push. Make code changes and commit them before running 'agenttree next'."
-        )
-
-
-@pre_transition(IMPLEMENT, IMPLEMENTATION_REVIEW)
-def require_review_md_for_pr(issue: Issue):
-    """Require that review.md exists with no unresolved Critical Issues before creating PR.
-
-    Blocks transition if:
-    - review.md doesn't exist in issue directory
-    - Critical Issues section contains any items (checked or unchecked)
-
-    Args:
-        issue: Issue being transitioned
-
-    Raises:
-        ValidationError: If review.md is missing or has unresolved critical issues
-    """
-    import re
-
-    issue_dir = _get_issue_dir(issue)
-    review_path = issue_dir / "review.md"
-
-    if not review_path.exists():
-        raise ValidationError(
-            "review.md not found. Complete the code_review substage and fill out review.md "
-            "before creating a PR. Run 'agenttree next' from implement.debug to enter code_review."
-        )
-
-    content = review_path.read_text()
-
-    # Find the Critical Issues section
-    # Match variations like "## Critical Issues" or "## Critical Issues (Blocking)"
-    critical_match = re.search(r'##\s*Critical Issues.*?\n(.*?)(?=\n##|\n---|\Z)', content, re.DOTALL | re.IGNORECASE)
-
-    if critical_match:
-        critical_section = critical_match.group(1)
-
-        # Remove HTML comments
-        critical_section = re.sub(r'<!--.*?-->', '', critical_section, flags=re.DOTALL)
-
-        # Check for any list items (- [ ] or - [x])
-        if re.search(r'-\s*\[[x ]\]', critical_section, re.IGNORECASE):
-            raise ValidationError(
-                "Critical Issues section in review.md is not empty. "
-                "Fix all critical issues and remove them from the list before creating a PR. "
-                "(Fixed issues should be removed, not checked off.)"
-            )
-
-
-@pre_transition(IMPLEMENT, IMPLEMENTATION_REVIEW)
-def require_wrapup_score(issue: Issue):
-    """Require that implementation wrapup scores meet the threshold.
-
-    Blocks transition if:
-    - review.md doesn't have a Self-Assessment Scores section
-    - Average score is below threshold (default 7.0)
-
-    Args:
-        issue: Issue being transitioned
-
-    Raises:
-        ValidationError: If scores are missing or below threshold
-    """
-    import re
-    import yaml
-
-    issue_dir = _get_issue_dir(issue)
-    review_path = issue_dir / "review.md"
-
-    if not review_path.exists():
-        raise ValidationError(
-            "review.md not found. Complete the wrapup substage before creating a PR."
-        )
-
-    content = review_path.read_text()
-
-    # Find the Self-Assessment Scores YAML block
-    # Look for ```yaml ... ``` after "Self-Assessment Scores"
-    scores_match = re.search(
-        r'###?\s*Self-Assessment Scores.*?```yaml\s*\n(.*?)```',
-        content,
-        re.DOTALL | re.IGNORECASE
-    )
-
-    if not scores_match:
-        raise ValidationError(
-            "Self-Assessment Scores not found in review.md. "
-            "Complete the wrapup substage and add your self-assessment scores."
-        )
-
-    try:
-        scores_yaml = yaml.safe_load(scores_match.group(1))
-    except Exception as e:
-        raise ValidationError(f"Invalid YAML in Self-Assessment Scores: {e}")
-
-    if not scores_yaml or "scores" not in scores_yaml:
-        raise ValidationError(
-            "Self-Assessment Scores section is missing 'scores' data. "
-            "Add scores for: correctness, test_coverage, code_quality, spec_alignment, documentation"
-        )
-
-    scores = scores_yaml["scores"]
-    required_fields = ["correctness", "test_coverage", "code_quality", "spec_alignment", "documentation"]
-
-    missing = [f for f in required_fields if f not in scores]
-    if missing:
-        raise ValidationError(
-            f"Missing score fields: {', '.join(missing)}. "
-            "All five criteria must be scored."
-        )
-
-    # Calculate average
-    try:
-        values = [float(scores[f]) for f in required_fields]
-        average = sum(values) / len(values)
-    except (TypeError, ValueError) as e:
-        raise ValidationError(f"Invalid score values: {e}. Scores must be numbers 1-10.")
-
-    threshold = float(scores_yaml.get("threshold", 7.0))
-
-    if average < threshold:
-        raise ValidationError(
-            f"Implementation score ({average:.1f}) is below threshold ({threshold}). "
-            f"Scores: correctness={scores['correctness']}, test_coverage={scores['test_coverage']}, "
-            f"code_quality={scores['code_quality']}, spec_alignment={scores['spec_alignment']}, "
-            f"documentation={scores['documentation']}. "
-            "Improve your implementation or adjust scores if they were too harsh."
-        )
-
-    console.print(f"[green]Implementation score: {average:.1f}/10 (threshold: {threshold})[/green]")
-
-
-@pre_transition(IMPLEMENTATION_REVIEW, ACCEPTED)
-def require_pr_approval(issue: Issue):
-    """Require that PR is approved before merging.
-
-    Blocks transition if PR doesn't exist or is not approved.
-
-    Args:
-        issue: Issue being transitioned
-
-    Raises:
-        ValidationError: If PR not found or not approved
-    """
-    if not issue.pr_number:
-        raise ValidationError(
-            "No PR number found. Cannot merge without a PR."
-        )
-
-    from agenttree.github import is_pr_approved
-
-    if not is_pr_approved(issue.pr_number):
-        raise ValidationError(
-            f"PR #{issue.pr_number} requires approval before merging. "
-            f"Ask a human to review and approve the PR."
-        )
-
-
-# Post-transition action hooks
-
-
 def is_running_in_container() -> bool:
     """Check if we're running inside a container.
 
@@ -919,72 +837,6 @@ def is_running_in_container() -> bool:
         os.path.exists("/run/.containerenv") or
         os.environ.get("CONTAINER_RUNTIME") is not None
     )
-
-
-@post_transition(IMPLEMENT, IMPLEMENTATION_REVIEW)
-def create_pull_request_hook(issue: Issue):
-    """Create PR when transitioning to implementation review.
-
-    If running in a container (no push access), only commits locally.
-    The host will handle push/PR creation when it sees the stage change.
-
-    Args:
-        issue: Issue that was transitioned
-    """
-    from agenttree.issues import update_issue_metadata
-
-    # Get current branch
-    branch = get_current_branch()
-
-    # Auto-commit any uncommitted changes
-    if has_uncommitted_changes():
-        console.print(f"[dim]Auto-committing uncommitted changes...[/dim]")
-        auto_commit_changes(issue, IMPLEMENT)
-
-    # Update issue with branch info
-    update_issue_metadata(issue.id, branch=branch)
-
-    # If in container, skip remote operations - host will handle them
-    if is_running_in_container():
-        console.print(f"[yellow]Running in container - PR will be created by host[/yellow]")
-        console.print(f"[dim]Branch: {branch} (committed locally, awaiting push)[/dim]")
-        return
-
-    # On host: do the full push/PR
-    from agenttree.github import create_pr
-
-    # Push to remote
-    console.print(f"[dim]Pushing {branch} to origin/{branch}...[/dim]")
-    push_branch_to_remote(branch)
-
-    # Generate PR title and body
-    title = f"[Issue {issue.id}] {issue.title}"
-    body = generate_pr_body(issue)
-
-    # Create PR
-    console.print(f"[dim]Creating pull request...[/dim]")
-    pr = create_pr(title=title, body=body, branch=branch, base="main")
-
-    # Update issue with PR info
-    update_issue_metadata(
-        issue.id,
-        pr_number=pr.number,
-        pr_url=pr.url,
-        branch=branch
-    )
-
-    console.print(f"[green]✓ PR created: {pr.url}[/green]")
-
-    # Request Cursor code review
-    try:
-        subprocess.run(
-            ["gh", "pr", "comment", str(pr.number), "--body", "@cursor do a code review"],
-            capture_output=True,
-            check=True,
-        )
-        console.print(f"[dim]Requested Cursor code review[/dim]")
-    except Exception:
-        pass  # Non-critical
 
 
 def ensure_pr_for_issue(issue_id: str) -> bool:
@@ -1085,243 +937,6 @@ def ensure_pr_for_issue(issue_id: str) -> bool:
         return False
 
 
-@post_transition(IMPLEMENTATION_REVIEW, ACCEPTED)
-def merge_pull_request_hook(issue: Issue):
-    """Merge PR when transitioning to accepted.
-
-    Args:
-        issue: Issue that was transitioned
-    """
-    if not issue.pr_number:
-        console.print("[yellow]Warning: No PR to merge[/yellow]")
-        return
-
-    console.print(f"[dim]Merging PR #{issue.pr_number}...[/dim]")
-
-    from agenttree.github import merge_pr
-
-    merge_pr(issue.pr_number, method="squash")
-
-    console.print(f"[green]✓ PR #{issue.pr_number} merged and branch deleted[/green]")
-
-
-@post_transition(IMPLEMENTATION_REVIEW, ACCEPTED)
-def cleanup_issue_agent_hook(issue: Issue):
-    """Clean up agent resources when issue is accepted.
-
-    Stops container, removes worktree, frees port.
-
-    Args:
-        issue: Issue that was transitioned
-    """
-    from agenttree.state import get_active_agent, unregister_agent
-
-    agent = get_active_agent(issue.id)
-    if not agent:
-        return  # No agent to clean up
-
-    console.print(f"[dim]Cleaning up agent for issue #{issue.id}...[/dim]")
-
-    # Stop tmux session
-    try:
-        from agenttree.tmux import kill_session, session_exists
-        if session_exists(agent.tmux_session):
-            kill_session(agent.tmux_session)
-            console.print(f"[dim]  Stopped tmux session: {agent.tmux_session}[/dim]")
-    except Exception as e:
-        console.print(f"[yellow]  Warning: Could not stop tmux session: {e}[/yellow]")
-
-    # Stop container (if running)
-    try:
-        result = subprocess.run(
-            ["docker", "stop", agent.container],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if result.returncode == 0:
-            console.print(f"[dim]  Stopped container: {agent.container}[/dim]")
-
-        # Remove container
-        subprocess.run(
-            ["docker", "rm", agent.container],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-    except Exception as e:
-        console.print(f"[yellow]  Warning: Could not stop container: {e}[/yellow]")
-
-    # Unregister agent (frees port)
-    unregister_agent(issue.id)
-    console.print(f"[green]✓ Agent cleaned up for issue #{issue.id}[/green]")
-
-
-# On-enter hooks for auto-creating documentation
-
-
-def _get_issue_dir(issue: Issue) -> Path:
-    """Get the issue directory path."""
-    from agenttree.issues import get_issue_dir
-    issue_dir = get_issue_dir(issue.id)
-    if not issue_dir:
-        raise ValueError(f"Issue directory not found for issue {issue.id}")
-    return issue_dir
-
-
-def _copy_template(template_name: str, dest_path: Path, issue: Issue) -> bool:
-    """Copy a template file to destination, filling in placeholders.
-
-    Args:
-        template_name: Name of template file (e.g., "plan.md")
-        dest_path: Destination path for the file
-        issue: Issue object for filling placeholders
-
-    Returns:
-        True if file was created, False if it already exists
-    """
-    if dest_path.exists():
-        return False  # Don't overwrite existing files
-
-    from agenttree.issues import get_agenttree_path
-
-    template_path = get_agenttree_path() / "templates" / template_name
-    if not template_path.exists():
-        console.print(f"[yellow]Warning: Template {template_name} not found[/yellow]")
-        return False
-
-    # Read template and fill placeholders
-    content = template_path.read_text()
-
-    # Common placeholder substitutions
-    placeholders = {
-        "{{issue_id}}": issue.id,
-        "{{branch}}": issue.branch or "N/A",
-        "{{pr_url}}": issue.pr_url or "N/A",
-        "{{files_changed}}": "TBD",
-        "{{lines_added}}": "TBD",
-        "{{lines_removed}}": "TBD",
-    }
-
-    for placeholder, value in placeholders.items():
-        content = content.replace(placeholder, str(value))
-
-    # Write the file
-    dest_path.write_text(content)
-    return True
-
-
-@on_enter(RESEARCH)
-def create_research_md_on_research(issue: Issue):
-    """Auto-create research.md when entering research stage.
-
-    Args:
-        issue: Issue entering research stage
-    """
-    issue_dir = _get_issue_dir(issue)
-    research_path = issue_dir / "research.md"
-
-    if _copy_template("research.md", research_path, issue):
-        console.print(f"[dim]Created research.md in issue directory[/dim]")
-
-
-@on_enter(PLAN)
-def create_spec_md_on_plan(issue: Issue):
-    """Auto-create spec.md when entering plan stage.
-
-    Args:
-        issue: Issue entering plan stage
-    """
-    issue_dir = _get_issue_dir(issue)
-    spec_path = issue_dir / "spec.md"
-
-    if _copy_template("spec.md", spec_path, issue):
-        console.print(f"[dim]Created spec.md in issue directory[/dim]")
-
-
-@on_enter(PLAN_ASSESS)
-def create_spec_review_md_on_plan_assess(issue: Issue):
-    """Auto-create spec_review.md when entering plan_assess stage.
-
-    Args:
-        issue: Issue entering plan_assess stage
-    """
-    issue_dir = _get_issue_dir(issue)
-    spec_review_path = issue_dir / "spec_review.md"
-
-    if _copy_template("spec_review.md", spec_review_path, issue):
-        console.print(f"[dim]Created spec_review.md in issue directory[/dim]")
-
-
-@on_enter(IMPLEMENT, substage="code_review")
-def create_review_md_on_code_review(issue: Issue):
-    """Auto-create review.md when entering code_review substage.
-
-    Args:
-        issue: Issue entering code_review substage
-    """
-    issue_dir = _get_issue_dir(issue)
-    review_path = issue_dir / "review.md"
-
-    if _copy_template("review.md", review_path, issue):
-        console.print(f"[dim]Created review.md in issue directory[/dim]")
-
-
-# Pre-transition hooks to enforce workflow order
-
-
-@pre_transition(PLAN_REVIEW, IMPLEMENT)
-def require_spec_md_for_implement(issue: Issue):
-    """Require that spec.md exists and has content before implementing.
-
-    Blocks transition if spec.md doesn't exist or is mostly empty.
-
-    Args:
-        issue: Issue being transitioned
-
-    Raises:
-        ValidationError: If spec.md doesn't exist or is incomplete
-    """
-    issue_dir = _get_issue_dir(issue)
-
-    # Check for spec.md (new name) or plan.md (legacy)
-    spec_path = issue_dir / "spec.md"
-    plan_path = issue_dir / "plan.md"
-
-    if spec_path.exists():
-        content = spec_path.read_text()
-        file_name = "spec.md"
-    elif plan_path.exists():
-        content = plan_path.read_text()
-        file_name = "plan.md"
-    else:
-        raise ValidationError(
-            "spec.md not found. Complete the plan stage and fill out spec.md "
-            "before moving to implementation."
-        )
-
-    # Look for filled-in sections - at least Approach should have content
-    approach_section = "## Approach"
-    if approach_section in content:
-        # Find content after "## Approach" header
-        approach_idx = content.index(approach_section) + len(approach_section)
-        next_section_idx = content.find("##", approach_idx)
-        if next_section_idx == -1:
-            next_section_idx = len(content)
-
-        approach_content = content[approach_idx:next_section_idx].strip()
-        # Remove HTML comments
-        import re
-        approach_content = re.sub(r'<!--.*?-->', '', approach_content, flags=re.DOTALL).strip()
-
-        if len(approach_content) < 20:  # Minimum 20 chars of actual content
-            raise ValidationError(
-                f"{file_name} Approach section is too short. Describe your implementation "
-                "approach before moving to implementation stage."
-            )
-
-
-@on_enter(ACCEPTED)
 def check_and_start_blocked_issues(issue: Issue) -> None:
     """Check for blocked issues that can now be started when a dependency completes.
 
@@ -1338,7 +953,7 @@ def check_and_start_blocked_issues(issue: Issue) -> None:
     if is_running_in_container():
         return
 
-    from agenttree.issues import get_blocked_issues, check_dependencies_met, BACKLOG
+    from agenttree.issues import get_blocked_issues, check_dependencies_met
 
     blocked = get_blocked_issues(issue.id)
     if not blocked:
