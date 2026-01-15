@@ -80,6 +80,37 @@
             border-bottom-color: #a8d5ba;
         }
 
+        .stage-toggle {
+            margin-left: auto;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .toggle-btn {
+            padding: 6px 12px;
+            background: #3d6b5a;
+            border: 1px solid #4a7c6f;
+            border-radius: 4px;
+            color: #e8e4d9;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .toggle-btn:hover {
+            background: #4a7c6f;
+        }
+
+        .toggle-btn.active {
+            background: #5d8a6b;
+            border-color: #6b9a7a;
+        }
+
+        .kanban-column.hidden {
+            display: none;
+        }
+
         .kanban-board {
             display: flex;
             gap: 15px;
@@ -353,6 +384,10 @@
                 <a href="/kanban" class="tab active">Kanban</a>
                 <a href="/flow" class="tab">Flow</a>
             </nav>
+            <div class="stage-toggle">
+                <button class="toggle-btn active" onclick="setStageView('review')" id="toggle-review">Review Stages</button>
+                <button class="toggle-btn" onclick="setStageView('all')" id="toggle-all">All Stages</button>
+            </div>
         </div>
     </header>
 
@@ -493,6 +528,39 @@
                 closeIssueModal();
             }
         });
+
+        // Stage toggle functionality
+        const reviewStages = ['backlog', 'define', 'problem_review', 'plan_review', 'implementation_review'];
+
+        function setStageView(view) {
+            const columns = document.querySelectorAll('.kanban-column');
+            const toggleReview = document.getElementById('toggle-review');
+            const toggleAll = document.getElementById('toggle-all');
+
+            if (view === 'review') {
+                toggleReview.classList.add('active');
+                toggleAll.classList.remove('active');
+                columns.forEach(col => {
+                    const stage = col.dataset.stage;
+                    if (reviewStages.includes(stage)) {
+                        col.classList.remove('hidden');
+                    } else {
+                        col.classList.add('hidden');
+                    }
+                });
+            } else {
+                toggleAll.classList.add('active');
+                toggleReview.classList.remove('active');
+                columns.forEach(col => col.classList.remove('hidden'));
+            }
+
+            // Save preference
+            localStorage.setItem('kanbanStageView', view);
+        }
+
+        // Apply saved preference on load
+        const savedView = localStorage.getItem('kanbanStageView') || 'review';
+        setStageView(savedView);
     </script>
 </body>
 </html>
