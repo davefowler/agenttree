@@ -751,8 +751,13 @@ def execute_hooks(
             continue
 
         if hook_type == "run":
-            # Shell command hook
-            hook_errors = run_command_hook(issue_dir, params, **kwargs)
+            # Shell command hook - use worktree_dir if available, otherwise issue_dir
+            issue = kwargs.get("issue")
+            if issue and hasattr(issue, 'worktree_dir') and issue.worktree_dir:
+                cwd = Path(issue.worktree_dir)
+            else:
+                cwd = issue_dir
+            hook_errors = run_command_hook(cwd, params, **kwargs)
             # If optional flag is set and command returns "not configured", warn but don't block
             if params.get("optional") and any("not configured" in e.lower() for e in hook_errors):
                 context = params.get("context", params.get("command", "command"))
@@ -815,6 +820,7 @@ def execute_exit_hooks(issue: "Issue", stage: str, substage: Optional[str] = Non
         "issue_title": issue.title,
         "branch": issue.branch or "",
         "substage": substage or "",
+        "issue": issue,  # Pass issue for worktree_dir access in run hooks
         **extra_kwargs,  # Pass through extra kwargs like skip_pr_approval
     }
 
