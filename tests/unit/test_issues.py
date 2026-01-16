@@ -67,7 +67,7 @@ class TestIssueModel:
         )
         assert issue.id == "001"
         assert issue.stage == DEFINE  # New issues start at define stage
-        assert issue.substage == "draft"  # With draft substage
+        assert issue.substage == "refine"  # Human provides draft, agent refines
         assert issue.priority == Priority.MEDIUM
 
     def test_issue_with_all_fields(self):
@@ -120,7 +120,7 @@ class TestIssueCRUD:
         assert issue.title == "Test Issue"
         assert issue.priority == Priority.HIGH
         assert issue.stage == DEFINE  # New issues start at define stage
-        assert issue.substage == "draft"  # With draft substage
+        assert issue.substage == "refine"  # Human provides draft, agent refines
 
         # Check files created
         issue_dir = temp_agenttrees / "issues" / "001-test-issue"
@@ -200,13 +200,13 @@ class TestIssueCRUD:
         assert issue.history[0].stage == "implement"
 
     def test_create_issue_defaults_to_define(self, temp_agenttrees):
-        """Test that not providing a stage defaults to define.draft."""
+        """Test that not providing a stage defaults to define.refine."""
         issue = create_issue("Default Stage Issue")
 
         assert issue.stage == DEFINE
-        assert issue.substage == "draft"
+        assert issue.substage == "refine"
         assert issue.history[0].stage == "define"
-        assert issue.history[0].substage == "draft"
+        assert issue.history[0].substage == "refine"
 
 
 class TestStageTransitions:
@@ -218,15 +218,8 @@ class TestStageTransitions:
     """
 
     def test_get_next_stage_from_backlog(self):
-        """Backlog -> define.draft"""
+        """Backlog -> define.refine"""
         next_stage, next_substage, is_review = get_next_stage(BACKLOG, None)
-        assert next_stage == DEFINE
-        assert next_substage == "draft"
-        assert is_review is False
-
-    def test_get_next_stage_within_define_substages(self):
-        """define.draft -> define.refine"""
-        next_stage, next_substage, is_review = get_next_stage(DEFINE, "draft")
         assert next_stage == DEFINE
         assert next_substage == "refine"
         assert is_review is False

@@ -55,7 +55,7 @@ class Issue(BaseModel):
     updated: str
 
     stage: str = DEFINE
-    substage: Optional[str] = "draft"
+    substage: Optional[str] = "refine"
 
     assigned_agent: Optional[int] = None
     branch: Optional[str] = None
@@ -160,7 +160,7 @@ def create_issue(
         priority: Issue priority
         labels: Optional list of labels
         stage: Starting stage for the issue (default: DEFINE)
-        substage: Starting substage (default: "draft" for define stage)
+        substage: Starting substage (default: "refine" for define stage)
         problem: Problem statement text (fills problem.md)
         context: Context/background text (fills problem.md)
         solutions: Possible solutions text (fills problem.md)
@@ -171,7 +171,7 @@ def create_issue(
     """
     # Default substage for define stage
     if stage == DEFINE and substage is None:
-        substage = "draft"
+        substage = "refine"
     # Sync before and after writing
     agents_path = get_agenttree_path()
     sync_agents_repo(agents_path, pull_only=True)

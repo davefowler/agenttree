@@ -10,9 +10,10 @@ test_commands:
 lint_commands:
   - uv run mypy agenttree
 
+# default_model (above) is used for all tools
 tools:
   aider:
-    command: aider --model sonnet
+    command: aider
     startup_prompt: /read TASK.md
   claude:
     command: claude
@@ -24,8 +25,7 @@ stages:
   - name: define
     output: problem.md
     substages:
-      draft: {}
-      refine: {}
+      refine: {}  # Human provides initial draft, agent refines
 
   - name: research
     output: research.md

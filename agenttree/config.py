@@ -73,8 +73,7 @@ DEFAULT_STAGES = [
         name="define",
         output="problem.md",
         substages={
-            "draft": SubstageConfig(name="draft"),
-            "refine": SubstageConfig(name="refine"),
+            "refine": SubstageConfig(name="refine"),  # Human provides draft, agent refines
         }
     ),
     StageConfig(
