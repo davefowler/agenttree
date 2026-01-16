@@ -21,14 +21,14 @@
         <div class="detail-actions">
             <button class="btn btn-primary"
                     hx-post="/api/issues/{{ issue.number }}/start"
-                    hx-target="#dispatch-status-{{ issue.number }}"
+                    hx-target="#start-status-{{ issue.number }}"
                     hx-swap="innerHTML">
                 Start Agent
             </button>
             <button class="btn btn-chat-toggle" onclick="toggleAgentChat('{{ issue.number }}')">
                 {% if issue.assigned_agent %}Chat{% else %}Chat{% endif %}
             </button>
-            <span id="dispatch-status-{{ issue.number }}"></span>
+            <span id="start-status-{{ issue.number }}"></span>
         </div>
 
         <!-- File tabs -->

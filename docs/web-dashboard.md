@@ -1,13 +1,13 @@
 # AgentTree Web Dashboard
 
-The AgentTree web dashboard provides a real-time view of all agents, their tmux sessions, and allows you to dispatch tasks and chat with agents through a browser interface.
+The AgentTree web dashboard provides a real-time view of all agents, their tmux sessions, and allows you to start tasks and chat with agents through a browser interface.
 
 ## Features
 
 - **Real-time Agent Status**: See all agents and their current state
 - **Live Tmux Output**: View tmux sessions updating in real-time via WebSocket
 - **Send Commands**: Type commands directly to agents via tmux
-- **Task Dispatch**: Assign GitHub issues or ad-hoc tasks to agents
+- **Task Start**: Assign GitHub issues or ad-hoc tasks to agents
 - **HTMX-Powered**: Dynamic updates without JavaScript framework overhead
 - **Optional Authentication**: Secure your dashboard if exposing publicly
 
@@ -155,13 +155,13 @@ For live streaming (1-second updates), the WebSocket connection is automatically
 - `pytest`
 - `Read TASK.md`
 
-### Dispatching Tasks
+### Starting Tasks
 
-1. Expand the "Dispatch Task" section
+1. Expand the "Start Task" section
 2. Either:
    - Enter a GitHub issue number (e.g., `42`)
    - OR write an ad-hoc task description
-3. Click "Dispatch Task"
+3. Click "Start Task"
 
 This will create a TASK.md file in the agent's worktree and notify the agent.
 
@@ -184,7 +184,7 @@ This will create a TASK.md file in the agent's worktree and notify the agent.
 - `GET /agents` - Agent list (updates every 5s)
 - `GET /agent/{num}/tmux` - Tmux output (updates every 2s)
 - `POST /agent/{num}/send` - Send command to agent
-- `POST /agent/{num}/dispatch` - Dispatch task to agent
+- `POST /agent/{num}/start` - Start task on agent
 
 **WebSocket:**
 - `WS /ws/agent/{num}/tmux` - Live tmux streaming (updates every 1s)
@@ -200,7 +200,7 @@ agenttree/web/
 │       ├── agents_list.html        # Agent cards (HTMX partial)
 │       ├── tmux_output.html        # Tmux display (HTMX partial)
 │       ├── send_status.html        # Send confirmation
-│       └── dispatch_status.html    # Dispatch confirmation
+│       └── start_status.html       # Start confirmation
 └── static/                         # CSS/JS (future)
 ```
 
