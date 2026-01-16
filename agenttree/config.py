@@ -14,13 +14,24 @@ class ToolConfig(BaseModel):
     skip_permissions: bool = False  # Add --dangerously-skip-permissions to command
 
 
+class HooksConfig(BaseModel):
+    """Configuration for host action hooks."""
+
+    post_pr_create: list[dict] = Field(default_factory=list)  # After PR created
+    post_merge: list[dict] = Field(default_factory=list)  # After merge
+    post_accepted: list[dict] = Field(default_factory=list)  # After issue accepted
+
+
 class SubstageConfig(BaseModel):
     """Configuration for a workflow substage."""
 
     name: str
     output: Optional[str] = None  # Document created by this substage
+    output_optional: bool = False  # If True, missing output file doesn't error
     skill: Optional[str] = None   # Override skill file path
-    validators: list[str] = Field(default_factory=list)
+    validators: list[str] = Field(default_factory=list)  # Legacy format
+    pre_completion: list[dict] = Field(default_factory=list)  # Hooks before completing
+    post_start: list[dict] = Field(default_factory=list)  # Hooks after starting
 
 
 class StageConfig(BaseModel):
@@ -28,11 +39,14 @@ class StageConfig(BaseModel):
 
     name: str
     output: Optional[str] = None  # Document created by this stage
+    output_optional: bool = False  # If True, missing output file doesn't error
     skill: Optional[str] = None   # Override skill file path
     human_review: bool = False
     triggers_merge: bool = False
     terminal: bool = False  # Cannot progress from here
     substages: Dict[str, SubstageConfig] = Field(default_factory=dict)
+    pre_completion: list[dict] = Field(default_factory=list)  # Stage-level hooks before completing
+    post_start: list[dict] = Field(default_factory=list)  # Stage-level hooks after starting
 
     def substage_order(self) -> list[str]:
         """Get ordered list of substage names."""
@@ -42,6 +56,23 @@ class StageConfig(BaseModel):
         """Get a substage by name."""
         return self.substages.get(name)
 
+    def hooks_for(self, substage: Optional[str], event: str) -> list[dict]:
+        """Get hooks for a substage or stage.
+
+        Args:
+            substage: Substage name, or None for stage-level hooks
+            event: "pre_completion" or "post_start"
+
+        Returns:
+            List of hook configurations
+        """
+        if substage:
+            substage_config = self.get_substage(substage)
+            if substage_config:
+                return getattr(substage_config, event, [])
+            return []
+        return getattr(self, event, [])
+
 
 # Default stages if not configured in .agenttree.yaml
 DEFAULT_STAGES = [
@@ -50,14 +81,13 @@ DEFAULT_STAGES = [
         name="define",
         output="problem.md",
         substages={
-            "draft": SubstageConfig(name="draft"),
-            "refine": SubstageConfig(name="refine"),
+            "refine": SubstageConfig(name="refine"),  # Human provides draft, agent refines
         }
     ),
-    StageConfig(name="problem_review", human_review=True),
     StageConfig(
         name="research",
         output="research.md",
+        post_start=[{"create_file": {"template": "research.md", "dest": "research.md"}}],
         substages={
             "explore": SubstageConfig(name="explore"),
             "document": SubstageConfig(name="document"),
@@ -66,29 +96,72 @@ DEFAULT_STAGES = [
     StageConfig(
         name="plan",
         output="spec.md",
+        post_start=[{"create_file": {"template": "spec.md", "dest": "spec.md"}}],
         substages={
             "draft": SubstageConfig(name="draft"),
             "refine": SubstageConfig(name="refine"),
         }
     ),
-    StageConfig(name="plan_assess", output="spec_review.md"),
+    StageConfig(
+        name="plan_assess",
+        output="spec_review.md",
+        post_start=[{"create_file": {"template": "spec_review.md", "dest": "spec_review.md"}}],
+    ),
     StageConfig(name="plan_revise", output="spec.md"),
-    StageConfig(name="plan_review", human_review=True),
+    StageConfig(
+        name="plan_review",
+        human_review=True,
+        pre_completion=[
+            {"file_exists": "spec.md"},
+            {"section_check": {"file": "spec.md", "section": "Approach", "expect": "not_empty"}},
+            {"rebase": {}, "host_only": True},  # Host-only: rebase onto main before implementation starts
+        ],
+    ),
     StageConfig(
         name="implement",
+        # pre_completion from implement stage: run lint, tests, then create PR
+        pre_completion=[
+            {"run": "agenttree lint", "optional": True, "context": "Lint"},
+            {"run": "agenttree test", "optional": True, "context": "Tests"},
+            {"create_pr": True},
+        ],
         substages={
             "setup": SubstageConfig(name="setup"),
-            "test": SubstageConfig(name="test"),
             "code": SubstageConfig(name="code"),
-            "debug": SubstageConfig(name="debug"),
-            "code_review": SubstageConfig(name="code_review", output="review.md", validators=["require_commits"]),
+            "code_review": SubstageConfig(
+                name="code_review",
+                output="review.md",
+                post_start=[{"create_file": {"template": "review.md", "dest": "review.md"}}],
+            ),
             "address_review": SubstageConfig(name="address_review"),
-            "wrapup": SubstageConfig(name="wrapup", validators=["require_wrapup_score"]),
-            "feedback": SubstageConfig(name="feedback", output="feedback.md"),
-        }
+            "wrapup": SubstageConfig(
+                name="wrapup",
+                pre_completion=[
+                    {"file_exists": "review.md"},
+                    {"field_check": {"file": "review.md", "path": "average", "min": 7}},
+                ],
+            ),
+            "feedback": SubstageConfig(
+                name="feedback",
+                output="feedback.md",
+                pre_completion=[
+                    {"has_commits": True},
+                    {"file_exists": "review.md"},
+                    {"section_check": {"file": "review.md", "section": "Critical Issues", "expect": "empty"}},
+                ],
+            ),
+        },
     ),
-    StageConfig(name="implementation_review", human_review=True),
-    StageConfig(name="accepted", triggers_merge=True),
+    StageConfig(
+        name="implementation_review",
+        human_review=True,
+        pre_completion=[{"pr_approved": True}],
+    ),
+    StageConfig(
+        name="accepted",
+        triggers_merge=True,
+        post_start=[{"merge_pr": True}],
+    ),
     StageConfig(name="not_doing", terminal=True),
 ]
 
@@ -117,8 +190,12 @@ class Config(BaseModel):
     default_model: str = "opus"  # Model to use for Claude CLI (opus, sonnet)
     refresh_interval: int = 10
     tools: Dict[str, ToolConfig] = Field(default_factory=dict)
+    test_commands: list[str] = Field(default_factory=list)  # Commands to run tests
+    lint_commands: list[str] = Field(default_factory=list)  # Commands to run linting
     stages: list[StageConfig] = Field(default_factory=lambda: DEFAULT_STAGES.copy())
     security: SecurityConfig = Field(default_factory=SecurityConfig)
+    merge_strategy: str = "squash"  # squash, merge, or rebase
+    hooks: HooksConfig = Field(default_factory=HooksConfig)
 
     def get_port_for_agent(self, agent_num: int) -> int:
         """Get port number for a specific agent.
@@ -480,5 +557,15 @@ def load_config(path: Optional[Path] = None) -> Config:
 
     if data is None:
         return Config()
+
+    # Auto-populate 'name' field for substages from the key
+    if "stages" in data:
+        for stage in data["stages"]:
+            if "substages" in stage and isinstance(stage["substages"], dict):
+                for substage_name, substage_config in stage["substages"].items():
+                    if substage_config is None:
+                        stage["substages"][substage_name] = {"name": substage_name}
+                    elif "name" not in substage_config:
+                        substage_config["name"] = substage_name
 
     return Config(**data)

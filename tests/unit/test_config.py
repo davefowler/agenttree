@@ -186,3 +186,171 @@ class TestToolConfig:
         )
         assert tool.command == "aider --model sonnet"
         assert tool.startup_prompt == "/read TASK.md"
+
+
+class TestHooksConfig:
+    """Tests for HooksConfig model."""
+
+    def test_hooks_config_empty_by_default(self) -> None:
+        """HooksConfig should have empty lists by default."""
+        from agenttree.config import HooksConfig
+
+        hooks = HooksConfig()
+        assert hooks.post_pr_create == []
+        assert hooks.post_merge == []
+        assert hooks.post_accepted == []
+
+    def test_hooks_config_with_values(self) -> None:
+        """HooksConfig should accept hook lists."""
+        from agenttree.config import HooksConfig
+
+        hooks = HooksConfig(
+            post_pr_create=[{"command": "echo 'PR created'"}],
+            post_merge=[{"command": "echo 'merged'"}],
+            post_accepted=[{"command": "echo 'done'"}],
+        )
+        assert len(hooks.post_pr_create) == 1
+        assert hooks.post_pr_create[0]["command"] == "echo 'PR created'"
+        assert len(hooks.post_merge) == 1
+        assert len(hooks.post_accepted) == 1
+
+
+class TestMergeStrategyConfig:
+    """Tests for merge_strategy config."""
+
+    def test_merge_strategy_default_is_squash(self) -> None:
+        """Default merge strategy should be squash."""
+        config = Config()
+        assert config.merge_strategy == "squash"
+
+    def test_merge_strategy_configurable(self) -> None:
+        """Merge strategy should be configurable."""
+        config = Config(merge_strategy="rebase")
+        assert config.merge_strategy == "rebase"
+
+        config = Config(merge_strategy="merge")
+        assert config.merge_strategy == "merge"
+
+    def test_merge_strategy_from_yaml(self, tmp_path: Path) -> None:
+        """Merge strategy should be loadable from YAML."""
+        config_file = tmp_path / ".agenttree.yaml"
+        config_file.write_text("merge_strategy: rebase")
+
+        config = load_config(tmp_path)
+        assert config.merge_strategy == "rebase"
+
+
+class TestConfigHooksIntegration:
+    """Tests for hooks config integration with main Config."""
+
+    def test_config_has_hooks_by_default(self) -> None:
+        """Config should have empty HooksConfig by default."""
+        from agenttree.config import HooksConfig
+
+        config = Config()
+        assert isinstance(config.hooks, HooksConfig)
+        assert config.hooks.post_pr_create == []
+
+    def test_config_hooks_from_yaml(self, tmp_path: Path) -> None:
+        """Hooks should be loadable from YAML."""
+        config_file = tmp_path / ".agenttree.yaml"
+        config_data = {
+            "hooks": {
+                "post_pr_create": [
+                    {"command": "gh pr comment {{pr_number}} --body 'review please'", "host_only": True}
+                ],
+                "post_merge": [
+                    {"command": "echo 'merged'"}
+                ],
+            }
+        }
+        config_file.write_text(yaml.dump(config_data))
+
+        config = load_config(tmp_path)
+        assert len(config.hooks.post_pr_create) == 1
+        assert config.hooks.post_pr_create[0]["host_only"] is True
+        assert len(config.hooks.post_merge) == 1
+
+
+class TestStageHookNaming:
+    """Tests for pre_completion/post_start hook naming."""
+
+    def test_substage_config_has_pre_completion(self) -> None:
+        """SubstageConfig should have pre_completion field (renamed from on_exit)."""
+        from agenttree.config import SubstageConfig
+
+        substage = SubstageConfig(
+            name="test",
+            pre_completion=[{"type": "file_exists", "file": "test.md"}],
+        )
+        assert len(substage.pre_completion) == 1
+        assert substage.pre_completion[0]["type"] == "file_exists"
+
+    def test_substage_config_has_post_start(self) -> None:
+        """SubstageConfig should have post_start field (renamed from on_enter)."""
+        from agenttree.config import SubstageConfig
+
+        substage = SubstageConfig(
+            name="test",
+            post_start=[{"command": "echo 'starting'"}],
+        )
+        assert len(substage.post_start) == 1
+        assert substage.post_start[0]["command"] == "echo 'starting'"
+
+    def test_stage_config_has_pre_completion(self) -> None:
+        """StageConfig should have pre_completion field."""
+        from agenttree.config import StageConfig
+
+        stage = StageConfig(
+            name="implement",
+            pre_completion=[{"type": "create_pr"}],
+        )
+        assert len(stage.pre_completion) == 1
+
+    def test_stage_config_has_post_start(self) -> None:
+        """StageConfig should have post_start field."""
+        from agenttree.config import StageConfig
+
+        stage = StageConfig(
+            name="research",
+            post_start=[{"type": "create_file", "template": "research.md", "dest": "research.md"}],
+        )
+        assert len(stage.post_start) == 1
+
+    def test_hooks_for_uses_new_names(self) -> None:
+        """hooks_for() should work with pre_completion/post_start."""
+        from agenttree.config import StageConfig, SubstageConfig
+
+        stage = StageConfig(
+            name="implement",
+            pre_completion=[{"type": "create_pr"}],
+            post_start=[{"type": "setup"}],
+            substages={
+                "code": SubstageConfig(
+                    name="code",
+                    pre_completion=[{"type": "has_commits"}],
+                    post_start=[{"command": "echo 'coding'"}],
+                ),
+            },
+        )
+
+        # Stage-level hooks
+        assert stage.hooks_for(None, "pre_completion") == [{"type": "create_pr"}]
+        assert stage.hooks_for(None, "post_start") == [{"type": "setup"}]
+
+        # Substage-level hooks
+        assert stage.hooks_for("code", "pre_completion") == [{"type": "has_commits"}]
+        assert stage.hooks_for("code", "post_start") == [{"command": "echo 'coding'"}]
+
+    def test_default_stages_use_new_names(self) -> None:
+        """DEFAULT_STAGES should use pre_completion/post_start."""
+        from agenttree.config import DEFAULT_STAGES
+
+        # Check that at least one stage has hooks with new names
+        implement_stage = next(s for s in DEFAULT_STAGES if s.name == "implement")
+        assert hasattr(implement_stage, "pre_completion")
+        assert hasattr(implement_stage, "post_start")
+
+        # Check plan_review stage has pre_completion (was on_exit)
+        plan_review = next(s for s in DEFAULT_STAGES if s.name == "plan_review")
+        assert len(plan_review.pre_completion) > 0

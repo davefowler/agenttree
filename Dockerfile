@@ -35,6 +35,10 @@ USER agent
 RUN git config --global user.email "agent@agenttree.dev" && \
     git config --global user.name "AgentTree Agent"
 
+# Install uv for agent user (fast Python package manager)
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/home/agent/.local/bin:$PATH"
+
 # Create workspace directory
 WORKDIR /workspace
 

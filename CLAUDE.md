@@ -1,5 +1,7 @@
 # AgentTree - Project Conventions
 
+## ⛔ NEVER merge your own PRs without explicit approval. Create PR → request `@cursoragent review` → WAIT for review → ASK before merging.
+
 ## Tech Stack
 
 - **Language:** Python 3.12+

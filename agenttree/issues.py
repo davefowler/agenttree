@@ -27,7 +27,6 @@ class Priority(str, Enum):
 # Full stage configuration is loaded from .agenttree.yaml via config.py
 BACKLOG = "backlog"
 DEFINE = "define"
-PROBLEM_REVIEW = "problem_review"
 RESEARCH = "research"
 PLAN = "plan"
 PLAN_ASSESS = "plan_assess"
@@ -56,18 +55,23 @@ class Issue(BaseModel):
     updated: str
 
     stage: str = DEFINE
-    substage: Optional[str] = "draft"
+    substage: Optional[str] = "refine"
 
     assigned_agent: Optional[int] = None
     branch: Optional[str] = None
+    worktree_dir: Optional[str] = None  # Absolute path to worktree directory
 
     labels: list[str] = Field(default_factory=list)
     priority: Priority = Priority.MEDIUM
+
+    # Dependencies: list of issue IDs that must be completed (accepted stage) before this issue can start
+    dependencies: list[str] = Field(default_factory=list)
 
     github_issue: Optional[int] = None
     pr_number: Optional[int] = None
     pr_url: Optional[str] = None
     relevant_url: Optional[str] = None
+    needs_push: bool = False  # Set by agent when commits need to be pushed by host
 
     history: list[HistoryEntry] = Field(default_factory=list)
 
@@ -87,8 +91,34 @@ def slugify(text: str) -> str:
 
 
 def get_agenttree_path() -> Path:
-    """Get the path to _agenttree directory."""
-    return Path.cwd() / "_agenttree"
+    """Get the path to _agenttree directory.
+
+    In worktrees, _agenttree is gitignored so we need to find it in the main repo.
+    """
+    cwd = Path.cwd()
+    local_path = cwd / "_agenttree"
+
+    # If local _agenttree has content (or is a symlink), use it
+    if local_path.exists():
+        # Check if it's a symlink or has issues subdirectory
+        if local_path.is_symlink() or (local_path / "issues").exists():
+            return local_path
+
+    # In a worktree, .git is a file pointing to the main repo
+    git_path = cwd / ".git"
+    if git_path.is_file():
+        # Parse gitdir from .git file: "gitdir: /path/to/main/.git/worktrees/xxx"
+        content = git_path.read_text().strip()
+        if content.startswith("gitdir:"):
+            gitdir = Path(content.split(":", 1)[1].strip())
+            # Go up from .git/worktrees/xxx to main repo root
+            main_repo = gitdir.parent.parent.parent
+            main_agenttree = main_repo / "_agenttree"
+            if main_agenttree.exists():
+                return main_agenttree
+
+    # Fallback to local path
+    return local_path
 
 
 def get_issues_path() -> Path:
@@ -123,6 +153,7 @@ def create_issue(
     problem: Optional[str] = None,
     context: Optional[str] = None,
     solutions: Optional[str] = None,
+    dependencies: Optional[list[str]] = None,
 ) -> Issue:
     """Create a new issue.
 
@@ -131,17 +162,18 @@ def create_issue(
         priority: Issue priority
         labels: Optional list of labels
         stage: Starting stage for the issue (default: DEFINE)
-        substage: Starting substage (default: "draft" for define stage)
+        substage: Starting substage (default: "refine" for define stage)
         problem: Problem statement text (fills problem.md)
         context: Context/background text (fills problem.md)
         solutions: Possible solutions text (fills problem.md)
+        dependencies: Optional list of issue IDs that must be completed first
 
     Returns:
         The created Issue object
     """
     # Default substage for define stage
     if stage == DEFINE and substage is None:
-        substage = "draft"
+        substage = "refine"
     # Sync before and after writing
     agents_path = get_agenttree_path()
     sync_agents_repo(agents_path, pull_only=True)
@@ -159,6 +191,13 @@ def create_issue(
     issue_dir = issues_path / dir_name
     issue_dir.mkdir(exist_ok=True)
 
+    # Normalize dependencies (ensure they're padded to 3 digits)
+    normalized_deps: list[str] = []
+    if dependencies:
+        for dep in dependencies:
+            dep_num = dep.lstrip("0") or "0"
+            normalized_deps.append(f"{int(dep_num):03d}")
+
     # Create issue object
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     issue = Issue(
@@ -171,6 +210,7 @@ def create_issue(
         substage=substage,
         priority=priority,
         labels=labels or [],
+        dependencies=normalized_deps,
         history=[
             HistoryEntry(stage=stage, substage=substage, timestamp=now)
         ]
@@ -233,6 +273,7 @@ def list_issues(
     stage: Optional[str] = None,
     priority: Optional[Priority] = None,
     assigned_agent: Optional[int] = None,
+    sync: bool = True,
 ) -> list[Issue]:
     """List issues, optionally filtered.
 
@@ -240,13 +281,15 @@ def list_issues(
         stage: Filter by stage
         priority: Filter by priority
         assigned_agent: Filter by assigned agent
+        sync: If True, sync with remote before reading (default True for CLI, False for web)
 
     Returns:
         List of Issue objects
     """
-    # Sync before reading
-    agents_path = get_agenttree_path()
-    sync_agents_repo(agents_path, pull_only=True)
+    # Sync before reading (skip for web UI to avoid latency)
+    if sync:
+        agents_path = get_agenttree_path()
+        sync_agents_repo(agents_path, pull_only=True)
 
     issues_path = get_issues_path()
     if not issues_path.exists():
@@ -283,18 +326,20 @@ def list_issues(
     return issues
 
 
-def get_issue(issue_id: str) -> Optional[Issue]:
+def get_issue(issue_id: str, sync: bool = True) -> Optional[Issue]:
     """Get a single issue by ID.
 
     Args:
         issue_id: Issue ID (e.g., "001" or "001-fix-login")
+        sync: If True, sync with remote before reading (default True for CLI, False for web)
 
     Returns:
         Issue object or None if not found
     """
-    # Sync before reading
-    agents_path = get_agenttree_path()
-    sync_agents_repo(agents_path, pull_only=True)
+    # Sync before reading (skip for web UI to avoid latency)
+    if sync:
+        agents_path = get_agenttree_path()
+        sync_agents_repo(agents_path, pull_only=True)
 
     issues_path = get_issues_path()
     if not issues_path.exists():
@@ -345,6 +390,76 @@ def get_issue_dir(issue_id: str) -> Optional[Path]:
     return None
 
 
+def check_dependencies_met(issue: Issue) -> tuple[bool, list[str]]:
+    """Check if all dependencies for an issue are met.
+
+    A dependency is met when the dependent issue is in the ACCEPTED stage.
+
+    Args:
+        issue: Issue to check dependencies for
+
+    Returns:
+        Tuple of (all_met, unmet_ids) where:
+        - all_met: True if all dependencies are met
+        - unmet_ids: List of issue IDs that are not yet completed
+    """
+    if not issue.dependencies:
+        return True, []
+
+    unmet = []
+    for dep_id in issue.dependencies:
+        dep_issue = get_issue(dep_id)
+        if dep_issue is None:
+            # Dependency doesn't exist - treat as unmet
+            unmet.append(dep_id)
+        elif dep_issue.stage != ACCEPTED:
+            unmet.append(dep_id)
+
+    return len(unmet) == 0, unmet
+
+
+def get_blocked_issues(completed_issue_id: str) -> list[Issue]:
+    """Get all issues in backlog that were waiting on a completed issue.
+
+    Args:
+        completed_issue_id: ID of the issue that was just completed
+
+    Returns:
+        List of issues that have this issue as a dependency
+    """
+    # Normalize the ID for comparison
+    normalized_id = completed_issue_id.lstrip("0") or "0"
+
+    blocked = []
+    for issue in list_issues(stage=BACKLOG):
+        # Check if this issue depends on the completed issue
+        for dep_id in issue.dependencies:
+            dep_normalized = dep_id.lstrip("0") or "0"
+            if dep_normalized == normalized_id:
+                blocked.append(issue)
+                break
+
+    return blocked
+
+
+def get_ready_issues() -> list[Issue]:
+    """Get all issues in backlog that have all dependencies met and can be started.
+
+    Returns:
+        List of issues that are ready to start
+    """
+    ready = []
+    for issue in list_issues(stage=BACKLOG):
+        if issue.dependencies:
+            all_met, _ = check_dependencies_met(issue)
+            if all_met:
+                ready.append(issue)
+        # Issues without dependencies in backlog can also be started
+        # but they were likely put there intentionally, so don't auto-start
+
+    return ready
+
+
 # Stage workflow definitions are now config-driven via .agenttree.yaml
 # These compatibility constants are provided for backward compatibility with tests
 # but the actual workflow logic uses Config.get_next_stage()
@@ -354,7 +469,6 @@ def get_issue_dir(issue_id: str) -> Optional[Path]:
 STAGE_ORDER = [
     BACKLOG,
     DEFINE,
-    PROBLEM_REVIEW,
     RESEARCH,
     PLAN,
     PLAN_ASSESS,
@@ -373,7 +487,6 @@ STAGE_SUBSTAGES = {
 }
 
 HUMAN_REVIEW_STAGES = {
-    PROBLEM_REVIEW,
     PLAN_REVIEW,
     IMPLEMENTATION_REVIEW,
 }
@@ -514,6 +627,10 @@ def update_issue_metadata(
     branch: Optional[str] = None,
     github_issue: Optional[int] = None,
     relevant_url: Optional[str] = None,
+    worktree_dir: Optional[str] = None,
+    needs_push: Optional[bool] = None,
+    assigned_agent: Optional[int] = None,
+    clear_assigned_agent: bool = False,
 ) -> Optional[Issue]:
     """Update metadata fields on an issue.
 
@@ -524,6 +641,10 @@ def update_issue_metadata(
         branch: Branch name (optional)
         github_issue: GitHub issue number (optional)
         relevant_url: Relevant URL (optional)
+        worktree_dir: Worktree directory path (optional)
+        needs_push: Whether host needs to push commits (optional)
+        assigned_agent: Assigned agent number (optional)
+        clear_assigned_agent: If True, sets assigned_agent to None
 
     Returns:
         Updated Issue object or None if not found
@@ -557,6 +678,14 @@ def update_issue_metadata(
         issue.github_issue = github_issue
     if relevant_url is not None:
         issue.relevant_url = relevant_url
+    if worktree_dir is not None:
+        issue.worktree_dir = worktree_dir
+    if needs_push is not None:
+        issue.needs_push = needs_push
+    if assigned_agent is not None:
+        issue.assigned_agent = assigned_agent
+    if clear_assigned_agent:
+        issue.assigned_agent = None
     issue.updated = now
 
     # Write back
