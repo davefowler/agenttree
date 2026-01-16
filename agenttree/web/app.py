@@ -366,14 +366,17 @@ async def agents_list(
 @app.get("/agent/{agent_num}/tmux", response_class=HTMLResponse)
 async def agent_tmux(
     request: Request,
-    agent_num: int,
+    agent_num: str,
     user: Optional[str] = Depends(get_current_user)
 ) -> HTMLResponse:
     """Get tmux output for an agent (HTMX endpoint)."""
+    config = load_config()
+    session_name = f"{config.project}-issue-{agent_num}"
+
     # Capture tmux output
     try:
         result = subprocess.run(
-            ["tmux", "capture-pane", "-t", f"agent-{agent_num}", "-p"],
+            ["tmux", "capture-pane", "-t", session_name, "-p"],
             capture_output=True,
             text=True,
             timeout=2
@@ -392,14 +395,17 @@ async def agent_tmux(
 @app.post("/agent/{agent_num}/send", response_class=HTMLResponse)
 async def send_to_agent(
     request: Request,
-    agent_num: int,
+    agent_num: str,
     message: str = Form(...),
     user: Optional[str] = Depends(get_current_user)
 ) -> HTMLResponse:
     """Send a message to an agent via tmux."""
+    config = load_config()
+    session_name = f"{config.project}-issue-{agent_num}"
+
     try:
         subprocess.run(
-            ["tmux", "send-keys", "-t", f"agent-{agent_num}", message, "Enter"],
+            ["tmux", "send-keys", "-t", session_name, message, "Enter"],
             check=True,
             timeout=2
         )
@@ -481,9 +487,9 @@ async def start_issue(
 ) -> HTMLResponse:
     """Start an agent to work on an issue (calls agenttree start)."""
     try:
-        # Run agenttree start in background (don't wait for completion)
+        # Use --force to restart stalled agents (tmux dead but state exists)
         subprocess.Popen(
-            ["uv", "run", "agenttree", "start", issue_id],
+            ["uv", "run", "agenttree", "start", issue_id, "--force"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             cwd=Path.cwd(),

@@ -146,11 +146,13 @@ stages:
 
   - name: implementation_review
     human_review: true
+    post_start:
+      - create_pr:
     pre_completion:
       - pr_approved:
 
   - name: accepted
-    triggers_merge: true
+    terminal: true
     post_start:
       - merge_pr:
       - cleanup_agent:

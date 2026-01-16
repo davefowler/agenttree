@@ -611,7 +611,7 @@
             });
         });
 
-        // Agent light toggle
+        // Agent light toggle (for kanban cards)
         async function toggleAgent(issueNumber, lightElement) {
             const isOn = lightElement.classList.contains('on');
 
@@ -621,8 +621,8 @@
                 return;
             }
 
-            // Start the agent
-            lightElement.classList.remove('off');
+            // Start/restart the agent (works for both 'off' and 'stalled')
+            lightElement.classList.remove('off', 'stalled');
             lightElement.classList.add('starting');
             lightElement.title = 'Starting agent...';
 
@@ -639,15 +639,54 @@
                         lightElement.title = 'Agent running - click to view';
                     }, 2000);
                 } else {
-                    // Revert to off state on error
+                    // Revert to stalled state on error
                     lightElement.classList.remove('starting');
-                    lightElement.classList.add('off');
+                    lightElement.classList.add('stalled');
                     lightElement.title = 'Failed to start - click to retry';
                 }
             } catch (error) {
                 console.error('Error starting agent:', error);
                 lightElement.classList.remove('starting');
-                lightElement.classList.add('off');
+                lightElement.classList.add('stalled');
+                lightElement.title = 'Error - click to retry';
+            }
+        }
+
+        // Agent light toggle (for detail view)
+        async function toggleAgentFromDetail(issueNumber, lightElement) {
+            const isOn = lightElement.classList.contains('on');
+
+            if (isOn) {
+                // Already running, maybe show chat panel
+                toggleAgentChat(issueNumber);
+                return;
+            }
+
+            // Start/restart the agent
+            lightElement.classList.remove('off', 'stalled');
+            lightElement.classList.add('starting');
+            lightElement.title = 'Starting agent...';
+
+            try {
+                const response = await fetch(`/api/issues/${issueNumber}/start`, {
+                    method: 'POST'
+                });
+
+                if (response.ok) {
+                    setTimeout(() => {
+                        lightElement.classList.remove('starting');
+                        lightElement.classList.add('on');
+                        lightElement.title = 'Agent running';
+                    }, 2000);
+                } else {
+                    lightElement.classList.remove('starting');
+                    lightElement.classList.add('stalled');
+                    lightElement.title = 'Failed to start - click to retry';
+                }
+            } catch (error) {
+                console.error('Error starting agent:', error);
+                lightElement.classList.remove('starting');
+                lightElement.classList.add('stalled');
                 lightElement.title = 'Error - click to retry';
             }
         }

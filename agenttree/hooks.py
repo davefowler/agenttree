@@ -176,8 +176,9 @@ def _action_create_pr(issue_dir: Path, issue_id: str = "", issue_title: str = ""
         )
 
     # Update issue with branch and worktree info
+    # Use current working directory as worktree (not issue_dir which is _agenttree/issues/...)
     if issue_id:
-        worktree_path = str(issue_dir.resolve()) if issue_dir else None
+        worktree_path = str(Path.cwd().resolve())
         update_issue_metadata(issue_id, branch=branch, worktree_dir=worktree_path)
 
     # If in container, skip remote operations - host will detect and push unpushed commits

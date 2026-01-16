@@ -352,11 +352,63 @@ header h1 {
     border-bottom: 1px solid var(--border-light);
 }
 
+.detail-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 15px;
+    margin-bottom: 10px;
+}
+
 .detail-title {
     font-size: 24px;
     font-weight: 600;
-    margin-bottom: 10px;
     color: var(--text-card);
+}
+
+/* Large agent light for detail view */
+.agent-light-large {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: all 0.2s;
+    flex-shrink: 0;
+}
+
+.agent-light-large.off {
+    background: #c4c0b4;
+    border: 2px solid #a8a498;
+    box-shadow: inset 0 1px 3px rgba(0,0,0,0.2);
+}
+
+.agent-light-large.off:hover {
+    background: #b8e4c8;
+    border-color: #6b9a7a;
+    box-shadow: 0 0 8px rgba(107, 154, 122, 0.5);
+}
+
+.agent-light-large.on {
+    background: #4ade80;
+    border: 2px solid #22c55e;
+    box-shadow: 0 0 8px rgba(74, 222, 128, 0.5);
+}
+
+.agent-light-large.stalled {
+    background: #f97316;
+    border: 2px solid #ea580c;
+    box-shadow: 0 0 8px rgba(249, 115, 22, 0.5);
+}
+
+.agent-light-large.stalled:hover {
+    box-shadow: 0 0 12px rgba(249, 115, 22, 0.7);
+}
+
+.agent-light-large.starting {
+    background: #fbbf24;
+    border: 2px solid #f59e0b;
+    box-shadow: 0 0 8px rgba(251, 191, 36, 0.6);
+    animation: blink 0.5s ease-in-out infinite;
 }
 
 .detail-meta {

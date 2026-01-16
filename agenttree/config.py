@@ -41,9 +41,8 @@ class StageConfig(BaseModel):
     output: Optional[str] = None  # Document created by this stage
     output_optional: bool = False  # If True, missing output file doesn't error
     skill: Optional[str] = None   # Override skill file path
-    human_review: bool = False
-    triggers_merge: bool = False
-    terminal: bool = False  # Cannot progress from here
+    human_review: bool = False    # Requires human approval to exit
+    terminal: bool = False        # Cannot progress from here (accepted, not_doing)
     substages: Dict[str, SubstageConfig] = Field(default_factory=dict)
     pre_completion: list[dict] = Field(default_factory=list)  # Stage-level hooks before completing
     post_start: list[dict] = Field(default_factory=list)  # Stage-level hooks after starting
@@ -355,8 +354,8 @@ class Config(BaseModel):
             Tuple of (next_stage, next_substage, is_human_review)
         """
         stage_config = self.get_stage(current_stage)
-        # Terminal stages and stages that trigger merge don't progress further
-        if stage_config is None or stage_config.terminal or stage_config.triggers_merge:
+        # Terminal stages don't progress further
+        if stage_config is None or stage_config.terminal:
             return current_stage, current_substage, False
 
         substages = stage_config.substage_order()
