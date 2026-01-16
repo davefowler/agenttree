@@ -261,13 +261,40 @@ async def dashboard(
 @app.get("/kanban", response_class=HTMLResponse)
 async def kanban(
     request: Request,
+    issue: Optional[str] = None,
+    chat: Optional[str] = None,
     user: Optional[str] = Depends(get_current_user)
 ) -> HTMLResponse:
     """Kanban board page."""
     board = get_kanban_board()
+
+    # If issue param provided, load issue detail for modal
+    selected_issue = None
+    files: list[dict[str, str | int]] = []
+    if issue:
+        issue_obj = issue_crud.get_issue(issue, sync=False)
+        if issue_obj:
+            selected_issue = convert_issue_to_web(issue_obj)
+            files = get_issue_files(issue)
+            # Load last file content
+            issue_dir = issue_crud.get_issue_dir(issue)
+            if issue_dir and files:
+                last_file = files[-1]
+                file_path = issue_dir / last_file["name"]
+                if file_path.exists():
+                    selected_issue.body = file_path.read_text()
+
     return templates.TemplateResponse(
         "kanban.html",
-        {"request": request, "board": board, "stages": list(StageEnum), "active_page": "kanban"}
+        {
+            "request": request,
+            "board": board,
+            "stages": list(StageEnum),
+            "active_page": "kanban",
+            "selected_issue": selected_issue,
+            "files": files,
+            "chat_open": chat == "1",
+        }
     )
 
 
@@ -303,25 +330,38 @@ def _sort_flow_issues(issues: list[WebIssue]) -> list[WebIssue]:
 @app.get("/flow", response_class=HTMLResponse)
 async def flow(
     request: Request,
+    issue: Optional[str] = None,
+    chat: Optional[str] = None,
     user: Optional[str] = Depends(get_current_user)
 ) -> HTMLResponse:
     """Flow view page."""
     issues = issue_crud.list_issues(sync=False)  # Skip sync for fast web reads
     web_issues = _sort_flow_issues([convert_issue_to_web(i) for i in issues])
-    selected_issue = web_issues[0] if web_issues else None
+
+    # Select issue from URL param or default to first
+    selected_issue = None
+    if issue:
+        for wi in web_issues:
+            if str(wi.number) == issue or str(wi.number).zfill(3) == issue:
+                selected_issue = wi
+                break
+    if not selected_issue and web_issues:
+        selected_issue = web_issues[0]
 
     # Load body content and files for selected issue
-    files = []
+    files: list[dict[str, str | int]] = []
     if selected_issue:
         issue_id = str(selected_issue.number).zfill(3)
         issue_dir = issue_crud.get_issue_dir(issue_id)
         if issue_dir:
             # Get list of markdown files
             files = get_issue_files(issue_id)
-            # Load first file content (problem.md by default)
-            problem_path = issue_dir / "problem.md"
-            if problem_path.exists():
-                selected_issue.body = problem_path.read_text()
+            # Load last file content (rightmost tab selected by default)
+            if files:
+                last_file = files[-1]
+                file_path = issue_dir / last_file["name"]
+                if file_path.exists():
+                    selected_issue.body = file_path.read_text()
 
     return templates.TemplateResponse(
         "flow.html",
@@ -332,6 +372,7 @@ async def flow(
             "issue": selected_issue,  # issue_detail.html expects 'issue'
             "files": files,
             "active_page": "flow",
+            "chat_open": chat == "1",
         }
     )
 

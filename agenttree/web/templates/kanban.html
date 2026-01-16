@@ -311,7 +311,10 @@
                      data-stage="{{ issue.stage.value }}"
                      data-has-agent="{{ 'true' if issue.assigned_agent else 'false' }}"
                      draggable="{{ 'true' if issue.stage.value in ['plan_review', 'implementation_review'] else 'false' }}"
-                     onclick="openIssueModal({{ issue.number }})">
+                     hx-get="/kanban?issue={{ issue.number }}"
+                     hx-push-url="true"
+                     hx-target="body"
+                     hx-swap="outerHTML">
                     <div class="agent-light {% if issue.tmux_active %}on{% elif issue.assigned_agent %}stalled{% else %}off{% endif %}"
                          onclick="event.stopPropagation(); toggleAgent('{{ issue.number }}', this)"
                          title="{% if issue.tmux_active %}Agent running - click to view{% elif issue.assigned_agent %}Agent assigned but inactive{% else %}Click to start agent{% endif %}"></div>
@@ -344,11 +347,13 @@
     </div>
 
     <!-- Modal for issue detail -->
-    <div id="issue-modal" class="modal">
+    <div id="issue-modal" class="modal{% if selected_issue %} active{% endif %}">
         <div class="modal-content">
-            <button class="modal-close" onclick="closeIssueModal()">&times;</button>
+            <a href="/kanban" class="modal-close" hx-get="/kanban" hx-push-url="true" hx-target="body" hx-swap="outerHTML">&times;</a>
             <div id="modal-issue-detail">
-                <!-- Issue detail loaded here via HTMX -->
+                {% if selected_issue %}
+                {% include 'partials/issue_detail_content.html' with context %}
+                {% endif %}
             </div>
         </div>
     </div>
