@@ -58,22 +58,21 @@ def sync_agents_repo(
 
     try:
         # First, commit any local changes (prevents "unstaged changes" error on pull)
-        subprocess.run(
-            ["git", "-C", str(agents_dir), "add", "-A"],
-            check=False,
+        # Check for ANY changes (staged or unstaged)
+        status_result = subprocess.run(
+            ["git", "-C", str(agents_dir), "status", "--porcelain"],
             capture_output=True,
+            text=True,
             timeout=10,
         )
 
-        # Check if there are staged changes to commit
-        diff_result = subprocess.run(
-            ["git", "-C", str(agents_dir), "diff", "--cached", "--quiet"],
-            capture_output=True,
-            timeout=10,
-        )
-
-        # Commit local changes first (if any)
-        if diff_result.returncode != 0:
+        if status_result.stdout.strip():
+            # There are changes - stage and commit them
+            subprocess.run(
+                ["git", "-C", str(agents_dir), "add", "-A"],
+                capture_output=True,
+                timeout=10,
+            )
             message = commit_message or "Auto-sync: update issue data"
             subprocess.run(
                 ["git", "-C", str(agents_dir), "commit", "-m", message],
@@ -101,24 +100,11 @@ def sync_agents_repo(
                 print(f"Warning: Merge conflict in _agenttree repo: {result.stderr}")
                 return False
             elif "local changes" in result.stderr.lower() or "overwritten" in result.stderr.lower():
-                # Local changes blocking pull - try stash, pull, unstash
-                subprocess.run(
-                    ["git", "-C", str(agents_dir), "stash", "--include-untracked"],
-                    capture_output=True,
-                    timeout=10,
-                )
-                retry_result = subprocess.run(
-                    ["git", "-C", str(agents_dir), "pull", "--no-rebase"],
-                    capture_output=True,
-                    text=True,
-                    timeout=30,
-                )
-                subprocess.run(
-                    ["git", "-C", str(agents_dir), "stash", "pop"],
-                    capture_output=True,
-                    timeout=10,
-                )
-                if retry_result.returncode != 0:
+                # Shouldn't happen after auto-commit, but try stash as fallback
+                subprocess.run(["git", "-C", str(agents_dir), "stash", "--include-untracked"], capture_output=True, timeout=10)
+                retry = subprocess.run(["git", "-C", str(agents_dir), "pull", "--no-rebase"], capture_output=True, timeout=30)
+                subprocess.run(["git", "-C", str(agents_dir), "stash", "pop"], capture_output=True, timeout=10)
+                if retry.returncode != 0:
                     return False
             else:
                 # Other error - print warning but continue

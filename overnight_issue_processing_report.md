@@ -36,5 +36,21 @@
 
 ### Issue #025 - Rename dispatch command to agent-start or similar
 **Starting Stage:** implementation_review
+**PR:** https://github.com/davefowler/agenttree/pull/53
+**Status:** DONE - PR exists, cursor already reviewed, conflict resolved
+
+**Actions taken:**
+- PR #53 already exists
+- Cursor had flagged a merge conflict in `issue_detail_content.html`
+- Conflict was a duplicate "Actions" section - resolved by keeping the header controls only
+- Requested cursor re-review
+
+**Decisions:**
+- Removed the duplicate Start Agent/Chat buttons section since the header already provides these controls via agent light and chat toggle icons
+
+---
+
+### Issue #040 - Fix auto-sync friction - handle unstaged changes gracefully
+**Starting Stage:** implement
 **Status:** Processing...
 
