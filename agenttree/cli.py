@@ -1265,11 +1265,6 @@ def issue() -> None:
     multiple=True,
     help="Issue ID that must be completed first (can be used multiple times)"
 )
-@click.option(
-    "--no-auto-start",
-    is_flag=True,
-    help="Don't auto-start an agent (just create the issue)"
-)
 @click.pass_context
 def issue_create(
     ctx: click.Context,
@@ -1281,7 +1276,6 @@ def issue_create(
     context: Optional[str],
     solutions: Optional[str],
     depends_on: tuple,
-    no_auto_start: bool,
 ) -> None:
     """Create a new issue.
 
@@ -1289,8 +1283,8 @@ def issue_create(
     - issue.yaml (metadata)
     - problem.md (from template or provided content)
 
-    By default, an agent is automatically dispatched to start working on the issue.
-    Use --no-auto-start to create the issue without dispatching an agent.
+    After creating, fill in problem.md then run 'agenttree start <id>' to
+    dispatch an agent.
 
     Issues with unmet dependencies are placed in backlog and auto-started when
     all dependencies are completed.
@@ -1300,7 +1294,6 @@ def issue_create(
         agenttree issue create "Add dark mode" -p high -l ui -l feature
         agenttree issue create "Quick fix" --stage implement
         agenttree issue create "Bug" --problem "The login fails" --context "On Chrome only"
-        agenttree issue create "Manual issue" --no-auto-start
         agenttree issue create "Feature B" --depends-on 053 --depends-on 060
     """
     from agenttree.issues import check_dependencies_met
@@ -1350,21 +1343,13 @@ def issue_create(
         if issue.dependencies:
             console.print(f"[dim]  Dependencies: {', '.join(issue.dependencies)}[/dim]")
 
-        # Auto-start agent unless disabled or issue has unmet dependencies
-        if no_auto_start:
-            console.print(f"\n[dim]Dispatch an agent: agenttree start {issue.id}[/dim]")
-        elif has_unmet_deps:
+        # Show next steps
+        if has_unmet_deps:
             console.print(f"\n[yellow]Issue blocked by dependencies - will auto-start when deps complete[/yellow]")
-        elif effective_stage == "backlog":
-            console.print(f"\n[dim]Issue in backlog - dispatch manually: agenttree start {issue.id}[/dim]")
         else:
-            console.print(f"\n[cyan]Auto-starting agent for issue #{issue.id}...[/cyan]")
-            try:
-                ctx.invoke(start_agent, issue_id=issue.id, tool=None, force=False)
-            except SystemExit:
-                # start_agent may exit on error, but we've already created the issue
-                console.print(f"[yellow]Issue created but agent failed to start[/yellow]")
-                console.print(f"[dim]Try manually: agenttree start {issue.id}[/dim]")
+            console.print(f"\n[bold]Next steps:[/bold]")
+            console.print(f"  1. Fill in problem.md: [cyan]_agenttree/issues/{issue.id}-{issue.slug}/problem.md[/cyan]")
+            console.print(f"  2. Start agent: [cyan]agenttree start {issue.id}[/cyan]")
 
     except Exception as e:
         console.print(f"[red]Error creating issue: {e}[/red]")
