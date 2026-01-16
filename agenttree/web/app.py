@@ -455,18 +455,93 @@ async def move_issue(
     move_request: IssueMoveRequest,
     user: Optional[str] = Depends(get_current_user)
 ) -> dict:
-    """Move an issue to a new stage."""
-    # Update the issue stage
+    """Move an issue to a new stage.
+
+    DEPRECATED: Use /approve for human review stages instead.
+    This bypasses workflow validation and should only be used for backlog management.
+    """
+    # Only allow moving TO backlog or not_doing (safe operations)
+    safe_targets = ["backlog", "not_doing"]
+    if move_request.stage.value not in safe_targets:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Direct stage changes only allowed to: {', '.join(safe_targets)}. Use approve for workflow transitions."
+        )
+
     updated_issue = issue_crud.update_issue_stage(
         issue_id=issue_id,
         stage=move_request.stage.value,
-        substage=None,  # Clear substage when moving manually
+        substage=None,
     )
 
     if not updated_issue:
         raise HTTPException(status_code=404, detail=f"Issue {issue_id} not found")
 
     return {"success": True, "stage": move_request.stage.value}
+
+
+@app.post("/api/issues/{issue_id}/approve")
+async def approve_issue(
+    issue_id: str,
+    user: Optional[str] = Depends(get_current_user)
+) -> dict:
+    """Approve an issue at a human review stage.
+
+    Runs the proper workflow: executes exit hooks, advances to next stage,
+    executes enter hooks. Only works from human review stages.
+    """
+    from agenttree.config import load_config
+    from agenttree.hooks import execute_exit_hooks, execute_enter_hooks, ValidationError
+    from agenttree.state import update_session_stage
+
+    HUMAN_REVIEW_STAGES = ["plan_review", "implementation_review"]
+
+    # Get issue
+    issue_id_normalized = issue_id.lstrip("0") or "0"
+    issue = issue_crud.get_issue(issue_id_normalized, sync=False)
+    if not issue:
+        raise HTTPException(status_code=404, detail=f"Issue {issue_id} not found")
+
+    # Check if at human review stage
+    if issue.stage not in HUMAN_REVIEW_STAGES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Issue is at '{issue.stage}', not a human review stage. Can only approve from: {', '.join(HUMAN_REVIEW_STAGES)}"
+        )
+
+    # Calculate next stage
+    config = load_config()
+    next_stage, next_substage, _ = config.get_next_stage(issue.stage, issue.substage)
+
+    # Execute exit hooks (validation)
+    try:
+        execute_exit_hooks(issue, issue.stage, issue.substage)
+    except ValidationError as e:
+        raise HTTPException(status_code=400, detail=f"Cannot approve: {str(e)}")
+
+    # Update issue stage
+    updated = issue_crud.update_issue_stage(issue_id_normalized, next_stage, next_substage)
+    if not updated:
+        raise HTTPException(status_code=500, detail="Failed to update issue")
+
+    # Update session
+    try:
+        update_session_stage(issue_id_normalized, next_stage, next_substage)
+    except Exception:
+        pass  # Session update is optional
+
+    # Execute enter hooks
+    try:
+        execute_enter_hooks(updated, next_stage, next_substage)
+    except Exception:
+        pass  # Enter hooks shouldn't block
+
+    return {
+        "success": True,
+        "message": f"Approved! Moved from {issue.stage} to {next_stage}",
+        "new_stage": next_stage,
+        "new_substage": next_substage
+    }
 
 
 @app.get("/api/issues/{issue_id}/detail", response_class=HTMLResponse)

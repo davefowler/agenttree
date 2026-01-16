@@ -393,7 +393,7 @@
                      data-issue="{{ issue.number }}"
                      data-stage="{{ issue.stage.value }}"
                      data-has-agent="{{ 'true' if issue.assigned_agent else 'false' }}"
-                     draggable="true"
+                     draggable="{{ 'true' if issue.stage.value in ['plan_review', 'implementation_review'] else 'false' }}"
                      onclick="openIssueModal({{ issue.number }})">
                     <div class="agent-light {{ 'on' if issue.assigned_agent else 'off' }}"
                          onclick="event.stopPropagation(); toggleAgent('{{ issue.number }}', this)"
@@ -439,11 +439,20 @@
     <script>
         // Minimal JS for drag-drop and modal
 
+        // Human review stages - only these can be dragged
+        const HUMAN_REVIEW_STAGES = ['plan_review', 'implementation_review'];
+
         // Drag and drop
         let draggedCard = null;
 
         document.addEventListener('dragstart', (e) => {
             if (e.target.classList.contains('kanban-card')) {
+                const cardStage = e.target.dataset.stage;
+                // Only allow dragging from human review stages
+                if (!HUMAN_REVIEW_STAGES.includes(cardStage)) {
+                    e.preventDefault();
+                    return;
+                }
                 draggedCard = e.target;
                 e.target.classList.add('dragging');
             }
@@ -473,25 +482,33 @@
                 const newStage = column.dataset.stage;
                 const oldStage = draggedCard.dataset.stage;
 
+                // Only process if from a human review stage
+                if (!HUMAN_REVIEW_STAGES.includes(oldStage)) {
+                    location.reload();
+                    return;
+                }
+
+                // Dropping anywhere from human review = approve
+                // (except dropping back on same column)
                 if (newStage !== oldStage) {
-                    // Update backend
                     try {
-                        const response = await fetch(`/api/issues/${issueNumber}/move`, {
+                        // Call approve endpoint - runs actual workflow
+                        const response = await fetch(`/api/issues/${issueNumber}/approve`, {
                             method: 'POST',
-                            headers: {'Content-Type': 'application/json'},
-                            body: JSON.stringify({stage: newStage})
+                            headers: {'Content-Type': 'application/json'}
                         });
 
+                        const data = await response.json();
                         if (response.ok) {
-                            draggedCard.dataset.stage = newStage;
-                            console.log(`Moved issue #${issueNumber} to ${newStage}`);
+                            console.log(`Approved issue #${issueNumber}: ${data.message}`);
+                            // Reload to show new state
+                            location.reload();
                         } else {
-                            // Revert on error
-                            console.error('Failed to move issue');
+                            alert(`Cannot approve: ${data.detail || 'Unknown error'}`);
                             location.reload();
                         }
                     } catch (error) {
-                        console.error('Error moving issue:', error);
+                        console.error('Error approving issue:', error);
                         location.reload();
                     }
                 }
