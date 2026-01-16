@@ -111,13 +111,15 @@ DEFAULT_STAGES = [
     ),
     StageConfig(
         name="implement",
-        # on_exit from implement stage (to implementation_review): create PR
-        on_exit=[{"type": "create_pr"}],
+        # on_exit from implement stage: run lint, tests, then create PR
+        on_exit=[
+            {"command": "agenttree lint", "optional": True, "context": "Lint"},
+            {"command": "agenttree test", "optional": True, "context": "Tests"},
+            {"type": "create_pr"},
+        ],
         substages={
             "setup": SubstageConfig(name="setup"),
-            "test": SubstageConfig(name="test"),
             "code": SubstageConfig(name="code"),
-            "debug": SubstageConfig(name="debug"),
             "code_review": SubstageConfig(
                 name="code_review",
                 output="review.md",
@@ -180,6 +182,8 @@ class Config(BaseModel):
     default_model: str = "opus"  # Model to use for Claude CLI (opus, sonnet)
     refresh_interval: int = 10
     tools: Dict[str, ToolConfig] = Field(default_factory=dict)
+    test_commands: list[str] = Field(default_factory=list)  # Commands to run tests
+    lint_commands: list[str] = Field(default_factory=list)  # Commands to run linting
     stages: list[StageConfig] = Field(default_factory=lambda: DEFAULT_STAGES.copy())
     security: SecurityConfig = Field(default_factory=SecurityConfig)
 

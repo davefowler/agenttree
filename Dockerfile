@@ -17,6 +17,10 @@ RUN apt-get update && apt-get install -y \
 # Install Claude CLI
 RUN npm install -g @anthropic-ai/claude-code
 
+# Install uv (fast Python package manager)
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/root/.local/bin:$PATH"
+
 # Install agenttree runtime dependencies (for dogfooding - symlink approach)
 RUN pip install --break-system-packages \
     click>=8.1.0 \

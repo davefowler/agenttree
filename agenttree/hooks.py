@@ -437,7 +437,13 @@ def execute_hooks(
             errors.extend(run_builtin_validator(issue_dir, hook, pr_number=pr_number, **kwargs))
         elif "command" in hook:
             # Shell command hook
-            errors.extend(run_command_hook(issue_dir, hook, **kwargs))
+            hook_errors = run_command_hook(issue_dir, hook, **kwargs)
+            # If optional flag is set and command returns "not configured", warn but don't block
+            if hook.get("optional") and any("not configured" in e.lower() for e in hook_errors):
+                context = hook.get("context", hook["command"])
+                console.print(f"[yellow]Warning: {context} skipped - not configured[/yellow]")
+                continue
+            errors.extend(hook_errors)
 
     return errors
 
