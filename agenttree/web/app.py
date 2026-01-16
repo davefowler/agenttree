@@ -493,6 +493,11 @@ async def move_issue(
             detail=f"Direct stage changes only allowed to: {', '.join(safe_targets)}. Use approve for workflow transitions."
         )
 
+    # Get issue first to pass to cleanup
+    issue = issue_crud.get_issue(issue_id, sync=False)
+    if not issue:
+        raise HTTPException(status_code=404, detail=f"Issue {issue_id} not found")
+
     updated_issue = issue_crud.update_issue_stage(
         issue_id=issue_id,
         stage=move_request.stage.value,
@@ -500,7 +505,14 @@ async def move_issue(
     )
 
     if not updated_issue:
-        raise HTTPException(status_code=404, detail=f"Issue {issue_id} not found")
+        raise HTTPException(status_code=500, detail=f"Failed to update issue {issue_id}")
+
+    # Clean up agent when moving to backlog or not_doing
+    # backlog = pause work (stop agent, keep worktree for later)
+    # not_doing = abandon work (stop agent, worktree can be cleaned up)
+    if move_request.stage.value in ["backlog", "not_doing"]:
+        from agenttree.hooks import cleanup_issue_agent
+        cleanup_issue_agent(updated_issue)
 
     return {"success": True, "stage": move_request.stage.value}
 
