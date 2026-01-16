@@ -35,15 +35,30 @@
                     <span><a href="{{ issue.pr_url }}" target="_blank">PR #{{ issue.pr_number }}</a></span>
                     {% endif %}
                 </div>
-                {% if issue.is_review %}
-                <button class="btn btn-approve"
-                        hx-post="/api/issues/{{ issue.number }}/approve"
-                        hx-target="#approve-status-{{ issue.number }}"
-                        hx-swap="innerHTML">
-                    Approve
-                </button>
-                <span id="approve-status-{{ issue.number }}"></span>
-                {% endif %}
+                <div class="detail-actions">
+                    {% if issue.assigned_agent %}
+                    <!-- Rebase controls - loaded lazily via HTMX -->
+                    <div id="rebase-controls-{{ issue.number }}"
+                         hx-get="/api/issues/{{ issue.number }}/rebase-controls"
+                         hx-trigger="load"
+                         hx-swap="innerHTML">
+                        <span class="rebase-loading">Checking...</span>
+                    </div>
+                    <span id="rebase-status-{{ issue.number }}"></span>
+                    {% endif %}
+                    {% if issue.is_review %}
+                    <button class="btn btn-approve"
+                            hx-post="/api/issues/{{ issue.number }}/approve"
+                            hx-target="#approve-status-{{ issue.number }}"
+                            hx-swap="innerHTML"
+                            hx-indicator="#approve-spinner-{{ issue.number }}"
+                            hx-disabled-elt="this">
+                        <span class="btn-text">Approve</span>
+                        <span class="htmx-indicator" id="approve-spinner-{{ issue.number }}">Approving...</span>
+                    </button>
+                    <span id="approve-status-{{ issue.number }}"></span>
+                    {% endif %}
+                </div>
             </div>
         </div>
 

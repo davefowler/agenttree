@@ -675,6 +675,111 @@ async def approve_issue(
     }
 
 
+@app.get("/api/issues/{issue_id}/commits-behind")
+async def get_commits_behind(
+    issue_id: str,
+    user: Optional[str] = Depends(get_current_user)
+) -> dict:
+    """Get the number of commits the issue branch is behind main."""
+    from agenttree.hooks import get_commits_behind_main
+
+    issue_id_normalized = issue_id.lstrip("0") or "0"
+    issue = issue_crud.get_issue(issue_id_normalized, sync=False)
+    if not issue:
+        raise HTTPException(status_code=404, detail=f"Issue {issue_id} not found")
+
+    commits_behind = get_commits_behind_main(issue_id_normalized)
+    return {"commits_behind": commits_behind}
+
+
+@app.get("/api/issues/{issue_id}/rebase-controls", response_class=HTMLResponse)
+async def get_rebase_controls(
+    request: Request,
+    issue_id: str,
+    user: Optional[str] = Depends(get_current_user)
+) -> HTMLResponse:
+    """Get rebase controls HTML partial."""
+    from agenttree.hooks import get_commits_behind_main
+
+    issue_id_normalized = issue_id.lstrip("0") or "0"
+    issue = issue_crud.get_issue(issue_id_normalized, sync=False)
+    if not issue:
+        raise HTTPException(status_code=404, detail=f"Issue {issue_id} not found")
+
+    commits_behind = get_commits_behind_main(issue_id_normalized)
+
+    return templates.TemplateResponse(
+        "partials/rebase_controls.html",
+        {
+            "request": request,
+            "issue_number": issue.id,
+            "commits_behind": commits_behind
+        }
+    )
+
+
+@app.post("/api/issues/{issue_id}/rebase", response_class=HTMLResponse)
+async def rebase_issue(
+    request: Request,
+    issue_id: str,
+    user: Optional[str] = Depends(get_current_user)
+) -> HTMLResponse:
+    """Rebase an issue's branch onto the latest main.
+
+    Performs the rebase from the host and notifies the agent of the changes.
+    Returns updated rebase controls HTML for HTMX.
+    """
+    from agenttree.hooks import rebase_issue_branch, get_commits_behind_main
+
+    # Get issue
+    issue_id_normalized = issue_id.lstrip("0") or "0"
+    issue = issue_crud.get_issue(issue_id_normalized, sync=False)
+    if not issue:
+        raise HTTPException(status_code=404, detail=f"Issue {issue_id} not found")
+
+    # Perform the rebase
+    success, message = rebase_issue_branch(issue_id_normalized)
+
+    if not success:
+        # Return error message in the controls area
+        return HTMLResponse(
+            content=f'<div class="rebase-controls"><span class="rebase-error" style="color: #dc2626; font-size: 12px;">{message}</span></div>',
+            status_code=200  # Use 200 so HTMX still swaps content
+        )
+
+    # Notify the agent if one is assigned and has an active tmux session
+    if issue.assigned_agent:
+        config = load_config()
+        padded_num = issue.assigned_agent.zfill(3)
+        session_name = f"{config.project}-issue-{padded_num}"
+
+        notification = (
+            "Your branch has been rebased onto the latest main. "
+            "Please review the recent changes and update your work if needed. "
+            "Run 'git log --oneline -10' to see recent commits."
+        )
+
+        try:
+            subprocess.run(
+                ["tmux", "send-keys", "-t", session_name, notification, "Enter"],
+                check=False,
+                timeout=2
+            )
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            pass  # Agent notification is best-effort
+
+    # Return updated rebase controls
+    commits_behind = get_commits_behind_main(issue_id_normalized)
+    return templates.TemplateResponse(
+        "partials/rebase_controls.html",
+        {
+            "request": request,
+            "issue_number": issue.id,
+            "commits_behind": commits_behind
+        }
+    )
+
+
 @app.get("/api/issues/{issue_id}/detail", response_class=HTMLResponse)
 async def issue_detail(
     request: Request,

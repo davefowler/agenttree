@@ -484,6 +484,86 @@ header h1 {
     color: white;
 }
 
+/* Detail actions container */
+.detail-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-left: auto;
+}
+
+/* Rebase controls */
+.rebase-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.commits-behind {
+    font-size: 12px;
+    color: #d97706;
+    font-weight: 500;
+}
+
+.commits-synced {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.rebase-loading {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+.btn-rebase {
+    padding: 4px 10px;
+    font-size: 12px;
+    background: #fef3c7;
+    border: 1px solid #d97706;
+    color: #92400e;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-rebase:hover {
+    background: #fde68a;
+    border-color: #b45309;
+}
+
+[data-theme="dark"] .btn-rebase {
+    background: #451a03;
+    border-color: #d97706;
+    color: #fcd34d;
+}
+
+[data-theme="dark"] .btn-rebase:hover {
+    background: #78350f;
+}
+
+[data-theme="dark"] .commits-behind {
+    color: #fbbf24;
+}
+
+/* HTMX loading indicators */
+.htmx-indicator {
+    display: none;
+}
+
+.htmx-request .htmx-indicator {
+    display: inline;
+}
+
+.htmx-request .btn-text {
+    display: none;
+}
+
+button[disabled] {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
 .detail-timestamps {
     display: flex;
     gap: 20px;

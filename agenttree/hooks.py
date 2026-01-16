@@ -935,6 +935,48 @@ def push_branch_to_remote(branch: str) -> None:
     )
 
 
+def get_commits_behind_main(issue_id: str) -> int:
+    """Get the number of commits the issue branch is behind origin/main.
+
+    Args:
+        issue_id: Issue ID to check
+
+    Returns:
+        Number of commits behind main, or 0 if unable to determine
+    """
+    from agenttree.issues import get_issue
+
+    issue = get_issue(issue_id)
+    if not issue or not issue.worktree_dir:
+        return 0
+
+    worktree_path = Path(issue.worktree_dir)
+    if not worktree_path.exists():
+        return 0
+
+    try:
+        # Fetch latest from origin (quiet, no output needed)
+        subprocess.run(
+            ["git", "-C", str(worktree_path), "fetch", "origin", "main"],
+            capture_output=True,
+            timeout=30,
+        )
+
+        # Count commits that are in origin/main but not in HEAD
+        result = subprocess.run(
+            ["git", "-C", str(worktree_path), "rev-list", "--count", "HEAD..origin/main"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+
+        if result.returncode == 0:
+            return int(result.stdout.strip())
+        return 0
+    except (subprocess.TimeoutExpired, ValueError, Exception):
+        return 0
+
+
 def rebase_issue_branch(issue_id: str) -> tuple[bool, str]:
     """Rebase an issue's worktree branch onto the latest main.
 
