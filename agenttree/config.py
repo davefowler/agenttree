@@ -14,6 +14,20 @@ class ToolConfig(BaseModel):
     skip_permissions: bool = False  # Add --dangerously-skip-permissions to command
 
 
+class AgentHostConfig(BaseModel):
+    """Configuration for a custom agent host.
+
+    Custom agent hosts allow defining specialized agents that handle
+    specific stages in the workflow (e.g., code review, security audit).
+    """
+
+    name: str  # Host name (e.g., "review", "security")
+    tool: str  # AI tool to use (e.g., "codex", "claude")
+    model: str  # Model to use (e.g., "gpt-5.2", "opus")
+    skill: str  # Skill file path relative to _agenttree/skills/agents/
+    description: str = ""  # Human-readable description
+
+
 class HooksConfig(BaseModel):
     """Configuration for host action hooks."""
 
@@ -98,6 +112,7 @@ class Config(BaseModel):
     default_model: str = "opus"  # Model to use for Claude CLI (opus, sonnet)
     refresh_interval: int = 10
     tools: Dict[str, ToolConfig] = Field(default_factory=dict)
+    agents: Dict[str, AgentHostConfig] = Field(default_factory=dict)  # Custom agent hosts
     test_commands: list[str] = Field(default_factory=list)  # Commands to run tests
     lint_commands: list[str] = Field(default_factory=list)  # Commands to run linting
     stages: list[StageConfig] = Field(default_factory=list)  # Must be defined in .agenttree.yaml
@@ -249,6 +264,52 @@ class Config(BaseModel):
             List of stage names where host=controller
         """
         return [stage.name for stage in self.stages if stage.host == "controller"]
+
+    def get_custom_agent_stages(self) -> list[str]:
+        """Get list of stages that use custom agent hosts.
+
+        Custom agent stages have a host value that matches a key in the agents dict.
+
+        Returns:
+            List of stage names where host is a custom agent
+        """
+        return [
+            stage.name for stage in self.stages
+            if stage.host not in ("agent", "controller") and stage.host in self.agents
+        ]
+
+    def get_agent_host(self, host_name: str) -> Optional[AgentHostConfig]:
+        """Get configuration for a custom agent host.
+
+        Args:
+            host_name: Name of the agent host
+
+        Returns:
+            AgentHostConfig or None if not found
+        """
+        return self.agents.get(host_name)
+
+    def is_custom_agent_host(self, host_name: str) -> bool:
+        """Check if a host name is a custom agent host.
+
+        Args:
+            host_name: Name to check
+
+        Returns:
+            True if it's a custom agent host, False otherwise
+        """
+        return host_name in self.agents
+
+    def get_non_agent_stages(self) -> list[str]:
+        """Get list of stages NOT executed by the default agent.
+
+        This includes controller stages and custom agent stages.
+        Used to determine which stages the default agent should block on.
+
+        Returns:
+            List of stage names where host != "agent"
+        """
+        return [stage.name for stage in self.stages if stage.host != "agent"]
 
     def substages_for(self, stage_name: str) -> list[str]:
         """Get ordered list of substage names for a stage.
@@ -483,5 +544,13 @@ def load_config(path: Optional[Path] = None) -> Config:
                         stage["substages"][substage_name] = {"name": substage_name}
                     elif "name" not in substage_config:
                         substage_config["name"] = substage_name
+
+    # Auto-populate 'name' field for agents from the key
+    if "agents" in data and isinstance(data["agents"], dict):
+        for agent_name, agent_config in data["agents"].items():
+            if agent_config is None:
+                data["agents"][agent_name] = {"name": agent_name}
+            elif "name" not in agent_config:
+                agent_config["name"] = agent_name
 
     return Config(**data)

@@ -46,6 +46,8 @@ from agenttree.hooks import (
     execute_post_hooks,
     ValidationError,
     is_running_in_container,
+    get_current_agent_host,
+    can_agent_operate_in_stage,
 )
 from agenttree.preflight import run_preflight
 
@@ -1665,8 +1667,15 @@ def stage_status(issue_id: Optional[str]) -> None:
     if issue.assigned_agent:
         console.print(f"[bold]Agent:[/bold] {issue.assigned_agent}")
 
-    if issue.stage in HUMAN_REVIEW_STAGES:
-        console.print(f"\n[yellow]⏳ Waiting for human review[/yellow]")
+    # Check if waiting for non-agent host
+    from agenttree.config import load_config
+    config_for_status = load_config()
+    status_stage_config = config_for_status.get_stage(issue.stage)
+    if status_stage_config and status_stage_config.host != "agent":
+        if status_stage_config.host == "controller":
+            console.print(f"\n[yellow]⏳ Waiting for human review[/yellow]")
+        else:
+            console.print(f"\n[yellow]⏳ Waiting for '{status_stage_config.host}' agent[/yellow]")
     elif issue.stage == ACCEPTED:
         console.print(f"\n[green]✓ Issue completed[/green]")
 
@@ -1706,12 +1715,23 @@ def stage_next(issue_id: Optional[str], reassess: bool) -> None:
         console.print(f"[yellow]Issue is marked as not doing[/yellow]")
         return
 
-    # Block agents from advancing past human review gates
-    if issue.stage in HUMAN_REVIEW_STAGES and is_running_in_container():
-        console.print(f"\n[yellow]⏳ Waiting for human approval[/yellow]")
-        console.print(f"[dim]Stage '{issue.stage}' requires human review.[/dim]")
-        console.print(f"[dim]A human will run 'agenttree approve {issue.id}' when ready.[/dim]")
-        return
+    # Block agents from operating in stages not meant for them
+    # Agents can only operate in stages where host matches their identity
+    from agenttree.config import load_config
+    config = load_config()
+    stage_config = config.get_stage(issue.stage)
+    if stage_config:
+        stage_host = stage_config.host
+        if not can_agent_operate_in_stage(stage_host):
+            current_host = get_current_agent_host()
+            console.print(f"\n[yellow]⏳ Waiting for '{stage_host}' to handle this stage[/yellow]")
+            if stage_host == "controller":
+                console.print(f"[dim]Stage '{issue.stage}' requires human review.[/dim]")
+                console.print(f"[dim]A human will run 'agenttree approve {issue.id}' when ready.[/dim]")
+            else:
+                console.print(f"[dim]Stage '{issue.stage}' is handled by the '{stage_host}' agent.[/dim]")
+                console.print(f"[dim]You ({current_host}) should wait for that agent to complete.[/dim]")
+            return
 
     # Check for restart and re-orient if needed
     session = get_session(issue_id)
@@ -1808,10 +1828,17 @@ def stage_next(issue_id: Optional[str], reassess: bool) -> None:
         stage_str += f".{next_substage}"
     console.print(f"[green]✓ Moved to {stage_str}[/green]")
 
-    if is_human_review:
-        console.print(f"\n[yellow]⏳ Waiting for human review[/yellow]")
-        console.print(f"[dim]Your work has been submitted for review.[/dim]")
-        console.print(f"[dim]You will receive instructions when the review is complete.[/dim]")
+    # Check if next stage requires a different host
+    next_stage_config = config.get_stage(next_stage)
+    if next_stage_config and next_stage_config.host != "agent" and is_running_in_container():
+        if next_stage_config.host == "controller" or is_human_review:
+            console.print(f"\n[yellow]⏳ Waiting for human review[/yellow]")
+            console.print(f"[dim]Your work has been submitted for review.[/dim]")
+            console.print(f"[dim]You will receive instructions when the review is complete.[/dim]")
+        else:
+            console.print(f"\n[yellow]⏳ Waiting for '{next_stage_config.host}' agent[/yellow]")
+            console.print(f"[dim]The '{next_stage_config.host}' agent will handle the next stage.[/dim]")
+            console.print(f"[dim]You will receive instructions when that stage is complete.[/dim]")
         return
 
     # Determine if this is first agent entry (should include AGENTS.md system prompt)
@@ -1858,10 +1885,14 @@ def approve_issue(issue_id: str, skip_approval: bool) -> None:
         console.print(f"[red]Issue {issue_id} not found[/red]")
         sys.exit(1)
 
-    # Check if at human review stage
-    if issue.stage not in HUMAN_REVIEW_STAGES:
+    # Check if at a stage that requires human approval (human_review=true or host=controller)
+    from agenttree.config import load_config
+    approve_config = load_config()
+    approve_stage_config = approve_config.get_stage(issue.stage)
+    if not approve_stage_config or not (approve_stage_config.human_review or approve_stage_config.host == "controller"):
+        human_review_stages = approve_config.get_human_review_stages()
         console.print(f"[red]Issue is at '{issue.stage}', not a human review stage[/red]")
-        console.print(f"[dim]Human review stages: {', '.join(HUMAN_REVIEW_STAGES)}[/dim]")
+        console.print(f"[dim]Human review stages: {', '.join(human_review_stages)}[/dim]")
         sys.exit(1)
 
     # Calculate next stage

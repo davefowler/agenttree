@@ -1262,6 +1262,52 @@ def is_running_in_container() -> bool:
     )
 
 
+def get_current_agent_host() -> str:
+    """Get the current agent host type.
+
+    The agent host is determined by the AGENTTREE_AGENT_HOST env var.
+    If not set, defaults to "agent" for containers or "controller" for host.
+
+    Returns:
+        Agent host name (e.g., "agent", "controller", "review")
+    """
+    import os
+
+    # Check for explicit agent host
+    agent_host = os.environ.get("AGENTTREE_AGENT_HOST")
+    if agent_host:
+        return agent_host
+
+    # Default: "agent" if in container, "controller" if on host
+    if is_running_in_container():
+        return "agent"
+    return "controller"
+
+
+def can_agent_operate_in_stage(stage_host: str) -> bool:
+    """Check if the current agent can operate in a stage with the given host.
+
+    Agents can only operate in stages where the stage's host matches their identity.
+    - Default agents (host="agent") can only operate in host="agent" stages
+    - Custom agents (host="review") can only operate in host="review" stages
+    - Controller can operate in any stage (it's human-driven)
+
+    Args:
+        stage_host: The host value from the stage config (e.g., "agent", "controller", "review")
+
+    Returns:
+        True if the current agent can operate in this stage, False otherwise
+    """
+    current_host = get_current_agent_host()
+
+    # Controller (human) can operate anywhere
+    if current_host == "controller":
+        return True
+
+    # Agents can only operate in their own host stages
+    return current_host == stage_host
+
+
 def ensure_pr_for_issue(issue_id: str) -> bool:
     """Ensure a PR exists for an issue in a controller stage.
 

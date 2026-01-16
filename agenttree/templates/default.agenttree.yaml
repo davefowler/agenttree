@@ -21,6 +21,18 @@ tools:
   aider:
     command: aider
     startup_prompt: /read TASK.md
+  codex:
+    command: codex
+    startup_prompt: "Read TASK.md for your instructions."
+
+# Custom agent hosts for specialized tasks
+# These agents handle specific stages that require different tools/models
+agents:
+  review:
+    tool: codex
+    model: gpt-5.2
+    skill: agents/review.md
+    description: "Independent code reviewer using OpenAI Codex"
 
 stages:
   - name: backlog
@@ -146,6 +158,18 @@ stages:
               file: review.md
               section: Critical Issues
               expect: empty
+
+  # Independent code review by a specialized review agent (not the implementing agent)
+  - name: independent_code_review
+    host: review  # Custom agent host - spawned by controller
+    output: independent_review.md
+    skill: agents/review.md  # Custom skill file for this stage
+    pre_completion:
+      - file_exists: independent_review.md
+      - section_check:
+          file: independent_review.md
+          section: Review Findings
+          expect: not_empty
 
   - name: implementation_review
     human_review: true

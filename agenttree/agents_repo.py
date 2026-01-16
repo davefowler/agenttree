@@ -3,13 +3,19 @@
 Manages the _agenttree/ git repository (separate from main project).
 """
 
+from __future__ import annotations
+
 import fcntl
 import shutil
 import subprocess
 from pathlib import Path
 from datetime import datetime
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 import re
+
+if TYPE_CHECKING:
+    from agenttree.issues import Issue
+    from agenttree.config import AgentHostConfig, StageConfig
 
 # Global lock file handle (kept open during sync)
 _sync_lock_fd = None
@@ -131,10 +137,11 @@ def sync_agents_repo(
                 print(f"Warning: Failed to pull _agenttree repo: {result.stderr}")
                 return False
 
-        # If pull-only, check for pending pushes, PRs, and merged PRs, then we're done
+        # If pull-only, check for pending pushes, PRs, merged PRs, and custom agents, then we're done
         if pull_only:
             push_pending_branches(agents_dir)
             check_controller_stages(agents_dir)
+            check_custom_agent_stages(agents_dir)
             check_merged_prs(agents_dir)
             return True
 
@@ -155,9 +162,10 @@ def sync_agents_repo(
             return False
 
         # After successful sync, push pending branches, check for issues needing PRs,
-        # and check for externally merged/closed PRs
+        # check for custom agent stages, and check for externally merged/closed PRs
         push_pending_branches(agents_dir)
         check_controller_stages(agents_dir)
+        check_custom_agent_stages(agents_dir)
         check_merged_prs(agents_dir)
 
         return True
@@ -252,6 +260,206 @@ def check_controller_stages(agents_dir: Path) -> int:
             continue
 
     return processed
+
+
+def check_custom_agent_stages(agents_dir: Path) -> int:
+    """Spawn custom agent hosts for issues in custom agent stages.
+
+    Custom agent stages (host: <custom_agent_name>) have their agents
+    spawned by the controller, similar to how controller stages work
+    but instead of running hooks directly, we spawn a specialized agent.
+
+    Called from host (sync, web server, etc.) on every sync.
+
+    Args:
+        agents_dir: Path to _agenttree directory
+
+    Returns:
+        Number of agents spawned
+    """
+    from agenttree.hooks import is_running_in_container
+    from agenttree.config import load_config
+    from agenttree.issues import Issue
+
+    # Bail early if running in a container - host operations only
+    if is_running_in_container():
+        return 0
+
+    issues_dir = agents_dir / "issues"
+    if not issues_dir.exists():
+        return 0
+
+    config = load_config()
+    custom_agent_stages = config.get_custom_agent_stages()
+
+    if not custom_agent_stages:
+        return 0
+
+    import yaml
+    from rich.console import Console
+    console = Console()
+
+    spawned = 0
+
+    for issue_dir in issues_dir.iterdir():
+        if not issue_dir.is_dir():
+            continue
+
+        issue_yaml = issue_dir / "issue.yaml"
+        if not issue_yaml.exists():
+            continue
+
+        try:
+            with open(issue_yaml) as f:
+                data = yaml.safe_load(f)
+
+            stage = data.get("stage", "")
+
+            # Check if in a custom agent stage
+            if stage in custom_agent_stages:
+                # Skip if custom agent already spawned for this stage
+                custom_agent_spawned_stage = data.get("custom_agent_spawned")
+                if custom_agent_spawned_stage == stage:
+                    continue
+
+                # Get the stage config to find the host name
+                stage_config = config.get_stage(stage)
+                if not stage_config:
+                    continue
+
+                host_name = stage_config.host
+                agent_config = config.get_agent_host(host_name)
+                if not agent_config:
+                    console.print(f"[yellow]Custom agent host '{host_name}' not found in config[/yellow]")
+                    continue
+
+                # Mark as spawned BEFORE spawning to prevent double-spawn
+                data["custom_agent_spawned"] = stage
+                with open(issue_yaml, "w") as f:
+                    yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
+
+                issue = Issue(**data)
+                console.print(f"[cyan]Spawning {host_name} agent for issue #{issue.id} at stage {stage}...[/cyan]")
+
+                # Spawn the custom agent
+                success = spawn_custom_agent(issue, agent_config, stage_config)
+                if success:
+                    console.print(f"[green]✓ Spawned {host_name} agent for issue #{issue.id}[/green]")
+                    spawned += 1
+                else:
+                    console.print(f"[red]Failed to spawn {host_name} agent for issue #{issue.id}[/red]")
+                    # Clear the spawn marker so it can be retried
+                    data["custom_agent_spawned"] = None
+                    with open(issue_yaml, "w") as f:
+                        yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
+
+        except Exception as e:
+            from rich.console import Console
+            Console().print(f"[yellow]Error checking issue for custom agent: {e}[/yellow]")
+            continue
+
+    return spawned
+
+
+def spawn_custom_agent(
+    issue: Issue,
+    agent_config: AgentHostConfig,
+    stage_config: StageConfig
+) -> bool:
+    """Spawn a custom agent for an issue.
+
+    Custom agents run in the same worktree as the implementing agent
+    but use a different tool/model and have their own skill file.
+
+    Args:
+        issue: Issue to spawn agent for
+        agent_config: Configuration for the custom agent host
+        stage_config: Stage configuration
+
+    Returns:
+        True if agent was spawned successfully, False otherwise
+    """
+    from agenttree.config import load_config
+    from agenttree.container import get_container_runtime
+    import subprocess
+    from rich.console import Console
+
+    console = Console()
+    config = load_config()
+
+    # Find the worktree for this issue
+    worktree_path: Optional[Path] = None
+    if issue.worktree_dir:
+        worktree_path = Path(issue.worktree_dir)
+        if not worktree_path.exists():
+            console.print(f"[yellow]Worktree not found at {issue.worktree_dir}[/yellow]")
+            return False
+    else:
+        # Try to find it
+        worktrees_dir = Path.cwd() / config.worktrees_dir
+        for p in worktrees_dir.glob(f"issue-{issue.id}*"):
+            worktree_path = p
+            break
+
+    if not worktree_path or not worktree_path.exists():
+        console.print(f"[yellow]Could not find worktree for issue #{issue.id}[/yellow]")
+        return False
+
+    # Get container runtime
+    runtime = get_container_runtime()
+    if not runtime.is_available():
+        console.print(f"[red]No container runtime available[/red]")
+        return False
+
+    # Build tmux session name for the custom agent
+    tmux_session = f"{config.project}-{agent_config.name}-{issue.id}"
+
+    # Build container name
+    container_name = f"{config.project}-{agent_config.name}-{issue.id}"
+
+    # Get the tool config
+    tool_config = config.get_tool_config(agent_config.tool)
+
+    # Build the container run command with custom agent environment
+    cmd = runtime.build_run_command(
+        worktree_path=worktree_path,
+        ai_tool=agent_config.tool,
+        dangerous=tool_config.skip_permissions,
+        agent_num=None,  # Custom agents don't use numbered agents
+        model=agent_config.model,
+        agent_host=agent_config.name,  # Set the custom agent host type
+    )
+
+    # Update the container name in the command
+    for i, arg in enumerate(cmd):
+        if arg == "--name":
+            cmd[i + 1] = container_name
+            break
+
+    # Check if tmux session already exists
+    check_result = subprocess.run(
+        ["tmux", "has-session", "-t", tmux_session],
+        capture_output=True,
+    )
+    if check_result.returncode == 0:
+        console.print(f"[dim]Tmux session {tmux_session} already exists[/dim]")
+        return True  # Already running
+
+    # Create tmux session and run the container
+    try:
+        # Join command for shell execution
+        cmd_str = " ".join(f'"{c}"' if " " in c else c for c in cmd)
+
+        subprocess.run(
+            ["tmux", "new-session", "-d", "-s", tmux_session, cmd_str],
+            check=True,
+            capture_output=True,
+        )
+        return True
+
+    except subprocess.CalledProcessError as e:
+        console.print(f"[red]Failed to start tmux session: {e}[/red]")
+        return False
 
 
 def _update_issue_stage_direct(yaml_path: Path, data: dict, new_stage: str) -> None:
