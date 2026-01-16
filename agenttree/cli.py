@@ -1895,9 +1895,17 @@ def approve_issue(issue_id: str, skip_approval: bool) -> None:
         stage_str += f".{next_substage}"
     console.print(f"[green]✓ Approved! Issue #{issue.id} moved to {stage_str}[/green]")
 
-    # Notify agent to continue (if active)
-    console.print(f"\n[dim]Notify the agent to continue:[/dim]")
-    console.print(f"  agenttree send {issue.id} 'Your work was approved! Run `agenttree next` for instructions.'")
+    # Auto-notify agent to continue (if active)
+    from agenttree.state import get_active_agent
+
+    agent = get_active_agent(issue_id_normalized)
+    if agent:
+        config = load_config()
+        tmux_manager = TmuxManager(config)
+        if tmux_manager.is_issue_running(agent.tmux_session):
+            message = "Your work was approved! Run `agenttree next` for instructions."
+            tmux_manager.send_message_to_issue(agent.tmux_session, message)
+            console.print(f"[green]✓ Notified agent to continue[/green]")
 
 
 @main.command("defer")
@@ -2164,9 +2172,11 @@ def sync_command() -> None:
         agenttree sync
     """
     from agenttree.agents_repo import sync_agents_repo
+    from agenttree.issues import get_agenttree_path
 
     console.print("[dim]Syncing agents repository...[/dim]")
-    success = sync_agents_repo()
+    agents_path = get_agenttree_path()
+    success = sync_agents_repo(agents_path)
 
     if success:
         console.print("[green]✓ Sync complete[/green]")
