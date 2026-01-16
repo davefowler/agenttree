@@ -29,7 +29,7 @@ stages:
 
   - name: research
     output: research.md
-    on_enter:
+    post_start:
       - create_file:
           template: research.md
           dest: research.md
@@ -39,7 +39,7 @@ stages:
 
   - name: plan
     output: spec.md
-    on_enter:
+    post_start:
       - create_file:
           template: spec.md
           dest: spec.md
@@ -49,7 +49,7 @@ stages:
 
   - name: plan_assess
     output: spec_review.md
-    on_enter:
+    post_start:
       - create_file:
           template: spec_review.md
           dest: spec_review.md
@@ -59,7 +59,7 @@ stages:
 
   - name: plan_review
     human_review: true
-    on_exit:
+    pre_completion:
       - file_exists: spec.md
       - section_check:
           file: spec.md
@@ -68,7 +68,7 @@ stages:
       - rebase:  # Host-only: rebase onto main before implementation starts
 
   - name: implement
-    on_exit:
+    pre_completion:
       - run: agenttree lint
         optional: true
         context: Lint
@@ -81,13 +81,13 @@ stages:
       code: {}
       code_review:
         output: review.md
-        on_enter:
+        post_start:
           - create_file:
               template: review.md
               dest: review.md
       address_review: {}
       wrapup:
-        on_exit:
+        pre_completion:
           - file_exists: review.md
           - field_check:
               file: review.md
@@ -95,7 +95,7 @@ stages:
               min: 7
       feedback:
         output: feedback.md
-        on_exit:
+        pre_completion:
           - has_commits:
           - file_exists: review.md
           - section_check:
@@ -105,12 +105,12 @@ stages:
 
   - name: implementation_review
     human_review: true
-    on_exit:
+    pre_completion:
       - pr_approved:
 
   - name: accepted
     triggers_merge: true
-    on_enter:
+    post_start:
       - merge_pr:
 
   - name: not_doing
