@@ -443,8 +443,8 @@
             }
         });
 
-        // Modal functions
-        function openIssueModal(issueNumber) {
+        // Modal functions - exposed globally for onclick handlers
+        window.openIssueModal = function(issueNumber) {
             const modal = document.getElementById('issue-modal');
             const detailDiv = document.getElementById('modal-issue-detail');
 
@@ -455,15 +455,15 @@
             });
 
             modal.classList.add('active');
-        }
+        };
 
-        function closeIssueModal() {
+        window.closeIssueModal = function() {
             const modal = document.getElementById('issue-modal');
             modal.classList.remove('active');
-        }
+        };
 
-        // Handle file tab clicks in issue detail
-        function selectFileTab(evt, issueId, filename) {
+        // Handle file tab clicks in issue detail - exposed globally for onclick handlers
+        window.selectFileTab = function(evt, issueId, filename) {
             // Update active tab within the same issue's tabs
             const tabContainer = evt.target.closest('.file-tabs');
             tabContainer.querySelectorAll('.file-tab').forEach(tab => {
@@ -476,10 +476,10 @@
                 target: '#file-content-' + issueId,
                 swap: 'innerHTML'
             });
-        }
+        };
 
-        // Toggle agent chat panel
-        function toggleAgentChat(issueNumber) {
+        // Toggle agent chat panel - exposed globally for onclick handlers
+        window.toggleAgentChat = function(issueNumber) {
             const panel = document.getElementById('agent-chat-panel-' + issueNumber);
             if (panel) {
                 panel.classList.toggle('collapsed');
@@ -488,19 +488,19 @@
                     icon.textContent = panel.classList.contains('collapsed') ? '\u00ab' : '\u00d7';
                 }
             }
-        }
+        };
 
         // Close modal on escape key
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
-                closeIssueModal();
+                window.closeIssueModal();
             }
         });
 
         // Close modal on background click
         document.getElementById('issue-modal').addEventListener('click', (e) => {
             if (e.target.id === 'issue-modal') {
-                closeIssueModal();
+                window.closeIssueModal();
             }
         });
 
@@ -535,7 +535,8 @@
             }
         }
 
-        function setStageView(view) {
+        // Stage view toggle - exposed globally for onclick handlers
+        window.setStageView = function(view) {
             const columns = document.querySelectorAll('.kanban-column');
             const toggleReview = document.getElementById('toggle-review');
             const toggleNonempty = document.getElementById('toggle-nonempty');
@@ -576,11 +577,11 @@
 
             // Update mini dropzones visibility
             updateMiniDropzones();
-        }
+        };
 
         // Apply saved preference on load
         const savedView = localStorage.getItem('kanbanStageView') || 'review';
-        setStageView(savedView);
+        window.setStageView(savedView);
 
         // Mini dropzone drag/drop handlers
         document.querySelectorAll('.mini-dropzone').forEach(dropzone => {
@@ -632,13 +633,13 @@
             });
         });
 
-        // Agent light toggle (for kanban cards)
-        async function toggleAgent(issueNumber, lightElement) {
+        // Agent light toggle (for kanban cards) - exposed globally for onclick handlers
+        window.toggleAgent = async function(issueNumber, lightElement) {
             const isOn = lightElement.classList.contains('on');
 
             if (isOn) {
                 // Agent is running - open the modal to show details
-                openIssueModal(issueNumber);
+                window.openIssueModal(issueNumber);
                 return;
             }
 
@@ -671,10 +672,10 @@
                 lightElement.classList.add('stalled');
                 lightElement.title = 'Error - click to retry';
             }
-        }
+        };
 
-        // Agent light toggle (for detail view)
-        async function toggleAgentFromDetail(issueNumber, lightElement) {
+        // Agent light toggle (for detail view) - exposed globally for onclick handlers
+        window.toggleAgentFromDetail = async function(issueNumber, lightElement) {
             const isOn = lightElement.classList.contains('on');
 
             if (isOn) {
@@ -709,7 +710,7 @@
                 lightElement.classList.add('stalled');
                 lightElement.title = 'Error - click to retry';
             }
-        }
+        };
     })();
     </script>
 </body>
