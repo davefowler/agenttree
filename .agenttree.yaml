@@ -30,9 +30,9 @@ stages:
   - name: research
     output: research.md
     on_enter:
-      - type: create_file
-        template: research.md
-        dest: research.md
+      - create_file:
+          template: research.md
+          dest: research.md
     substages:
       explore: {}
       document: {}
@@ -40,9 +40,9 @@ stages:
   - name: plan
     output: spec.md
     on_enter:
-      - type: create_file
-        template: spec.md
-        dest: spec.md
+      - create_file:
+          template: spec.md
+          dest: spec.md
     substages:
       draft: {}
       refine: {}
@@ -50,9 +50,9 @@ stages:
   - name: plan_assess
     output: spec_review.md
     on_enter:
-      - type: create_file
-        template: spec_review.md
-        dest: spec_review.md
+      - create_file:
+          template: spec_review.md
+          dest: spec_review.md
 
   - name: plan_revise
     output: spec.md
@@ -60,60 +60,58 @@ stages:
   - name: plan_review
     human_review: true
     on_exit:
-      - type: file_exists
-        file: spec.md
-      - type: section_check
-        file: spec.md
-        section: Approach
-        expect: not_empty
+      - file_exists: spec.md
+      - section_check:
+          file: spec.md
+          section: Approach
+          expect: not_empty
+      - rebase:  # Host-only: rebase onto main before implementation starts
 
   - name: implement
     on_exit:
-      - command: agenttree lint
+      - run: agenttree lint
         optional: true
         context: Lint
-      - command: agenttree test
+      - run: agenttree test
         optional: true
         context: Tests
-      - type: create_pr
+      - create_pr:
     substages:
       setup: {}
       code: {}
       code_review:
         output: review.md
         on_enter:
-          - type: create_file
-            template: review.md
-            dest: review.md
+          - create_file:
+              template: review.md
+              dest: review.md
       address_review: {}
       wrapup:
         on_exit:
-          - type: file_exists
-            file: review.md
-          - type: field_check
-            file: review.md
-            path: average
-            min: 7
+          - file_exists: review.md
+          - field_check:
+              file: review.md
+              path: average
+              min: 7
       feedback:
         output: feedback.md
         on_exit:
-          - type: has_commits
-          - type: file_exists
-            file: review.md
-          - type: section_check
-            file: review.md
-            section: Critical Issues
-            expect: empty
+          - has_commits:
+          - file_exists: review.md
+          - section_check:
+              file: review.md
+              section: Critical Issues
+              expect: empty
 
   - name: implementation_review
     human_review: true
     on_exit:
-      - type: pr_approved
+      - pr_approved:
 
   - name: accepted
     triggers_merge: true
     on_enter:
-      - type: merge_pr
+      - merge_pr:
 
   - name: not_doing
     terminal: true

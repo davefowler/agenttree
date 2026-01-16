@@ -5,8 +5,8 @@ automation, setup, and cleanup during workflow stage transitions.
 
 Hook Types (configured in config.py DEFAULT_STAGES):
 ----------------------------------------------------
-1. **on_exit hooks** - Validation/actions when exiting a stage (can block)
-2. **on_enter hooks** - Setup when entering a stage (logs warnings but doesn't block)
+1. **pre_completion hooks** - Validation/actions when completing a stage (can block)
+2. **post_start hooks** - Setup when starting a stage (logs warnings but doesn't block)
 
 Built-in Validators:
 -------------------
@@ -21,30 +21,31 @@ Built-in Actions:
 - create_file: Create a file from a template
 - create_pr: Create a pull request
 - merge_pr: Merge a pull request
+- rebase: Rebase branch onto main (host-only)
 
 Usage:
 ------
     from agenttree.hooks import execute_exit_hooks, execute_enter_hooks, ValidationError
 
-    # Execute exit hooks (validation, can block)
+    # Execute pre_completion hooks (validation, can block)
     execute_exit_hooks(issue, stage, substage)
 
-    # Execute enter hooks (setup, logs warnings)
+    # Execute post_start hooks (setup, logs warnings)
     execute_enter_hooks(issue, stage, substage)
 
 Configuration:
 -------------
-Hooks are configured in config.py DEFAULT_STAGES via on_exit and on_enter lists:
+Hooks are configured in config.py DEFAULT_STAGES via pre_completion and post_start lists:
 
     StageConfig(
         name="implement",
-        on_exit=[{"type": "create_pr"}],
+        pre_completion=[{"create_pr": True}],
         substages={
             "feedback": SubstageConfig(
                 name="feedback",
-                on_exit=[
-                    {"type": "has_commits"},
-                    {"type": "file_exists", "file": "review.md"},
+                pre_completion=[
+                    {"has_commits": True},
+                    {"file_exists": "review.md"},
                 ],
             ),
         },
@@ -80,6 +81,72 @@ class ValidationError(Exception):
 # Config-Driven Validators (New System)
 # =============================================================================
 
+# Known hook types (used to detect hook type from key)
+HOOK_TYPES = {
+    "file_exists", "has_commits", "field_check", "section_check", "pr_approved",
+    "create_file", "create_pr", "merge_pr", "run", "rebase"
+}
+
+
+def parse_hook(hook: Dict[str, Any]) -> tuple[str, Dict[str, Any]]:
+    """Parse a hook configuration dict to extract hook type and parameters.
+
+    Supports both new format (hook type as key) and legacy format (type field).
+
+    New format examples:
+        {"file_exists": "review.md"}
+        {"field_check": {"file": "review.md", "path": "average", "min": 7}}
+        {"run": "agenttree lint", "optional": True, "context": "Lint"}
+        {"create_pr": {}}
+        {"rebase": {}}
+
+    Legacy format (still supported):
+        {"type": "file_exists", "file": "review.md"}
+        {"command": "agenttree lint"}
+
+    Args:
+        hook: Hook configuration dict
+
+    Returns:
+        Tuple of (hook_type, parameters_dict)
+    """
+    # Legacy format: explicit "type" field
+    if "type" in hook:
+        hook_type = hook["type"]
+        params = {k: v for k, v in hook.items() if k != "type"}
+        return hook_type, params
+
+    # Legacy format: "command" field (now "run")
+    if "command" in hook:
+        params = {k: v for k, v in hook.items() if k != "command"}
+        params["command"] = hook["command"]
+        return "run", params
+
+    # New format: hook type is a key in the dict
+    for key in hook:
+        if key in HOOK_TYPES:
+            value = hook[key]
+            # Collect other keys as additional params (e.g., optional, context)
+            extra_params = {k: v for k, v in hook.items() if k != key}
+
+            if isinstance(value, dict):
+                # {"field_check": {"file": "review.md", "path": "average"}}
+                return key, {**value, **extra_params}
+            elif isinstance(value, str):
+                # {"file_exists": "review.md"} or {"run": "agenttree lint"}
+                if key == "run":
+                    return key, {"command": value, **extra_params}
+                else:
+                    return key, {"file": value, **extra_params}
+            elif value is None or value == {}:
+                # {"create_pr": {}} or {"create_pr": null}
+                return key, extra_params
+            else:
+                return key, {"value": value, **extra_params}
+
+    # Unknown hook type
+    return "unknown", hook
+
 
 def _action_create_pr(issue_dir: Path, issue_id: str = "", issue_title: str = "", branch: str = "", **kwargs: Any) -> None:
     """Create PR for an issue (action hook helper).
@@ -111,11 +178,14 @@ def _action_create_pr(issue_dir: Path, issue_id: str = "", issue_title: str = ""
         worktree_path = str(issue_dir.resolve()) if issue_dir else None
         update_issue_metadata(issue_id, branch=branch, worktree_dir=worktree_path)
 
-    # If in container, skip remote operations
+    # If in container, skip remote operations but signal host to push
     if is_running_in_container():
         console.print(f"[yellow]Running in container - PR will be created by host[/yellow]")
         console.print(f"[dim]Branch: {branch} (committed locally, awaiting push)[/dim]")
         console.print(f"[dim]Worktree: {issue_dir}[/dim]")
+        # Signal host that push is needed
+        if issue_id:
+            update_issue_metadata(issue_id, needs_push=True)
         return
 
     # On host: do the full push/PR
@@ -197,44 +267,6 @@ def get_pr_approval_status(pr_number: int) -> bool:
         return False
 
 
-def _get_hook_type_and_params(hook: Dict[str, Any]) -> tuple[Optional[str], Dict[str, Any]]:
-    """Extract hook type and parameters from new or old format.
-
-    New format: {"file_exists": "review.md"} or {"field_check": {"file": "...", ...}}
-    Old format: {"type": "file_exists", "file": "review.md"}
-
-    Returns:
-        Tuple of (hook_type, params_dict)
-    """
-    # Known hook types
-    builtin_types = {
-        "file_exists", "has_commits", "field_check", "section_check",
-        "pr_approved", "create_file", "create_pr", "merge_pr"
-    }
-
-    # Check for new format (type as key)
-    for key in builtin_types:
-        if key in hook:
-            value = hook[key]
-            if isinstance(value, dict):
-                # Nested params: {"field_check": {"file": "...", "path": "..."}}
-                return key, value
-            elif isinstance(value, str):
-                # Simple value: {"file_exists": "review.md"}
-                return key, {"file": value}
-            else:
-                # Boolean or other: {"create_pr": True}
-                return key, {}
-
-    # Check for old format
-    if "type" in hook:
-        hook_type = hook["type"]
-        params = {k: v for k, v in hook.items() if k != "type"}
-        return hook_type, params
-
-    return None, {}
-
-
 def run_builtin_validator(
     issue_dir: Path,
     hook: Dict[str, Any],
@@ -245,7 +277,7 @@ def run_builtin_validator(
 
     Args:
         issue_dir: Path to issue directory (worktree)
-        hook: Hook configuration dict (new or old format)
+        hook: Hook configuration dict (new or legacy format)
         pr_number: Optional PR number for pr_approved validator
         **kwargs: Additional context (unused for now)
 
@@ -254,7 +286,7 @@ def run_builtin_validator(
     """
     import yaml
 
-    hook_type, params = _get_hook_type_and_params(hook)
+    hook_type, params = parse_hook(hook)
     errors: List[str] = []
 
     if hook_type == "file_exists":
@@ -494,21 +526,37 @@ def execute_hooks(
 
     # Run each hook
     for hook in hooks:
-        # Check if it's a shell command hook (new format: "run", old format: "command")
-        if "run" in hook or "command" in hook:
-            # Shell command hook - normalize to use "command" key for run_command_hook
-            normalized_hook = hook.copy()
-            if "run" in normalized_hook:
-                normalized_hook["command"] = normalized_hook.pop("run")
-            hook_errors = run_command_hook(issue_dir, normalized_hook, **kwargs)
+        hook_type, params = parse_hook(hook)
+
+        # Skip host-only hooks when running in container
+        if hook.get("host_only") and is_running_in_container():
+            console.print(f"[dim]Skipping {hook_type} (host-only hook)[/dim]")
+            continue
+
+        if hook_type == "run":
+            # Shell command hook
+            hook_errors = run_command_hook(issue_dir, params, **kwargs)
             # If optional flag is set and command returns "not configured", warn but don't block
-            if hook.get("optional") and any("not configured" in e.lower() for e in hook_errors):
-                context = hook.get("context", normalized_hook["command"])
+            if params.get("optional") and any("not configured" in e.lower() for e in hook_errors):
+                context = params.get("context", params.get("command", "command"))
                 console.print(f"[yellow]Warning: {context} skipped - not configured[/yellow]")
                 continue
             errors.extend(hook_errors)
-        else:
-            # Built-in validator (new or old format)
+        elif hook_type == "rebase":
+            # Rebase hook - host-only, skips gracefully in container
+            if is_running_in_container():
+                console.print(f"[dim]Skipping rebase (running in container)[/dim]")
+                continue
+            issue_id = kwargs.get("issue_id", "")
+            if issue_id:
+                success, message = rebase_issue_branch(issue_id)
+                if success:
+                    console.print(f"[green]✓ {message}[/green]")
+                else:
+                    console.print(f"[yellow]Warning: {message}[/yellow]")
+                    # Don't block on rebase failure - agent can handle conflicts
+        elif hook_type != "unknown":
+            # Built-in validator/action
             errors.extend(run_builtin_validator(issue_dir, hook, pr_number=pr_number, **kwargs))
 
     return errors
@@ -519,7 +567,7 @@ def execute_exit_hooks(issue: "Issue", stage: str, substage: Optional[str] = Non
 
     This is the config-driven replacement for execute_pre_hooks.
 
-    When exiting the LAST substage of a stage, this also runs stage-level on_exit hooks.
+    When exiting the LAST substage of a stage, this also runs stage-level pre_completion hooks.
     This ensures hooks like lint/test/create_pr run when leaving implement stage.
 
     Args:
@@ -816,6 +864,68 @@ def push_branch_to_remote(branch: str) -> None:
         capture_output=True,
         text=True,
     )
+
+
+def rebase_issue_branch(issue_id: str) -> tuple[bool, str]:
+    """Rebase an issue's worktree branch onto the latest main.
+
+    Called from host (approve command, etc.) to ensure feature branches
+    are up to date before implementation begins.
+
+    Args:
+        issue_id: Issue ID to rebase
+
+    Returns:
+        Tuple of (success, message)
+    """
+    from agenttree.issues import get_issue, get_issue_dir
+
+    issue = get_issue(issue_id)
+    if not issue:
+        return False, f"Issue {issue_id} not found"
+
+    if not issue.worktree_dir:
+        return False, f"Issue {issue_id} has no worktree directory"
+
+    worktree_path = Path(issue.worktree_dir)
+    if not worktree_path.exists():
+        return False, f"Worktree not found: {issue.worktree_dir}"
+
+    try:
+        # Fetch latest from origin
+        result = subprocess.run(
+            ["git", "-C", str(worktree_path), "fetch", "origin", "main"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+
+        # Rebase onto origin/main
+        result = subprocess.run(
+            ["git", "-C", str(worktree_path), "rebase", "origin/main"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+
+        if result.returncode != 0:
+            # Check for conflicts
+            if "conflict" in result.stderr.lower() or "conflict" in result.stdout.lower():
+                # Abort the failed rebase
+                subprocess.run(
+                    ["git", "-C", str(worktree_path), "rebase", "--abort"],
+                    capture_output=True,
+                    timeout=10,
+                )
+                return False, f"Rebase conflicts - manual resolution needed"
+            return False, f"Rebase failed: {result.stderr}"
+
+        return True, "Rebased successfully"
+
+    except subprocess.TimeoutExpired:
+        return False, "Rebase timed out"
+    except Exception as e:
+        return False, f"Rebase error: {e}"
 
 
 def get_repo_remote_name() -> str:

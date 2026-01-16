@@ -114,6 +114,7 @@ DEFAULT_STAGES = [
         pre_completion=[
             {"file_exists": "spec.md"},
             {"section_check": {"file": "spec.md", "section": "Approach", "expect": "not_empty"}},
+            {"rebase": {}, "host_only": True},  # Host-only: rebase onto main before implementation starts
         ],
     ),
     StageConfig(
