@@ -1,23 +1,26 @@
+# AgentTree Configuration
+# This file is the source of truth for all workflow configuration.
+# See https://github.com/davefowler/agenttree for documentation.
+
 default_tool: claude
 default_model: opus
 port_range: 9001-9099
-project: agenttree
+project: "{{PROJECT_NAME}}"
 worktrees_dir: .worktrees
 
 test_commands:
-  - uv run pytest
+  - echo "No test command configured - update test_commands in .agenttree.yaml"
 
 lint_commands:
-  - uv run mypy agenttree
+  - echo "No lint command configured - update lint_commands in .agenttree.yaml"
 
-# default_model (above) is used for all tools
 tools:
-  aider:
-    command: aider
-    startup_prompt: /read TASK.md
   claude:
     command: claude
     startup_prompt: "Read TASK.md - it has your issue ID, stage, and workflow instructions. You MUST follow the staged workflow."
+  aider:
+    command: aider
+    startup_prompt: /read TASK.md
 
 stages:
   - name: backlog
@@ -33,7 +36,7 @@ stages:
           file: problem.md
           section: Possible Solutions
     substages:
-      refine: {}  # Human provides initial draft, agent refines
+      refine: {}
 
   - name: research
     output: research.md
@@ -102,7 +105,7 @@ stages:
           file: spec.md
           section: Approach
           expect: not_empty
-      - rebase:  # Host-only: rebase onto main before implementation starts
+      - rebase:
 
   - name: implement
     pre_completion:

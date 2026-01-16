@@ -275,7 +275,7 @@ class TestSyncAgentsRepo:
         mock_run.side_effect = [
             Mock(returncode=0),  # add -A
             Mock(returncode=0),  # diff --cached --quiet (0 = no changes)
-            Mock(returncode=0, stderr=""),  # pull --rebase
+            Mock(returncode=0, stderr=""),  # pull --no-rebase
         ]
 
         result = sync_agents_repo(git_repo, pull_only=True)
@@ -286,7 +286,7 @@ class TestSyncAgentsRepo:
         # Verify pull was called
         pull_call = mock_run.call_args_list[2][0][0]
         assert "pull" in pull_call
-        assert "--rebase" in pull_call
+        assert "--no-rebase" in pull_call
 
     @patch("agenttree.agents_repo.subprocess.run")
     def test_sync_pull_only_offline(self, mock_run, git_repo):

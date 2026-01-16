@@ -74,116 +74,6 @@ class StageConfig(BaseModel):
         return getattr(self, event, [])
 
 
-# Default stages if not configured in .agenttree.yaml
-# Keep in sync with .agenttree.yaml in this repo (the canonical reference)
-DEFAULT_STAGES = [
-    StageConfig(name="backlog"),
-    StageConfig(
-        name="define",
-        output="problem.md",
-        pre_completion=[
-            {"section_check": {"file": "problem.md", "section": "Context", "expect": "not_empty"}},
-        ],
-        substages={
-            "refine": SubstageConfig(name="refine"),  # Human provides draft, agent refines
-        }
-    ),
-    StageConfig(
-        name="research",
-        output="research.md",
-        post_start=[{"create_file": {"template": "research.md", "dest": "research.md"}}],
-        pre_completion=[
-            {"section_check": {"file": "research.md", "section": "Relevant Files", "expect": "not_empty"}},
-        ],
-        substages={
-            "explore": SubstageConfig(name="explore"),
-            "document": SubstageConfig(name="document"),
-        }
-    ),
-    StageConfig(
-        name="plan",
-        output="spec.md",
-        post_start=[{"create_file": {"template": "spec.md", "dest": "spec.md"}}],
-        pre_completion=[
-            {"section_check": {"file": "spec.md", "section": "Approach", "expect": "not_empty"}},
-            {"section_check": {"file": "spec.md", "section": "Files to Modify", "expect": "not_empty"}},
-            {"section_check": {"file": "spec.md", "section": "Implementation Steps", "expect": "not_empty"}},
-        ],
-        substages={
-            "draft": SubstageConfig(name="draft"),
-            "refine": SubstageConfig(name="refine"),
-        }
-    ),
-    StageConfig(
-        name="plan_assess",
-        output="spec_review.md",
-        post_start=[{"create_file": {"template": "spec_review.md", "dest": "spec_review.md"}}],
-        pre_completion=[
-            {"section_check": {"file": "spec_review.md", "section": "Assessment Summary", "expect": "not_empty"}},
-        ],
-    ),
-    StageConfig(name="plan_revise", output="spec.md"),
-    StageConfig(
-        name="plan_review",
-        human_review=True,
-        pre_completion=[
-            {"file_exists": "spec.md"},
-            {"section_check": {"file": "spec.md", "section": "Approach", "expect": "not_empty"}},
-            {"rebase": {}, "host_only": True},  # Host-only: rebase onto main before implementation starts
-        ],
-    ),
-    StageConfig(
-        name="implement",
-        # pre_completion from implement stage: run lint, tests, then create PR
-        pre_completion=[
-            {"run": "agenttree lint", "optional": True, "context": "Lint"},
-            {"run": "agenttree test", "optional": True, "context": "Tests"},
-            {"create_pr": True},
-        ],
-        substages={
-            "setup": SubstageConfig(name="setup"),
-            "code": SubstageConfig(name="code"),
-            "code_review": SubstageConfig(
-                name="code_review",
-                output="review.md",
-                post_start=[{"create_file": {"template": "review.md", "dest": "review.md"}}],
-                pre_completion=[
-                    {"section_check": {"file": "review.md", "section": "Self-Review Checklist", "expect": "all_checked"}},
-                ],
-            ),
-            "address_review": SubstageConfig(name="address_review"),
-            "wrapup": SubstageConfig(
-                name="wrapup",
-                pre_completion=[
-                    {"file_exists": "review.md"},
-                    {"field_check": {"file": "review.md", "path": "average", "min": 7}},
-                ],
-            ),
-            "feedback": SubstageConfig(
-                name="feedback",
-                output="feedback.md",
-                pre_completion=[
-                    {"has_commits": True},
-                    {"file_exists": "review.md"},
-                    {"section_check": {"file": "review.md", "section": "Critical Issues", "expect": "empty"}},
-                ],
-            ),
-        },
-    ),
-    StageConfig(
-        name="implementation_review",
-        human_review=True,
-        pre_completion=[{"pr_approved": True}],
-    ),
-    StageConfig(
-        name="accepted",
-        triggers_merge=True,
-        post_start=[{"merge_pr": True}],
-    ),
-    StageConfig(name="not_doing", terminal=True),
-]
-
-
 class SecurityConfig(BaseModel):
     """Security configuration for agents.
 
@@ -210,7 +100,7 @@ class Config(BaseModel):
     tools: Dict[str, ToolConfig] = Field(default_factory=dict)
     test_commands: list[str] = Field(default_factory=list)  # Commands to run tests
     lint_commands: list[str] = Field(default_factory=list)  # Commands to run linting
-    stages: list[StageConfig] = Field(default_factory=lambda: DEFAULT_STAGES.copy())
+    stages: list[StageConfig] = Field(default_factory=list)  # Must be defined in .agenttree.yaml
     security: SecurityConfig = Field(default_factory=SecurityConfig)
     merge_strategy: str = "squash"  # squash, merge, or rebase
     hooks: HooksConfig = Field(default_factory=HooksConfig)

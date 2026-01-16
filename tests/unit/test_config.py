@@ -342,15 +342,4 @@ class TestStageHookNaming:
         assert stage.hooks_for("code", "pre_completion") == [{"type": "has_commits"}]
         assert stage.hooks_for("code", "post_start") == [{"command": "echo 'coding'"}]
 
-    def test_default_stages_use_new_names(self) -> None:
-        """DEFAULT_STAGES should use pre_completion/post_start."""
-        from agenttree.config import DEFAULT_STAGES
-
-        # Check that at least one stage has hooks with new names
-        implement_stage = next(s for s in DEFAULT_STAGES if s.name == "implement")
-        assert hasattr(implement_stage, "pre_completion")
-        assert hasattr(implement_stage, "post_start")
-
-        # Check plan_review stage has pre_completion (was on_exit)
-        plan_review = next(s for s in DEFAULT_STAGES if s.name == "plan_review")
-        assert len(plan_review.pre_completion) > 0
+    # DEFAULT_STAGES removed - config now comes entirely from .agenttree.yaml

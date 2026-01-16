@@ -24,10 +24,7 @@
 
         {% include 'partials/header_styles.html' %}
 
-        .kanban-column.hidden {
-            display: none;
-        }
-
+        /* Kanban-specific styles */
         .kanban-board {
             display: flex;
             gap: 15px;
@@ -41,6 +38,10 @@
             display: flex;
             flex-direction: column;
             max-height: calc(100vh - 90px);
+        }
+
+        .kanban-column.hidden {
+            display: none;
         }
 
         .column-header {
@@ -79,6 +80,42 @@
             box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
         }
 
+        .kanban-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1), 0 3px 6px rgba(0, 0, 0, 0.06);
+        }
+
+        .kanban-card.dragging {
+            opacity: 0.5;
+            cursor: grabbing;
+        }
+
+        .kanban-card.drag-over {
+            border-color: var(--text-accent);
+            border-style: dashed;
+        }
+
+        .card-number {
+            color: var(--text-muted);
+            font-size: 12px;
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+
+        .card-title {
+            color: var(--text-card);
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 8px;
+        }
+
+        .card-badges {
+            display: flex;
+            gap: 5px;
+            flex-wrap: wrap;
+        }
+
+        /* Agent status light */
         .agent-light {
             position: absolute;
             top: 8px;
@@ -116,61 +153,18 @@
             animation: blink 0.5s ease-in-out infinite;
         }
 
+        .agent-light.stalled {
+            background: #f97316;
+            border: 2px solid #ea580c;
+            box-shadow: 0 0 6px rgba(249, 115, 22, 0.5);
+        }
+
         @keyframes blink {
             0%, 100% { opacity: 1; }
             50% { opacity: 0.5; }
         }
 
-        .kanban-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1), 0 3px 6px rgba(0, 0, 0, 0.06);
-        }
-
-        .kanban-card.dragging {
-            opacity: 0.5;
-            cursor: grabbing;
-        }
-
-        .kanban-card.drag-over {
-            border-color: var(--text-accent);
-            border-style: dashed;
-        }
-
-        .card-number {
-            color: var(--text-muted);
-            font-size: 12px;
-            font-weight: 600;
-            margin-bottom: 5px;
-        }
-
-        .card-title {
-            color: var(--text-card);
-            font-size: 14px;
-            font-weight: 500;
-            margin-bottom: 8px;
-        }
-
-        .card-badges {
-            display: flex;
-            gap: 5px;
-            flex-wrap: wrap;
-        }
-
-        .badge {
-            padding: 2px 8px;
-            border-radius: 10px;
-            font-size: 11px;
-            font-weight: 600;
-            background: var(--badge-bg);
-            color: var(--badge-text);
-        }
-
-        .badge-agent {
-            background: var(--badge-bg);
-            color: var(--badge-text);
-        }
-
-        /* Modal styles */
+        /* Modal */
         .modal {
             display: none;
             position: fixed;
@@ -214,118 +208,6 @@
 
         .modal-close:hover {
             color: var(--text-card);
-        }
-
-        /* Issue detail styles */
-        .issue-detail {
-            color: var(--text-card);
-        }
-
-        .detail-header {
-            margin-bottom: 20px;
-            padding-bottom: 20px;
-            border-bottom: 1px solid var(--border-light);
-        }
-
-        .detail-title {
-            font-size: 24px;
-            font-weight: 600;
-            margin-bottom: 10px;
-        }
-
-        .detail-meta {
-            display: flex;
-            gap: 20px;
-            font-size: 14px;
-            color: var(--text-muted);
-            flex-wrap: wrap;
-        }
-
-        .detail-body {
-            background: var(--bg-card-alt);
-            border: 1px solid var(--border-light);
-            border-radius: 6px;
-            padding: 20px;
-            margin-bottom: 20px;
-            white-space: pre-wrap;
-            line-height: 1.6;
-        }
-
-        .detail-labels {
-            display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-            margin-bottom: 20px;
-        }
-
-        .label {
-            padding: 5px 12px;
-            background: var(--badge-bg);
-            color: var(--badge-text);
-            border-radius: 12px;
-            font-size: 12px;
-            font-weight: 500;
-        }
-
-        .detail-actions {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 20px;
-        }
-
-        .btn {
-            padding: 8px 16px;
-            border: 1px solid var(--border-color);
-            background: var(--btn-bg);
-            color: var(--text-primary);
-            border-radius: 6px;
-            font-size: 14px;
-            cursor: pointer;
-            transition: all 0.2s;
-            text-decoration: none;
-            display: inline-block;
-        }
-
-        .btn:hover {
-            background: var(--btn-bg-hover);
-        }
-
-        .btn-primary {
-            background: var(--btn-bg-active);
-            border-color: var(--btn-bg-active);
-            color: var(--text-primary);
-        }
-
-        .btn-primary:hover {
-            background: var(--text-accent);
-            border-color: var(--text-accent);
-        }
-
-        .detail-timestamps {
-            display: flex;
-            gap: 20px;
-            color: var(--text-muted);
-            font-size: 12px;
-            padding-top: 20px;
-            border-top: 1px solid var(--border-light);
-        }
-
-        ::-webkit-scrollbar {
-            width: 10px;
-            height: 10px;
-        }
-
-        ::-webkit-scrollbar-track {
-            background: var(--bg-secondary);
-        }
-
-        ::-webkit-scrollbar-thumb {
-            background: var(--border-color);
-            border-radius: 5px;
-        }
-
-        ::-webkit-scrollbar-thumb:hover {
-            background: var(--btn-bg-active);
         }
 
         /* Mini dropzones for hidden columns */
@@ -377,328 +259,28 @@
             opacity: 0.7;
         }
 
-        /* File tabs for issue detail */
+        /* Kanban-specific file tabs margin adjustment */
         .file-tabs-container {
-            background: var(--bg-card-alt);
-            border-bottom: 1px solid var(--border-light);
-            padding: 0;
             margin: 15px -30px;
         }
 
-        .file-tabs {
-            display: flex;
-            gap: 0;
-            overflow-x: auto;
-            padding: 0 20px;
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 10px;
+            height: 10px;
         }
 
-        .file-tab {
-            padding: 10px 16px;
-            color: var(--text-muted);
-            font-size: 13px;
-            font-weight: 500;
-            cursor: pointer;
-            border-bottom: 2px solid transparent;
-            transition: all 0.2s;
-            white-space: nowrap;
-            background: none;
-            border-top: none;
-            border-left: none;
-            border-right: none;
+        ::-webkit-scrollbar-track {
+            background: var(--bg-secondary);
         }
 
-        .file-tab:hover {
-            color: var(--text-card);
-            background: var(--bg-card);
+        ::-webkit-scrollbar-thumb {
+            background: var(--border-color);
+            border-radius: 5px;
         }
 
-        .file-tab.active {
-            color: var(--text-accent);
-            border-bottom-color: var(--text-accent);
-            background: var(--bg-card);
-        }
-
-        .no-files {
-            padding: 10px 16px;
-            color: var(--text-muted);
-            font-size: 13px;
-        }
-
-        .file-content {
-            padding: 20px 0;
-        }
-
-        /* Markdown rendering */
-        .markdown-content {
-            background: var(--bg-card-alt);
-            border: 1px solid var(--border-light);
-            border-radius: 6px;
-            padding: 20px;
-        }
-
-        .markdown-raw {
-            white-space: pre-wrap;
-            line-height: 1.6;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            font-size: 14px;
-            color: var(--text-card);
-            margin: 0;
-        }
-
-        .markdown-rendered {
-            line-height: 1.6;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            font-size: 14px;
-            color: var(--text-card);
-        }
-
-        .markdown-rendered h1 {
-            font-size: 24px;
-            font-weight: 600;
-            margin: 0 0 16px 0;
-            padding-bottom: 8px;
-            border-bottom: 1px solid var(--border-light);
-        }
-
-        .markdown-rendered h2 {
-            font-size: 20px;
-            font-weight: 600;
-            margin: 24px 0 12px 0;
-            padding-bottom: 6px;
-            border-bottom: 1px solid var(--border-light);
-        }
-
-        .markdown-rendered h3 {
-            font-size: 16px;
-            font-weight: 600;
-            margin: 20px 0 10px 0;
-        }
-
-        .markdown-rendered p {
-            margin: 0 0 12px 0;
-        }
-
-        .markdown-rendered ul, .markdown-rendered ol {
-            margin: 0 0 12px 0;
-            padding-left: 24px;
-        }
-
-        .markdown-rendered li {
-            margin-bottom: 4px;
-        }
-
-        .markdown-rendered code {
-            background: var(--bg-card-alt);
-            padding: 2px 6px;
-            border-radius: 3px;
-            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-            font-size: 13px;
-        }
-
-        .markdown-rendered pre {
-            background: #2d4a3e;
-            color: #e8e4d9;
-            padding: 16px;
-            border-radius: 6px;
-            overflow-x: auto;
-            margin: 0 0 16px 0;
-        }
-
-        .markdown-rendered pre code {
-            background: none;
-            padding: 0;
-            color: inherit;
-        }
-
-        .markdown-rendered blockquote {
-            border-left: 4px solid var(--text-accent);
-            margin: 0 0 16px 0;
-            padding: 8px 16px;
-            background: var(--bg-card-alt);
-            color: var(--text-muted);
-        }
-
-        .markdown-rendered a {
-            color: var(--text-accent);
-            text-decoration: none;
-        }
-
-        .markdown-rendered a:hover {
-            text-decoration: underline;
-        }
-
-        .markdown-rendered strong {
-            font-weight: 600;
-        }
-
-        .markdown-rendered hr {
-            border: none;
-            border-top: 1px solid var(--border-light);
-            margin: 24px 0;
-        }
-
-        .empty-state {
-            color: var(--text-muted);
-            text-align: center;
-            padding: 40px 20px;
-        }
-
-        .detail-timestamps {
-            display: flex;
-            gap: 20px;
-            margin-top: 20px;
-            padding-top: 15px;
-            border-top: 1px solid var(--border-light);
-            color: var(--text-muted);
-            font-size: 12px;
-        }
-
-        /* Issue detail wrapper with chat panel */
-        .issue-detail-wrapper {
-            display: flex;
-            gap: 20px;
-            min-height: 400px;
-        }
-
-        .issue-detail-main {
-            flex: 1;
-            min-width: 0;
-        }
-
-        .btn-chat-toggle {
-            background: var(--btn-bg);
-        }
-
-        .btn-chat-toggle:hover {
-            background: var(--btn-bg-hover);
-        }
-
-        /* Agent chat panel */
-        .agent-chat-panel {
-            width: 350px;
-            flex-shrink: 0;
-            background: #1e3a2f;
-            border-radius: 6px;
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-            transition: width 0.3s ease, opacity 0.3s ease;
-        }
-
-        .agent-chat-panel.collapsed {
-            width: 0;
-            opacity: 0;
-            overflow: hidden;
-        }
-
-        .agent-chat-header {
-            background: #2d4a3e;
-            padding: 12px 15px;
-            border-bottom: 1px solid #4a7c6f;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-
-        .agent-chat-header h4 {
-            color: #a8d5ba;
-            font-size: 14px;
-            font-weight: 600;
-            margin: 0;
-        }
-
-        .agent-chat-toggle {
-            background: none;
-            border: none;
-            color: #8eb89c;
-            cursor: pointer;
-            font-size: 16px;
-            padding: 4px;
-        }
-
-        .agent-chat-toggle:hover {
-            color: #a8d5ba;
-        }
-
-        .agent-chat-content {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-        }
-
-        .agent-chat-panel .agent-status {
-            padding: 10px 15px;
-            background: #2d4a3e;
-            border-bottom: 1px solid #4a7c6f;
-            font-size: 12px;
-            color: #a8d5ba;
-        }
-
-        .agent-chat-panel .status-indicator {
-            display: inline-block;
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            margin-right: 8px;
-        }
-
-        .agent-chat-panel .status-indicator.active {
-            background: #6b9a7a;
-        }
-
-        .agent-chat-panel .tmux-output {
-            flex: 1;
-            background: #0d1f18;
-            padding: 10px;
-            overflow-y: auto;
-            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-            font-size: 12px;
-            line-height: 1.4;
-            white-space: pre-wrap;
-            word-break: break-all;
-            color: #e8e4d9;
-            min-height: 200px;
-            max-height: 400px;
-        }
-
-        .agent-chat-panel .tmux-input-container {
-            padding: 10px;
-            background: #2d4a3e;
-            border-top: 1px solid #4a7c6f;
-        }
-
-        .agent-chat-panel .tmux-input {
-            width: 100%;
-            padding: 8px 12px;
-            background: #1e3a2f;
-            border: 1px solid #4a7c6f;
-            border-radius: 4px;
-            color: #e8e4d9;
-            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-            font-size: 12px;
-        }
-
-        .agent-chat-panel .tmux-input:focus {
-            outline: none;
-            border-color: #a8d5ba;
-        }
-
-        .agent-chat-panel .no-agent-message {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 100%;
-            min-height: 200px;
-            text-align: center;
-            color: #8eb89c;
-            padding: 20px;
-        }
-
-        .agent-chat-panel .no-agent-message p {
-            font-size: 13px;
-            margin-bottom: 10px;
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--btn-bg-active);
         }
     </style>
 </head>
@@ -720,9 +302,9 @@
                      data-has-agent="{{ 'true' if issue.assigned_agent else 'false' }}"
                      draggable="{{ 'true' if issue.stage.value in ['plan_review', 'implementation_review'] else 'false' }}"
                      onclick="openIssueModal({{ issue.number }})">
-                    <div class="agent-light {{ 'on' if issue.assigned_agent else 'off' }}"
+                    <div class="agent-light {% if issue.tmux_active %}on{% elif issue.assigned_agent %}stalled{% else %}off{% endif %}"
                          onclick="event.stopPropagation(); toggleAgent('{{ issue.number }}', this)"
-                         title="{{ 'Agent running - click to view' if issue.assigned_agent else 'Click to start agent' }}"></div>
+                         title="{% if issue.tmux_active %}Agent running - click to view{% elif issue.assigned_agent %}Agent assigned but inactive{% else %}Click to start agent{% endif %}"></div>
                     <div class="card-number">#{{ issue.number }}</div>
                     <div class="card-title">{{ issue.title }}</div>
                     <div class="card-badges">

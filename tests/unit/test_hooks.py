@@ -435,7 +435,12 @@ class TestExecuteExitHooks:
         from agenttree.hooks import execute_exit_hooks, ValidationError
         from agenttree.config import Config, StageConfig, SubstageConfig
 
-        config = Config()
+        # Create config with stages (stages are now required)
+        config = Config(stages=[
+            StageConfig(name="implement", substages={
+                "code": SubstageConfig(name="code", pre_completion=[{"file_exists": "test.md"}])
+            })
+        ])
         mock_load_config.return_value = config
         mock_get_dir.return_value = Path("/tmp/issue")
         mock_execute_hooks.return_value = ["Error 1"]
@@ -457,9 +462,14 @@ class TestExecuteExitHooks:
     ):
         """Should format multiple errors with numbered list."""
         from agenttree.hooks import execute_exit_hooks, ValidationError
-        from agenttree.config import Config
+        from agenttree.config import Config, StageConfig, SubstageConfig
 
-        config = Config()
+        # Create config with stages (stages are now required)
+        config = Config(stages=[
+            StageConfig(name="implement", substages={
+                "code": SubstageConfig(name="code", pre_completion=[{"file_exists": "test.md"}])
+            })
+        ])
         mock_load_config.return_value = config
         mock_get_dir.return_value = Path("/tmp/issue")
         mock_execute_hooks.return_value = ["Error 1", "Error 2"]
@@ -1454,9 +1464,14 @@ class TestPreCompletionPostStartHooks:
     ):
         """execute_exit_hooks should use pre_completion field."""
         from agenttree.hooks import execute_exit_hooks
-        from agenttree.config import Config
+        from agenttree.config import Config, StageConfig, SubstageConfig
 
-        config = Config()
+        # Create config with stages (stages are now required)
+        config = Config(stages=[
+            StageConfig(name="implement", substages={
+                "code": SubstageConfig(name="code", pre_completion=[{"file_exists": "test.md"}])
+            })
+        ])
         mock_load_config.return_value = config
         mock_get_dir.return_value = Path("/tmp/issue")
         mock_execute_hooks.return_value = []
@@ -1470,9 +1485,10 @@ class TestPreCompletionPostStartHooks:
         execute_exit_hooks(issue, "implement", "code")
 
         # Verify execute_hooks was called with "pre_completion" event
-        mock_execute_hooks.assert_called_once()
-        call_args = mock_execute_hooks.call_args
-        assert call_args[0][3] == "pre_completion"
+        # May be called multiple times (substage + stage level)
+        mock_execute_hooks.assert_called()
+        for call in mock_execute_hooks.call_args_list:
+            assert call[0][3] == "pre_completion"
 
     @patch('agenttree.hooks.execute_hooks')
     @patch('agenttree.config.load_config')
@@ -1482,9 +1498,14 @@ class TestPreCompletionPostStartHooks:
     ):
         """execute_enter_hooks should use post_start field."""
         from agenttree.hooks import execute_enter_hooks
-        from agenttree.config import Config
+        from agenttree.config import Config, StageConfig, SubstageConfig
 
-        config = Config()
+        # Create config with stages (stages are now required)
+        config = Config(stages=[
+            StageConfig(name="implement", substages={
+                "code": SubstageConfig(name="code", post_start=[{"create_file": {"template": "t.md", "dest": "d.md"}}])
+            })
+        ])
         mock_load_config.return_value = config
         mock_get_dir.return_value = Path("/tmp/issue")
         mock_execute_hooks.return_value = []

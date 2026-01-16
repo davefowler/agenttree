@@ -48,6 +48,14 @@ agenttree web
 # Open http://127.0.0.1:8080
 ```
 
+**Kanban View** - Drag-and-drop issues across workflow stages:
+
+![Kanban View](docs/images/kanban.png)
+
+**Flow View** - Focus on review items with issue details and agent chat:
+
+![Flow View](docs/images/flow.png)
+
 **Features:**
 - Live agent status updates
 - Real-time tmux streaming via WebSocket

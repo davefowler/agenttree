@@ -52,3 +52,4 @@ Thumbs.db
 # AgentTree issue tracking (separate git repo)
 _agenttree
 .worktrees/
+.playwright-mcp/
