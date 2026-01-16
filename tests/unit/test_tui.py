@@ -40,7 +40,7 @@ def sample_issues() -> list[Issue]:
             stage="implement",
             substage="code",
             priority=Priority.MEDIUM,
-            assigned_agent=1,
+            assigned_agent="1",
         ),
         Issue(
             id="003",
