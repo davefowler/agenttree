@@ -149,6 +149,7 @@ stages:
 
   - name: implementation_review
     human_review: true
+    host: controller  # Host handles PR creation (agents can't push)
     post_start:
       - create_pr:
     pre_completion:

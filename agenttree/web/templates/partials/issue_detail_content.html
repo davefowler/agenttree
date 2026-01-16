@@ -8,15 +8,15 @@
                     #{{ issue.number }}: {{ issue.title }}
                 </div>
                 <div class="detail-title-actions">
+                    <div class="agent-light-large {% if issue.tmux_active %}on{% elif issue.assigned_agent %}stalled{% else %}off{% endif %}"
+                         onclick="toggleAgentFromDetail('{{ issue.number }}', this)"
+                         title="{% if issue.tmux_active %}Agent running{% elif issue.assigned_agent %}Agent stalled - click to restart{% else %}Click to start agent{% endif %}">
+                    </div>
                     <button class="chat-toggle-icon" onclick="toggleAgentChat('{{ issue.number }}')" title="Toggle agent chat">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
                         </svg>
                     </button>
-                    <div class="agent-light-large {% if issue.tmux_active %}on{% elif issue.assigned_agent %}stalled{% else %}off{% endif %}"
-                         onclick="toggleAgentFromDetail('{{ issue.number }}', this)"
-                         title="{% if issue.tmux_active %}Agent running{% elif issue.assigned_agent %}Agent stalled - click to restart{% else %}Click to start agent{% endif %}">
-                    </div>
                 </div>
             </div>
             <div class="detail-meta-row">
@@ -45,7 +45,7 @@
         <div class="file-tabs-container">
             <div class="file-tabs" id="file-tabs-{{ issue.number }}">
                 {% for file in files %}
-                <button class="file-tab{% if loop.first %} active{% endif %}"
+                <button class="file-tab{% if loop.last %} active{% endif %}"
                         onclick="selectFileTab(event, '{{ issue.number }}', '{{ file.name }}')">
                     {{ file.display_name }}
                 </button>

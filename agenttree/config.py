@@ -43,6 +43,7 @@ class StageConfig(BaseModel):
     skill: Optional[str] = None   # Override skill file path
     human_review: bool = False    # Requires human approval to exit
     terminal: bool = False        # Cannot progress from here (accepted, not_doing)
+    host: str = "agent"           # Who executes this stage: "agent" (in container) or "controller" (host)
     substages: Dict[str, SubstageConfig] = Field(default_factory=dict)
     pre_completion: list[dict] = Field(default_factory=list)  # Stage-level hooks before completing
     post_start: list[dict] = Field(default_factory=list)  # Stage-level hooks after starting
@@ -240,6 +241,14 @@ class Config(BaseModel):
             List of stage names that require human review
         """
         return [stage.name for stage in self.stages if stage.human_review]
+
+    def get_controller_stages(self) -> list[str]:
+        """Get list of stages executed by the controller (host), not agent.
+
+        Returns:
+            List of stage names where host=controller
+        """
+        return [stage.name for stage in self.stages if stage.host == "controller"]
 
     def substages_for(self, stage_name: str) -> list[str]:
         """Get ordered list of substage names for a stage.

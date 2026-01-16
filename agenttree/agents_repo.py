@@ -108,7 +108,7 @@ def sync_agents_repo(
         # If pull-only, check for pending pushes, PRs, and merged PRs, then we're done
         if pull_only:
             push_pending_branches(agents_dir)
-            check_pending_prs(agents_dir)
+            check_controller_stages(agents_dir)
             check_merged_prs(agents_dir)
             return True
 
@@ -131,7 +131,7 @@ def sync_agents_repo(
         # After successful sync, push pending branches, check for issues needing PRs,
         # and check for externally merged/closed PRs
         push_pending_branches(agents_dir)
-        check_pending_prs(agents_dir)
+        check_controller_stages(agents_dir)
         check_merged_prs(agents_dir)
 
         return True
@@ -144,22 +144,25 @@ def sync_agents_repo(
         return False
 
 
-def check_pending_prs(agents_dir: Path) -> int:
-    """Check for issues at implementation_review without PRs and create them.
+def check_controller_stages(agents_dir: Path) -> int:
+    """Execute post_start hooks for issues in controller stages.
 
-    Called from host (sync, web server, etc.) to create PRs for issues
-    where agents couldn't push from containers.
+    Controller stages (host: controller) have their hooks executed by the host,
+    not by agents. This is for operations agents can't do (like pushing/creating PRs).
 
-    Bails early if running inside a container (containers can't push anyway).
+    Called from host (sync, web server, etc.) on every sync.
 
     Args:
         agents_dir: Path to _agenttree directory
 
     Returns:
-        Number of PRs created
+        Number of issues processed
     """
-    # Bail early if running in a container - no point checking since we can't push
-    from agenttree.hooks import is_running_in_container
+    # Bail early if running in a container - host operations only
+    from agenttree.hooks import is_running_in_container, execute_enter_hooks
+    from agenttree.config import load_config
+    from agenttree.issues import Issue
+
     if is_running_in_container():
         return 0
 
@@ -167,9 +170,15 @@ def check_pending_prs(agents_dir: Path) -> int:
     if not issues_dir.exists():
         return 0
 
+    config = load_config()
+    controller_stages = config.get_controller_stages()
+
+    if not controller_stages:
+        return 0
+
     import yaml
 
-    prs_created = 0
+    processed = 0
 
     for issue_dir in issues_dir.iterdir():
         if not issue_dir.is_dir():
@@ -183,17 +192,19 @@ def check_pending_prs(agents_dir: Path) -> int:
             with open(issue_yaml) as f:
                 data = yaml.safe_load(f)
 
-            # Check if at implementation_review without PR
-            if data.get("stage") == "implementation_review" and not data.get("pr_number"):
-                issue_id = data.get("id", "")
-                if issue_id:
-                    from agenttree.hooks import ensure_pr_for_issue
-                    if ensure_pr_for_issue(str(issue_id)):
-                        prs_created += 1
+            stage = data.get("stage", "")
+
+            # Check if in a controller stage
+            if stage in controller_stages:
+                issue = Issue(**data)
+                # Execute the post_start hooks for this stage (host side)
+                execute_enter_hooks(issue, stage, data.get("substage"))
+                processed += 1
+
         except Exception:
             continue
 
-    return prs_created
+    return processed
 
 
 def _update_issue_stage_direct(yaml_path: Path, data: dict, new_stage: str) -> None:

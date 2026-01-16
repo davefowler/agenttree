@@ -90,6 +90,42 @@ class ContainerRuntime:
         """
         return self.runtime is not None
 
+    def ensure_system_running(self) -> bool:
+        """Ensure the container system service is running (Apple Container only).
+
+        For Apple Container, the system service must be started before running containers.
+        This method checks if it's running and starts it if not.
+
+        Returns:
+            True if system is running or not applicable, False if failed to start
+        """
+        if self.runtime != "container":
+            return True  # Only applicable to Apple Container
+
+        try:
+            # Check if system is already running
+            result = subprocess.run(
+                ["container", "system", "status"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if "apiserver is running" in result.stdout:
+                return True
+
+            # Not running, try to start it
+            print("Starting Apple Container system service...")
+            start_result = subprocess.run(
+                ["container", "system", "start"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            return start_result.returncode == 0
+        except Exception as e:
+            print(f"Warning: Could not check/start container system: {e}")
+            return False
+
     def build_run_command(
         self,
         worktree_path: Path,

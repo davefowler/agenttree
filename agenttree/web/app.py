@@ -628,16 +628,17 @@ async def issue_detail(
     # Get markdown files list
     files = get_issue_files(issue_id)
 
-    # Load problem.md content (first tab)
+    # Load last file content (rightmost tab selected by default)
     issue_dir = issue_crud.get_issue_dir(issue_id)
-    problem_content = ""
-    if issue_dir:
-        problem_path = issue_dir / "problem.md"
-        if problem_path.exists():
-            problem_content = problem_path.read_text()
+    default_content = ""
+    if issue_dir and files:
+        last_file = files[-1]
+        file_path = issue_dir / last_file["name"]
+        if file_path.exists():
+            default_content = file_path.read_text()
 
     web_issue = convert_issue_to_web(issue)
-    web_issue.body = problem_content
+    web_issue.body = default_content
 
     return templates.TemplateResponse(
         "partials/issue_detail.html",
@@ -659,16 +660,17 @@ async def flow_issue_detail(
     # Get markdown files list
     files = get_issue_files(issue_id)
 
-    # Load problem.md content (first tab)
+    # Load last file content (rightmost tab selected by default)
     issue_dir = issue_crud.get_issue_dir(issue_id)
-    problem_content = ""
-    if issue_dir:
-        problem_path = issue_dir / "problem.md"
-        if problem_path.exists():
-            problem_content = problem_path.read_text()
+    default_content = ""
+    if issue_dir and files:
+        last_file = files[-1]
+        file_path = issue_dir / last_file["name"]
+        if file_path.exists():
+            default_content = file_path.read_text()
 
     web_issue = convert_issue_to_web(issue)
-    web_issue.body = problem_content
+    web_issue.body = default_content
 
     return templates.TemplateResponse(
         "partials/flow_issue_detail.html",

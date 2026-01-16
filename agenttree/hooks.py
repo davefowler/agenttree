@@ -150,44 +150,23 @@ def parse_hook(hook: Dict[str, Any]) -> tuple[str, Dict[str, Any]]:
 
 
 def _action_create_pr(issue_dir: Path, issue_id: str = "", issue_title: str = "", branch: str = "", **kwargs: Any) -> None:
-    """Prepare for PR creation (agent hook - runs in container).
+    """Create PR for an issue (controller stage hook - runs on host).
 
-    Since agents run in containers without push access, this hook just:
-    1. Auto-commits any uncommitted changes
-    2. Stores branch info in issue metadata
+    This hook runs on host for controller stages (host: controller).
+    Agents can't push, so PR creation is handled by the host.
 
-    Actual PR creation happens on host via:
-    - `agenttree sync` → `check_pending_prs()` → `ensure_pr_for_issue()`
-
-    The worktree_dir is already set when agent starts (cli.py:790).
+    Workflow:
+    1. Agent advances to implementation_review (does nothing - controller stage)
+    2. Host sync calls check_controller_stages()
+    3. For issues in controller stages, host runs post_start hooks
+    4. This hook (create_pr) calls ensure_pr_for_issue() to create the PR
     """
-    from agenttree.issues import update_issue_metadata
+    if not issue_id:
+        console.print(f"[yellow]create_pr hook: no issue_id provided[/yellow]")
+        return
 
-    # Get current branch if not provided
-    if not branch:
-        branch = get_current_branch()
-
-    # Auto-commit any uncommitted changes
-    if has_uncommitted_changes():
-        console.print(f"[dim]Auto-committing uncommitted changes...[/dim]")
-        subprocess.run(
-            ["git", "add", "-A"],
-            capture_output=True,
-            check=False
-        )
-        subprocess.run(
-            ["git", "commit", "-m", f"Issue #{issue_id}: auto-commit before PR"],
-            capture_output=True,
-            check=False
-        )
-
-    # Update issue with branch info (worktree_dir is already set when agent starts)
-    if issue_id:
-        update_issue_metadata(issue_id, branch=branch)
-
-    console.print(f"[green]✓ Ready for PR creation[/green]")
-    console.print(f"[dim]Branch: {branch}[/dim]")
-    console.print(f"[dim]PR will be created by host on next sync[/dim]")
+    # Delegate to ensure_pr_for_issue which handles the actual PR creation
+    ensure_pr_for_issue(issue_id)
 
 
 def _action_merge_pr(pr_number: Optional[int], **kwargs: Any) -> None:
@@ -1179,10 +1158,10 @@ def is_running_in_container() -> bool:
 
 
 def ensure_pr_for_issue(issue_id: str) -> bool:
-    """Ensure a PR exists for an issue at implementation_review stage.
+    """Ensure a PR exists for an issue in a controller stage.
 
-    Called by host (sync or web server) to create PRs for issues
-    where the agent couldn't push.
+    Called by host via create_pr hook for controller stages (host: controller).
+    Stage check is done by check_controller_stages(), not here.
 
     Args:
         issue_id: Issue ID to create PR for
@@ -1200,13 +1179,9 @@ def ensure_pr_for_issue(issue_id: str) -> bool:
     if not issue:
         return False
 
-    # Already has PR
+    # Already has PR - idempotent
     if issue.pr_number:
         return True
-
-    # Not at implementation_review stage
-    if issue.stage != "implementation_review":
-        return False
 
     # Need branch info (silently skip if not started yet)
     if not issue.branch:

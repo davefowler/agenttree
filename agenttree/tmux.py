@@ -277,6 +277,9 @@ class TmuxManager:
         # Get tool config
         tool_config = self.config.get_tool_config(tool_name)
 
+        # Ensure container system is running (Apple Container)
+        container_runtime.ensure_system_running()
+
         # Build container command with model from config
         # The container runs the AI tool with --dangerously-skip-permissions
         # since it's already isolated in a container
@@ -375,6 +378,9 @@ class TmuxManager:
 
         # Get tool config
         tool_config = self.config.get_tool_config(tool_name)
+
+        # Ensure container system is running (Apple Container)
+        container_runtime.ensure_system_running()
 
         # Build container command with model from config
         container_cmd = container_runtime.build_run_command(
