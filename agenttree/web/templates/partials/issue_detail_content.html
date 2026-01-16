@@ -3,39 +3,49 @@
     <div class="issue-detail-main">
         <!-- Issue header -->
         <div class="detail-header">
-            <div class="detail-title">
-                #{{ issue.number }}: {{ issue.title }}
+            <div class="detail-title-row">
+                <div class="detail-title">
+                    #{{ issue.number }}: {{ issue.title }}
+                </div>
+                <div class="detail-title-actions">
+                    <div class="agent-light-large {% if issue.tmux_active %}on{% elif issue.assigned_agent %}stalled{% else %}off{% endif %}"
+                         onclick="toggleAgentFromDetail('{{ issue.number }}', this)"
+                         title="{% if issue.tmux_active %}Agent running{% elif issue.assigned_agent %}Agent stalled - click to restart{% else %}Click to start agent{% endif %}">
+                    </div>
+                    <button class="chat-toggle-icon" onclick="toggleAgentChat('{{ issue.number }}')" title="Toggle agent chat">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                        </svg>
+                    </button>
+                </div>
             </div>
-            <div class="detail-meta">
-                <span>Stage: {{ issue.stage.value.replace('_', ' ').title() }}</span>
-                {% if issue.assigned_agent %}
-                <span>Agent: {{ issue.assigned_agent }}</span>
-                {% endif %}
-                {% if issue.pr_url %}
-                <span><a href="{{ issue.pr_url }}" target="_blank">PR #{{ issue.pr_number }}</a></span>
+            <div class="detail-meta-row">
+                <div class="detail-meta">
+                    <span>Stage: {{ issue.stage.value.replace('_', ' ').title() }}</span>
+                    {% if issue.assigned_agent %}
+                    <span>Agent: {{ issue.assigned_agent }}</span>
+                    {% endif %}
+                    {% if issue.pr_url %}
+                    <span><a href="{{ issue.pr_url }}" target="_blank">PR #{{ issue.pr_number }}</a></span>
+                    {% endif %}
+                </div>
+                {% if issue.is_review %}
+                <button class="btn btn-approve"
+                        hx-post="/api/issues/{{ issue.number }}/approve"
+                        hx-target="#approve-status-{{ issue.number }}"
+                        hx-swap="innerHTML">
+                    Approve
+                </button>
+                <span id="approve-status-{{ issue.number }}"></span>
                 {% endif %}
             </div>
-        </div>
-
-        <!-- Actions -->
-        <div class="detail-actions">
-            <button class="btn btn-primary"
-                    hx-post="/api/issues/{{ issue.number }}/start"
-                    hx-target="#dispatch-status-{{ issue.number }}"
-                    hx-swap="innerHTML">
-                Start Agent
-            </button>
-            <button class="btn btn-chat-toggle" onclick="toggleAgentChat('{{ issue.number }}')">
-                {% if issue.assigned_agent %}Chat{% else %}Chat{% endif %}
-            </button>
-            <span id="dispatch-status-{{ issue.number }}"></span>
         </div>
 
         <!-- File tabs -->
         <div class="file-tabs-container">
             <div class="file-tabs" id="file-tabs-{{ issue.number }}">
                 {% for file in files %}
-                <button class="file-tab{% if loop.first %} active{% endif %}"
+                <button class="file-tab{% if loop.last %} active{% endif %}"
                         onclick="selectFileTab(event, '{{ issue.number }}', '{{ file.name }}')">
                     {{ file.display_name }}
                 </button>
@@ -48,22 +58,20 @@
         <!-- File content -->
         <div class="issue-content file-content" id="file-content-{{ issue.number }}">
             {% if issue.body %}
-            <div class="markdown-content">
-                <div class="markdown-rendered"></div>
-                <script type="text/template">{{ issue.body }}</script>
-                <script>
-                    (function() {
-                        const script = document.currentScript;
-                        const source = script.previousElementSibling.textContent;
-                        const display = script.previousElementSibling.previousElementSibling;
-                        if (typeof marked !== 'undefined') {
-                            display.innerHTML = marked.parse(source);
-                        } else {
-                            display.innerHTML = '<pre class="markdown-raw">' + source + '</pre>';
-                        }
-                    })();
-                </script>
-            </div>
+            <div class="markdown-rendered"></div>
+            <script type="text/template">{{ issue.body }}</script>
+            <script>
+                (function() {
+                    const script = document.currentScript;
+                    const source = script.previousElementSibling.textContent;
+                    const display = script.previousElementSibling.previousElementSibling;
+                    if (typeof marked !== 'undefined') {
+                        display.innerHTML = marked.parse(source);
+                    } else {
+                        display.innerHTML = '<pre class="markdown-raw">' + source + '</pre>';
+                    }
+                })();
+            </script>
             {% else %}
             <div class="empty-state">
                 <p>No content available</p>

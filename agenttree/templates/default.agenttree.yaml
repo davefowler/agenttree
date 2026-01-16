@@ -149,11 +149,15 @@ stages:
 
   - name: implementation_review
     human_review: true
+    host: controller  # Host handles PR creation (agents can't push)
+    post_start:
+      - create_pr:
     pre_completion:
       - pr_approved:
 
   - name: accepted
-    triggers_merge: true
+    terminal: true
+    host: controller  # Host handles merge/cleanup (agents can't push)
     post_start:
       - merge_pr:
       - cleanup_agent:

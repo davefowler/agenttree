@@ -200,6 +200,43 @@
             }
         }
 
+        // Agent light toggle (for detail view)
+        async function toggleAgentFromDetail(issueNumber, lightElement) {
+            const isOn = lightElement.classList.contains('on');
+
+            if (isOn) {
+                toggleAgentChat(issueNumber);
+                return;
+            }
+
+            lightElement.classList.remove('off', 'stalled');
+            lightElement.classList.add('starting');
+            lightElement.title = 'Starting agent...';
+
+            try {
+                const response = await fetch(`/api/issues/${issueNumber}/start`, {
+                    method: 'POST'
+                });
+
+                if (response.ok) {
+                    setTimeout(() => {
+                        lightElement.classList.remove('starting');
+                        lightElement.classList.add('on');
+                        lightElement.title = 'Agent running';
+                    }, 2000);
+                } else {
+                    lightElement.classList.remove('starting');
+                    lightElement.classList.add('stalled');
+                    lightElement.title = 'Failed to start - click to retry';
+                }
+            } catch (error) {
+                console.error('Error starting agent:', error);
+                lightElement.classList.remove('starting');
+                lightElement.classList.add('stalled');
+                lightElement.title = 'Error - click to retry';
+            }
+        }
+
         // Handle issue selection
         document.body.addEventListener('htmx:afterSwap', function(event) {
             if (event.detail.target.classList.contains('flow-sidebar')) {
