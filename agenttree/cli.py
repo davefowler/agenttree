@@ -49,6 +49,7 @@ from agenttree.hooks import (
     ValidationError,
     is_running_in_container,
 )
+from agenttree.preflight import run_preflight
 
 console = Console()
 
@@ -635,14 +636,51 @@ def setup(agent_numbers: tuple) -> None:
             console.print(f"[red]✗ Failed to set up agent {agent_num}: {e}[/red]")
 
 
+@main.command()
+def preflight() -> None:
+    """Run environment preflight checks.
+
+    Validates that the environment is properly set up for agent work:
+    - Python version meets minimum requirement
+    - Dependencies are installed
+    - Git is available and working
+    - agenttree CLI is accessible
+    - Test runner (pytest) is available
+    """
+    console.print("[bold]Running preflight checks...[/bold]\n")
+
+    results = run_preflight()
+    all_passed = True
+
+    for result in results:
+        if result.passed:
+            console.print(f"[green]✓[/green] {result.name}: {result.message}")
+        else:
+            console.print(f"[red]✗[/red] {result.name}: {result.message}")
+            if result.fix_hint:
+                console.print(f"  [dim]Hint: {result.fix_hint}[/dim]")
+            all_passed = False
+
+    console.print("")
+
+    if all_passed:
+        console.print("[green]✓ All preflight checks passed[/green]")
+        sys.exit(0)
+    else:
+        console.print("[red]✗ Some preflight checks failed[/red]")
+        sys.exit(1)
+
+
 @main.command(name="start")
 @click.argument("issue_id", type=str)
 @click.option("--tool", help="AI tool to use (default: from config)")
 @click.option("--force", is_flag=True, help="Force dispatch even if agent already exists")
+@click.option("--skip-preflight", is_flag=True, help="Skip preflight environment checks")
 def start_agent(
     issue_id: str,
     tool: Optional[str],
     force: bool,
+    skip_preflight: bool,
 ) -> None:
     """Start an agent for an issue (creates container + worktree).
 
@@ -662,9 +700,25 @@ def start_agent(
         get_issue_names,
     )
     from agenttree.worktree import create_worktree, update_worktree_with_main
+    from agenttree.issues import assign_agent
 
     repo_path = Path.cwd()
     config = load_config(repo_path)
+
+    # Run preflight checks unless skipped
+    if not skip_preflight:
+        console.print("[dim]Running preflight checks...[/dim]")
+        results = run_preflight()
+        failed = [r for r in results if not r.passed]
+        if failed:
+            console.print("[red]Preflight checks failed:[/red]")
+            for result in failed:
+                console.print(f"  [red]✗[/red] {result.name}: {result.message}")
+                if result.fix_hint:
+                    console.print(f"    [dim]Hint: {result.fix_hint}[/dim]")
+            console.print("\n[yellow]Use --skip-preflight to bypass these checks[/yellow]")
+            sys.exit(1)
+        console.print("[green]✓ Preflight checks passed[/green]\n")
 
     # Normalize issue ID (strip leading zeros for lookup, keep for display)
     issue_id_normalized = issue_id.lstrip("0") or "0"
@@ -744,6 +798,9 @@ def start_agent(
         port=port,
         project=config.project,
     )
+
+    # Mark issue as having an assigned agent (for web UI status light)
+    assign_agent(issue.id, int(issue.id))
 
     console.print(f"[green]✓ Dispatching agent for issue #{issue.id}: {issue.title}[/green]")
 
@@ -1203,7 +1260,14 @@ def issue() -> None:
     "--solutions",
     help="Possible solutions (fills problem.md)"
 )
+@click.option(
+    "--depends-on", "-d",
+    multiple=True,
+    help="Issue ID that must be completed first (can be used multiple times)"
+)
+@click.pass_context
 def issue_create(
+    ctx: click.Context,
     title: str,
     priority: str,
     label: tuple,
@@ -1211,6 +1275,7 @@ def issue_create(
     problem: Optional[str],
     context: Optional[str],
     solutions: Optional[str],
+    depends_on: tuple,
 ) -> None:
     """Create a new issue.
 
@@ -1218,26 +1283,73 @@ def issue_create(
     - issue.yaml (metadata)
     - problem.md (from template or provided content)
 
+    After creating, fill in problem.md then run 'agenttree start <id>' to
+    dispatch an agent.
+
+    Issues with unmet dependencies are placed in backlog and auto-started when
+    all dependencies are completed.
+
     Example:
         agenttree issue create "Fix login validation"
         agenttree issue create "Add dark mode" -p high -l ui -l feature
         agenttree issue create "Quick fix" --stage implement
         agenttree issue create "Bug" --problem "The login fails" --context "On Chrome only"
+        agenttree issue create "Feature B" --depends-on 053 --depends-on 060
     """
+    from agenttree.issues import check_dependencies_met
+
+    dependencies = list(depends_on) if depends_on else None
+
+    # If dependencies are specified, check if they're all met
+    # If not, force the issue to backlog stage
+    effective_stage = stage
+    has_unmet_deps = False
+
+    if dependencies:
+        # Create a temporary issue object just to check dependencies
+        # We'll use the normalized deps for the check
+        normalized_deps = []
+        for dep in dependencies:
+            dep_num = dep.lstrip("0") or "0"
+            normalized_deps.append(f"{int(dep_num):03d}")
+
+        # Check each dependency
+        unmet = []
+        for dep_id in normalized_deps:
+            dep_issue = get_issue_func(dep_id)
+            if dep_issue is None or dep_issue.stage != "accepted":
+                unmet.append(dep_id)
+
+        if unmet:
+            has_unmet_deps = True
+            effective_stage = "backlog"
+            console.print(f"[yellow]Dependencies not met: {', '.join(unmet)}[/yellow]")
+            console.print(f"[dim]Issue will be placed in backlog until dependencies complete[/dim]")
+
     try:
         issue = create_issue_func(
             title=title,
             priority=Priority(priority),
             labels=list(label) if label else None,
-            stage=stage,
+            stage=effective_stage,
             problem=problem,
             context=context,
             solutions=solutions,
+            dependencies=dependencies,
         )
         console.print(f"[green]✓ Created issue {issue.id}: {issue.title}[/green]")
         console.print(f"[dim]  _agenttree/issues/{issue.id}-{issue.slug}/[/dim]")
         console.print(f"[dim]  Stage: {issue.stage}[/dim]")
-        console.print(f"\n[dim]Dispatch an agent: agenttree start {issue.id}[/dim]")
+        if issue.dependencies:
+            console.print(f"[dim]  Dependencies: {', '.join(issue.dependencies)}[/dim]")
+
+        # Show next steps
+        if has_unmet_deps:
+            console.print(f"\n[yellow]Issue blocked by dependencies - will auto-start when deps complete[/yellow]")
+        else:
+            console.print(f"\n[bold]Next steps:[/bold]")
+            console.print(f"  1. Fill in problem.md: [cyan]_agenttree/issues/{issue.id}-{issue.slug}/problem.md[/cyan]")
+            console.print(f"  2. Start agent: [cyan]agenttree start {issue.id}[/cyan]")
 
     except Exception as e:
         console.print(f"[red]Error creating issue: {e}[/red]")
@@ -1358,6 +1470,15 @@ def issue_show(issue_id: str) -> None:
     if issue.labels:
         console.print(f"[bold]Labels:[/bold] {', '.join(issue.labels)}")
 
+    if issue.dependencies:
+        from agenttree.issues import check_dependencies_met
+        all_met, unmet = check_dependencies_met(issue)
+        deps_str = ", ".join(issue.dependencies)
+        if all_met:
+            console.print(f"[bold]Dependencies:[/bold] {deps_str} [green](all met)[/green]")
+        else:
+            console.print(f"[bold]Dependencies:[/bold] {deps_str} [yellow](waiting on: {', '.join(unmet)})[/yellow]")
+
     if issue.branch:
         console.print(f"[bold]Branch:[/bold] {issue.branch}")
 
@@ -1436,6 +1557,62 @@ def issue_doc(doc_type: str, issue_id: str) -> None:
 
     console.print(f"\n[bold]Path:[/bold] {doc_file}")
     console.print(f"\n[dim]Write your {doc_type} documentation to this file.[/dim]")
+
+
+@issue.command("check-deps")
+def issue_check_deps() -> None:
+    """Check all blocked issues and their dependency status.
+
+    Shows issues in backlog that have dependencies and whether
+    those dependencies are met or still pending.
+
+    Example:
+        agenttree issue check-deps
+    """
+    from agenttree.issues import check_dependencies_met, get_ready_issues
+
+    blocked_issues = list_issues_func(stage="backlog")
+
+    if not blocked_issues:
+        console.print("[dim]No issues in backlog[/dim]")
+        return
+
+    # Filter to only issues with dependencies
+    issues_with_deps = [i for i in blocked_issues if i.dependencies]
+
+    if not issues_with_deps:
+        console.print("[dim]No issues in backlog with dependencies[/dim]")
+        return
+
+    table = Table(title="Blocked Issues in Backlog")
+    table.add_column("ID", style="cyan")
+    table.add_column("Title", style="white")
+    table.add_column("Dependencies", style="yellow")
+    table.add_column("Status", style="magenta")
+
+    for issue in issues_with_deps:
+        all_met, unmet = check_dependencies_met(issue)
+        deps_str = ", ".join(issue.dependencies)
+
+        if all_met:
+            status = "[green]✓ Ready to start[/green]"
+        else:
+            status = f"[red]Blocked by: {', '.join(unmet)}[/red]"
+
+        table.add_row(
+            issue.id,
+            issue.title[:35] + ("..." if len(issue.title) > 35 else ""),
+            deps_str,
+            status,
+        )
+
+    console.print(table)
+
+    # Show ready issues
+    ready = get_ready_issues()
+    if ready:
+        console.print(f"\n[green]Ready to start: {', '.join(i.id for i in ready)}[/green]")
+        console.print("[dim]These will auto-start when their dependencies are accepted[/dim]")
 
 
 # =============================================================================
@@ -1554,7 +1731,7 @@ def stage_begin(stage: str, issue_id: Optional[str]) -> None:
 
     # Run on_enter hooks (e.g., create plan.md for research stage)
     # Note: We skip pre_transition hooks since begin allows arbitrary stage jumps
-    execute_post_hooks(updated, from_stage, target_stage, substage)
+    execute_post_hooks(updated, target_stage, substage)
 
     stage_str = target_stage
     if substage:
@@ -1696,8 +1873,9 @@ def stage_next(issue_id: Optional[str], reassess: bool) -> None:
 
     # Execute pre-hooks (can block with ValidationError)
     from_stage = issue.stage
+    from_substage = issue.substage
     try:
-        execute_pre_hooks(issue, from_stage, next_stage)
+        execute_pre_hooks(issue, from_stage, from_substage)
     except ValidationError as e:
         console.print(f"[red]Cannot proceed: {e}[/red]")
         sys.exit(1)
@@ -1712,7 +1890,7 @@ def stage_next(issue_id: Optional[str], reassess: bool) -> None:
     update_session_stage(issue_id, next_stage, next_substage)
 
     # Execute post-hooks (after stage updated)
-    execute_post_hooks(updated, from_stage, next_stage, next_substage)
+    execute_post_hooks(updated, next_stage, next_substage)
 
     stage_str = next_stage
     if next_substage:
@@ -1745,7 +1923,7 @@ def stage_next(issue_id: Optional[str], reassess: bool) -> None:
 def approve_issue(issue_id: str) -> None:
     """Approve an issue at a human review stage.
 
-    Only works at human review stages (problem_review, plan_review, implementation_review).
+    Only works at human review stages (plan_review, implementation_review).
     Cannot be run from inside a container - humans only.
 
     Example:
@@ -1775,8 +1953,9 @@ def approve_issue(issue_id: str) -> None:
 
     # Execute pre-hooks
     from_stage = issue.stage
+    from_substage = issue.substage
     try:
-        execute_pre_hooks(issue, from_stage, next_stage)
+        execute_pre_hooks(issue, from_stage, from_substage)
     except ValidationError as e:
         console.print(f"[red]Cannot approve: {e}[/red]")
         sys.exit(1)
@@ -1790,8 +1969,8 @@ def approve_issue(issue_id: str) -> None:
     # Update session
     update_session_stage(issue_id_normalized, next_stage, next_substage)
 
-    # Execute post-hooks
-    execute_post_hooks(updated, from_stage, next_stage, next_substage)
+    # Execute post-hooks (after stage updated)
+    execute_post_hooks(updated, next_stage, next_substage)
 
     stage_str = next_stage
     if next_substage:
@@ -1800,7 +1979,7 @@ def approve_issue(issue_id: str) -> None:
 
     # Notify agent to continue (if active)
     console.print(f"\n[dim]Notify the agent to continue:[/dim]")
-    console.print(f"  agenttree send {issue.id} 'Your work was approved! Run agenttree next for instructions.'")
+    console.print(f"  agenttree send {issue.id} 'Your work was approved! Run `agenttree next` for instructions.'")
 
 
 @main.command("defer")
@@ -1966,6 +2145,84 @@ def context_init(agent_num: Optional[int], port: Optional[int]) -> None:
     console.print(f"  _agenttree/ - Issues, skills, templates")
     console.print(f"  .env - AGENT_NUM={agent_num}, PORT={port}")
     console.print(f"\n[dim]Read CLAUDE.md for workflow instructions[/dim]")
+
+
+@main.command()
+@click.argument("extra_args", nargs=-1)
+def test(extra_args: tuple[str, ...]) -> None:
+    """Run the project's test commands.
+
+    Uses test_commands from .agenttree.yaml config.
+    Runs all commands and reports all errors (doesn't stop on first failure).
+    """
+    config = load_config()
+    commands = config.test_commands
+
+    if not commands:
+        console.print("[red]Error: test_commands not configured[/red]")
+        console.print("\nAdd to .agenttree.yaml:")
+        console.print("  test_commands:")
+        console.print("    - pytest")
+        sys.exit(1)
+
+    failed = []
+    for cmd in commands:
+        # Append extra arguments to each command
+        if extra_args:
+            cmd = f"{cmd} {' '.join(extra_args)}"
+
+        console.print(f"[dim]Running: {cmd}[/dim]")
+        result = subprocess.run(cmd, shell=True)
+
+        if result.returncode != 0:
+            failed.append(cmd)
+
+    if failed:
+        console.print(f"\n[red]Failed commands ({len(failed)}/{len(commands)}):[/red]")
+        for cmd in failed:
+            console.print(f"  - {cmd}")
+        sys.exit(1)
+
+    console.print(f"\n[green]All {len(commands)} test command(s) passed[/green]")
+
+
+@main.command()
+@click.argument("extra_args", nargs=-1)
+def lint(extra_args: tuple[str, ...]) -> None:
+    """Run the project's lint commands.
+
+    Uses lint_commands from .agenttree.yaml config.
+    Runs all commands and reports all errors (doesn't stop on first failure).
+    """
+    config = load_config()
+    commands = config.lint_commands
+
+    if not commands:
+        console.print("[red]Error: lint_commands not configured[/red]")
+        console.print("\nAdd to .agenttree.yaml:")
+        console.print("  lint_commands:")
+        console.print("    - ruff check .")
+        sys.exit(1)
+
+    failed = []
+    for cmd in commands:
+        # Append extra arguments to each command
+        if extra_args:
+            cmd = f"{cmd} {' '.join(extra_args)}"
+
+        console.print(f"[dim]Running: {cmd}[/dim]")
+        result = subprocess.run(cmd, shell=True)
+
+        if result.returncode != 0:
+            failed.append(cmd)
+
+    if failed:
+        console.print(f"\n[red]Failed commands ({len(failed)}/{len(commands)}):[/red]")
+        for cmd in failed:
+            console.print(f"  - {cmd}")
+        sys.exit(1)
+
+    console.print(f"\n[green]All {len(commands)} lint command(s) passed[/green]")
 
 
 if __name__ == "__main__":

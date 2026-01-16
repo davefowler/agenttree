@@ -239,8 +239,13 @@ class TestAgentsRepository:
         assert "push" in calls[2]
 
 
+@pytest.mark.usefixtures("host_environment")
 class TestSyncAgentsRepo:
-    """Tests for sync_agents_repo function."""
+    """Tests for sync_agents_repo function.
+
+    These tests simulate host environment (not container) since sync
+    operations are only performed on the host.
+    """
 
     @pytest.fixture
     def git_repo(self, tmp_path):

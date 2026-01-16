@@ -2,11 +2,116 @@ default_tool: claude
 default_model: opus
 port_range: 9001-9099
 project: agenttree
+worktrees_dir: .worktrees
+
+test_commands:
+  - uv run pytest
+
+lint_commands:
+  - uv run mypy agenttree
+
+# default_model (above) is used for all tools
 tools:
   aider:
-    command: aider --model sonnet
+    command: aider
     startup_prompt: /read TASK.md
   claude:
     command: claude
     startup_prompt: "Read TASK.md - it has your issue ID, stage, and workflow instructions. You MUST follow the staged workflow."
-worktrees_dir: .worktrees
+
+stages:
+  - name: backlog
+
+  - name: define
+    output: problem.md
+    substages:
+      refine: {}  # Human provides initial draft, agent refines
+
+  - name: research
+    output: research.md
+    on_enter:
+      - create_file:
+          template: research.md
+          dest: research.md
+    substages:
+      explore: {}
+      document: {}
+
+  - name: plan
+    output: spec.md
+    on_enter:
+      - create_file:
+          template: spec.md
+          dest: spec.md
+    substages:
+      draft: {}
+      refine: {}
+
+  - name: plan_assess
+    output: spec_review.md
+    on_enter:
+      - create_file:
+          template: spec_review.md
+          dest: spec_review.md
+
+  - name: plan_revise
+    output: spec.md
+
+  - name: plan_review
+    human_review: true
+    on_exit:
+      - file_exists: spec.md
+      - section_check:
+          file: spec.md
+          section: Approach
+          expect: not_empty
+      - rebase:  # Host-only: rebase onto main before implementation starts
+
+  - name: implement
+    on_exit:
+      - run: agenttree lint
+        optional: true
+        context: Lint
+      - run: agenttree test
+        optional: true
+        context: Tests
+      - create_pr:
+    substages:
+      setup: {}
+      code: {}
+      code_review:
+        output: review.md
+        on_enter:
+          - create_file:
+              template: review.md
+              dest: review.md
+      address_review: {}
+      wrapup:
+        on_exit:
+          - file_exists: review.md
+          - field_check:
+              file: review.md
+              path: average
+              min: 7
+      feedback:
+        output: feedback.md
+        on_exit:
+          - has_commits:
+          - file_exists: review.md
+          - section_check:
+              file: review.md
+              section: Critical Issues
+              expect: empty
+
+  - name: implementation_review
+    human_review: true
+    on_exit:
+      - pr_approved:
+
+  - name: accepted
+    triggers_merge: true
+    on_enter:
+      - merge_pr:
+
+  - name: not_doing
+    terminal: true

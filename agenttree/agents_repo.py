@@ -106,8 +106,9 @@ def sync_agents_repo(
                 print(f"Warning: Failed to pull _agenttree repo: {result.stderr}")
                 return False
 
-        # If pull-only, check for pending PRs and we're done
+        # If pull-only, check for pending pushes and PRs, then we're done
         if pull_only:
+            push_pending_branches(agents_dir)
             check_pending_prs(agents_dir)
             return True
 
@@ -127,7 +128,8 @@ def sync_agents_repo(
                 print(f"Warning: Failed to push changes: {push_result.stderr}")
             return False
 
-        # After successful sync, check for issues needing PRs
+        # After successful sync, push pending branches and check for issues needing PRs
+        push_pending_branches(agents_dir)
         check_pending_prs(agents_dir)
 
         return True
@@ -190,6 +192,104 @@ def check_pending_prs(agents_dir: Path) -> int:
             continue
 
     return prs_created
+
+
+def push_pending_branches(agents_dir: Path) -> int:
+    """Push branches for issues with needs_push=true.
+
+    Called from host (sync, web server, etc.) to push branches for issues
+    where agents have committed but couldn't push from containers.
+
+    Tries regular push first, falls back to force push if histories diverged.
+    Clears needs_push flag after successful push.
+
+    Bails early if running inside a container.
+
+    Args:
+        agents_dir: Path to _agenttree directory
+
+    Returns:
+        Number of branches pushed
+    """
+    from agenttree.hooks import is_running_in_container
+    if is_running_in_container():
+        return 0
+
+    issues_dir = agents_dir / "issues"
+    if not issues_dir.exists():
+        return 0
+
+    import yaml
+    from rich.console import Console
+    console = Console()
+
+    branches_pushed = 0
+
+    for issue_dir in issues_dir.iterdir():
+        if not issue_dir.is_dir():
+            continue
+
+        issue_yaml = issue_dir / "issue.yaml"
+        if not issue_yaml.exists():
+            continue
+
+        try:
+            with open(issue_yaml) as f:
+                data = yaml.safe_load(f)
+
+            # Check if needs_push is set
+            if not data.get("needs_push"):
+                continue
+
+            issue_id = data.get("id", "")
+            branch = data.get("branch")
+            worktree_dir = data.get("worktree_dir")
+
+            if not branch or not worktree_dir:
+                continue
+
+            worktree_path = Path(worktree_dir)
+            if not worktree_path.exists():
+                console.print(f"[yellow]Worktree not found for issue #{issue_id}[/yellow]")
+                continue
+
+            console.print(f"[dim]Pushing branch {branch} for issue #{issue_id}...[/dim]")
+
+            # Try regular push first
+            result = subprocess.run(
+                ["git", "-C", str(worktree_path), "push", "-u", "origin", branch],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+
+            if result.returncode != 0:
+                # Check if it's a diverged history (needs force push)
+                if "divergent" in result.stderr or "rejected" in result.stderr or "non-fast-forward" in result.stderr:
+                    console.print(f"[dim]Histories diverged, force pushing...[/dim]")
+                    result = subprocess.run(
+                        ["git", "-C", str(worktree_path), "push", "--force-with-lease", "-u", "origin", branch],
+                        capture_output=True,
+                        text=True,
+                        timeout=60,
+                    )
+
+            if result.returncode == 0:
+                console.print(f"[green]✓ Pushed branch {branch} for issue #{issue_id}[/green]")
+                branches_pushed += 1
+
+                # Clear needs_push flag
+                from agenttree.issues import update_issue_metadata
+                update_issue_metadata(issue_id, needs_push=False)
+            else:
+                console.print(f"[red]Failed to push branch {branch}: {result.stderr}[/red]")
+
+        except subprocess.TimeoutExpired:
+            console.print(f"[yellow]Push timed out for issue #{issue_id}[/yellow]")
+        except Exception as e:
+            console.print(f"[yellow]Error pushing issue #{issue_id}: {e}[/yellow]")
+
+    return branches_pushed
 
 
 class AgentsRepository:

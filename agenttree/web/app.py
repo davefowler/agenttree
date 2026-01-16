@@ -1,10 +1,11 @@
 """Web dashboard for AgentTree using FastAPI + HTMX."""
 
 from fastapi import FastAPI, Request, Form, WebSocket, WebSocketDisconnect, Depends, HTTPException, status
-from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse, Response
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.middleware.base import BaseHTTPMiddleware
 from pathlib import Path
 import subprocess
 import asyncio
@@ -23,6 +24,22 @@ from agenttree.web.models import StageEnum, KanbanBoard, Issue as WebIssue, Issu
 BASE_DIR = Path(__file__).resolve().parent
 
 app = FastAPI(title="AgentTree Dashboard")
+
+
+class NoCacheMiddleware(BaseHTTPMiddleware):
+    """Disable caching for HTML responses during development."""
+
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        # Disable cache for HTML responses
+        if response.headers.get("content-type", "").startswith("text/html"):
+            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+        return response
+
+
+app.add_middleware(NoCacheMiddleware)
 
 # Mount static files and templates
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
@@ -185,6 +202,8 @@ def convert_issue_to_web(issue: issue_crud.Issue) -> WebIssue:
         assignees=[],
         stage=stage,
         assigned_agent=issue.assigned_agent,
+        pr_url=issue.pr_url,
+        pr_number=issue.pr_number,
         created_at=datetime.fromisoformat(issue.created.replace("Z", "+00:00")),
         updated_at=datetime.fromisoformat(issue.updated.replace("Z", "+00:00")),
     )
@@ -195,8 +214,8 @@ def get_kanban_board() -> KanbanBoard:
     # Initialize all stages with empty lists
     stages: Dict[StageEnum, List[WebIssue]] = {stage: [] for stage in StageEnum}
 
-    # Get all issues and organize by stage
-    issues = issue_crud.list_issues()
+    # Get all issues and organize by stage (no sync for fast web reads)
+    issues = issue_crud.list_issues(sync=False)
     for issue in issues:
         web_issue = convert_issue_to_web(issue)
         if web_issue.stage in stages:
@@ -214,7 +233,7 @@ async def dashboard(
     agents = agent_manager.get_all_agents()
     return templates.TemplateResponse(
         "dashboard.html",
-        {"request": request, "agents": agents, "user": user}
+        {"request": request, "agents": agents, "user": user, "active_page": "dashboard"}
     )
 
 
@@ -227,7 +246,7 @@ async def kanban(
     board = get_kanban_board()
     return templates.TemplateResponse(
         "kanban.html",
-        {"request": request, "board": board, "stages": list(StageEnum)}
+        {"request": request, "board": board, "stages": list(StageEnum), "active_page": "kanban"}
     )
 
 
@@ -237,7 +256,7 @@ async def flow(
     user: Optional[str] = Depends(get_current_user)
 ) -> HTMLResponse:
     """Flow view page."""
-    issues = issue_crud.list_issues()
+    issues = issue_crud.list_issues(sync=False)  # Skip sync for fast web reads
     web_issues = [convert_issue_to_web(i) for i in issues]
     # Sort by stage order and then by number
     web_issues.sort(key=lambda x: (list(StageEnum).index(x.stage), x.number))
@@ -259,6 +278,7 @@ async def flow(
             "issues": web_issues,
             "selected_issue": selected_issue,
             "issue": selected_issue,  # issue_detail.html expects 'issue'
+            "active_page": "flow",
         }
     )
 
@@ -269,7 +289,7 @@ async def flow_issues(
     user: Optional[str] = Depends(get_current_user)
 ) -> HTMLResponse:
     """Flow issues list (HTMX endpoint)."""
-    issues = issue_crud.list_issues()
+    issues = issue_crud.list_issues(sync=False)  # Skip sync for fast web reads
     web_issues = [convert_issue_to_web(i) for i in issues]
     web_issues.sort(key=lambda x: (list(StageEnum).index(x.stage), x.number))
     return templates.TemplateResponse(
@@ -497,7 +517,7 @@ async def issue_detail(
     user: Optional[str] = Depends(get_current_user)
 ) -> HTMLResponse:
     """Get issue detail HTML (for modal)."""
-    issue = issue_crud.get_issue(issue_id)
+    issue = issue_crud.get_issue(issue_id, sync=False)  # Skip sync for fast web reads
     if not issue:
         raise HTTPException(status_code=404, detail=f"Issue {issue_id} not found")
 
@@ -525,7 +545,7 @@ async def flow_issue_detail(
     user: Optional[str] = Depends(get_current_user)
 ) -> HTMLResponse:
     """Get issue detail for flow view (HTMX endpoint)."""
-    issue = issue_crud.get_issue(issue_id)
+    issue = issue_crud.get_issue(issue_id, sync=False)  # Skip sync for fast web reads
     if not issue:
         raise HTTPException(status_code=404, detail=f"Issue {issue_id} not found")
 

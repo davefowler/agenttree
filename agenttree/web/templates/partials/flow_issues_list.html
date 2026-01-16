@@ -5,20 +5,12 @@
          hx-get="/api/issues/{{ issue.number }}/detail"
          hx-target="#issue-detail"
          hx-swap="innerHTML">
-        <div class="issue-header">
-            <span class="issue-number">#{{ issue.number }}</span>
-            <span class="issue-title">{{ issue.title }}</span>
-        </div>
+        <div class="issue-number">#{{ issue.number }}</div>
+        <div class="issue-title">{{ issue.title }}</div>
         <div class="issue-badges">
-            {% if issue.is_review %}
-            <span class="badge badge-review">Review</span>
-            {% endif %}
-            {% if issue.stage %}
-            <span class="badge badge-stage">Stage {{ issue.stage }}</span>
-            {% endif %}
-            {% for label in issue.labels[:3] %}
-            {% if not label.startswith('stage-') and label.lower() not in ['review', 'needs-review', 'in-review'] %}
-            <span class="badge badge-label">{{ label }}</span>
+            {% for label in issue.labels[:2] %}
+            {% if not label.startswith('stage-') %}
+            <span class="badge">{{ label }}</span>
             {% endif %}
             {% endfor %}
         </div>
