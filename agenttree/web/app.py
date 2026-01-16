@@ -250,6 +250,26 @@ async def kanban(
     )
 
 
+def get_issue_files(issue_id: str) -> list[dict[str, str | int]]:
+    """Get list of markdown files for an issue.
+
+    Returns list of dicts with keys: name, display_name, size, modified
+    """
+    issue_dir = issue_crud.get_issue_dir(issue_id)
+    if not issue_dir:
+        return []
+
+    files: list[dict[str, str | int]] = []
+    for f in sorted(issue_dir.glob("*.md")):
+        files.append({
+            "name": f.name,
+            "display_name": f.stem.replace("_", " ").title(),
+            "size": f.stat().st_size,
+            "modified": datetime.fromtimestamp(f.stat().st_mtime).isoformat()
+        })
+    return files
+
+
 @app.get("/flow", response_class=HTMLResponse)
 async def flow(
     request: Request,
@@ -262,11 +282,15 @@ async def flow(
     web_issues.sort(key=lambda x: (list(StageEnum).index(x.stage), x.number))
     selected_issue = web_issues[0] if web_issues else None
 
-    # Load body content for selected issue
+    # Load body content and files for selected issue
+    files = []
     if selected_issue and issues:
         raw_issue = issues[0]
         issue_dir = issue_crud.get_issue_dir(raw_issue.id)
         if issue_dir:
+            # Get list of markdown files
+            files = get_issue_files(raw_issue.id)
+            # Load first file content (problem.md by default)
             problem_path = issue_dir / "problem.md"
             if problem_path.exists():
                 selected_issue.body = problem_path.read_text()
@@ -278,6 +302,7 @@ async def flow(
             "issues": web_issues,
             "selected_issue": selected_issue,
             "issue": selected_issue,  # issue_detail.html expects 'issue'
+            "files": files,
             "active_page": "flow",
         }
     )
@@ -583,7 +608,10 @@ async def flow_issue_detail(
     if not issue:
         raise HTTPException(status_code=404, detail=f"Issue {issue_id} not found")
 
-    # Load problem.md content
+    # Get markdown files list
+    files = get_issue_files(issue_id)
+
+    # Load problem.md content (first tab)
     issue_dir = issue_crud.get_issue_dir(issue_id)
     problem_content = ""
     if issue_dir:
@@ -595,8 +623,8 @@ async def flow_issue_detail(
     web_issue.body = problem_content
 
     return templates.TemplateResponse(
-        "partials/issue_detail.html",
-        {"request": request, "issue": web_issue}
+        "partials/flow_issue_detail.html",
+        {"request": request, "issue": web_issue, "files": files}
     )
 
 
@@ -628,6 +656,47 @@ async def tmux_websocket(websocket: WebSocket, agent_num: int) -> None:
 
     except WebSocketDisconnect:
         pass
+
+
+@app.get("/api/issues/{issue_id}/files")
+async def list_issue_files(
+    issue_id: str,
+    user: Optional[str] = Depends(get_current_user)
+) -> dict:
+    """List markdown files in an issue directory."""
+    files = get_issue_files(issue_id)
+    if not files and not issue_crud.get_issue_dir(issue_id):
+        raise HTTPException(status_code=404, detail=f"Issue {issue_id} not found")
+
+    return {"issue_id": issue_id, "files": files}
+
+
+@app.get("/api/issues/{issue_id}/files/{filename}", response_class=HTMLResponse)
+async def get_issue_file(
+    request: Request,
+    issue_id: str,
+    filename: str,
+    user: Optional[str] = Depends(get_current_user)
+) -> HTMLResponse:
+    """Get content of a markdown file in an issue directory."""
+    issue_dir = issue_crud.get_issue_dir(issue_id)
+    if not issue_dir:
+        raise HTTPException(status_code=404, detail=f"Issue {issue_id} not found")
+
+    # Security: ensure filename is safe (no path traversal)
+    if "/" in filename or "\\" in filename or ".." in filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    file_path = issue_dir / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail=f"File {filename} not found")
+
+    content = file_path.read_text()
+
+    return templates.TemplateResponse(
+        "partials/markdown_content.html",
+        {"request": request, "content": content, "filename": filename}
+    )
 
 
 @app.get("/health")
