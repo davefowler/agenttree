@@ -2331,5 +2331,30 @@ def hooks_check(issue_id: str, event: str) -> None:
     console.print()
 
 
+@main.command("tui")
+def tui_command() -> None:
+    """Launch the Terminal User Interface for issue management.
+
+    A keyboard-driven interface for managing issues:
+    - Arrow keys to navigate
+    - Enter to select
+    - a = Advance stage
+    - r = Reject (send back)
+    - s = Start agent
+    - / = Filter
+    - R = Refresh
+    - q = Quit
+    """
+    try:
+        from agenttree.tui import TUIApp
+    except ImportError:
+        console.print("[red]Error: TUI dependencies not installed[/red]")
+        console.print("Install with: pip install agenttree[tui]")
+        sys.exit(1)
+
+    app = TUIApp()
+    app.run()
+
+
 if __name__ == "__main__":
     main()
