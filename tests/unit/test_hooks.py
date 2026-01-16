@@ -321,6 +321,55 @@ This is the approach section with content.
         # This test verifies the hook runs without errors
         assert errors == []
 
+    @patch('agenttree.hooks.get_git_diff_stats')
+    def test_create_file_action_substitutes_placeholders(self, mock_git_stats, tmp_path):
+        """Should substitute placeholders in template when creating file."""
+        from agenttree.hooks import run_builtin_validator
+
+        mock_git_stats.return_value = {
+            'files_changed': 5,
+            'lines_added': 100,
+            'lines_removed': 20
+        }
+
+        # Create templates directory and template file with placeholders
+        templates_dir = tmp_path / "_agenttree" / "templates"
+        templates_dir.mkdir(parents=True)
+        template_content = """# Review - Issue #{{issue_id}}
+**Branch:** {{branch}}
+**Files Changed:** {{files_changed}}
+**Lines Changed:** +{{lines_added}} -{{lines_removed}}
+"""
+        (templates_dir / "review.md").write_text(template_content)
+
+        with patch.object(Path, 'cwd', return_value=tmp_path):
+            issue_dir = tmp_path / "issue"
+            issue_dir.mkdir()
+            hook = {"type": "create_file", "template": "review.md", "dest": "review.md"}
+
+            errors = run_builtin_validator(
+                issue_dir,
+                hook,
+                issue_id="046",
+                branch="issue-046-feature"
+            )
+
+        assert errors == []
+        mock_git_stats.assert_called_once()
+
+        # Verify the file was created with substituted values
+        created_file = issue_dir / "review.md"
+        assert created_file.exists()
+        content = created_file.read_text()
+        assert "Issue #046" in content
+        assert "issue-046-feature" in content
+        assert "**Files Changed:** 5" in content
+        assert "+100 -20" in content
+        # Ensure placeholders are no longer present
+        assert "{{issue_id}}" not in content
+        assert "{{branch}}" not in content
+        assert "{{files_changed}}" not in content
+
     def test_unknown_hook_type_ignored(self, tmp_path):
         """Unknown hook types should be ignored silently."""
         from agenttree.hooks import run_builtin_validator
@@ -879,6 +928,192 @@ class TestGitUtilities:
         assert "Implement" in msg
         assert "#023" in msg
         assert "Test Issue" in msg
+
+    # Tests for get_git_diff_stats()
+
+    @patch('agenttree.hooks.get_default_branch')
+    @patch('subprocess.run')
+    def test_get_git_diff_stats_parses_shortstat_output(self, mock_run, mock_default_branch):
+        """Should parse typical shortstat output correctly."""
+        from agenttree.hooks import get_git_diff_stats
+
+        mock_default_branch.return_value = "main"
+        mock_run.return_value = MagicMock(
+            stdout=" 5 files changed, 100 insertions(+), 20 deletions(-)\n",
+            returncode=0
+        )
+
+        result = get_git_diff_stats()
+
+        assert result == {'files_changed': 5, 'lines_added': 100, 'lines_removed': 20}
+        mock_default_branch.assert_called_once()
+        mock_run.assert_called_once()
+        # Verify the correct git command was called
+        call_args = mock_run.call_args[0][0]
+        assert call_args[0:2] == ["git", "diff"]
+        assert "--shortstat" in call_args
+        assert "main...HEAD" in call_args
+
+    @patch('agenttree.hooks.get_default_branch')
+    @patch('subprocess.run')
+    def test_get_git_diff_stats_handles_only_insertions(self, mock_run, mock_default_branch):
+        """Should handle output with only insertions (no deletions)."""
+        from agenttree.hooks import get_git_diff_stats
+
+        mock_default_branch.return_value = "main"
+        mock_run.return_value = MagicMock(
+            stdout=" 3 files changed, 50 insertions(+)\n",
+            returncode=0
+        )
+
+        result = get_git_diff_stats()
+
+        assert result == {'files_changed': 3, 'lines_added': 50, 'lines_removed': 0}
+
+    @patch('agenttree.hooks.get_default_branch')
+    @patch('subprocess.run')
+    def test_get_git_diff_stats_handles_only_deletions(self, mock_run, mock_default_branch):
+        """Should handle output with only deletions (no insertions)."""
+        from agenttree.hooks import get_git_diff_stats
+
+        mock_default_branch.return_value = "main"
+        mock_run.return_value = MagicMock(
+            stdout=" 2 files changed, 30 deletions(-)\n",
+            returncode=0
+        )
+
+        result = get_git_diff_stats()
+
+        assert result == {'files_changed': 2, 'lines_added': 0, 'lines_removed': 30}
+
+    @patch('agenttree.hooks.get_default_branch')
+    @patch('subprocess.run')
+    def test_get_git_diff_stats_handles_single_file(self, mock_run, mock_default_branch):
+        """Should handle singular 'file' in output."""
+        from agenttree.hooks import get_git_diff_stats
+
+        mock_default_branch.return_value = "main"
+        mock_run.return_value = MagicMock(
+            stdout=" 1 file changed, 10 insertions(+)\n",
+            returncode=0
+        )
+
+        result = get_git_diff_stats()
+
+        assert result == {'files_changed': 1, 'lines_added': 10, 'lines_removed': 0}
+
+    @patch('agenttree.hooks.get_default_branch')
+    @patch('subprocess.run')
+    def test_get_git_diff_stats_handles_empty_output(self, mock_run, mock_default_branch):
+        """Should return zeros when there are no changes."""
+        from agenttree.hooks import get_git_diff_stats
+
+        mock_default_branch.return_value = "main"
+        mock_run.return_value = MagicMock(
+            stdout="",
+            returncode=0
+        )
+
+        result = get_git_diff_stats()
+
+        assert result == {'files_changed': 0, 'lines_added': 0, 'lines_removed': 0}
+
+    @patch('agenttree.hooks.get_default_branch')
+    @patch('subprocess.run')
+    def test_get_git_diff_stats_handles_git_failure(self, mock_run, mock_default_branch):
+        """Should return zeros gracefully when git command fails."""
+        from agenttree.hooks import get_git_diff_stats
+
+        mock_default_branch.return_value = "main"
+        mock_run.return_value = MagicMock(
+            stdout="",
+            stderr="fatal: not a git repository",
+            returncode=128
+        )
+
+        result = get_git_diff_stats()
+
+        assert result == {'files_changed': 0, 'lines_added': 0, 'lines_removed': 0}
+
+    @patch('agenttree.hooks.get_default_branch')
+    @patch('subprocess.run')
+    def test_get_git_diff_stats_uses_default_branch(self, mock_run, mock_default_branch):
+        """Should use get_default_branch() to determine base branch."""
+        from agenttree.hooks import get_git_diff_stats
+
+        mock_default_branch.return_value = "develop"
+        mock_run.return_value = MagicMock(
+            stdout=" 2 files changed, 15 insertions(+), 5 deletions(-)\n",
+            returncode=0
+        )
+
+        get_git_diff_stats()
+
+        mock_default_branch.assert_called_once()
+        call_args = mock_run.call_args[0][0]
+        assert "develop...HEAD" in call_args
+
+    def test_get_git_diff_stats_integration(self, temp_git_repo, monkeypatch):
+        """Integration test: should return correct stats from real git operations."""
+        from agenttree.hooks import get_git_diff_stats
+
+        monkeypatch.chdir(temp_git_repo)
+
+        # Create a bare repo to act as remote
+        remote_path = temp_git_repo.parent / "remote.git"
+        subprocess.run(
+            ["git", "init", "--bare", str(remote_path)],
+            check=True,
+            capture_output=True
+        )
+
+        # Add remote and push
+        subprocess.run(
+            ["git", "remote", "add", "origin", str(remote_path)],
+            cwd=temp_git_repo,
+            check=True,
+            capture_output=True
+        )
+        subprocess.run(
+            ["git", "push", "-u", "origin", "HEAD"],
+            cwd=temp_git_repo,
+            check=True,
+            capture_output=True
+        )
+
+        # Create a feature branch with changes
+        subprocess.run(
+            ["git", "checkout", "-b", "feature-branch"],
+            cwd=temp_git_repo,
+            check=True,
+            capture_output=True
+        )
+
+        # Add a new file with 5 lines
+        (temp_git_repo / "new_file.py").write_text("line1\nline2\nline3\nline4\nline5\n")
+        subprocess.run(["git", "add", "new_file.py"], cwd=temp_git_repo, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "Add new file"],
+            cwd=temp_git_repo,
+            check=True,
+            capture_output=True
+        )
+
+        # Modify an existing file (add 2 lines)
+        (temp_git_repo / "README.md").write_text("Modified\nNew line 1\nNew line 2\n")
+        subprocess.run(["git", "add", "README.md"], cwd=temp_git_repo, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "Modify README"],
+            cwd=temp_git_repo,
+            check=True,
+            capture_output=True
+        )
+
+        result = get_git_diff_stats()
+
+        # Should have 2 files changed with insertions and possibly deletions
+        assert result['files_changed'] == 2
+        assert result['lines_added'] > 0
 
 
 class TestCheckAndStartBlockedIssues:

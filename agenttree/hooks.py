@@ -443,7 +443,24 @@ def run_builtin_validator(
             template_path = Path("_agenttree/templates") / template
             dest_path = issue_dir / dest
             if not dest_path.exists() and template_path.exists():
-                dest_path.write_text(template_path.read_text())
+                content = template_path.read_text()
+
+                # Substitute placeholders with actual values
+                issue_id = kwargs.get("issue_id", "")
+                branch = kwargs.get("branch", "")
+                pr_url = kwargs.get("pr_url", "")
+
+                # Get git diff stats for review template
+                git_stats = get_git_diff_stats()
+
+                content = content.replace("{{issue_id}}", str(issue_id))
+                content = content.replace("{{branch}}", str(branch))
+                content = content.replace("{{pr_url}}", str(pr_url))
+                content = content.replace("{{files_changed}}", str(git_stats['files_changed']))
+                content = content.replace("{{lines_added}}", str(git_stats['lines_added']))
+                content = content.replace("{{lines_removed}}", str(git_stats['lines_removed']))
+
+                dest_path.write_text(content)
                 console.print(f"[dim]Created {dest} from template[/dim]")
 
     elif hook_type == "create_pr":
@@ -909,6 +926,48 @@ def has_commits_to_push(branch: Optional[str] = None) -> bool:
     )
 
     return bool(result.stdout.strip())
+
+
+def get_git_diff_stats() -> Dict[str, int]:
+    """Get git diff statistics comparing current branch to default branch.
+
+    Runs `git diff --shortstat <default_branch>...HEAD` and parses the output
+    to extract files changed, lines added, and lines removed.
+
+    Returns:
+        Dict with keys 'files_changed', 'lines_added', 'lines_removed'.
+        Returns zeros if there are no changes or on error.
+    """
+    default_branch = get_default_branch()
+
+    result = subprocess.run(
+        ["git", "diff", "--shortstat", f"{default_branch}...HEAD"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    stats = {'files_changed': 0, 'lines_added': 0, 'lines_removed': 0}
+
+    if result.returncode != 0 or not result.stdout.strip():
+        return stats
+
+    output = result.stdout.strip()
+
+    # Parse "5 files changed, 100 insertions(+), 20 deletions(-)"
+    # Handle singular "file" vs "files", and optional insertions/deletions
+    files_match = re.search(r'(\d+) files? changed', output)
+    insertions_match = re.search(r'(\d+) insertions?\(\+\)', output)
+    deletions_match = re.search(r'(\d+) deletions?\(-\)', output)
+
+    if files_match:
+        stats['files_changed'] = int(files_match.group(1))
+    if insertions_match:
+        stats['lines_added'] = int(insertions_match.group(1))
+    if deletions_match:
+        stats['lines_removed'] = int(deletions_match.group(1))
+
+    return stats
 
 
 def push_branch_to_remote(branch: str) -> None:
