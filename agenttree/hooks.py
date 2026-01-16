@@ -82,10 +82,9 @@ class ValidationError(Exception):
 # =============================================================================
 
 # Known hook types (used to detect hook type from key)
-# Note: create_pr was removed - PR creation is handled by host sync via ensure_pr_for_issue()
 HOOK_TYPES = {
     "file_exists", "has_commits", "field_check", "section_check", "pr_approved",
-    "create_file", "merge_pr", "run", "rebase", "cleanup_agent", "start_blocked_issues",
+    "create_file", "create_pr", "merge_pr", "run", "rebase", "cleanup_agent", "start_blocked_issues",
     "min_words", "has_list_items", "contains"
 }
 
@@ -153,7 +152,13 @@ def parse_hook(hook: Dict[str, Any]) -> tuple[str, Dict[str, Any]]:
 def _action_create_pr(issue_dir: Path, issue_id: str = "", issue_title: str = "", branch: str = "", **kwargs: Any) -> None:
     """Create PR for an issue (action hook helper).
 
-    If running in a container, commits locally and lets host handle PR creation.
+    Workflow:
+    1. On host: auto-commit, push branch, create PR directly
+    2. In container: auto-commit, store branch info, return (host handles push/PR via sync)
+
+    The worktree_dir is already set when agent starts (cli.py:790), so we only update branch.
+    Host's `check_pending_prs()` / `ensure_pr_for_issue()` uses stored worktree_dir to find
+    the worktree and push from there.
     """
     from agenttree.issues import update_issue_metadata
 
@@ -175,11 +180,9 @@ def _action_create_pr(issue_dir: Path, issue_id: str = "", issue_title: str = ""
             check=False
         )
 
-    # Update issue with branch and worktree info
-    # Use current working directory as worktree (not issue_dir which is _agenttree/issues/...)
+    # Update issue with branch info (worktree_dir is already set when agent starts)
     if issue_id:
-        worktree_path = str(Path.cwd().resolve())
-        update_issue_metadata(issue_id, branch=branch, worktree_dir=worktree_path)
+        update_issue_metadata(issue_id, branch=branch)
 
     # If in container, skip remote operations - host will detect and push unpushed commits
     if is_running_in_container():
