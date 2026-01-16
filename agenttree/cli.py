@@ -1089,6 +1089,120 @@ def web(host: str, port: int, config: Optional[str]) -> None:
 
 
 @main.command()
+@click.option("--host", default="127.0.0.1", help="Host to bind to")
+@click.option("--port", default=8080, type=int, help="Port to bind to")
+def serve(host: str, port: int) -> None:
+    """Start the AgentTree server (runs syncs, spawns agents).
+
+    This is the main controller process that:
+    - Syncs the _agenttree repo periodically
+    - Spawns agents for issues in agent stages
+    - Runs hooks for controller stages
+    - Provides the web dashboard
+
+    Use 'agenttree start' to run this in a tmux session.
+    """
+    from agenttree.web.app import run_server
+
+    console.print(f"[cyan]Starting AgentTree server at http://{host}:{port}[/cyan]")
+    console.print("[dim]Press Ctrl+C to stop[/dim]\n")
+
+    run_server(host=host, port=port)
+
+
+@main.command()
+def start() -> None:
+    """Start the controller in a tmux session.
+
+    Reads the controller host's 'process' config and runs it in a
+    background tmux session. This keeps the sync server running
+    even after you close your terminal.
+
+    Example:
+        agenttree start     # Starts controller in tmux
+        tmux attach -t agenttree-controller  # Attach to see output
+    """
+    import subprocess
+
+    config = load_config()
+
+    # Get controller host config
+    controller = config.get_host("controller")
+    if not controller:
+        console.print("[red]Error: No controller host defined[/red]")
+        sys.exit(1)
+
+    # Get the process to run
+    process_cmd = controller.process
+    if not process_cmd:
+        # Default to serve if no process specified
+        process_cmd = "agenttree serve"
+
+    # Build tmux session name
+    tmux_session = f"{config.project}-controller"
+
+    # Check if already running
+    check_result = subprocess.run(
+        ["tmux", "has-session", "-t", tmux_session],
+        capture_output=True,
+    )
+    if check_result.returncode == 0:
+        console.print(f"[yellow]Controller already running in tmux session '{tmux_session}'[/yellow]")
+        console.print(f"[dim]Attach with: tmux attach -t {tmux_session}[/dim]")
+        return
+
+    # Start the tmux session
+    try:
+        subprocess.run(
+            ["tmux", "new-session", "-d", "-s", tmux_session, process_cmd],
+            check=True,
+            capture_output=True,
+        )
+        console.print(f"[green]✓ Started controller in tmux session '{tmux_session}'[/green]")
+        console.print(f"[dim]Attach with: tmux attach -t {tmux_session}[/dim]")
+        console.print(f"[dim]Running: {process_cmd}[/dim]")
+    except subprocess.CalledProcessError as e:
+        console.print(f"[red]Failed to start tmux session: {e}[/red]")
+        sys.exit(1)
+    except FileNotFoundError:
+        console.print("[red]Error: tmux not found. Please install tmux.[/red]")
+        sys.exit(1)
+
+
+@main.command()
+def stop() -> None:
+    """Stop the controller tmux session.
+
+    Stops the background controller process started with 'agenttree start'.
+    """
+    import subprocess
+
+    config = load_config()
+    tmux_session = f"{config.project}-controller"
+
+    # Check if running
+    check_result = subprocess.run(
+        ["tmux", "has-session", "-t", tmux_session],
+        capture_output=True,
+    )
+    if check_result.returncode != 0:
+        console.print(f"[yellow]Controller is not running (no tmux session '{tmux_session}')[/yellow]")
+        return
+
+    # Kill the session
+    try:
+        subprocess.run(
+            ["tmux", "kill-session", "-t", tmux_session],
+            check=True,
+            capture_output=True,
+        )
+        console.print(f"[green]✓ Stopped controller (killed tmux session '{tmux_session}')[/green]")
+    except subprocess.CalledProcessError as e:
+        console.print(f"[red]Failed to stop controller: {e}[/red]")
+        sys.exit(1)
+
+
+@main.command()
 @click.argument("pr_number", type=int)
 @click.option("--no-approval", is_flag=True, help="Skip approval requirement")
 @click.option("--monitor", is_flag=True, help="Monitor PR until ready to merge")
