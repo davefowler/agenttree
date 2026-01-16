@@ -26,6 +26,7 @@ from agenttree.issues import (
     get_issue_dir,
     get_next_stage,
     update_issue_stage,
+    update_issue_metadata,
     assign_agent,
     load_skill,
     # Session management
@@ -801,6 +802,9 @@ def start_agent(
 
     # Mark issue as having an assigned agent (for web UI status light)
     assign_agent(issue.id, int(issue.id))
+
+    # Save branch and worktree info to issue metadata
+    update_issue_metadata(issue.id, branch=names["branch"], worktree_dir=str(worktree_path))
 
     console.print(f"[green]✓ Dispatching agent for issue #{issue.id}: {issue.title}[/green]")
 

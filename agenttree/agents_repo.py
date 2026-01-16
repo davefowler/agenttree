@@ -315,11 +315,12 @@ def check_merged_prs(agents_dir: Path) -> int:
 
 
 def push_pending_branches(agents_dir: Path) -> int:
-    """Push branches for issues with needs_push=true.
+    """Push branches for issues that have unpushed commits.
 
     Called from host (sync, web server, etc.) to push branches for issues
     where agents have committed but couldn't push from containers.
 
+    Detects unpushed commits automatically (doesn't rely solely on needs_push flag).
     Tries regular push first, falls back to force push if histories diverged.
     Clears needs_push flag after successful push.
 
@@ -357,10 +358,6 @@ def push_pending_branches(agents_dir: Path) -> int:
             with open(issue_yaml) as f:
                 data = yaml.safe_load(f)
 
-            # Check if needs_push is set
-            if not data.get("needs_push"):
-                continue
-
             issue_id = data.get("id", "")
             branch = data.get("branch")
             worktree_dir = data.get("worktree_dir")
@@ -370,7 +367,24 @@ def push_pending_branches(agents_dir: Path) -> int:
 
             worktree_path = Path(worktree_dir)
             if not worktree_path.exists():
-                console.print(f"[yellow]Worktree not found for issue #{issue_id}[/yellow]")
+                continue
+
+            # Check if there are unpushed commits (more robust than needs_push flag)
+            has_unpushed = False
+            if data.get("needs_push"):
+                has_unpushed = True
+            else:
+                # Check git for unpushed commits
+                check_result = subprocess.run(
+                    ["git", "-C", str(worktree_path), "log", f"origin/{branch}..HEAD", "--oneline"],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+                if check_result.returncode == 0 and check_result.stdout.strip():
+                    has_unpushed = True
+
+            if not has_unpushed:
                 continue
 
             console.print(f"[dim]Pushing branch {branch} for issue #{issue_id}...[/dim]")
@@ -398,9 +412,10 @@ def push_pending_branches(agents_dir: Path) -> int:
                 console.print(f"[green]✓ Pushed branch {branch} for issue #{issue_id}[/green]")
                 branches_pushed += 1
 
-                # Clear needs_push flag
-                from agenttree.issues import update_issue_metadata
-                update_issue_metadata(issue_id, needs_push=False)
+                # Clear needs_push flag if it was set
+                if data.get("needs_push"):
+                    from agenttree.issues import update_issue_metadata
+                    update_issue_metadata(issue_id, needs_push=False)
             else:
                 console.print(f"[red]Failed to push branch {branch}: {result.stderr}[/red]")
 
