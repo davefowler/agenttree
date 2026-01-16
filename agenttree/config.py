@@ -1,7 +1,7 @@
 """Configuration management for AgentTree."""
 
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, Union
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -98,8 +98,7 @@ class Config(BaseModel):
     default_model: str = "opus"  # Model to use for Claude CLI (opus, sonnet)
     refresh_interval: int = 10
     tools: Dict[str, ToolConfig] = Field(default_factory=dict)
-    test_commands: list[str] = Field(default_factory=list)  # Commands to run tests
-    lint_commands: list[str] = Field(default_factory=list)  # Commands to run linting
+    commands: Dict[str, Union[str, list[str]]] = Field(default_factory=dict)  # Named shell commands
     stages: list[StageConfig] = Field(default_factory=list)  # Must be defined in .agenttree.yaml
     security: SecurityConfig = Field(default_factory=SecurityConfig)
     merge_strategy: str = "squash"  # squash, merge, or rebase

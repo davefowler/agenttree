@@ -8,11 +8,13 @@ port_range: 9001-9099
 project: "agenttree"
 worktrees_dir: .worktrees
 
-test_commands:
-  - echo "No test command configured - update test_commands in .agenttree.yaml"
-
-lint_commands:
-  - echo "No lint command configured - update lint_commands in .agenttree.yaml"
+commands:
+  test: uv run pytest
+  lint: "uv run mypy agenttree || echo 'Lint warnings (optional)'"
+  git_branch: git branch --show-current
+  files_changed: "git diff --stat main...HEAD | grep -c '|' || echo 0"
+  lines_added: "git diff --stat main...HEAD | tail -1 | awk '{print $4}' || echo 0"
+  lines_removed: "git diff --stat main...HEAD | tail -1 | awk '{print $6}' || echo 0"
 
 tools:
   claude:
