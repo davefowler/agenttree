@@ -1,10 +1,11 @@
 {% if issues %}
     {% for issue in issues %}
-    <div class="issue-item {% if loop.first %}active{% endif %}"
+    <div class="issue-item {% if selected_issue and issue.number == selected_issue.number %}active{% endif %}"
          data-issue="{{ issue.number }}"
-         hx-get="/flow/issue/{{ issue.number }}"
-         hx-target="#issue-detail"
-         hx-swap="innerHTML">
+         hx-get="/flow?issue={{ issue.number }}{% if chat_open %}&chat=1{% endif %}"
+         hx-push-url="true"
+         hx-target="body"
+         hx-swap="outerHTML">
         <div class="issue-number">#{{ issue.number }}</div>
         <div class="issue-title">{{ issue.title }}</div>
         <div class="issue-badges">

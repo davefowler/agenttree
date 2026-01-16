@@ -90,6 +90,87 @@ class ContainerRuntime:
         """
         return self.runtime is not None
 
+    def ensure_system_running(self) -> bool:
+        """Ensure the container system service is running.
+
+        For Apple Container, the system service must be started before running containers.
+        For Docker, the Docker daemon must be running.
+
+        Returns:
+            True if system is running or was started successfully, False if failed
+        """
+        if self.runtime == "container":
+            return self._ensure_apple_container_running()
+        elif self.runtime == "docker":
+            return self._ensure_docker_running()
+        # Podman doesn't need a daemon
+        return True
+
+    def _ensure_apple_container_running(self) -> bool:
+        """Ensure Apple Container system is running."""
+        try:
+            result = subprocess.run(
+                ["container", "system", "status"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if "apiserver is running" in result.stdout:
+                return True
+
+            print("Starting Apple Container system service...")
+            start_result = subprocess.run(
+                ["container", "system", "start"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            return start_result.returncode == 0
+        except Exception as e:
+            print(f"Warning: Could not check/start container system: {e}")
+            return False
+
+    def _ensure_docker_running(self) -> bool:
+        """Ensure Docker daemon is running."""
+        try:
+            result = subprocess.run(
+                ["docker", "info"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.returncode == 0:
+                return True
+
+            # Docker not running - try to start it on macOS
+            system = platform.system()
+            if system == "Darwin":
+                print("Docker daemon not running. Attempting to start Docker Desktop...")
+                subprocess.run(
+                    ["open", "-a", "Docker"],
+                    capture_output=True,
+                    timeout=5,
+                )
+                # Wait for Docker to start (up to 30 seconds)
+                import time
+                for _ in range(30):
+                    time.sleep(1)
+                    check = subprocess.run(
+                        ["docker", "info"],
+                        capture_output=True,
+                        timeout=5,
+                    )
+                    if check.returncode == 0:
+                        return True
+                print("Warning: Docker Desktop did not start in time")
+                return False
+            else:
+                print("Warning: Docker daemon is not running. Please start Docker.")
+                return False
+        except Exception as e:
+            print(f"Warning: Could not check Docker status: {e}")
+            return False
+
     def build_run_command(
         self,
         worktree_path: Path,

@@ -82,10 +82,9 @@ class ValidationError(Exception):
 # =============================================================================
 
 # Known hook types (used to detect hook type from key)
-# Note: create_pr was removed - PR creation is handled by host sync via ensure_pr_for_issue()
 HOOK_TYPES = {
     "file_exists", "has_commits", "field_check", "section_check", "pr_approved",
-    "create_file", "merge_pr", "run", "rebase", "cleanup_agent", "start_blocked_issues",
+    "create_file", "create_pr", "merge_pr", "run", "rebase", "cleanup_agent", "start_blocked_issues",
     "min_words", "has_list_items", "contains"
 }
 
@@ -151,74 +150,23 @@ def parse_hook(hook: Dict[str, Any]) -> tuple[str, Dict[str, Any]]:
 
 
 def _action_create_pr(issue_dir: Path, issue_id: str = "", issue_title: str = "", branch: str = "", **kwargs: Any) -> None:
-    """Create PR for an issue (action hook helper).
+    """Create PR for an issue (controller stage hook - runs on host).
 
-    If running in a container, commits locally and lets host handle PR creation.
+    This hook runs on host for controller stages (host: controller).
+    Agents can't push, so PR creation is handled by the host.
+
+    Workflow:
+    1. Agent advances to implementation_review (does nothing - controller stage)
+    2. Host sync calls check_controller_stages()
+    3. For issues in controller stages, host runs post_start hooks
+    4. This hook (create_pr) calls ensure_pr_for_issue() to create the PR
     """
-    from agenttree.issues import update_issue_metadata
-
-    # Get current branch if not provided
-    if not branch:
-        branch = get_current_branch()
-
-    # Auto-commit any uncommitted changes
-    if has_uncommitted_changes():
-        console.print(f"[dim]Auto-committing uncommitted changes...[/dim]")
-        subprocess.run(
-            ["git", "add", "-A"],
-            capture_output=True,
-            check=False
-        )
-        subprocess.run(
-            ["git", "commit", "-m", f"Issue #{issue_id}: auto-commit before PR"],
-            capture_output=True,
-            check=False
-        )
-
-    # Update issue with branch and worktree info
-    if issue_id:
-        worktree_path = str(issue_dir.resolve()) if issue_dir else None
-        update_issue_metadata(issue_id, branch=branch, worktree_dir=worktree_path)
-
-    # If in container, skip remote operations - host will detect and push unpushed commits
-    if is_running_in_container():
-        console.print(f"[yellow]Running in container - PR will be created by host[/yellow]")
-        console.print(f"[dim]Branch: {branch} (committed locally, awaiting push)[/dim]")
-        console.print(f"[dim]Worktree: {issue_dir}[/dim]")
+    if not issue_id:
+        console.print(f"[yellow]create_pr hook: no issue_id provided[/yellow]")
         return
 
-    # On host: do the full push/PR
-    from agenttree.github import create_pr
-
-    # Push to remote
-    console.print(f"[dim]Pushing {branch} to origin/{branch}...[/dim]")
-    push_branch_to_remote(branch)
-
-    # Create PR
-    title = f"[Issue {issue_id}] {issue_title}" if issue_id else f"PR for {branch}"
-    body = f"## Summary\n\nImplementation for issue #{issue_id}: {issue_title}\n\n" if issue_id else ""
-    body += "🤖 Generated with [Claude Code](https://claude.com/claude-code)"
-
-    console.print(f"[dim]Creating pull request...[/dim]")
-    pr = create_pr(title=title, body=body, branch=branch, base="main")
-
-    # Update issue with PR info
-    if issue_id:
-        update_issue_metadata(issue_id, pr_number=pr.number, pr_url=pr.url, branch=branch)
-
-    console.print(f"[green]✓ PR created: {pr.url}[/green]")
-
-    # Run post_pr_create hooks
-    from agenttree.config import load_config
-    config = load_config()
-    if config.hooks.post_pr_create:
-        run_host_hooks(config.hooks.post_pr_create, {
-            "issue_id": issue_id,
-            "issue_title": issue_title,
-            "pr_number": pr.number,
-            "pr_url": pr.url,
-            "branch": branch,
-        })
+    # Delegate to ensure_pr_for_issue which handles the actual PR creation
+    ensure_pr_for_issue(issue_id)
 
 
 def _action_merge_pr(pr_number: Optional[int], **kwargs: Any) -> None:
@@ -758,6 +706,9 @@ def execute_enter_hooks(issue: "Issue", stage: str, substage: Optional[str] = No
 
     This is the config-driven replacement for execute_post_hooks.
 
+    For controller stages (host: controller), hooks are skipped when running in a container.
+    The host will execute them via check_controller_stages() during sync.
+
     Args:
         issue: Issue that was transitioned
         stage: New stage name
@@ -770,6 +721,12 @@ def execute_enter_hooks(issue: "Issue", stage: str, substage: Optional[str] = No
     stage_config = config.get_stage(stage)
     if not stage_config:
         return  # Unknown stage, skip hooks
+
+    # Skip hooks for controller stages when in a container
+    # Host will run them via check_controller_stages() during sync
+    if stage_config.host == "controller" and is_running_in_container():
+        console.print(f"[dim]Controller stage - hooks will run on host sync[/dim]")
+        return
 
     # Get the appropriate config (substage or stage)
     if substage:
@@ -990,7 +947,7 @@ def rebase_issue_branch(issue_id: str) -> tuple[bool, str]:
     Returns:
         Tuple of (success, message)
     """
-    from agenttree.issues import get_issue, get_issue_dir
+    from agenttree.issues import get_issue
 
     issue = get_issue(issue_id)
     if not issue:
@@ -1210,10 +1167,10 @@ def is_running_in_container() -> bool:
 
 
 def ensure_pr_for_issue(issue_id: str) -> bool:
-    """Ensure a PR exists for an issue at implementation_review stage.
+    """Ensure a PR exists for an issue in a controller stage.
 
-    Called by host (sync or web server) to create PRs for issues
-    where the agent couldn't push.
+    Called by host via create_pr hook for controller stages (host: controller).
+    Stage check is done by check_controller_stages(), not here.
 
     Args:
         issue_id: Issue ID to create PR for
@@ -1231,13 +1188,9 @@ def ensure_pr_for_issue(issue_id: str) -> bool:
     if not issue:
         return False
 
-    # Already has PR
+    # Already has PR - idempotent
     if issue.pr_number:
         return True
-
-    # Not at implementation_review stage
-    if issue.stage != "implementation_review":
-        return False
 
     # Need branch info (silently skip if not started yet)
     if not issue.branch:
