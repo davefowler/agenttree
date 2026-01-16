@@ -277,14 +277,20 @@ This is the approach section with content.
             assert errors == []
 
     def test_pr_approved_failure(self, tmp_path):
-        """Should return error when PR is not approved."""
+        """Should return error when PR is not approved and auto-approve fails."""
         from agenttree.hooks import run_builtin_validator
 
+        # Mock approval check returning False, and subprocess auto-approve failing
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        mock_result.stderr = "Can not approve your own pull request"
+
         with patch('agenttree.hooks.get_pr_approval_status', return_value=False):
-            hook = {"type": "pr_approved"}
-            errors = run_builtin_validator(tmp_path, hook, pr_number=123)
-            assert len(errors) == 1
-            assert "not approved" in errors[0]
+            with patch('agenttree.hooks.subprocess.run', return_value=mock_result):
+                hook = {"type": "pr_approved"}
+                errors = run_builtin_validator(tmp_path, hook, pr_number=123)
+                assert len(errors) == 1
+                assert "approve" in errors[0].lower()
 
     def test_pr_approved_no_pr_number(self, tmp_path):
         """Should return error when no PR number available."""

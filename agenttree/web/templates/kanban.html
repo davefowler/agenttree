@@ -192,8 +192,8 @@
             background: var(--bg-card);
             border: 1px solid var(--border-color);
             border-radius: 6px;
-            max-width: 800px;
-            width: 90%;
+            max-width: 1200px;
+            width: 95%;
             max-height: 90vh;
             overflow-y: auto;
             padding: 30px;
@@ -552,6 +552,154 @@
             color: var(--text-muted);
             font-size: 12px;
         }
+
+        /* Issue detail wrapper with chat panel */
+        .issue-detail-wrapper {
+            display: flex;
+            gap: 20px;
+            min-height: 400px;
+        }
+
+        .issue-detail-main {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .btn-chat-toggle {
+            background: var(--btn-bg);
+        }
+
+        .btn-chat-toggle:hover {
+            background: var(--btn-bg-hover);
+        }
+
+        /* Agent chat panel */
+        .agent-chat-panel {
+            width: 350px;
+            flex-shrink: 0;
+            background: #1e3a2f;
+            border-radius: 6px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            transition: width 0.3s ease, opacity 0.3s ease;
+        }
+
+        .agent-chat-panel.collapsed {
+            width: 0;
+            opacity: 0;
+            overflow: hidden;
+        }
+
+        .agent-chat-header {
+            background: #2d4a3e;
+            padding: 12px 15px;
+            border-bottom: 1px solid #4a7c6f;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .agent-chat-header h4 {
+            color: #a8d5ba;
+            font-size: 14px;
+            font-weight: 600;
+            margin: 0;
+        }
+
+        .agent-chat-toggle {
+            background: none;
+            border: none;
+            color: #8eb89c;
+            cursor: pointer;
+            font-size: 16px;
+            padding: 4px;
+        }
+
+        .agent-chat-toggle:hover {
+            color: #a8d5ba;
+        }
+
+        .agent-chat-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .agent-chat-panel .agent-status {
+            padding: 10px 15px;
+            background: #2d4a3e;
+            border-bottom: 1px solid #4a7c6f;
+            font-size: 12px;
+            color: #a8d5ba;
+        }
+
+        .agent-chat-panel .status-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+
+        .agent-chat-panel .status-indicator.active {
+            background: #6b9a7a;
+        }
+
+        .agent-chat-panel .tmux-output {
+            flex: 1;
+            background: #0d1f18;
+            padding: 10px;
+            overflow-y: auto;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 12px;
+            line-height: 1.4;
+            white-space: pre-wrap;
+            word-break: break-all;
+            color: #e8e4d9;
+            min-height: 200px;
+            max-height: 400px;
+        }
+
+        .agent-chat-panel .tmux-input-container {
+            padding: 10px;
+            background: #2d4a3e;
+            border-top: 1px solid #4a7c6f;
+        }
+
+        .agent-chat-panel .tmux-input {
+            width: 100%;
+            padding: 8px 12px;
+            background: #1e3a2f;
+            border: 1px solid #4a7c6f;
+            border-radius: 4px;
+            color: #e8e4d9;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 12px;
+        }
+
+        .agent-chat-panel .tmux-input:focus {
+            outline: none;
+            border-color: #a8d5ba;
+        }
+
+        .agent-chat-panel .no-agent-message {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            min-height: 200px;
+            text-align: center;
+            color: #8eb89c;
+            padding: 20px;
+        }
+
+        .agent-chat-panel .no-agent-message p {
+            font-size: 13px;
+            margin-bottom: 10px;
+        }
     </style>
 </head>
 <body>
@@ -725,6 +873,18 @@
                 target: '#file-content-' + issueId,
                 swap: 'innerHTML'
             });
+        }
+
+        // Toggle agent chat panel
+        function toggleAgentChat(issueNumber) {
+            const panel = document.getElementById('agent-chat-panel-' + issueNumber);
+            if (panel) {
+                panel.classList.toggle('collapsed');
+                const icon = document.getElementById('chat-toggle-icon-' + issueNumber);
+                if (icon) {
+                    icon.textContent = panel.classList.contains('collapsed') ? '\u00ab' : '\u00d7';
+                }
+            }
         }
 
         // Close modal on escape key

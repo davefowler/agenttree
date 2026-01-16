@@ -1,0 +1,40 @@
+<!-- Shared agent chat panel - used by both flow view and kanban modal -->
+<div class="agent-chat-panel" id="agent-chat-panel-{{ issue.number }}">
+    <div class="agent-chat-header">
+        <h4>Agent Chat</h4>
+        <button class="agent-chat-toggle" onclick="toggleAgentChat('{{ issue.number }}')" title="Close chat panel">
+            <span id="chat-toggle-icon-{{ issue.number }}">&times;</span>
+        </button>
+    </div>
+    <div class="agent-chat-content">
+        {% if issue.assigned_agent %}
+        <div class="agent-status">
+            <span class="status-indicator active"></span>
+            Agent {{ issue.assigned_agent }} assigned
+        </div>
+        <div class="tmux-output" id="tmux-output-{{ issue.number }}"
+             hx-get="/agent/{{ issue.assigned_agent }}/tmux"
+             hx-trigger="load, every 2s"
+             hx-swap="innerHTML">
+            Loading...
+        </div>
+        <div class="tmux-input-container">
+            <form hx-post="/agent/{{ issue.assigned_agent }}/send"
+                  hx-trigger="submit"
+                  hx-target="#send-status-{{ issue.number }}"
+                  hx-swap="innerHTML"
+                  onsubmit="this.reset(); return true;">
+                <input type="text" name="message" class="tmux-input"
+                       placeholder="Send message to agent..."
+                       autocomplete="off">
+            </form>
+            <div id="send-status-{{ issue.number }}"></div>
+        </div>
+        {% else %}
+        <div class="no-agent-message">
+            <p>No agent assigned</p>
+            <p>Click "Start Agent" to begin</p>
+        </div>
+        {% endif %}
+    </div>
+</div>

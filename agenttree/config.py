@@ -75,11 +75,15 @@ class StageConfig(BaseModel):
 
 
 # Default stages if not configured in .agenttree.yaml
+# Keep in sync with .agenttree.yaml in this repo (the canonical reference)
 DEFAULT_STAGES = [
     StageConfig(name="backlog"),
     StageConfig(
         name="define",
         output="problem.md",
+        pre_completion=[
+            {"section_check": {"file": "problem.md", "section": "Context", "expect": "not_empty"}},
+        ],
         substages={
             "refine": SubstageConfig(name="refine"),  # Human provides draft, agent refines
         }
@@ -88,6 +92,9 @@ DEFAULT_STAGES = [
         name="research",
         output="research.md",
         post_start=[{"create_file": {"template": "research.md", "dest": "research.md"}}],
+        pre_completion=[
+            {"section_check": {"file": "research.md", "section": "Relevant Files", "expect": "not_empty"}},
+        ],
         substages={
             "explore": SubstageConfig(name="explore"),
             "document": SubstageConfig(name="document"),
@@ -97,6 +104,11 @@ DEFAULT_STAGES = [
         name="plan",
         output="spec.md",
         post_start=[{"create_file": {"template": "spec.md", "dest": "spec.md"}}],
+        pre_completion=[
+            {"section_check": {"file": "spec.md", "section": "Approach", "expect": "not_empty"}},
+            {"section_check": {"file": "spec.md", "section": "Files to Modify", "expect": "not_empty"}},
+            {"section_check": {"file": "spec.md", "section": "Implementation Steps", "expect": "not_empty"}},
+        ],
         substages={
             "draft": SubstageConfig(name="draft"),
             "refine": SubstageConfig(name="refine"),
@@ -106,6 +118,9 @@ DEFAULT_STAGES = [
         name="plan_assess",
         output="spec_review.md",
         post_start=[{"create_file": {"template": "spec_review.md", "dest": "spec_review.md"}}],
+        pre_completion=[
+            {"section_check": {"file": "spec_review.md", "section": "Assessment Summary", "expect": "not_empty"}},
+        ],
     ),
     StageConfig(name="plan_revise", output="spec.md"),
     StageConfig(
@@ -132,6 +147,9 @@ DEFAULT_STAGES = [
                 name="code_review",
                 output="review.md",
                 post_start=[{"create_file": {"template": "review.md", "dest": "review.md"}}],
+                pre_completion=[
+                    {"section_check": {"file": "review.md", "section": "Self-Review Checklist", "expect": "all_checked"}},
+                ],
             ),
             "address_review": SubstageConfig(name="address_review"),
             "wrapup": SubstageConfig(

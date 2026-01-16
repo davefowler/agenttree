@@ -24,6 +24,11 @@ stages:
 
   - name: define
     output: problem.md
+    pre_completion:
+      - section_check:
+          file: problem.md
+          section: Context
+          expect: not_empty
     substages:
       refine: {}  # Human provides initial draft, agent refines
 
@@ -33,6 +38,11 @@ stages:
       - create_file:
           template: research.md
           dest: research.md
+    pre_completion:
+      - section_check:
+          file: research.md
+          section: Relevant Files
+          expect: not_empty
     substages:
       explore: {}
       document: {}
@@ -43,6 +53,19 @@ stages:
       - create_file:
           template: spec.md
           dest: spec.md
+    pre_completion:
+      - section_check:
+          file: spec.md
+          section: Approach
+          expect: not_empty
+      - section_check:
+          file: spec.md
+          section: Files to Modify
+          expect: not_empty
+      - section_check:
+          file: spec.md
+          section: Implementation Steps
+          expect: not_empty
     substages:
       draft: {}
       refine: {}
@@ -53,6 +76,11 @@ stages:
       - create_file:
           template: spec_review.md
           dest: spec_review.md
+    pre_completion:
+      - section_check:
+          file: spec_review.md
+          section: Assessment Summary
+          expect: not_empty
 
   - name: plan_revise
     output: spec.md
@@ -85,6 +113,11 @@ stages:
           - create_file:
               template: review.md
               dest: review.md
+        pre_completion:
+          - section_check:
+              file: review.md
+              section: Self-Review Checklist
+              expect: all_checked
       address_review: {}
       wrapup:
         pre_completion:
