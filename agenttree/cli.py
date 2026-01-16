@@ -2225,9 +2225,5 @@ def lint(extra_args: tuple[str, ...]) -> None:
     console.print(f"\n[green]All {len(commands)} lint command(s) passed[/green]")
 
 
-def broken_function(x: int) -> str:
-    return x + 1  # Type error: returns int not str
-
-
 if __name__ == "__main__":
     main()
