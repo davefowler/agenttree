@@ -26,6 +26,7 @@ from agenttree.issues import (
     get_issue_dir,
     get_next_stage,
     update_issue_stage,
+    update_issue_metadata,
     assign_agent,
     load_skill,
     # Session management
@@ -73,6 +74,8 @@ def main() -> None:
 @click.option("--project", help="Project name for tmux sessions")
 def init(worktrees_dir: Optional[str], project: Optional[str]) -> None:
     """Initialize AgentTree in the current repository."""
+    import importlib.resources
+
     repo_path = Path.cwd()
 
     # Check if we're in a git repo
@@ -91,29 +94,13 @@ def init(worktrees_dir: Optional[str], project: Optional[str]) -> None:
     if not project:
         project = repo_path.name
 
-    # Create config
-    config_data = {
-        "project": project,
-        "worktrees_dir": worktrees_dir or ".worktrees",
-        "port_range": "9001-9099",  # Less conflicting range (9000 + agent number)
-        "default_tool": "claude",
-        "tools": {
-            "claude": {
-                "command": "claude",
-                "startup_prompt": "Check TASK.md and start working on it.",
-            },
-            "aider": {
-                "command": "aider --model sonnet",
-                "startup_prompt": "/read TASK.md",
-            },
-        },
-    }
-
-    import yaml
-
-    with open(config_file, "w") as f:
-        yaml.dump(config_data, f, default_flow_style=False)
-
+    # Copy default config template and substitute project name
+    template_path = importlib.resources.files("agenttree.templates").joinpath("default.agenttree.yaml")
+    config_content = template_path.read_text()
+    config_content = config_content.replace("{{PROJECT_NAME}}", project)
+    if worktrees_dir:
+        config_content = config_content.replace("worktrees_dir: .worktrees", f"worktrees_dir: {worktrees_dir}")
+    config_file.write_text(config_content)
     console.print(f"[green]✓ Created {config_file}[/green]")
 
     # Create _agenttree/scripts directory
@@ -802,6 +789,9 @@ def start_agent(
     # Mark issue as having an assigned agent (for web UI status light)
     assign_agent(issue.id, int(issue.id))
 
+    # Save branch and worktree info to issue metadata
+    update_issue_metadata(issue.id, branch=names["branch"], worktree_dir=str(worktree_path))
+
     console.print(f"[green]✓ Dispatching agent for issue #{issue.id}: {issue.title}[/green]")
 
     # Create session for restart detection
@@ -987,6 +977,11 @@ def kill(issue_id: str) -> None:
 
     tmux_manager.stop_issue_agent(agent.tmux_session)
     unregister_agent(agent.issue_id)
+
+    # Clear assigned_agent in issue metadata to prevent ghost status
+    from agenttree.issues import update_issue_metadata
+    update_issue_metadata(agent.issue_id, clear_assigned_agent=True)
+
     console.print(f"[green]✓ Killed agent for issue #{agent.issue_id}[/green]")
 
 
@@ -1680,86 +1675,6 @@ def stage_status(issue_id: Optional[str]) -> None:
         console.print(f"\n[green]✓ Issue completed[/green]")
 
 
-@main.command("begin")
-@click.argument("stage")
-@click.option("--issue", "-i", "issue_id", required=False, help="Issue ID (auto-detected from branch if not provided)")
-def stage_begin(stage: str, issue_id: Optional[str]) -> None:
-    """Begin working on a stage. Returns stage instructions.
-
-    Valid stages: backlog, define, research, plan, implement, etc.
-
-    Examples:
-        agenttree begin define --issue 001
-        agenttree begin research  # Auto-detects issue from branch
-    """
-    from agenttree.issues import get_issue_from_branch
-
-    # Auto-detect issue from branch if not provided
-    if not issue_id:
-        issue_id = get_issue_from_branch()
-        if not issue_id:
-            console.print("[red]No issue ID provided and couldn't detect from branch name[/red]")
-            console.print("[dim]Use --issue <ID> or run from a branch like 'issue-042-slug'[/dim]")
-            sys.exit(1)
-        console.print(f"[dim]Detected issue {issue_id} from branch[/dim]")
-
-    issue = get_issue_func(issue_id)
-    if not issue:
-        console.print(f"[red]Issue {issue_id} not found[/red]")
-        sys.exit(1)
-
-    target_stage = stage
-
-    # Validate: can't begin review stages or terminal stages directly
-    if target_stage in HUMAN_REVIEW_STAGES:
-        console.print(f"[red]Cannot begin review stages directly. Use 'agenttree next' to transition.[/red]")
-        sys.exit(1)
-    if target_stage in (ACCEPTED, NOT_DOING):
-        console.print(f"[red]Cannot begin terminal stages ({target_stage})[/red]")
-        sys.exit(1)
-
-    # Get substages for this stage
-    substages = STAGE_SUBSTAGES.get(target_stage, [])
-    substage = substages[0] if substages else None
-
-    # Update issue to this stage
-    from_stage = issue.stage
-    updated = update_issue_stage(issue_id, target_stage, substage)
-    if not updated:
-        console.print(f"[red]Failed to update issue[/red]")
-        sys.exit(1)
-
-    # Run on_enter hooks (e.g., create plan.md for research stage)
-    # Note: We skip pre_transition hooks since begin allows arbitrary stage jumps
-    execute_post_hooks(updated, target_stage, substage)
-
-    stage_str = target_stage
-    if substage:
-        stage_str += f".{substage}"
-    console.print(f"[green]✓ Started {stage_str}[/green]")
-
-    # Determine if this is first agent entry (should include AGENTS.md system prompt)
-    is_first_stage = target_stage == DEFINE and from_stage == BACKLOG
-
-    # Load and display skill with Jinja rendering
-    skill = load_skill(target_stage, substage, issue=updated, include_system=is_first_stage)
-    if skill:
-        console.print(f"\n{'='*60}")
-        console.print(f"[bold cyan]Stage Instructions: {target_stage.upper()}[/bold cyan]")
-        console.print(f"{'='*60}\n")
-        console.print(skill)
-    else:
-        console.print(f"\n[dim]No skill file found for {target_stage}[/dim]")
-
-    # Show relevant files
-    issue_dir = get_issue_dir(issue_id)
-    if issue_dir:
-        console.print(f"\n[bold]Issue files:[/bold]")
-        for file in sorted(issue_dir.iterdir()):
-            if file.is_file():
-                console.print(f"  • {file.name}")
-
-
 @main.command("next")
 @click.option("--issue", "-i", "issue_id", required=False, help="Issue ID (auto-detected from branch if not provided)")
 @click.option("--reassess", is_flag=True, help="Go back to plan_assess for another review cycle")
@@ -1920,14 +1835,19 @@ def stage_next(issue_id: Optional[str], reassess: bool) -> None:
 
 @main.command("approve")
 @click.argument("issue_id", type=str)
-def approve_issue(issue_id: str) -> None:
+@click.option("--skip-approval", is_flag=True, help="Skip PR approval check (useful if you're the PR author)")
+def approve_issue(issue_id: str, skip_approval: bool) -> None:
     """Approve an issue at a human review stage.
 
     Only works at human review stages (plan_review, implementation_review).
     Cannot be run from inside a container - humans only.
 
+    For implementation_review: will auto-approve the PR on GitHub unless you're the author.
+    Use --skip-approval to bypass if you've already reviewed the changes.
+
     Example:
         agenttree approve 042
+        agenttree approve 042 --skip-approval  # Skip PR approval check
     """
     # Block if in container
     if is_running_in_container():
@@ -1955,7 +1875,7 @@ def approve_issue(issue_id: str) -> None:
     from_stage = issue.stage
     from_substage = issue.substage
     try:
-        execute_pre_hooks(issue, from_stage, from_substage)
+        execute_pre_hooks(issue, from_stage, from_substage, skip_pr_approval=skip_approval)
     except ValidationError as e:
         console.print(f"[red]Cannot approve: {e}[/red]")
         sys.exit(1)
@@ -2223,6 +2143,158 @@ def lint(extra_args: tuple[str, ...]) -> None:
         sys.exit(1)
 
     console.print(f"\n[green]All {len(commands)} lint command(s) passed[/green]")
+
+
+# =============================================================================
+# Sync Command
+# =============================================================================
+
+
+@main.command("sync")
+def sync_command() -> None:
+    """Force sync with agents repository.
+
+    This command:
+    1. Pushes any pending branches to remote
+    2. Creates PRs for issues at implementation_review that don't have PRs
+    3. Detects PRs that were merged externally and advances issues to accepted
+
+    Sync happens automatically on most agenttree commands, but use this
+    to force it immediately (e.g., right after an agent finishes).
+
+    Example:
+        agenttree sync
+    """
+    from agenttree.agents_repo import sync_agents_repo
+
+    console.print("[dim]Syncing agents repository...[/dim]")
+    success = sync_agents_repo()
+
+    if success:
+        console.print("[green]✓ Sync complete[/green]")
+    else:
+        console.print("[yellow]Sync completed with warnings[/yellow]")
+
+
+# =============================================================================
+# Hooks Commands
+# =============================================================================
+
+
+@main.group("hooks")
+def hooks_group() -> None:
+    """Hook management commands."""
+    pass
+
+
+@hooks_group.command("check")
+@click.argument("issue_id", type=str)
+@click.option("--event", type=click.Choice(["pre_completion", "post_start", "both"]), default="both",
+              help="Which hooks to show (default: both)")
+def hooks_check(issue_id: str, event: str) -> None:
+    """Preview which hooks would run for an issue.
+
+    Shows the hooks that would execute for the issue's current stage,
+    without actually running them. Useful for debugging workflow issues.
+
+    Example:
+        agenttree hooks check 042
+        agenttree hooks check 042 --event pre_completion
+    """
+    from agenttree.config import load_config
+    from agenttree.hooks import parse_hook, is_running_in_container
+
+    # Normalize issue ID
+    issue_id_normalized = issue_id.lstrip("0") or "0"
+    issue = get_issue_func(issue_id_normalized)
+    if not issue:
+        console.print(f"[red]Issue {issue_id} not found[/red]")
+        sys.exit(1)
+
+    config = load_config()
+    stage_config = config.get_stage(issue.stage)
+    if not stage_config:
+        console.print(f"[yellow]No hooks configured for stage: {issue.stage}[/yellow]")
+        return
+
+    in_container = is_running_in_container()
+    context = "container" if in_container else "host"
+
+    console.print(f"\n[bold]Issue #{issue.id}[/bold]: {issue.title}")
+    console.print(f"[dim]Stage: {issue.stage}" + (f".{issue.substage}" if issue.substage else "") + f"[/dim]")
+    console.print(f"[dim]Context: {context}[/dim]")
+    console.print()
+
+    def show_hooks(hooks: list, event_name: str, source: str) -> None:
+        if not hooks:
+            console.print(f"[dim]{event_name} ({source}): none[/dim]")
+            return
+
+        console.print(f"[cyan]{event_name} ({source}):[/cyan]")
+        for hook in hooks:
+            hook_type, params = parse_hook(hook)
+            host_only = hook.get("host_only", False)
+            optional = hook.get("optional", False)
+
+            # Check if would be skipped
+            skipped = ""
+            if host_only and in_container:
+                skipped = " [yellow](would skip - host only)[/yellow]"
+            elif hook_type in ("merge_pr", "pr_approved", "cleanup_agent", "start_blocked_issues") and in_container:
+                skipped = " [yellow](would skip - needs host)[/yellow]"
+
+            optional_str = " [dim](optional)[/dim]" if optional else ""
+
+            # Format params
+            if hook_type == "run":
+                param_str = params.get("command", "")
+            elif hook_type == "file_exists":
+                param_str = params.get("file", "")
+            elif hook_type == "section_check":
+                param_str = f"{params.get('file', '')} → {params.get('section', '')} ({params.get('expect', '')})"
+            elif hook_type == "field_check":
+                param_str = f"{params.get('file', '')} → {params.get('path', '')} (min: {params.get('min', 'n/a')})"
+            elif hook_type == "create_file":
+                param_str = f"{params.get('template', '')} → {params.get('dest', '')}"
+            else:
+                param_str = str(params) if params else ""
+
+            console.print(f"  • [green]{hook_type}[/green]: {param_str}{optional_str}{skipped}")
+
+    # Get substage config if applicable
+    substage_config = None
+    if issue.substage:
+        substage_config = stage_config.get_substage(issue.substage)
+
+    # Show hooks based on event filter
+    if event in ("pre_completion", "both"):
+        # Substage pre_completion hooks
+        if substage_config:
+            show_hooks(substage_config.pre_completion, "pre_completion", f"{issue.stage}.{issue.substage}")
+
+        # Check if exiting stage (last substage or no substages)
+        substages = stage_config.substage_order()
+        is_exiting_stage = not substages or (issue.substage and substages[-1] == issue.substage)
+
+        if is_exiting_stage:
+            show_hooks(stage_config.pre_completion, "pre_completion", f"{issue.stage} (stage-level)")
+        elif not substage_config:
+            show_hooks(stage_config.pre_completion, "pre_completion", issue.stage)
+
+    if event in ("post_start", "both"):
+        # For post_start, show what would run on NEXT stage
+        next_stage, next_substage, _ = get_next_stage(issue.stage, issue.substage)
+        if next_stage:
+            next_stage_config = config.get_stage(next_stage)
+            if next_stage_config:
+                if next_substage:
+                    next_substage_config = next_stage_config.get_substage(next_substage)
+                    if next_substage_config:
+                        show_hooks(next_substage_config.post_start, "post_start", f"{next_stage}.{next_substage} (next)")
+                else:
+                    show_hooks(next_stage_config.post_start, "post_start", f"{next_stage} (next)")
+
+    console.print()
 
 
 if __name__ == "__main__":

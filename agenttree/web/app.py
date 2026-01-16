@@ -14,6 +14,7 @@ import os
 from typing import List, Dict, Optional
 from datetime import datetime
 
+from agenttree import __version__
 from agenttree.config import load_config
 from agenttree.worktree import WorktreeManager
 from agenttree.github import get_issue as get_github_issue
@@ -44,6 +45,7 @@ app.add_middleware(NoCacheMiddleware)
 # Mount static files and templates
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+templates.env.globals["version"] = __version__
 
 # Optional authentication (auto_error=False allows requests without credentials)
 security = HTTPBasic(auto_error=False)
@@ -120,10 +122,25 @@ class AgentManager:
         self.agents: Dict[int, dict] = {}
 
     def _check_tmux_session(self, agent_num: int) -> bool:
-        """Check if tmux session exists for agent."""
+        """Check if tmux session exists for agent (legacy numbered agents)."""
         try:
             result = subprocess.run(
                 ["tmux", "has-session", "-t", f"agent-{agent_num}"],
+                capture_output=True,
+                timeout=1
+            )
+            return result.returncode == 0
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            return False
+
+    def _check_issue_tmux_session(self, issue_id: str) -> bool:
+        """Check if tmux session exists for an issue-bound agent."""
+        # Session names are: {project}-issue-{issue_id}
+        config = load_config()
+        session_name = f"{config.project}-issue-{issue_id}"
+        try:
+            result = subprocess.run(
+                ["tmux", "has-session", "-t", session_name],
                 capture_output=True,
                 timeout=1
             )
@@ -194,6 +211,9 @@ def convert_issue_to_web(issue: issue_crud.Issue) -> WebIssue:
     except ValueError:
         stage = StageEnum.BACKLOG
 
+    # Check if tmux session is active for this issue
+    tmux_active = agent_manager._check_issue_tmux_session(issue.id)
+
     return WebIssue(
         number=int(issue.id),
         title=issue.title,
@@ -202,6 +222,7 @@ def convert_issue_to_web(issue: issue_crud.Issue) -> WebIssue:
         assignees=[],
         stage=stage,
         assigned_agent=issue.assigned_agent,
+        tmux_active=tmux_active,
         pr_url=issue.pr_url,
         pr_number=issue.pr_number,
         created_at=datetime.fromisoformat(issue.created.replace("Z", "+00:00")),
@@ -250,6 +271,35 @@ async def kanban(
     )
 
 
+def get_issue_files(issue_id: str) -> list[dict[str, str | int]]:
+    """Get list of markdown files for an issue.
+
+    Returns list of dicts with keys: name, display_name, size, modified
+    """
+    issue_dir = issue_crud.get_issue_dir(issue_id)
+    if not issue_dir:
+        return []
+
+    files: list[dict[str, str | int]] = []
+    for f in sorted(issue_dir.glob("*.md")):
+        files.append({
+            "name": f.name,
+            "display_name": f.stem.replace("_", " ").title(),
+            "size": f.stat().st_size,
+            "modified": datetime.fromtimestamp(f.stat().st_mtime).isoformat()
+        })
+    return files
+
+
+# Cache stage list for sorting efficiency
+_STAGE_LIST = list(StageEnum)
+
+
+def _sort_flow_issues(issues: list[WebIssue]) -> list[WebIssue]:
+    """Sort issues for flow view: review stages first, higher stage order, then number."""
+    return sorted(issues, key=lambda x: (not x.is_review, -_STAGE_LIST.index(x.stage), x.number))
+
+
 @app.get("/flow", response_class=HTMLResponse)
 async def flow(
     request: Request,
@@ -257,16 +307,18 @@ async def flow(
 ) -> HTMLResponse:
     """Flow view page."""
     issues = issue_crud.list_issues(sync=False)  # Skip sync for fast web reads
-    web_issues = [convert_issue_to_web(i) for i in issues]
-    # Sort by stage order and then by number
-    web_issues.sort(key=lambda x: (list(StageEnum).index(x.stage), x.number))
+    web_issues = _sort_flow_issues([convert_issue_to_web(i) for i in issues])
     selected_issue = web_issues[0] if web_issues else None
 
-    # Load body content for selected issue
-    if selected_issue and issues:
-        raw_issue = issues[0]
-        issue_dir = issue_crud.get_issue_dir(raw_issue.id)
+    # Load body content and files for selected issue
+    files = []
+    if selected_issue:
+        issue_id = str(selected_issue.number).zfill(3)
+        issue_dir = issue_crud.get_issue_dir(issue_id)
         if issue_dir:
+            # Get list of markdown files
+            files = get_issue_files(issue_id)
+            # Load first file content (problem.md by default)
             problem_path = issue_dir / "problem.md"
             if problem_path.exists():
                 selected_issue.body = problem_path.read_text()
@@ -278,6 +330,7 @@ async def flow(
             "issues": web_issues,
             "selected_issue": selected_issue,
             "issue": selected_issue,  # issue_detail.html expects 'issue'
+            "files": files,
             "active_page": "flow",
         }
     )
@@ -290,8 +343,7 @@ async def flow_issues(
 ) -> HTMLResponse:
     """Flow issues list (HTMX endpoint)."""
     issues = issue_crud.list_issues(sync=False)  # Skip sync for fast web reads
-    web_issues = [convert_issue_to_web(i) for i in issues]
-    web_issues.sort(key=lambda x: (list(StageEnum).index(x.stage), x.number))
+    web_issues = _sort_flow_issues([convert_issue_to_web(i) for i in issues])
     return templates.TemplateResponse(
         "partials/flow_issues_list.html",
         {"request": request, "issues": web_issues}
@@ -496,18 +548,105 @@ async def move_issue(
     move_request: IssueMoveRequest,
     user: Optional[str] = Depends(get_current_user)
 ) -> dict:
-    """Move an issue to a new stage."""
-    # Update the issue stage
+    """Move an issue to a new stage.
+
+    DEPRECATED: Use /approve for human review stages instead.
+    This bypasses workflow validation and should only be used for backlog management.
+    """
+    # Only allow moving TO backlog or not_doing (safe operations)
+    safe_targets = ["backlog", "not_doing"]
+    if move_request.stage.value not in safe_targets:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Direct stage changes only allowed to: {', '.join(safe_targets)}. Use approve for workflow transitions."
+        )
+
+    # Get issue first to pass to cleanup
+    issue = issue_crud.get_issue(issue_id, sync=False)
+    if not issue:
+        raise HTTPException(status_code=404, detail=f"Issue {issue_id} not found")
+
     updated_issue = issue_crud.update_issue_stage(
         issue_id=issue_id,
         stage=move_request.stage.value,
-        substage=None,  # Clear substage when moving manually
+        substage=None,
     )
 
     if not updated_issue:
-        raise HTTPException(status_code=404, detail=f"Issue {issue_id} not found")
+        raise HTTPException(status_code=500, detail=f"Failed to update issue {issue_id}")
+
+    # Clean up agent when moving to backlog or not_doing
+    # backlog = pause work (stop agent, keep worktree for later)
+    # not_doing = abandon work (stop agent, worktree can be cleaned up)
+    if move_request.stage.value in ["backlog", "not_doing"]:
+        from agenttree.hooks import cleanup_issue_agent
+        cleanup_issue_agent(updated_issue)
 
     return {"success": True, "stage": move_request.stage.value}
+
+
+@app.post("/api/issues/{issue_id}/approve")
+async def approve_issue(
+    issue_id: str,
+    user: Optional[str] = Depends(get_current_user)
+) -> dict:
+    """Approve an issue at a human review stage.
+
+    Runs the proper workflow: executes exit hooks, advances to next stage,
+    executes enter hooks. Only works from human review stages.
+    """
+    from agenttree.config import load_config
+    from agenttree.hooks import execute_exit_hooks, execute_enter_hooks, ValidationError
+    from agenttree.issues import update_session_stage
+
+    HUMAN_REVIEW_STAGES = ["plan_review", "implementation_review"]
+
+    # Get issue
+    issue_id_normalized = issue_id.lstrip("0") or "0"
+    issue = issue_crud.get_issue(issue_id_normalized, sync=False)
+    if not issue:
+        raise HTTPException(status_code=404, detail=f"Issue {issue_id} not found")
+
+    # Check if at human review stage
+    if issue.stage not in HUMAN_REVIEW_STAGES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Issue is at '{issue.stage}', not a human review stage. Can only approve from: {', '.join(HUMAN_REVIEW_STAGES)}"
+        )
+
+    # Calculate next stage
+    config = load_config()
+    next_stage, next_substage, _ = config.get_next_stage(issue.stage, issue.substage)
+
+    # Execute exit hooks (validation)
+    try:
+        execute_exit_hooks(issue, issue.stage, issue.substage)
+    except ValidationError as e:
+        raise HTTPException(status_code=400, detail=f"Cannot approve: {str(e)}")
+
+    # Update issue stage
+    updated = issue_crud.update_issue_stage(issue_id_normalized, next_stage, next_substage)
+    if not updated:
+        raise HTTPException(status_code=500, detail="Failed to update issue")
+
+    # Update session
+    try:
+        update_session_stage(issue_id_normalized, next_stage, next_substage)
+    except Exception:
+        pass  # Session update is optional
+
+    # Execute enter hooks
+    try:
+        execute_enter_hooks(updated, next_stage, next_substage)
+    except Exception:
+        pass  # Enter hooks shouldn't block
+
+    return {
+        "success": True,
+        "message": f"Approved! Moved from {issue.stage} to {next_stage}",
+        "new_stage": next_stage,
+        "new_substage": next_substage
+    }
 
 
 @app.get("/api/issues/{issue_id}/detail", response_class=HTMLResponse)
@@ -521,7 +660,10 @@ async def issue_detail(
     if not issue:
         raise HTTPException(status_code=404, detail=f"Issue {issue_id} not found")
 
-    # Load problem.md content
+    # Get markdown files list
+    files = get_issue_files(issue_id)
+
+    # Load problem.md content (first tab)
     issue_dir = issue_crud.get_issue_dir(issue_id)
     problem_content = ""
     if issue_dir:
@@ -534,7 +676,7 @@ async def issue_detail(
 
     return templates.TemplateResponse(
         "partials/issue_detail.html",
-        {"request": request, "issue": web_issue}
+        {"request": request, "issue": web_issue, "files": files}
     )
 
 
@@ -549,7 +691,10 @@ async def flow_issue_detail(
     if not issue:
         raise HTTPException(status_code=404, detail=f"Issue {issue_id} not found")
 
-    # Load problem.md content
+    # Get markdown files list
+    files = get_issue_files(issue_id)
+
+    # Load problem.md content (first tab)
     issue_dir = issue_crud.get_issue_dir(issue_id)
     problem_content = ""
     if issue_dir:
@@ -561,8 +706,8 @@ async def flow_issue_detail(
     web_issue.body = problem_content
 
     return templates.TemplateResponse(
-        "partials/issue_detail.html",
-        {"request": request, "issue": web_issue}
+        "partials/flow_issue_detail.html",
+        {"request": request, "issue": web_issue, "files": files}
     )
 
 
@@ -594,6 +739,47 @@ async def tmux_websocket(websocket: WebSocket, agent_num: int) -> None:
 
     except WebSocketDisconnect:
         pass
+
+
+@app.get("/api/issues/{issue_id}/files")
+async def list_issue_files(
+    issue_id: str,
+    user: Optional[str] = Depends(get_current_user)
+) -> dict:
+    """List markdown files in an issue directory."""
+    files = get_issue_files(issue_id)
+    if not files and not issue_crud.get_issue_dir(issue_id):
+        raise HTTPException(status_code=404, detail=f"Issue {issue_id} not found")
+
+    return {"issue_id": issue_id, "files": files}
+
+
+@app.get("/api/issues/{issue_id}/files/{filename}", response_class=HTMLResponse)
+async def get_issue_file(
+    request: Request,
+    issue_id: str,
+    filename: str,
+    user: Optional[str] = Depends(get_current_user)
+) -> HTMLResponse:
+    """Get content of a markdown file in an issue directory."""
+    issue_dir = issue_crud.get_issue_dir(issue_id)
+    if not issue_dir:
+        raise HTTPException(status_code=404, detail=f"Issue {issue_id} not found")
+
+    # Security: ensure filename is safe (no path traversal)
+    if "/" in filename or "\\" in filename or ".." in filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    file_path = issue_dir / filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail=f"File {filename} not found")
+
+    content = file_path.read_text()
+
+    return templates.TemplateResponse(
+        "partials/markdown_content.html",
+        {"request": request, "content": content, "filename": filename}
+    )
 
 
 @app.get("/health")

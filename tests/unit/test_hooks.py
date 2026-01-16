@@ -277,14 +277,20 @@ This is the approach section with content.
             assert errors == []
 
     def test_pr_approved_failure(self, tmp_path):
-        """Should return error when PR is not approved."""
+        """Should return error when PR is not approved and auto-approve fails."""
         from agenttree.hooks import run_builtin_validator
 
+        # Mock approval check returning False, and subprocess auto-approve failing
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        mock_result.stderr = "Can not approve your own pull request"
+
         with patch('agenttree.hooks.get_pr_approval_status', return_value=False):
-            hook = {"type": "pr_approved"}
-            errors = run_builtin_validator(tmp_path, hook, pr_number=123)
-            assert len(errors) == 1
-            assert "not approved" in errors[0]
+            with patch('agenttree.hooks.subprocess.run', return_value=mock_result):
+                hook = {"type": "pr_approved"}
+                errors = run_builtin_validator(tmp_path, hook, pr_number=123)
+                assert len(errors) == 1
+                assert "approve" in errors[0].lower()
 
     def test_pr_approved_no_pr_number(self, tmp_path):
         """Should return error when no PR number available."""
@@ -429,7 +435,12 @@ class TestExecuteExitHooks:
         from agenttree.hooks import execute_exit_hooks, ValidationError
         from agenttree.config import Config, StageConfig, SubstageConfig
 
-        config = Config()
+        # Create config with stages (stages are now required)
+        config = Config(stages=[
+            StageConfig(name="implement", substages={
+                "code": SubstageConfig(name="code", pre_completion=[{"file_exists": "test.md"}])
+            })
+        ])
         mock_load_config.return_value = config
         mock_get_dir.return_value = Path("/tmp/issue")
         mock_execute_hooks.return_value = ["Error 1"]
@@ -451,9 +462,14 @@ class TestExecuteExitHooks:
     ):
         """Should format multiple errors with numbered list."""
         from agenttree.hooks import execute_exit_hooks, ValidationError
-        from agenttree.config import Config
+        from agenttree.config import Config, StageConfig, SubstageConfig
 
-        config = Config()
+        # Create config with stages (stages are now required)
+        config = Config(stages=[
+            StageConfig(name="implement", substages={
+                "code": SubstageConfig(name="code", pre_completion=[{"file_exists": "test.md"}])
+            })
+        ])
         mock_load_config.return_value = config
         mock_get_dir.return_value = Path("/tmp/issue")
         mock_execute_hooks.return_value = ["Error 1", "Error 2"]
@@ -1448,9 +1464,14 @@ class TestPreCompletionPostStartHooks:
     ):
         """execute_exit_hooks should use pre_completion field."""
         from agenttree.hooks import execute_exit_hooks
-        from agenttree.config import Config
+        from agenttree.config import Config, StageConfig, SubstageConfig
 
-        config = Config()
+        # Create config with stages (stages are now required)
+        config = Config(stages=[
+            StageConfig(name="implement", substages={
+                "code": SubstageConfig(name="code", pre_completion=[{"file_exists": "test.md"}])
+            })
+        ])
         mock_load_config.return_value = config
         mock_get_dir.return_value = Path("/tmp/issue")
         mock_execute_hooks.return_value = []
@@ -1464,9 +1485,10 @@ class TestPreCompletionPostStartHooks:
         execute_exit_hooks(issue, "implement", "code")
 
         # Verify execute_hooks was called with "pre_completion" event
-        mock_execute_hooks.assert_called_once()
-        call_args = mock_execute_hooks.call_args
-        assert call_args[0][3] == "pre_completion"
+        # May be called multiple times (substage + stage level)
+        mock_execute_hooks.assert_called()
+        for call in mock_execute_hooks.call_args_list:
+            assert call[0][3] == "pre_completion"
 
     @patch('agenttree.hooks.execute_hooks')
     @patch('agenttree.config.load_config')
@@ -1476,9 +1498,14 @@ class TestPreCompletionPostStartHooks:
     ):
         """execute_enter_hooks should use post_start field."""
         from agenttree.hooks import execute_enter_hooks
-        from agenttree.config import Config
+        from agenttree.config import Config, StageConfig, SubstageConfig
 
-        config = Config()
+        # Create config with stages (stages are now required)
+        config = Config(stages=[
+            StageConfig(name="implement", substages={
+                "code": SubstageConfig(name="code", post_start=[{"create_file": {"template": "t.md", "dest": "d.md"}}])
+            })
+        ])
         mock_load_config.return_value = config
         mock_get_dir.return_value = Path("/tmp/issue")
         mock_execute_hooks.return_value = []

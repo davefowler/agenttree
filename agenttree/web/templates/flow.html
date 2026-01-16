@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Flow - AgentTree</title>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -23,6 +24,7 @@
 
         {% include 'partials/header_styles.html' %}
 
+        /* Flow-specific styles */
         .flow-container {
             display: flex;
             height: calc(100vh - 60px);
@@ -30,7 +32,9 @@
         }
 
         .flow-sidebar {
-            width: 300px;
+            width: 320px;
+            background: #2d4a3e;
+            border-right: 1px solid #4a7c6f;
             overflow-y: auto;
             flex-shrink: 0;
             padding: 15px;
@@ -39,10 +43,13 @@
         .flow-main {
             flex: 1;
             overflow-y: auto;
+            background: #f8f6f0;
+            display: flex;
+            flex-direction: column;
             padding: 20px;
-            background: var(--bg-card);
         }
 
+        /* Issue list items in sidebar */
         .issue-item {
             background: var(--bg-card);
             padding: 12px;
@@ -83,14 +90,7 @@
             flex-wrap: wrap;
         }
 
-        .badge {
-            padding: 2px 8px;
-            border-radius: 10px;
-            font-size: 11px;
-            font-weight: 600;
-            text-transform: uppercase;
-        }
-
+        /* Badge variants */
         .badge-review {
             background: #f8e8e8;
             color: #c44;
@@ -106,110 +106,17 @@
             color: var(--text-primary);
         }
 
-        .issue-detail {
-            max-width: 900px;
-            color: var(--text-card);
+        /* Flow-specific wrapper height */
+        .issue-detail-wrapper {
+            min-height: calc(100vh - 120px);
         }
 
-        .detail-header {
-            margin-bottom: 20px;
-            padding-bottom: 20px;
-            border-bottom: 1px solid var(--border-light);
+        /* Flow-specific chat panel width */
+        .agent-chat-panel {
+            width: 400px;
         }
 
-        .detail-title {
-            color: var(--text-card);
-            font-size: 24px;
-            font-weight: 600;
-            margin-bottom: 10px;
-        }
-
-        .detail-meta {
-            display: flex;
-            gap: 20px;
-            font-size: 14px;
-            color: var(--text-muted);
-        }
-
-        .detail-body {
-            background: var(--bg-card-alt);
-            border: 1px solid var(--border-light);
-            border-radius: 6px;
-            padding: 20px;
-            margin-bottom: 20px;
-            white-space: pre-wrap;
-            line-height: 1.6;
-        }
-
-        .detail-labels {
-            display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-            margin-top: 20px;
-        }
-
-        .label {
-            padding: 5px 12px;
-            background: var(--badge-bg);
-            color: var(--badge-text);
-            border-radius: 12px;
-            font-size: 12px;
-            font-weight: 500;
-        }
-
-        .actions {
-            display: flex;
-            gap: 10px;
-            margin-top: 20px;
-        }
-
-        .btn {
-            padding: 8px 16px;
-            border: 1px solid var(--border-color);
-            background: var(--btn-bg);
-            color: var(--text-primary);
-            border-radius: 6px;
-            font-size: 14px;
-            cursor: pointer;
-            transition: all 0.2s;
-            text-decoration: none;
-            display: inline-block;
-        }
-
-        .btn:hover {
-            background: var(--btn-bg-hover);
-        }
-
-        .btn-primary {
-            background: var(--btn-bg-active);
-            border-color: var(--btn-bg-active);
-            color: var(--text-primary);
-        }
-
-        .btn-primary:hover {
-            background: var(--text-accent);
-            border-color: var(--text-accent);
-        }
-
-        .empty-state {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 100%;
-            text-align: center;
-            color: var(--text-muted);
-        }
-
-        .empty-state h2 {
-            font-size: 20px;
-            margin-bottom: 10px;
-        }
-
-        .empty-state p {
-            font-size: 14px;
-        }
-
+        /* Flow-specific scrollbars */
         ::-webkit-scrollbar {
             width: 10px;
             height: 10px;
@@ -227,12 +134,21 @@
         ::-webkit-scrollbar-thumb:hover {
             background: var(--btn-bg-active);
         }
+
+        .flow-main::-webkit-scrollbar-track {
+            background: #eae8e0;
+        }
+
+        .flow-main::-webkit-scrollbar-thumb {
+            background: #c4c0b4;
+        }
     </style>
 </head>
 <body>
     {% include 'partials/header.html' %}
 
     <div class="flow-container">
+        <!-- Left sidebar: Issue list -->
         <div class="flow-sidebar"
              hx-get="/flow/issues"
              hx-trigger="load, every 10s"
@@ -240,31 +156,68 @@
             {% include 'partials/flow_issues_list.html' %}
         </div>
 
+        <!-- Main panel: Issue detail with file tabs -->
         <div class="flow-main" id="issue-detail">
             {% if selected_issue %}
-                {% include 'partials/issue_detail.html' %}
+                {% include 'partials/flow_issue_detail.html' %}
             {% else %}
                 <div class="empty-state">
                     <h2>No issues found</h2>
-                    <p>All caught up! 🎉</p>
+                    <p>All caught up!</p>
                 </div>
             {% endif %}
         </div>
     </div>
 
     <script>
+        let currentIssueId = '{{ selected_issue.number if selected_issue else "" }}';
+
+        // Handle file tab clicks
+        function selectFileTab(evt, issueId, filename) {
+            // Update active tab within the same issue's tabs
+            const tabContainer = evt.target.closest('.file-tabs');
+            tabContainer.querySelectorAll('.file-tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            evt.target.classList.add('active');
+
+            // Load file content - target the specific issue's content area
+            htmx.ajax('GET', '/api/issues/' + issueId + '/files/' + filename, {
+                target: '#file-content-' + issueId,
+                swap: 'innerHTML'
+            });
+        }
+
+        // Toggle agent chat panel
+        function toggleAgentChat(issueNumber) {
+            const panel = document.getElementById('agent-chat-panel-' + issueNumber);
+            if (panel) {
+                panel.classList.toggle('collapsed');
+                const icon = document.getElementById('chat-toggle-icon-' + issueNumber);
+                if (icon) {
+                    icon.textContent = panel.classList.contains('collapsed') ? '\u00ab' : '\u00d7';
+                }
+            }
+        }
+
         // Handle issue selection
         document.body.addEventListener('htmx:afterSwap', function(event) {
             if (event.detail.target.classList.contains('flow-sidebar')) {
                 // After sidebar refresh, restore active state
-                const activeIssue = document.querySelector('.issue-item.active');
-                if (activeIssue) {
-                    const issueNumber = activeIssue.dataset.issue;
+                if (currentIssueId) {
                     document.querySelectorAll('.issue-item').forEach(item => {
-                        if (item.dataset.issue === issueNumber) {
+                        if (item.dataset.issue === currentIssueId) {
                             item.classList.add('active');
                         }
                     });
+                }
+            }
+
+            // When issue detail is loaded, update current issue ID
+            if (event.detail.target.id === 'issue-detail') {
+                const newIssueId = event.detail.target.querySelector('[data-issue-id]')?.dataset.issueId;
+                if (newIssueId) {
+                    currentIssueId = newIssueId;
                 }
             }
         });
@@ -278,6 +231,7 @@
                     item.classList.remove('active');
                 });
                 issueItem.classList.add('active');
+                currentIssueId = issueItem.dataset.issue;
             }
         });
     </script>

@@ -3,7 +3,7 @@
 This module provides a config-driven hook system that allows validation,
 automation, setup, and cleanup during workflow stage transitions.
 
-Hook Types (configured in config.py DEFAULT_STAGES):
+Hook Types (configured in .agenttree.yaml stages):
 ----------------------------------------------------
 1. **pre_completion hooks** - Validation/actions when completing a stage (can block)
 2. **post_start hooks** - Setup when starting a stage (logs warnings but doesn't block)
@@ -35,7 +35,7 @@ Usage:
 
 Configuration:
 -------------
-Hooks are configured in config.py DEFAULT_STAGES via pre_completion and post_start lists:
+Hooks are configured in .agenttree.yaml via pre_completion and post_start lists:
 
     StageConfig(
         name="implement",
@@ -82,9 +82,11 @@ class ValidationError(Exception):
 # =============================================================================
 
 # Known hook types (used to detect hook type from key)
+# Note: create_pr was removed - PR creation is handled by host sync via ensure_pr_for_issue()
 HOOK_TYPES = {
     "file_exists", "has_commits", "field_check", "section_check", "pr_approved",
-    "create_file", "create_pr", "merge_pr", "run", "rebase"
+    "create_file", "merge_pr", "run", "rebase", "cleanup_agent", "start_blocked_issues",
+    "min_words", "has_list_items", "contains"
 }
 
 
@@ -178,14 +180,11 @@ def _action_create_pr(issue_dir: Path, issue_id: str = "", issue_title: str = ""
         worktree_path = str(issue_dir.resolve()) if issue_dir else None
         update_issue_metadata(issue_id, branch=branch, worktree_dir=worktree_path)
 
-    # If in container, skip remote operations but signal host to push
+    # If in container, skip remote operations - host will detect and push unpushed commits
     if is_running_in_container():
         console.print(f"[yellow]Running in container - PR will be created by host[/yellow]")
         console.print(f"[dim]Branch: {branch} (committed locally, awaiting push)[/dim]")
         console.print(f"[dim]Worktree: {issue_dir}[/dim]")
-        # Signal host that push is needed
-        if issue_id:
-            update_issue_metadata(issue_id, needs_push=True)
         return
 
     # On host: do the full push/PR
@@ -344,8 +343,9 @@ def run_builtin_validator(
             section = params["section"]
             expect = params["expect"]
 
-            # Find section content (between ## Section and next ## or end)
-            pattern = rf'^##\s*{re.escape(section)}.*?\n(.*?)(?=\n##|\Z)'
+            # Find section content (between ##/### Section and next ##/### or end)
+            # Supports both h2 (##) and h3 (###) headers
+            pattern = rf'^##[#]?\s*{re.escape(section)}.*?\n(.*?)(?=\n##|\Z)'
             section_match = re.search(pattern, content, re.MULTILINE | re.DOTALL)
 
             if not section_match:
@@ -378,11 +378,113 @@ def run_builtin_validator(
                             f"Unchecked items in '{section}': {items}"
                         )
 
+    elif hook_type == "min_words":
+        # Check that a file or section has at least N words
+        file_path = issue_dir / params["file"]
+        min_count = params.get("min", 10)
+        section = params.get("section")
+
+        if not file_path.exists():
+            errors.append(f"File '{params['file']}' not found for min_words check")
+        else:
+            content = file_path.read_text()
+
+            if section:
+                # Find section content
+                pattern = rf'^##[#]?\s*{re.escape(section)}.*?\n(.*?)(?=\n##|\Z)'
+                section_match = re.search(pattern, content, re.MULTILINE | re.DOTALL)
+                if not section_match:
+                    errors.append(f"Section '{section}' not found in {params['file']}")
+                else:
+                    content = section_match.group(1)
+
+            # Count words (split on whitespace, filter empty)
+            words = [w for w in content.split() if w.strip()]
+            if len(words) < min_count:
+                target = f"section '{section}'" if section else f"file '{params['file']}'"
+                errors.append(
+                    f"{target.capitalize()} has {len(words)} words, minimum is {min_count}"
+                )
+
+    elif hook_type == "has_list_items":
+        # Check that a section has at least one list item (- or *)
+        file_path = issue_dir / params["file"]
+        section = params["section"]
+        min_items = params.get("min", 1)
+
+        if not file_path.exists():
+            errors.append(f"File '{params['file']}' not found for has_list_items check")
+        else:
+            content = file_path.read_text()
+            pattern = rf'^##[#]?\s*{re.escape(section)}.*?\n(.*?)(?=\n##|\Z)'
+            section_match = re.search(pattern, content, re.MULTILINE | re.DOTALL)
+
+            if not section_match:
+                errors.append(f"Section '{section}' not found in {params['file']}")
+            else:
+                section_content = section_match.group(1)
+                # Count list items (lines starting with - or *)
+                list_items = re.findall(r'^\s*[-*]\s+\S', section_content, re.MULTILINE)
+                if len(list_items) < min_items:
+                    errors.append(
+                        f"Section '{section}' has {len(list_items)} list items, minimum is {min_items}"
+                    )
+
+    elif hook_type == "contains":
+        # Check that a section contains one of the specified values
+        file_path = issue_dir / params["file"]
+        section = params["section"]
+        values = params.get("values", [])  # List of acceptable values
+
+        if not file_path.exists():
+            errors.append(f"File '{params['file']}' not found for contains check")
+        else:
+            content = file_path.read_text()
+            pattern = rf'^##[#]?\s*{re.escape(section)}.*?\n(.*?)(?=\n##|\Z)'
+            section_match = re.search(pattern, content, re.MULTILINE | re.DOTALL)
+
+            if not section_match:
+                errors.append(f"Section '{section}' not found in {params['file']}")
+            else:
+                section_content = section_match.group(1).strip()
+                # Check if any of the values appear in the section
+                found = any(v.lower() in section_content.lower() for v in values)
+                if not found:
+                    errors.append(
+                        f"Section '{section}' must contain one of: {', '.join(values)}"
+                    )
+
     elif hook_type == "pr_approved":
-        if pr_number is None:
+        skip_approval = kwargs.get("skip_pr_approval", False)
+        if skip_approval:
+            console.print(f"[dim]Skipping PR approval check (--skip-approval)[/dim]")
+        elif pr_number is None:
             errors.append("No PR number available to check approval status")
-        elif not get_pr_approval_status(pr_number):
-            errors.append(f"PR #{pr_number} is not approved")
+        else:
+            # Auto-approve the PR if not already approved
+            if not get_pr_approval_status(pr_number):
+                try:
+                    console.print(f"[dim]Auto-approving PR #{pr_number}...[/dim]")
+                    result = subprocess.run(
+                        ["gh", "pr", "review", str(pr_number), "--approve"],
+                        capture_output=True,
+                        text=True,
+                        timeout=30,
+                    )
+                    if result.returncode != 0:
+                        # Check if it's because we're the author
+                        if "Can not approve your own pull request" in result.stderr:
+                            console.print(f"[yellow]Cannot self-approve PR #{pr_number} (you're the author)[/yellow]")
+                            console.print(f"[dim]Use --skip-approval to bypass, or have someone else approve[/dim]")
+                            errors.append(f"Cannot self-approve PR #{pr_number}. Use --skip-approval to bypass.")
+                        else:
+                            errors.append(f"Failed to approve PR #{pr_number}: {result.stderr}")
+                    else:
+                        console.print(f"[green]✓ PR #{pr_number} approved[/green]")
+                except subprocess.TimeoutExpired:
+                    errors.append(f"Timeout approving PR #{pr_number}")
+                except Exception as e:
+                    errors.append(f"Error approving PR #{pr_number}: {e}")
 
     # Action types (side effects, don't return errors on success)
     elif hook_type == "create_file":
@@ -409,6 +511,18 @@ def run_builtin_validator(
             _action_merge_pr(pr_number, **kwargs)
         except Exception as e:
             errors.append(f"Failed to merge PR: {e}")
+
+    elif hook_type == "cleanup_agent":
+        # Clean up agent resources (container, tmux, port)
+        issue = kwargs.get("issue")
+        if issue:
+            cleanup_issue_agent(issue)
+
+    elif hook_type == "start_blocked_issues":
+        # Check and start any issues that were blocked on this one
+        issue = kwargs.get("issue")
+        if issue:
+            check_and_start_blocked_issues(issue)
 
     else:
         # Unknown type - ignore silently (allows for future extensions)
@@ -562,7 +676,7 @@ def execute_hooks(
     return errors
 
 
-def execute_exit_hooks(issue: "Issue", stage: str, substage: Optional[str] = None) -> None:
+def execute_exit_hooks(issue: "Issue", stage: str, substage: Optional[str] = None, **extra_kwargs: Any) -> None:
     """Execute pre_completion hooks for a stage/substage. Raises ValidationError if any fail.
 
     This is the config-driven replacement for execute_pre_hooks.
@@ -574,6 +688,7 @@ def execute_exit_hooks(issue: "Issue", stage: str, substage: Optional[str] = Non
         issue: Issue being transitioned
         stage: Current stage name
         substage: Current substage name (optional)
+        **extra_kwargs: Additional args (e.g., skip_pr_approval=True)
 
     Raises:
         ValidationError: If any validation fails (blocks transition)
@@ -597,6 +712,7 @@ def execute_exit_hooks(issue: "Issue", stage: str, substage: Optional[str] = Non
         "issue_title": issue.title,
         "branch": issue.branch or "",
         "substage": substage or "",
+        **extra_kwargs,  # Pass through extra kwargs like skip_pr_approval
     }
 
     # Execute substage hooks first (if applicable)
@@ -677,17 +793,13 @@ def execute_enter_hooks(issue: "Issue", stage: str, substage: Optional[str] = No
         issue_title=issue.title,
         branch=issue.branch or "",
         substage=substage or "",
+        issue=issue,  # Pass issue object for cleanup_agent and start_blocked_issues hooks
     )
 
     # Log warnings but don't block
     if errors:
         for error in errors:
             console.print(f"[yellow]Warning: {error}[/yellow]")
-
-    # Special handling for ACCEPTED stage - cleanup agent and check blocked issues
-    if stage == ACCEPTED:
-        cleanup_issue_agent(issue)
-        check_and_start_blocked_issues(issue)
 
 
 def run_host_hooks(hooks: List[Dict[str, Any]], context: Dict[str, Any]) -> None:
@@ -892,6 +1004,28 @@ def rebase_issue_branch(issue_id: str) -> tuple[bool, str]:
         return False, f"Worktree not found: {issue.worktree_dir}"
 
     try:
+        # First, commit any uncommitted changes (so rebase doesn't fail)
+        # Stage all changes
+        subprocess.run(
+            ["git", "-C", str(worktree_path), "add", "-A"],
+            capture_output=True,
+            timeout=10,
+        )
+        # Check if there are staged changes
+        diff_result = subprocess.run(
+            ["git", "-C", str(worktree_path), "diff", "--cached", "--quiet"],
+            capture_output=True,
+            timeout=10,
+        )
+        if diff_result.returncode != 0:
+            # There are staged changes - commit them
+            subprocess.run(
+                ["git", "-C", str(worktree_path), "commit", "-m", "Auto-commit before rebase"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+
         # Fetch latest from origin
         result = subprocess.run(
             ["git", "-C", str(worktree_path), "fetch", "origin", "main"],
@@ -1105,9 +1239,8 @@ def ensure_pr_for_issue(issue_id: str) -> bool:
     if issue.stage != "implementation_review":
         return False
 
-    # Need branch info
+    # Need branch info (silently skip if not started yet)
     if not issue.branch:
-        console.print(f"[yellow]Issue #{issue_id} has no branch info[/yellow]")
         return False
 
     # Find the worktree for this issue
@@ -1133,6 +1266,29 @@ def ensure_pr_for_issue(issue_id: str) -> bool:
         return False
 
     console.print(f"[dim]Creating PR for issue #{issue_id} from host...[/dim]")
+
+    # Auto-commit any uncommitted changes before pushing
+    # Stage all changes
+    subprocess.run(
+        ["git", "-C", str(worktree_path), "add", "-A"],
+        capture_output=True,
+        timeout=10,
+    )
+    # Check if there are staged changes
+    diff_result = subprocess.run(
+        ["git", "-C", str(worktree_path), "diff", "--cached", "--quiet"],
+        capture_output=True,
+        timeout=10,
+    )
+    if diff_result.returncode != 0:
+        # There are staged changes - commit them
+        console.print(f"[dim]Auto-committing uncommitted changes...[/dim]")
+        subprocess.run(
+            ["git", "-C", str(worktree_path), "commit", "-m", f"Issue #{issue_id}: auto-commit before PR"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
 
     # Push the branch from the worktree
     result = subprocess.run(
