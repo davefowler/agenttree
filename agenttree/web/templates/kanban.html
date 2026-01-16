@@ -352,7 +352,8 @@
             <a href="/kanban" class="modal-close" hx-get="/kanban" hx-push-url="true" hx-target="body" hx-swap="outerHTML">&times;</a>
             <div id="modal-issue-detail">
                 {% if selected_issue %}
-                {% include 'partials/issue_detail_content.html' with context %}
+                {% set issue = selected_issue %}
+                {% include 'partials/issue_detail_content.html' %}
                 {% endif %}
             </div>
         </div>
@@ -672,8 +673,7 @@
             const isOn = lightElement.classList.contains('on');
 
             if (isOn) {
-                // Already running, maybe show chat panel
-                toggleAgentChat(issueNumber);
+                // Already running - do nothing (use chat icon to toggle chat)
                 return;
             }
 

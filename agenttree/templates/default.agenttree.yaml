@@ -5,7 +5,7 @@
 default_tool: claude
 default_model: opus
 port_range: 9001-9099
-project: "{{PROJECT_NAME}}"
+project: "agenttree"
 worktrees_dir: .worktrees
 
 test_commands:

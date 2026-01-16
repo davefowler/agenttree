@@ -380,14 +380,30 @@ async def flow(
 @app.get("/flow/issues", response_class=HTMLResponse)
 async def flow_issues(
     request: Request,
+    issue: Optional[str] = None,
+    chat: Optional[str] = None,
     user: Optional[str] = Depends(get_current_user)
 ) -> HTMLResponse:
     """Flow issues list (HTMX endpoint)."""
     issues = issue_crud.list_issues(sync=False)  # Skip sync for fast web reads
     web_issues = _sort_flow_issues([convert_issue_to_web(i) for i in issues])
+
+    # Find selected issue for active state
+    selected_issue = None
+    if issue:
+        for wi in web_issues:
+            if str(wi.number) == issue or str(wi.number).zfill(3) == issue:
+                selected_issue = wi
+                break
+
     return templates.TemplateResponse(
         "partials/flow_issues_list.html",
-        {"request": request, "issues": web_issues}
+        {
+            "request": request,
+            "issues": web_issues,
+            "selected_issue": selected_issue,
+            "chat_open": chat == "1",
+        }
     )
 
 
@@ -412,7 +428,9 @@ async def agent_tmux(
 ) -> HTMLResponse:
     """Get tmux output for an agent (HTMX endpoint)."""
     config = load_config()
-    session_name = f"{config.project}-issue-{agent_num}"
+    # Pad agent number to 3 digits to match tmux session naming
+    padded_num = agent_num.zfill(3)
+    session_name = f"{config.project}-issue-{padded_num}"
 
     # Capture tmux output
     try:
@@ -442,7 +460,9 @@ async def send_to_agent(
 ) -> HTMLResponse:
     """Send a message to an agent via tmux."""
     config = load_config()
-    session_name = f"{config.project}-issue-{agent_num}"
+    # Pad agent number to 3 digits to match tmux session naming
+    padded_num = agent_num.zfill(3)
+    session_name = f"{config.project}-issue-{padded_num}"
 
     try:
         subprocess.run(
