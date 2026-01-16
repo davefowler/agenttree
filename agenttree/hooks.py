@@ -67,6 +67,7 @@ from agenttree.issues import (
     IMPLEMENT,
     ACCEPTED,
 )
+from agenttree.config import load_config
 
 console = Console()
 
@@ -436,14 +437,68 @@ def run_builtin_validator(
 
     # Action types (side effects, don't return errors on success)
     elif hook_type == "create_file":
-        # Create a file from template if it doesn't exist
-        template = params.get("template")
+        # Create a file from template with Jinja rendering
+        template_name = params.get("template")
         dest = params.get("dest")
-        if template and dest:
-            template_path = Path("_agenttree/templates") / template
+        if template_name and dest:
+            template_path = Path("_agenttree/templates") / template_name
             dest_path = issue_dir / dest
             if not dest_path.exists() and template_path.exists():
-                dest_path.write_text(template_path.read_text())
+                template_content = template_path.read_text()
+
+                # Build Jinja context
+                from jinja2 import Template
+                from agenttree.commands import get_referenced_commands, get_command_output
+
+                issue = kwargs.get("issue")
+                context: Dict[str, Any] = {}
+
+                if issue:
+                    context = {
+                        "issue_id": issue.id,
+                        "issue_title": issue.title,
+                        "issue_dir": str(issue_dir),
+                        "issue_dir_rel": f"_agenttree/issues/{issue.id}-{issue.slug}" if hasattr(issue, 'slug') else "",
+                    }
+
+                    # Add document contents if they exist
+                    for doc_name in ["problem.md", "research.md", "spec.md", "spec_review.md", "review.md"]:
+                        doc_path = issue_dir / doc_name
+                        var_name = doc_name.replace(".md", "_md").replace("-", "_")
+                        if doc_path.exists():
+                            context[var_name] = doc_path.read_text()
+                        else:
+                            context[var_name] = ""
+
+                # Inject command outputs for referenced commands
+                config = load_config()
+                if config.commands:
+                    # Determine working directory for commands
+                    cwd = None
+                    if issue and hasattr(issue, 'worktree_dir') and issue.worktree_dir:
+                        cwd = Path(issue.worktree_dir)
+                    else:
+                        cwd = issue_dir
+
+                    # Find commands referenced in the template
+                    referenced = get_referenced_commands(template_content, config.commands)
+
+                    for cmd_name in referenced:
+                        # Don't overwrite built-in context variables
+                        if cmd_name not in context:
+                            context[cmd_name] = get_command_output(
+                                config.commands, cmd_name, cwd=cwd
+                            )
+
+                # Render template
+                try:
+                    jinja_template = Template(template_content)
+                    rendered = jinja_template.render(**context)
+                except Exception:
+                    # If rendering fails, use raw content
+                    rendered = template_content
+
+                dest_path.write_text(rendered)
                 console.print(f"[dim]Created {dest} from template[/dim]")
 
     elif hook_type == "create_pr":

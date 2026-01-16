@@ -321,6 +321,82 @@ This is the approach section with content.
         # This test verifies the hook runs without errors
         assert errors == []
 
+    def test_create_file_renders_jinja_template(self, tmp_path, monkeypatch):
+        """create_file should render Jinja templates with issue context."""
+        from agenttree.hooks import run_builtin_validator
+        from agenttree.config import Config
+
+        # Change to tmp_path so relative paths work
+        monkeypatch.chdir(tmp_path)
+
+        # Create templates directory and template file with Jinja
+        templates_dir = tmp_path / "_agenttree" / "templates"
+        templates_dir.mkdir(parents=True)
+        (templates_dir / "test_review.md").write_text("# Review for {{issue_id}}\nTitle: {{issue_title}}")
+
+        # Create issue dir
+        issue_dir = tmp_path / "issue"
+        issue_dir.mkdir()
+
+        # Create a mock issue
+        mock_issue = MagicMock()
+        mock_issue.id = "042"
+        mock_issue.title = "Test Issue"
+        mock_issue.slug = "test-issue"
+        mock_issue.worktree_dir = None
+
+        # Mock load_config to return empty commands
+        with patch('agenttree.hooks.load_config', return_value=Config()):
+            hook = {"type": "create_file", "template": "test_review.md", "dest": "output.md"}
+            errors = run_builtin_validator(issue_dir, hook, issue=mock_issue)
+
+        assert errors == []
+
+        # Check that the file was created with rendered content
+        output_path = issue_dir / "output.md"
+        assert output_path.exists()
+        content = output_path.read_text()
+        assert "# Review for 042" in content
+        assert "Title: Test Issue" in content
+
+    def test_create_file_injects_command_outputs(self, tmp_path, monkeypatch):
+        """create_file should inject command outputs into templates."""
+        from agenttree.hooks import run_builtin_validator
+        from agenttree.config import Config
+
+        # Change to tmp_path so relative paths work
+        monkeypatch.chdir(tmp_path)
+
+        # Create templates directory and template file with command variable
+        templates_dir = tmp_path / "_agenttree" / "templates"
+        templates_dir.mkdir(parents=True)
+        (templates_dir / "stats.md").write_text("Branch: {{git_branch}}")
+
+        # Create issue dir
+        issue_dir = tmp_path / "issue"
+        issue_dir.mkdir()
+
+        # Create a mock issue
+        mock_issue = MagicMock()
+        mock_issue.id = "001"
+        mock_issue.title = "Test"
+        mock_issue.slug = "test"
+        mock_issue.worktree_dir = None
+
+        # Mock load_config to return commands
+        mock_config = Config(commands={"git_branch": "echo 'feature-branch'"})
+        with patch('agenttree.hooks.load_config', return_value=mock_config):
+            hook = {"type": "create_file", "template": "stats.md", "dest": "output.md"}
+            errors = run_builtin_validator(issue_dir, hook, issue=mock_issue)
+
+        assert errors == []
+
+        # Check that the file was created with command output
+        output_path = issue_dir / "output.md"
+        assert output_path.exists()
+        content = output_path.read_text()
+        assert "Branch: feature-branch" in content
+
     def test_unknown_hook_type_ignored(self, tmp_path):
         """Unknown hook types should be ignored silently."""
         from agenttree.hooks import run_builtin_validator

@@ -821,6 +821,28 @@ def load_skill(
             else:
                 context[var_name] = ""
 
+    # Inject command outputs for referenced commands
+    # Commands run in worktree directory if available, otherwise issue directory
+    from agenttree.commands import get_referenced_commands, get_command_output
+
+    if config.commands:
+        # Determine working directory for commands
+        cwd = None
+        if issue.worktree_dir:
+            cwd = Path(issue.worktree_dir)
+        elif issue_dir:
+            cwd = issue_dir
+
+        # Find commands referenced in the template
+        referenced = get_referenced_commands(skill_content, config.commands)
+
+        for cmd_name in referenced:
+            # Don't overwrite built-in context variables
+            if cmd_name not in context:
+                context[cmd_name] = get_command_output(
+                    config.commands, cmd_name, cwd=cwd
+                )
+
     # Render with Jinja
     try:
         template = Template(skill_content)
