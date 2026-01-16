@@ -2159,7 +2159,7 @@ def test(extra_args: tuple[str, ...]) -> None:
     commands = config.test_commands
 
     if not commands:
-        console.print("[red]Error: No test_commands configured[/red]")
+        console.print("[red]Error: test_commands not configured[/red]")
         console.print("\nAdd to .agenttree.yaml:")
         console.print("  test_commands:")
         console.print("    - pytest")
@@ -2198,7 +2198,7 @@ def lint(extra_args: tuple[str, ...]) -> None:
     commands = config.lint_commands
 
     if not commands:
-        console.print("[red]Error: No lint_commands configured[/red]")
+        console.print("[red]Error: lint_commands not configured[/red]")
         console.print("\nAdd to .agenttree.yaml:")
         console.print("  lint_commands:")
         console.print("    - ruff check .")
