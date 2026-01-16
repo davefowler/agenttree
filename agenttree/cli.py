@@ -2078,18 +2078,21 @@ def context_init(agent_num: Optional[int], port: Optional[int]) -> None:
 def test(extra_args: tuple[str, ...]) -> None:
     """Run the project's test commands.
 
-    Uses test_commands from .agenttree.yaml config.
+    Uses commands.test from .agenttree.yaml config.
     Runs all commands and reports all errors (doesn't stop on first failure).
     """
     config = load_config()
-    commands = config.test_commands
+    test_cmd = config.commands.get("test")
 
-    if not commands:
-        console.print("[red]Error: test_commands not configured[/red]")
+    if not test_cmd:
+        console.print("[red]Error: test command not configured[/red]")
         console.print("\nAdd to .agenttree.yaml:")
-        console.print("  test_commands:")
-        console.print("    - pytest")
+        console.print("  commands:")
+        console.print("    test: pytest")
         sys.exit(1)
+
+    # Normalize to list
+    commands = test_cmd if isinstance(test_cmd, list) else [test_cmd]
 
     failed = []
     for cmd in commands:
@@ -2117,18 +2120,21 @@ def test(extra_args: tuple[str, ...]) -> None:
 def lint(extra_args: tuple[str, ...]) -> None:
     """Run the project's lint commands.
 
-    Uses lint_commands from .agenttree.yaml config.
+    Uses commands.lint from .agenttree.yaml config.
     Runs all commands and reports all errors (doesn't stop on first failure).
     """
     config = load_config()
-    commands = config.lint_commands
+    lint_cmd = config.commands.get("lint")
 
-    if not commands:
-        console.print("[red]Error: lint_commands not configured[/red]")
+    if not lint_cmd:
+        console.print("[red]Error: lint command not configured[/red]")
         console.print("\nAdd to .agenttree.yaml:")
-        console.print("  lint_commands:")
-        console.print("    - ruff check .")
+        console.print("  commands:")
+        console.print("    lint: ruff check .")
         sys.exit(1)
+
+    # Normalize to list
+    commands = lint_cmd if isinstance(lint_cmd, list) else [lint_cmd]
 
     failed = []
     for cmd in commands:

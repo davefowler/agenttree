@@ -551,6 +551,126 @@ class TestLoadSkill:
         skill = load_skill(ACCEPTED)
         assert skill is None
 
+    def test_load_skill_with_command_variable(self, temp_agenttrees_with_skills, monkeypatch):
+        """Command outputs should be injected into templates."""
+        # Create a template with a command variable
+        skill_path = temp_agenttrees_with_skills / "skills" / "define.md"
+        skill_path.write_text("Branch: {{git_branch}}")
+
+        # Mock the config to include a command
+        from agenttree.config import Config
+        mock_config = Config(commands={"git_branch": "echo 'test-branch'"})
+        monkeypatch.setattr("agenttree.config.load_config", lambda *args, **kwargs: mock_config)
+
+        # Create a mock issue
+        from agenttree.issues import Issue
+        issue = Issue(
+            id="001",
+            slug="test",
+            title="Test",
+            created="2026-01-11T12:00:00Z",
+            updated="2026-01-11T12:00:00Z",
+        )
+
+        # Create issue dir
+        issue_dir = temp_agenttrees_with_skills / "issues" / "001-test"
+        issue_dir.mkdir(parents=True)
+
+        monkeypatch.setattr(
+            "agenttree.issues.get_issue_dir",
+            lambda x: issue_dir
+        )
+
+        skill = load_skill(DEFINE, issue=issue)
+        assert skill == "Branch: test-branch"
+
+    def test_load_skill_builtin_vars_take_precedence(self, temp_agenttrees_with_skills, monkeypatch):
+        """Built-in context variables should not be overwritten by commands."""
+        # Create a template using issue_id
+        skill_path = temp_agenttrees_with_skills / "skills" / "define.md"
+        skill_path.write_text("Issue: {{issue_id}}")
+
+        # Mock the config with a command named issue_id (should be ignored)
+        from agenttree.config import Config
+        mock_config = Config(commands={"issue_id": "echo 'WRONG'"})
+        monkeypatch.setattr("agenttree.config.load_config", lambda *args, **kwargs: mock_config)
+
+        # Create a mock issue
+        from agenttree.issues import Issue
+        issue = Issue(
+            id="042",
+            slug="test",
+            title="Test",
+            created="2026-01-11T12:00:00Z",
+            updated="2026-01-11T12:00:00Z",
+        )
+
+        # Create issue dir
+        issue_dir = temp_agenttrees_with_skills / "issues" / "042-test"
+        issue_dir.mkdir(parents=True)
+
+        monkeypatch.setattr(
+            "agenttree.issues.get_issue_dir",
+            lambda x: issue_dir
+        )
+
+        skill = load_skill(DEFINE, issue=issue)
+        # Should use the built-in issue_id, not the command output
+        assert skill == "Issue: 042"
+
+    def test_load_skill_only_runs_referenced_commands(self, temp_agenttrees_with_skills, monkeypatch):
+        """Only commands referenced in template should be executed."""
+        # Create a template with only one command reference
+        skill_path = temp_agenttrees_with_skills / "skills" / "define.md"
+        skill_path.write_text("Branch: {{git_branch}}")
+
+        # Track which commands are executed
+        executed_commands = []
+
+        from agenttree.config import Config
+        mock_config = Config(commands={
+            "git_branch": "echo 'main'",
+            "unused_cmd": "echo 'should not run'",
+        })
+        monkeypatch.setattr("agenttree.config.load_config", lambda *args, **kwargs: mock_config)
+
+        # Patch get_command_output to track calls
+        def tracking_get_output(commands, name, cwd=None):
+            executed_commands.append(name)
+            from agenttree.commands import execute_command
+            cmd = commands.get(name, "")
+            if isinstance(cmd, list):
+                cmd = cmd[0] if cmd else ""
+            return execute_command(cmd, cwd=cwd)
+
+        monkeypatch.setattr(
+            "agenttree.commands.get_command_output",
+            tracking_get_output
+        )
+
+        from agenttree.issues import Issue
+        issue = Issue(
+            id="001",
+            slug="test",
+            title="Test",
+            created="2026-01-11T12:00:00Z",
+            updated="2026-01-11T12:00:00Z",
+        )
+
+        issue_dir = temp_agenttrees_with_skills / "issues" / "001-test"
+        issue_dir.mkdir(parents=True)
+
+        monkeypatch.setattr(
+            "agenttree.issues.get_issue_dir",
+            lambda x: issue_dir
+        )
+
+        load_skill(DEFINE, issue=issue)
+
+        # Only git_branch should have been executed
+        assert "git_branch" in executed_commands
+        assert "unused_cmd" not in executed_commands
+
 
 class TestLoadSkillJinja:
     """Tests for load_skill Jinja template rendering."""
