@@ -371,6 +371,146 @@ class TestCommandHooks:
         assert output == "123"
 
 
+class TestWrapupVerifiedValidator:
+    """Tests for wrapup_verified validator."""
+
+    def test_wrapup_verified_success(self, tmp_path):
+        """Should pass when all checklist items are checked."""
+        from agenttree.hooks import run_builtin_validator
+
+        review_content = """# Code Review
+
+## Implementation Wrapup
+
+### Verification Checklist
+
+- [x] Tests pass
+- [x] Diff reviewed
+
+### Summary
+Implemented the feature.
+"""
+        (tmp_path / "review.md").write_text(review_content)
+        hook = {"wrapup_verified": "review.md"}
+
+        errors = run_builtin_validator(tmp_path, hook)
+        assert errors == []
+
+    def test_wrapup_verified_success_uppercase_x(self, tmp_path):
+        """Should pass for both [x] and [X]."""
+        from agenttree.hooks import run_builtin_validator
+
+        review_content = """# Code Review
+
+## Implementation Wrapup
+
+### Verification Checklist
+
+- [X] Tests pass
+- [x] Diff reviewed
+
+### Summary
+Implemented the feature.
+"""
+        (tmp_path / "review.md").write_text(review_content)
+        hook = {"wrapup_verified": "review.md"}
+
+        errors = run_builtin_validator(tmp_path, hook)
+        assert errors == []
+
+    def test_wrapup_verified_fails_missing_file(self, tmp_path):
+        """Should fail when review.md doesn't exist."""
+        from agenttree.hooks import run_builtin_validator
+
+        hook = {"wrapup_verified": "review.md"}
+
+        errors = run_builtin_validator(tmp_path, hook)
+        assert len(errors) == 1
+        assert "review.md" in errors[0]
+        assert "not found" in errors[0].lower()
+
+    def test_wrapup_verified_fails_missing_wrapup_section(self, tmp_path):
+        """Should fail when review.md has no Implementation Wrapup section."""
+        from agenttree.hooks import run_builtin_validator
+
+        review_content = """# Code Review
+
+## Self-Review Checklist
+
+- [x] Some item
+"""
+        (tmp_path / "review.md").write_text(review_content)
+        hook = {"wrapup_verified": "review.md"}
+
+        errors = run_builtin_validator(tmp_path, hook)
+        assert len(errors) == 1
+        assert "Implementation Wrapup" in errors[0]
+
+    def test_wrapup_verified_fails_missing_checklist_section(self, tmp_path):
+        """Should fail when Implementation Wrapup has no Verification Checklist."""
+        from agenttree.hooks import run_builtin_validator
+
+        review_content = """# Code Review
+
+## Implementation Wrapup
+
+### Summary
+Implemented the feature.
+"""
+        (tmp_path / "review.md").write_text(review_content)
+        hook = {"wrapup_verified": "review.md"}
+
+        errors = run_builtin_validator(tmp_path, hook)
+        assert len(errors) == 1
+        assert "Verification Checklist" in errors[0]
+
+    def test_wrapup_verified_fails_unchecked_items(self, tmp_path):
+        """Should fail when checklist has unchecked items."""
+        from agenttree.hooks import run_builtin_validator
+
+        review_content = """# Code Review
+
+## Implementation Wrapup
+
+### Verification Checklist
+
+- [x] Tests pass
+- [ ] Diff reviewed
+
+### Summary
+Implemented the feature.
+"""
+        (tmp_path / "review.md").write_text(review_content)
+        hook = {"wrapup_verified": "review.md"}
+
+        errors = run_builtin_validator(tmp_path, hook)
+        assert len(errors) == 1
+        assert "unchecked" in errors[0].lower()
+
+    def test_wrapup_verified_ignores_html_comments(self, tmp_path):
+        """HTML comments in checklist shouldn't cause false positives."""
+        from agenttree.hooks import run_builtin_validator
+
+        review_content = """# Code Review
+
+## Implementation Wrapup
+
+### Verification Checklist
+
+<!-- This is a comment with - [ ] unchecked item -->
+- [x] Tests pass
+- [x] Diff reviewed
+
+### Summary
+Implemented the feature.
+"""
+        (tmp_path / "review.md").write_text(review_content)
+        hook = {"wrapup_verified": "review.md"}
+
+        errors = run_builtin_validator(tmp_path, hook)
+        assert errors == []
+
+
 class TestExecuteHooks:
     """Tests for execute_hooks function."""
 

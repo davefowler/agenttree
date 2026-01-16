@@ -14,6 +14,7 @@ Built-in Validators:
 - has_commits: Check that there are unpushed commits
 - field_check: Check a YAML field value meets min/max threshold
 - section_check: Check a markdown section (empty, not_empty, all_checked)
+- wrapup_verified: Check Implementation Wrapup checklist is complete
 - pr_approved: Check that a PR is approved
 
 Built-in Actions:
@@ -85,7 +86,7 @@ class ValidationError(Exception):
 HOOK_TYPES = {
     "file_exists", "has_commits", "field_check", "section_check", "pr_approved",
     "create_file", "create_pr", "merge_pr", "run", "rebase", "cleanup_agent", "start_blocked_issues",
-    "min_words", "has_list_items", "contains", "ci_check"
+    "min_words", "has_list_items", "contains", "ci_check", "wrapup_verified"
 }
 
 
@@ -401,6 +402,44 @@ def run_builtin_validator(
                     errors.append(
                         f"Section '{section}' must contain one of: {', '.join(values)}"
                     )
+
+    elif hook_type == "wrapup_verified":
+        # Check that Implementation Wrapup has completed Verification Checklist
+        file_path = issue_dir / params["file"]
+        if not file_path.exists():
+            errors.append(f"File '{params['file']}' not found for wrapup verification")
+        else:
+            content = file_path.read_text()
+
+            # Find Implementation Wrapup section
+            wrapup_pattern = r'^##\s*Implementation Wrapup.*?\n(.*?)(?=\n##(?!#)|\Z)'
+            wrapup_match = re.search(wrapup_pattern, content, re.MULTILINE | re.DOTALL)
+
+            if not wrapup_match:
+                errors.append("Implementation Wrapup section not found in review.md")
+            else:
+                wrapup_content = wrapup_match.group(1)
+
+                # Find Verification Checklist subsection within wrapup
+                checklist_pattern = r'^###\s*Verification Checklist.*?\n(.*?)(?=\n###|\Z)'
+                checklist_match = re.search(checklist_pattern, wrapup_content, re.MULTILINE | re.DOTALL)
+
+                if not checklist_match:
+                    errors.append("Verification Checklist section not found in Implementation Wrapup")
+                else:
+                    checklist_content = checklist_match.group(1)
+                    # Remove HTML comments
+                    checklist_content = re.sub(r'<!--.*?-->', '', checklist_content, flags=re.DOTALL)
+
+                    # Find unchecked items (- [ ] pattern, case-insensitive for x)
+                    unchecked = re.findall(r'-\s*\[\s*\]\s*(.*)', checklist_content)
+                    if unchecked:
+                        items = ", ".join(item.strip() for item in unchecked[:3])
+                        if len(unchecked) > 3:
+                            items += f" (and {len(unchecked) - 3} more)"
+                        errors.append(
+                            f"Wrapup verification incomplete. Unchecked items: {items}"
+                        )
 
     elif hook_type == "pr_approved":
         skip_approval = kwargs.get("skip_pr_approval", False)

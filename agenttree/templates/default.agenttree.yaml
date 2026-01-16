@@ -132,11 +132,7 @@ stages:
       address_review: {}
       wrapup:
         pre_completion:
-          - file_exists: review.md
-          - field_check:
-              file: review.md
-              path: average
-              min: 7
+          - wrapup_verified: review.md
       feedback:
         output: feedback.md
         pre_completion:
