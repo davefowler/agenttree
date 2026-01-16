@@ -139,16 +139,17 @@ def _action_create_pr(issue_dir: Path, issue_id: str = "", issue_title: str = ""
 
     console.print(f"[green]✓ PR created: {pr.url}[/green]")
 
-    # Request Cursor code review
-    try:
-        subprocess.run(
-            ["gh", "pr", "comment", str(pr.number), "--body", "@cursor do a code review"],
-            capture_output=True,
-            check=True,
-        )
-        console.print(f"[dim]Requested Cursor code review[/dim]")
-    except Exception:
-        pass  # Non-critical
+    # Run post_pr_create hooks
+    from agenttree.config import load_config
+    config = load_config()
+    if config.hooks.post_pr_create:
+        run_host_hooks(config.hooks.post_pr_create, {
+            "issue_id": issue_id,
+            "issue_title": issue_title,
+            "pr_number": pr.number,
+            "pr_url": pr.url,
+            "branch": branch,
+        })
 
 
 def _action_merge_pr(pr_number: Optional[int], **kwargs: Any) -> None:
@@ -162,11 +163,22 @@ def _action_merge_pr(pr_number: Optional[int], **kwargs: Any) -> None:
         console.print(f"[yellow]Running in container - PR will be merged by host[/yellow]")
         return
 
+    from agenttree.config import load_config
     from agenttree.github import merge_pr
 
+    config = load_config()
+
     console.print(f"[dim]Merging PR #{pr_number}...[/dim]")
-    merge_pr(pr_number, method="squash")
+    merge_pr(pr_number, method=config.merge_strategy)
     console.print(f"[green]✓ PR #{pr_number} merged[/green]")
+
+    # Run post_merge hooks
+    if config.hooks.post_merge:
+        run_host_hooks(config.hooks.post_merge, {
+            "issue_id": kwargs.get("issue_id", ""),
+            "pr_number": pr_number,
+            "branch": kwargs.get("branch", ""),
+        })
 
 
 def get_pr_approval_status(pr_number: int) -> bool:
@@ -185,6 +197,44 @@ def get_pr_approval_status(pr_number: int) -> bool:
         return False
 
 
+def _get_hook_type_and_params(hook: Dict[str, Any]) -> tuple[Optional[str], Dict[str, Any]]:
+    """Extract hook type and parameters from new or old format.
+
+    New format: {"file_exists": "review.md"} or {"field_check": {"file": "...", ...}}
+    Old format: {"type": "file_exists", "file": "review.md"}
+
+    Returns:
+        Tuple of (hook_type, params_dict)
+    """
+    # Known hook types
+    builtin_types = {
+        "file_exists", "has_commits", "field_check", "section_check",
+        "pr_approved", "create_file", "create_pr", "merge_pr"
+    }
+
+    # Check for new format (type as key)
+    for key in builtin_types:
+        if key in hook:
+            value = hook[key]
+            if isinstance(value, dict):
+                # Nested params: {"field_check": {"file": "...", "path": "..."}}
+                return key, value
+            elif isinstance(value, str):
+                # Simple value: {"file_exists": "review.md"}
+                return key, {"file": value}
+            else:
+                # Boolean or other: {"create_pr": True}
+                return key, {}
+
+    # Check for old format
+    if "type" in hook:
+        hook_type = hook["type"]
+        params = {k: v for k, v in hook.items() if k != "type"}
+        return hook_type, params
+
+    return None, {}
+
+
 def run_builtin_validator(
     issue_dir: Path,
     hook: Dict[str, Any],
@@ -195,7 +245,7 @@ def run_builtin_validator(
 
     Args:
         issue_dir: Path to issue directory (worktree)
-        hook: Hook configuration dict with 'type' and parameters
+        hook: Hook configuration dict (new or old format)
         pr_number: Optional PR number for pr_approved validator
         **kwargs: Additional context (unused for now)
 
@@ -204,13 +254,13 @@ def run_builtin_validator(
     """
     import yaml
 
-    hook_type = hook.get("type")
+    hook_type, params = _get_hook_type_and_params(hook)
     errors: List[str] = []
 
     if hook_type == "file_exists":
-        file_path = issue_dir / hook["file"]
+        file_path = issue_dir / params["file"]
         if not file_path.exists():
-            errors.append(f"File '{hook['file']}' does not exist")
+            errors.append(f"File '{params['file']}' does not exist")
 
     elif hook_type == "has_commits":
         if not has_commits_to_push():
@@ -219,20 +269,20 @@ def run_builtin_validator(
             )
 
     elif hook_type == "field_check":
-        file_path = issue_dir / hook["file"]
+        file_path = issue_dir / params["file"]
         if not file_path.exists():
-            errors.append(f"File '{hook['file']}' not found for field check")
+            errors.append(f"File '{params['file']}' not found for field check")
         else:
             content = file_path.read_text()
             # Extract YAML from markdown code block
             yaml_match = re.search(r'```yaml\s*\n(.*?)```', content, re.DOTALL)
             if not yaml_match:
-                errors.append(f"No YAML block found in {hook['file']}")
+                errors.append(f"No YAML block found in {params['file']}")
             else:
                 try:
                     data = yaml.safe_load(yaml_match.group(1))
                     # Navigate nested path like "scores.average"
-                    path_parts = hook["path"].split(".")
+                    path_parts = params["path"].split(".")
                     value = data
                     for part in path_parts:
                         if value is None or not isinstance(value, dict):
@@ -241,33 +291,33 @@ def run_builtin_validator(
                         value = value.get(part)
 
                     if value is None:
-                        errors.append(f"Field '{hook['path']}' not found in {hook['file']}")
-                    elif "min" in hook and float(value) < hook["min"]:
+                        errors.append(f"Field '{params['path']}' not found in {params['file']}")
+                    elif "min" in params and float(value) < params["min"]:
                         errors.append(
-                            f"Field '{hook['path']}' value {value} is below minimum {hook['min']}"
+                            f"Field '{params['path']}' value {value} is below minimum {params['min']}"
                         )
-                    elif "max" in hook and float(value) > hook["max"]:
+                    elif "max" in params and float(value) > params["max"]:
                         errors.append(
-                            f"Field '{hook['path']}' value {value} is above maximum {hook['max']}"
+                            f"Field '{params['path']}' value {value} is above maximum {params['max']}"
                         )
                 except yaml.YAMLError as e:
-                    errors.append(f"Failed to parse YAML in {hook['file']}: {e}")
+                    errors.append(f"Failed to parse YAML in {params['file']}: {e}")
 
     elif hook_type == "section_check":
-        file_path = issue_dir / hook["file"]
+        file_path = issue_dir / params["file"]
         if not file_path.exists():
-            errors.append(f"File '{hook['file']}' not found for section check")
+            errors.append(f"File '{params['file']}' not found for section check")
         else:
             content = file_path.read_text()
-            section = hook["section"]
-            expect = hook["expect"]
+            section = params["section"]
+            expect = params["expect"]
 
             # Find section content (between ## Section and next ## or end)
             pattern = rf'^##\s*{re.escape(section)}.*?\n(.*?)(?=\n##|\Z)'
             section_match = re.search(pattern, content, re.MULTILINE | re.DOTALL)
 
             if not section_match:
-                errors.append(f"Section '{section}' not found in {hook['file']}")
+                errors.append(f"Section '{section}' not found in {params['file']}")
             else:
                 section_content = section_match.group(1)
                 # Remove HTML comments
@@ -277,13 +327,13 @@ def run_builtin_validator(
                     # Check for list items
                     if re.search(r'^\s*[-*]\s+', section_content, re.MULTILINE):
                         errors.append(
-                            f"Section '{section}' in {hook['file']} is not empty"
+                            f"Section '{section}' in {params['file']} is not empty"
                         )
                 elif expect == "not_empty":
                     # Check if section has content beyond whitespace
                     if not section_content.strip():
                         errors.append(
-                            f"Section '{section}' in {hook['file']} is empty"
+                            f"Section '{section}' in {params['file']} is empty"
                         )
                 elif expect == "all_checked":
                     # Find unchecked checkboxes
@@ -305,8 +355,8 @@ def run_builtin_validator(
     # Action types (side effects, don't return errors on success)
     elif hook_type == "create_file":
         # Create a file from template if it doesn't exist
-        template = hook.get("template")
-        dest = hook.get("dest")
+        template = params.get("template")
+        dest = params.get("dest")
         if template and dest:
             template_path = Path("_agenttree/templates") / template
             dest_path = issue_dir / dest
@@ -349,7 +399,7 @@ def run_command_hook(
 
     Args:
         issue_dir: Path to run command in
-        hook: Hook configuration dict with 'command' and optional 'context', 'timeout'
+        hook: Hook configuration dict with 'command' and optional 'context', 'timeout', 'host_only'
         issue_id: Issue ID for template variable substitution
         issue_title: Issue title for template variable substitution
         branch: Branch name for template variable substitution
@@ -358,8 +408,12 @@ def run_command_hook(
         **kwargs: Additional template variables
 
     Returns:
-        List of error messages (empty if command succeeds)
+        List of error messages (empty if command succeeds or skipped)
     """
+    # Skip if host_only and running in container
+    if hook.get("host_only") and is_running_in_container():
+        return []
+
     command = hook["command"]
 
     # Replace template variables
@@ -368,6 +422,12 @@ def run_command_hook(
     command = command.replace("{{branch}}", branch)
     command = command.replace("{{stage}}", stage)
     command = command.replace("{{substage}}", substage)
+
+    # Additional variables from kwargs
+    pr_number = kwargs.get("pr_number", "")
+    pr_url = kwargs.get("pr_url", "")
+    command = command.replace("{{pr_number}}", str(pr_number))
+    command = command.replace("{{pr_url}}", str(pr_url))
 
     timeout = hook.get("timeout", 30)  # Default 30 seconds
     context = hook.get("context", "")
@@ -410,7 +470,7 @@ def execute_hooks(
         issue_dir: Path to issue directory
         stage: Current stage name
         substage_config: SubstageConfig or StageConfig with hook definitions
-        event: "on_exit" or "on_enter"
+        event: "pre_completion" or "post_start"
         pr_number: Optional PR number for pr_approved validator
         **kwargs: Additional context for hooks
 
@@ -419,8 +479,8 @@ def execute_hooks(
     """
     errors: List[str] = []
 
-    # Auto-check output file on exit (if not optional)
-    if event == "on_exit":
+    # Auto-check output file on pre_completion (if not optional)
+    if event == "pre_completion":
         output_file = getattr(substage_config, "output", None)
         output_optional = getattr(substage_config, "output_optional", False)
 
@@ -434,24 +494,28 @@ def execute_hooks(
 
     # Run each hook
     for hook in hooks:
-        if "type" in hook:
-            # Built-in validator
-            errors.extend(run_builtin_validator(issue_dir, hook, pr_number=pr_number, **kwargs))
-        elif "command" in hook:
-            # Shell command hook
-            hook_errors = run_command_hook(issue_dir, hook, **kwargs)
+        # Check if it's a shell command hook (new format: "run", old format: "command")
+        if "run" in hook or "command" in hook:
+            # Shell command hook - normalize to use "command" key for run_command_hook
+            normalized_hook = hook.copy()
+            if "run" in normalized_hook:
+                normalized_hook["command"] = normalized_hook.pop("run")
+            hook_errors = run_command_hook(issue_dir, normalized_hook, **kwargs)
             # If optional flag is set and command returns "not configured", warn but don't block
             if hook.get("optional") and any("not configured" in e.lower() for e in hook_errors):
-                context = hook.get("context", hook["command"])
+                context = hook.get("context", normalized_hook["command"])
                 console.print(f"[yellow]Warning: {context} skipped - not configured[/yellow]")
                 continue
             errors.extend(hook_errors)
+        else:
+            # Built-in validator (new or old format)
+            errors.extend(run_builtin_validator(issue_dir, hook, pr_number=pr_number, **kwargs))
 
     return errors
 
 
 def execute_exit_hooks(issue: "Issue", stage: str, substage: Optional[str] = None) -> None:
-    """Execute on_exit hooks for a stage/substage. Raises ValidationError if any fail.
+    """Execute pre_completion hooks for a stage/substage. Raises ValidationError if any fail.
 
     This is the config-driven replacement for execute_pre_hooks.
 
@@ -495,7 +559,7 @@ def execute_exit_hooks(issue: "Issue", stage: str, substage: Optional[str] = Non
                 issue_dir,
                 stage,
                 substage_config,
-                "on_exit",
+                "pre_completion",
                 pr_number=issue.pr_number,
                 **hook_kwargs,
             ))
@@ -510,7 +574,7 @@ def execute_exit_hooks(issue: "Issue", stage: str, substage: Optional[str] = Non
             issue_dir,
             stage,
             stage_config,
-            "on_exit",
+            "pre_completion",
             pr_number=issue.pr_number,
             **hook_kwargs,
         ))
@@ -526,7 +590,7 @@ def execute_exit_hooks(issue: "Issue", stage: str, substage: Optional[str] = Non
 
 
 def execute_enter_hooks(issue: "Issue", stage: str, substage: Optional[str] = None) -> None:
-    """Execute on_enter hooks for a stage/substage. Logs warnings but doesn't block.
+    """Execute post_start hooks for a stage/substage. Logs warnings but doesn't block.
 
     This is the config-driven replacement for execute_post_hooks.
 
@@ -559,7 +623,7 @@ def execute_enter_hooks(issue: "Issue", stage: str, substage: Optional[str] = No
         issue_dir,
         stage,
         hook_config,
-        "on_enter",
+        "post_start",
         pr_number=issue.pr_number,
         issue_id=issue.id,
         issue_title=issue.title,
@@ -576,6 +640,35 @@ def execute_enter_hooks(issue: "Issue", stage: str, substage: Optional[str] = No
     if stage == ACCEPTED:
         cleanup_issue_agent(issue)
         check_and_start_blocked_issues(issue)
+
+
+def run_host_hooks(hooks: List[Dict[str, Any]], context: Dict[str, Any]) -> None:
+    """Run host action hooks (post_pr_create, post_merge, post_accepted).
+
+    These hooks log errors but don't block operations.
+
+    Args:
+        hooks: List of hook configurations
+        context: Template variables for substitution (issue_id, pr_number, etc.)
+    """
+    from pathlib import Path
+
+    for hook in hooks:
+        try:
+            if "command" in hook:
+                errors = run_command_hook(
+                    Path.cwd(),
+                    hook,
+                    issue_id=context.get("issue_id", ""),
+                    issue_title=context.get("issue_title", ""),
+                    branch=context.get("branch", ""),
+                    pr_number=str(context.get("pr_number", "")),
+                    pr_url=context.get("pr_url", ""),
+                )
+                for error in errors:
+                    console.print(f"[yellow]Warning: {error}[/yellow]")
+        except Exception as e:
+            console.print(f"[yellow]Hook error: {e}[/yellow]")
 
 
 # Aliases for backward compatibility during transition
@@ -886,6 +979,7 @@ def ensure_pr_for_issue(issue_id: str) -> bool:
     """
     from agenttree.issues import get_issue, update_issue_metadata
     from agenttree.github import create_pr
+    from agenttree.config import load_config
     from pathlib import Path
     import subprocess
 
@@ -951,16 +1045,16 @@ def ensure_pr_for_issue(issue_id: str) -> bool:
         update_issue_metadata(issue.id, pr_number=pr.number, pr_url=pr.url)
         console.print(f"[green]✓ PR #{pr.number} created for issue #{issue_id}[/green]")
 
-        # Request Cursor code review
-        try:
-            subprocess.run(
-                ["gh", "pr", "comment", str(pr.number), "--body", "@cursor do a code review"],
-                capture_output=True,
-                check=True,
-            )
-            console.print(f"[dim]Requested Cursor code review[/dim]")
-        except Exception:
-            pass  # Non-critical, don't fail if comment fails
+        # Run post_pr_create hooks
+        config = load_config()
+        if config.hooks.post_pr_create:
+            run_host_hooks(config.hooks.post_pr_create, {
+                "issue_id": issue.id,
+                "issue_title": issue.title,
+                "pr_number": pr.number,
+                "pr_url": pr.url,
+                "branch": issue.branch,
+            })
 
         return True
     except Exception as e:
@@ -1050,7 +1144,15 @@ def check_and_start_blocked_issues(issue: Issue) -> None:
     if is_running_in_container():
         return
 
+    from agenttree.config import load_config
     from agenttree.issues import get_blocked_issues, check_dependencies_met
+
+    # Run post_accepted hooks
+    config = load_config()
+    if config.hooks.post_accepted:
+        run_host_hooks(config.hooks.post_accepted, {
+            "issue_id": issue.id,
+        })
 
     blocked = get_blocked_issues(issue.id)
     if not blocked:

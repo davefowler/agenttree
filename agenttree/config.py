@@ -14,6 +14,14 @@ class ToolConfig(BaseModel):
     skip_permissions: bool = False  # Add --dangerously-skip-permissions to command
 
 
+class HooksConfig(BaseModel):
+    """Configuration for host action hooks."""
+
+    post_pr_create: list[dict] = Field(default_factory=list)  # After PR created
+    post_merge: list[dict] = Field(default_factory=list)  # After merge
+    post_accepted: list[dict] = Field(default_factory=list)  # After issue accepted
+
+
 class SubstageConfig(BaseModel):
     """Configuration for a workflow substage."""
 
@@ -22,8 +30,8 @@ class SubstageConfig(BaseModel):
     output_optional: bool = False  # If True, missing output file doesn't error
     skill: Optional[str] = None   # Override skill file path
     validators: list[str] = Field(default_factory=list)  # Legacy format
-    on_exit: list[dict] = Field(default_factory=list)  # Config-driven hooks
-    on_enter: list[dict] = Field(default_factory=list)  # Hooks run on enter
+    pre_completion: list[dict] = Field(default_factory=list)  # Hooks before completing
+    post_start: list[dict] = Field(default_factory=list)  # Hooks after starting
 
 
 class StageConfig(BaseModel):
@@ -37,8 +45,8 @@ class StageConfig(BaseModel):
     triggers_merge: bool = False
     terminal: bool = False  # Cannot progress from here
     substages: Dict[str, SubstageConfig] = Field(default_factory=dict)
-    on_exit: list[dict] = Field(default_factory=list)  # Stage-level exit hooks
-    on_enter: list[dict] = Field(default_factory=list)  # Stage-level enter hooks
+    pre_completion: list[dict] = Field(default_factory=list)  # Stage-level hooks before completing
+    post_start: list[dict] = Field(default_factory=list)  # Stage-level hooks after starting
 
     def substage_order(self) -> list[str]:
         """Get ordered list of substage names."""
@@ -53,7 +61,7 @@ class StageConfig(BaseModel):
 
         Args:
             substage: Substage name, or None for stage-level hooks
-            event: "on_exit" or "on_enter"
+            event: "pre_completion" or "post_start"
 
         Returns:
             List of hook configurations
@@ -79,7 +87,7 @@ DEFAULT_STAGES = [
     StageConfig(
         name="research",
         output="research.md",
-        on_enter=[{"type": "create_file", "template": "research.md", "dest": "research.md"}],
+        post_start=[{"create_file": {"template": "research.md", "dest": "research.md"}}],
         substages={
             "explore": SubstageConfig(name="explore"),
             "document": SubstageConfig(name="document"),
@@ -88,7 +96,7 @@ DEFAULT_STAGES = [
     StageConfig(
         name="plan",
         output="spec.md",
-        on_enter=[{"type": "create_file", "template": "spec.md", "dest": "spec.md"}],
+        post_start=[{"create_file": {"template": "spec.md", "dest": "spec.md"}}],
         substages={
             "draft": SubstageConfig(name="draft"),
             "refine": SubstageConfig(name="refine"),
@@ -97,24 +105,24 @@ DEFAULT_STAGES = [
     StageConfig(
         name="plan_assess",
         output="spec_review.md",
-        on_enter=[{"type": "create_file", "template": "spec_review.md", "dest": "spec_review.md"}],
+        post_start=[{"create_file": {"template": "spec_review.md", "dest": "spec_review.md"}}],
     ),
     StageConfig(name="plan_revise", output="spec.md"),
     StageConfig(
         name="plan_review",
         human_review=True,
-        on_exit=[
-            {"type": "file_exists", "file": "spec.md"},
-            {"type": "section_check", "file": "spec.md", "section": "Approach", "expect": "not_empty"},
+        pre_completion=[
+            {"file_exists": "spec.md"},
+            {"section_check": {"file": "spec.md", "section": "Approach", "expect": "not_empty"}},
         ],
     ),
     StageConfig(
         name="implement",
-        # on_exit from implement stage: run lint, tests, then create PR
-        on_exit=[
-            {"command": "agenttree lint", "optional": True, "context": "Lint"},
-            {"command": "agenttree test", "optional": True, "context": "Tests"},
-            {"type": "create_pr"},
+        # pre_completion from implement stage: run lint, tests, then create PR
+        pre_completion=[
+            {"run": "agenttree lint", "optional": True, "context": "Lint"},
+            {"run": "agenttree test", "optional": True, "context": "Tests"},
+            {"create_pr": True},
         ],
         substages={
             "setup": SubstageConfig(name="setup"),
@@ -122,23 +130,23 @@ DEFAULT_STAGES = [
             "code_review": SubstageConfig(
                 name="code_review",
                 output="review.md",
-                on_enter=[{"type": "create_file", "template": "review.md", "dest": "review.md"}],
+                post_start=[{"create_file": {"template": "review.md", "dest": "review.md"}}],
             ),
             "address_review": SubstageConfig(name="address_review"),
             "wrapup": SubstageConfig(
                 name="wrapup",
-                on_exit=[
-                    {"type": "file_exists", "file": "review.md"},
-                    {"type": "field_check", "file": "review.md", "path": "average", "min": 7},
+                pre_completion=[
+                    {"file_exists": "review.md"},
+                    {"field_check": {"file": "review.md", "path": "average", "min": 7}},
                 ],
             ),
             "feedback": SubstageConfig(
                 name="feedback",
                 output="feedback.md",
-                on_exit=[
-                    {"type": "has_commits"},
-                    {"type": "file_exists", "file": "review.md"},
-                    {"type": "section_check", "file": "review.md", "section": "Critical Issues", "expect": "empty"},
+                pre_completion=[
+                    {"has_commits": True},
+                    {"file_exists": "review.md"},
+                    {"section_check": {"file": "review.md", "section": "Critical Issues", "expect": "empty"}},
                 ],
             ),
         },
@@ -146,12 +154,12 @@ DEFAULT_STAGES = [
     StageConfig(
         name="implementation_review",
         human_review=True,
-        on_exit=[{"type": "pr_approved"}],
+        pre_completion=[{"pr_approved": True}],
     ),
     StageConfig(
         name="accepted",
         triggers_merge=True,
-        on_enter=[{"type": "merge_pr"}],
+        post_start=[{"merge_pr": True}],
     ),
     StageConfig(name="not_doing", terminal=True),
 ]
@@ -185,6 +193,8 @@ class Config(BaseModel):
     lint_commands: list[str] = Field(default_factory=list)  # Commands to run linting
     stages: list[StageConfig] = Field(default_factory=lambda: DEFAULT_STAGES.copy())
     security: SecurityConfig = Field(default_factory=SecurityConfig)
+    merge_strategy: str = "squash"  # squash, merge, or rebase
+    hooks: HooksConfig = Field(default_factory=HooksConfig)
 
     def get_port_for_agent(self, agent_num: int) -> int:
         """Get port number for a specific agent.
