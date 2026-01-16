@@ -49,6 +49,7 @@ from agenttree.hooks import (
     ValidationError,
     is_running_in_container,
 )
+from agenttree.preflight import run_preflight
 
 console = Console()
 
@@ -635,14 +636,51 @@ def setup(agent_numbers: tuple) -> None:
             console.print(f"[red]✗ Failed to set up agent {agent_num}: {e}[/red]")
 
 
+@main.command()
+def preflight() -> None:
+    """Run environment preflight checks.
+
+    Validates that the environment is properly set up for agent work:
+    - Python version meets minimum requirement
+    - Dependencies are installed
+    - Git is available and working
+    - agenttree CLI is accessible
+    - Test runner (pytest) is available
+    """
+    console.print("[bold]Running preflight checks...[/bold]\n")
+
+    results = run_preflight()
+    all_passed = True
+
+    for result in results:
+        if result.passed:
+            console.print(f"[green]✓[/green] {result.name}: {result.message}")
+        else:
+            console.print(f"[red]✗[/red] {result.name}: {result.message}")
+            if result.fix_hint:
+                console.print(f"  [dim]Hint: {result.fix_hint}[/dim]")
+            all_passed = False
+
+    console.print("")
+
+    if all_passed:
+        console.print("[green]✓ All preflight checks passed[/green]")
+        sys.exit(0)
+    else:
+        console.print("[red]✗ Some preflight checks failed[/red]")
+        sys.exit(1)
+
+
 @main.command(name="start")
 @click.argument("issue_id", type=str)
 @click.option("--tool", help="AI tool to use (default: from config)")
 @click.option("--force", is_flag=True, help="Force dispatch even if agent already exists")
+@click.option("--skip-preflight", is_flag=True, help="Skip preflight environment checks")
 def start_agent(
     issue_id: str,
     tool: Optional[str],
     force: bool,
+    skip_preflight: bool,
 ) -> None:
     """Start an agent for an issue (creates container + worktree).
 
@@ -666,6 +704,21 @@ def start_agent(
 
     repo_path = Path.cwd()
     config = load_config(repo_path)
+
+    # Run preflight checks unless skipped
+    if not skip_preflight:
+        console.print("[dim]Running preflight checks...[/dim]")
+        results = run_preflight()
+        failed = [r for r in results if not r.passed]
+        if failed:
+            console.print("[red]Preflight checks failed:[/red]")
+            for result in failed:
+                console.print(f"  [red]✗[/red] {result.name}: {result.message}")
+                if result.fix_hint:
+                    console.print(f"    [dim]Hint: {result.fix_hint}[/dim]")
+            console.print("\n[yellow]Use --skip-preflight to bypass these checks[/yellow]")
+            sys.exit(1)
+        console.print("[green]✓ Preflight checks passed[/green]\n")
 
     # Normalize issue ID (strip leading zeros for lookup, keep for display)
     issue_id_normalized = issue_id.lstrip("0") or "0"
