@@ -10,7 +10,7 @@ Handles YAML frontmatter in markdown files:
 import subprocess
 import yaml
 from pathlib import Path
-from typing import Dict, Any, Tuple, Optional
+from typing import Dict, Any, Tuple
 from datetime import datetime, timezone
 
 

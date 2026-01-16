@@ -11,15 +11,13 @@ from rich.table import Table
 from agenttree.config import load_config
 from agenttree.worktree import WorktreeManager
 from agenttree.tmux import TmuxManager
-from agenttree.github import GitHubManager, get_issue as get_github_issue, ensure_gh_cli
+from agenttree.github import ensure_gh_cli
 from agenttree.container import get_container_runtime
 from agenttree.agents_repo import AgentsRepository
 from agenttree.cli_docs import create_rfc, create_investigation, create_note, complete, resume
 from agenttree.issues import (
-    Issue,
     Priority,
     HUMAN_REVIEW_STAGES,
-    STAGE_SUBSTAGES,
     create_issue as create_issue_func,
     list_issues as list_issues_func,
     get_issue as get_issue_func,
@@ -27,7 +25,6 @@ from agenttree.issues import (
     get_next_stage,
     update_issue_stage,
     update_issue_metadata,
-    assign_agent,
     load_skill,
     # Session management
     create_session,
@@ -1291,7 +1288,6 @@ def issue_create(
         agenttree issue create "Bug" --problem "The login fails" --context "On Chrome only"
         agenttree issue create "Feature B" --depends-on 053 --depends-on 060
     """
-    from agenttree.issues import check_dependencies_met
 
     dependencies = list(depends_on) if depends_on else None
 

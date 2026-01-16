@@ -3,7 +3,6 @@
 Manages the _agenttree/ git repository (separate from main project).
 """
 
-import os
 import shutil
 import subprocess
 from pathlib import Path

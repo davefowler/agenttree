@@ -990,7 +990,7 @@ def rebase_issue_branch(issue_id: str) -> tuple[bool, str]:
     Returns:
         Tuple of (success, message)
     """
-    from agenttree.issues import get_issue, get_issue_dir
+    from agenttree.issues import get_issue
 
     issue = get_issue(issue_id)
     if not issue:
