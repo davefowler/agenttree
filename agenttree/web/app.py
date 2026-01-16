@@ -14,6 +14,7 @@ import os
 from typing import List, Dict, Optional
 from datetime import datetime
 
+from agenttree import __version__
 from agenttree.config import load_config
 from agenttree.worktree import WorktreeManager
 from agenttree.github import get_issue as get_github_issue
@@ -44,6 +45,7 @@ app.add_middleware(NoCacheMiddleware)
 # Mount static files and templates
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+templates.env.globals["version"] = __version__
 
 # Optional authentication (auto_error=False allows requests without credentials)
 security = HTTPBasic(auto_error=False)
