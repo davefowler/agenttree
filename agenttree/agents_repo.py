@@ -3,12 +3,16 @@
 Manages the _agenttree/ git repository (separate from main project).
 """
 
+import fcntl
 import shutil
 import subprocess
 from pathlib import Path
 from datetime import datetime
 from typing import Optional
 import re
+
+# Global lock file handle (kept open during sync)
+_sync_lock_fd = None
 
 from agenttree.frontmatter import (
     create_frontmatter,
@@ -39,6 +43,8 @@ def sync_agents_repo(
 ) -> bool:
     """Sync _agenttree repo with remote.
 
+    Uses a file lock to prevent concurrent syncs from multiple agents.
+
     Args:
         agents_dir: Path to _agenttree directory
         pull_only: If True, only pull changes (for read operations)
@@ -47,6 +53,8 @@ def sync_agents_repo(
     Returns:
         True if sync succeeded, False otherwise
     """
+    global _sync_lock_fd
+
     # Skip sync in containers - no SSH access, host handles syncing
     from agenttree.hooks import is_running_in_container
     if is_running_in_container():
@@ -54,6 +62,18 @@ def sync_agents_repo(
 
     # Check if directory exists and is a git repo
     if not agents_dir.exists() or not (agents_dir / ".git").exists():
+        return False
+
+    # Acquire lock to prevent concurrent syncs
+    lock_file = agents_dir / ".sync.lock"
+    try:
+        _sync_lock_fd = open(lock_file, "w")
+        fcntl.flock(_sync_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except (IOError, OSError):
+        # Another sync is running, skip this one
+        if _sync_lock_fd:
+            _sync_lock_fd.close()
+            _sync_lock_fd = None
         return False
 
     try:
@@ -148,6 +168,11 @@ def sync_agents_repo(
     except Exception as e:
         print(f"Warning: Error syncing _agenttree repo: {e}")
         return False
+    finally:
+        # Always release the lock
+        if _sync_lock_fd:
+            fcntl.flock(_sync_lock_fd, fcntl.LOCK_UN)
+            _sync_lock_fd.close()
 
 
 def check_controller_stages(agents_dir: Path) -> int:
