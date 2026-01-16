@@ -1476,6 +1476,162 @@ class TestCursorReviewRemoved:
                 assert "@cursor" not in str(args), "Hardcoded cursor comment found!"
 
 
+class TestCICheckHook:
+    """Tests for ci_check hook type."""
+
+    @patch('agenttree.github.wait_for_ci')
+    @patch('agenttree.github.get_pr_checks')
+    def test_ci_check_success(self, mock_get_pr_checks, mock_wait_for_ci, tmp_path):
+        """Should pass when all CI checks succeed."""
+        from agenttree.hooks import run_builtin_validator
+        from agenttree.github import CheckStatus
+
+        # Mock wait_for_ci returns True (success)
+        mock_wait_for_ci.return_value = True
+
+        # Mock checks are all successful
+        mock_get_pr_checks.return_value = [
+            CheckStatus(name="build", state="SUCCESS", conclusion="success"),
+            CheckStatus(name="tests", state="SUCCESS", conclusion="success"),
+        ]
+
+        hook = {"ci_check": {"timeout": 60, "poll_interval": 10}}
+        errors = run_builtin_validator(tmp_path, hook, pr_number=123)
+
+        assert errors == []
+        mock_wait_for_ci.assert_called_once_with(123, 60, 10)
+
+    @patch('agenttree.github.wait_for_ci')
+    @patch('agenttree.github.get_pr_checks')
+    def test_ci_check_failure(self, mock_get_pr_checks, mock_wait_for_ci, tmp_path):
+        """Should return error when CI checks fail."""
+        from agenttree.hooks import run_builtin_validator
+        from agenttree.github import CheckStatus
+
+        # Mock wait_for_ci returns False (failure/timeout)
+        mock_wait_for_ci.return_value = False
+
+        # Mock one check failed
+        mock_get_pr_checks.return_value = [
+            CheckStatus(name="build", state="SUCCESS", conclusion="success"),
+            CheckStatus(name="tests", state="FAILURE", conclusion="failure"),
+        ]
+
+        hook = {"ci_check": {"timeout": 60}}
+        errors = run_builtin_validator(tmp_path, hook, pr_number=123)
+
+        assert len(errors) == 1
+        assert "tests" in errors[0]
+        assert "failed" in errors[0].lower()  # Check for "CI checks failed"
+
+    @patch('agenttree.github.wait_for_ci')
+    def test_ci_check_pending_then_success(self, mock_wait_for_ci, tmp_path):
+        """Should pass when CI eventually succeeds after pending."""
+        from agenttree.hooks import run_builtin_validator
+
+        # Mock wait_for_ci returns True (eventual success)
+        mock_wait_for_ci.return_value = True
+
+        hook = {"ci_check": {"timeout": 300, "poll_interval": 30}}
+        errors = run_builtin_validator(tmp_path, hook, pr_number=456)
+
+        assert errors == []
+        mock_wait_for_ci.assert_called_once_with(456, 300, 30)
+
+    @patch('agenttree.github.wait_for_ci')
+    @patch('agenttree.github.get_pr_checks')
+    def test_ci_check_timeout(self, mock_get_pr_checks, mock_wait_for_ci, tmp_path):
+        """Should return timeout error when CI doesn't complete in time."""
+        from agenttree.hooks import run_builtin_validator
+        from agenttree.github import CheckStatus
+
+        # Mock wait_for_ci returns False (timeout)
+        mock_wait_for_ci.return_value = False
+
+        # Mock checks still pending
+        mock_get_pr_checks.return_value = [
+            CheckStatus(name="build", state="PENDING", conclusion=None),
+        ]
+
+        hook = {"ci_check": {"timeout": 60}}
+        errors = run_builtin_validator(tmp_path, hook, pr_number=789)
+
+        assert len(errors) == 1
+        assert "pending" in errors[0].lower() or "timeout" in errors[0].lower() or "build" in errors[0].lower()
+
+    def test_ci_check_no_pr_number(self, tmp_path):
+        """Should return error when no PR number is provided."""
+        from agenttree.hooks import run_builtin_validator
+
+        hook = {"ci_check": {"timeout": 60}}
+        errors = run_builtin_validator(tmp_path, hook, pr_number=None)
+
+        assert len(errors) == 1
+        assert "No PR number" in errors[0]
+
+    @patch('agenttree.hooks.is_running_in_container', return_value=True)
+    def test_ci_check_host_only_in_container(self, mock_in_container, tmp_path):
+        """Should skip (return empty errors) when running in container with host_only."""
+        from agenttree.hooks import execute_hooks
+        from agenttree.config import SubstageConfig
+
+        # The ci_check hook should be skipped entirely when running in container
+        # with host_only set. This test verifies the execute_hooks behavior.
+        config = SubstageConfig(
+            name="ci_wait",
+            pre_completion=[{"ci_check": {"timeout": 60}, "host_only": True}],
+        )
+
+        errors = execute_hooks(tmp_path, "implementation_review", config, "pre_completion", pr_number=123)
+
+        # Should be empty because hook is skipped in container
+        assert errors == []
+
+    @patch('agenttree.github.wait_for_ci')
+    @patch('agenttree.github.get_pr_checks')
+    def test_ci_check_creates_feedback_file(self, mock_get_pr_checks, mock_wait_for_ci, tmp_path):
+        """Should create ci_feedback.md file on CI failure."""
+        from agenttree.hooks import run_builtin_validator
+        from agenttree.github import CheckStatus
+
+        # Mock CI failure
+        mock_wait_for_ci.return_value = False
+        mock_get_pr_checks.return_value = [
+            CheckStatus(name="lint", state="FAILURE", conclusion="failure"),
+            CheckStatus(name="tests", state="FAILURE", conclusion="failure"),
+        ]
+
+        hook = {"ci_check": {"timeout": 60}}
+        # tmp_path is passed as the issue_dir (first parameter)
+        errors = run_builtin_validator(tmp_path, hook, pr_number=123)
+
+        assert len(errors) >= 1
+        # Check that feedback file was created
+        feedback_file = tmp_path / "ci_feedback.md"
+        assert feedback_file.exists()
+        content = feedback_file.read_text()
+        assert "lint" in content
+        assert "tests" in content
+
+    @patch('agenttree.github.wait_for_ci')
+    @patch('agenttree.github.get_pr_checks')
+    def test_ci_check_no_checks_passes(self, mock_get_pr_checks, mock_wait_for_ci, tmp_path):
+        """Should pass when no CI checks are configured (empty list)."""
+        from agenttree.hooks import run_builtin_validator
+
+        # Mock wait_for_ci returns True (consider empty as success)
+        mock_wait_for_ci.return_value = True
+
+        # Mock no checks configured
+        mock_get_pr_checks.return_value = []
+
+        hook = {"ci_check": {"timeout": 60}}
+        errors = run_builtin_validator(tmp_path, hook, pr_number=123)
+
+        # Should treat empty checks as success
+        assert errors == []
+
+
 class TestPreCompletionPostStartHooks:
     """Tests for renamed hook fields (pre_completion/post_start)."""
 

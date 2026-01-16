@@ -85,7 +85,7 @@ class ValidationError(Exception):
 HOOK_TYPES = {
     "file_exists", "has_commits", "field_check", "section_check", "pr_approved",
     "create_file", "create_pr", "merge_pr", "run", "rebase", "cleanup_agent", "start_blocked_issues",
-    "min_words", "has_list_items", "contains"
+    "min_words", "has_list_items", "contains", "ci_check"
 }
 
 
@@ -433,6 +433,60 @@ def run_builtin_validator(
                     errors.append(f"Timeout approving PR #{pr_number}")
                 except Exception as e:
                     errors.append(f"Error approving PR #{pr_number}: {e}")
+
+    elif hook_type == "ci_check":
+        # CI status check hook - waits for CI to complete and reports failures
+        if pr_number is None:
+            errors.append("No PR number available to check CI status")
+        else:
+            from agenttree.github import wait_for_ci, get_pr_checks
+
+            timeout = params.get("timeout", 600)
+            poll_interval = params.get("poll_interval", 30)
+
+            console.print(f"[dim]Waiting for CI checks on PR #{pr_number}...[/dim]")
+            ci_passed = wait_for_ci(pr_number, timeout, poll_interval)
+
+            if ci_passed:
+                console.print(f"[green]✓ CI checks passed for PR #{pr_number}[/green]")
+            else:
+                # Get detailed check status
+                checks = get_pr_checks(pr_number)
+
+                # Filter to failed/incomplete checks
+                failed_checks = [
+                    check for check in checks
+                    if check.state != "SUCCESS" and check.conclusion not in ("success", "skipped", None)
+                    or (check.state == "PENDING")
+                    or (check.conclusion == "failure")
+                ]
+
+                # If no specific failed checks but wait_for_ci returned False, it's a timeout
+                if not failed_checks and checks:
+                    failed_checks = [
+                        check for check in checks
+                        if check.state == "PENDING" or check.conclusion not in ("success", "skipped")
+                    ]
+
+                if failed_checks:
+                    # Create ci_feedback.md file in issue directory
+                    if issue_dir:
+                        feedback_path = issue_dir / "ci_feedback.md"
+                        feedback_content = "# CI Failure Report\n\nThe following CI checks failed:\n\n"
+                        for check in failed_checks:
+                            feedback_content += f"## {check.name}\n"
+                            feedback_content += f"- **State:** {check.state}\n"
+                            feedback_content += f"- **Conclusion:** {check.conclusion}\n\n"
+                        feedback_content += "Please fix these issues and run `agenttree next` to re-submit for CI.\n"
+                        feedback_path.write_text(feedback_content)
+                        console.print(f"[dim]Created {feedback_path}[/dim]")
+
+                    # Build error message
+                    check_names = ", ".join(c.name for c in failed_checks)
+                    errors.append(f"CI checks failed: {check_names}")
+                else:
+                    # No checks at all, or all passed but timeout
+                    errors.append("CI check timed out or failed")
 
     # Action types (side effects, don't return errors on success)
     elif hook_type == "create_file":

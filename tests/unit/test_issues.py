@@ -295,10 +295,10 @@ class TestStageTransitions:
         assert is_review is False
 
     def test_get_next_stage_feedback_to_review(self):
-        """implement.feedback -> implementation_review (human review)"""
+        """implement.feedback -> implementation_review.ci_wait (human review)"""
         next_stage, next_substage, is_review = get_next_stage(IMPLEMENT, "feedback")
         assert next_stage == IMPLEMENTATION_REVIEW
-        assert next_substage is None
+        assert next_substage == "ci_wait"  # First substage of implementation_review
         assert is_review is True
 
     def test_get_next_stage_to_accepted(self):
