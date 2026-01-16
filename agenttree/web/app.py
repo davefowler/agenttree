@@ -539,46 +539,6 @@ async def start_task(
 
 
 @app.post("/api/issues/{issue_id}/start", response_class=HTMLResponse)
-<<<<<<< HEAD
-async def start_issue(request: Request, issue_id: str):
-    """Start an agent to work on an issue (calls agenttree start)."""
-    get_current_user()  # Check auth if enabled
-
-    try:
-        # Run agenttree start in background
-        result = subprocess.run(
-            ["uv", "run", "agenttree", "start", issue_id],
-            capture_output=True,
-            text=True,
-            timeout=30,
-            cwd=Path.cwd()
-        )
-
-        if result.returncode == 0:
-            status = f"Agent started for issue #{issue_id}"
-            success = True
-        else:
-            status = f"Failed to start: {result.stderr[:200]}"
-            success = False
-
-    except subprocess.TimeoutExpired:
-        status = "Command timed out"
-        success = False
-    except Exception as e:
-        status = f"Error: {str(e)}"
-        success = False
-
-    return templates.TemplateResponse(
-        "partials/dispatch_status.html",
-        {"request": request, "status": status, "success": success, "agent_num": 0}
-    )
-
-
-@app.post("/api/issues/{issue_id}/move")
-async def move_issue(issue_id: str, move_request: IssueMoveRequest):
-    """Move an issue to a new stage."""
-    get_current_user()  # Check auth if enabled
-=======
 async def start_issue(
     request: Request,
     issue_id: str,
@@ -599,7 +559,6 @@ async def start_issue(
     except Exception as e:
         status = f"Error: {str(e)}"
         success = False
->>>>>>> origin/main
 
     return templates.TemplateResponse(
         "partials/start_status.html",
