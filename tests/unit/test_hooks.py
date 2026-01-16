@@ -322,7 +322,7 @@ This is the approach section with content.
         assert errors == []
 
     @patch('agenttree.hooks.get_git_diff_stats')
-    def test_create_file_action_substitutes_placeholders(self, mock_git_stats, tmp_path):
+    def test_create_file_action_substitutes_placeholders(self, mock_git_stats, tmp_path, monkeypatch):
         """Should substitute placeholders in template when creating file."""
         from agenttree.hooks import run_builtin_validator
 
@@ -342,17 +342,20 @@ This is the approach section with content.
 """
         (templates_dir / "review.md").write_text(template_content)
 
-        with patch.object(Path, 'cwd', return_value=tmp_path):
-            issue_dir = tmp_path / "issue"
-            issue_dir.mkdir()
-            hook = {"type": "create_file", "template": "review.md", "dest": "review.md"}
+        # Use monkeypatch.chdir to actually change the working directory
+        # so that relative paths like Path("_agenttree/templates") resolve correctly
+        monkeypatch.chdir(tmp_path)
 
-            errors = run_builtin_validator(
-                issue_dir,
-                hook,
-                issue_id="046",
-                branch="issue-046-feature"
-            )
+        issue_dir = tmp_path / "issue"
+        issue_dir.mkdir()
+        hook = {"type": "create_file", "template": "review.md", "dest": "review.md"}
+
+        errors = run_builtin_validator(
+            issue_dir,
+            hook,
+            issue_id="046",
+            branch="issue-046-feature"
+        )
 
         assert errors == []
         mock_git_stats.assert_called_once()
