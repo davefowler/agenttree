@@ -100,6 +100,26 @@ def sync_agents_repo(
                 # Merge conflict - print error and fail
                 print(f"Warning: Merge conflict in _agenttree repo: {result.stderr}")
                 return False
+            elif "local changes" in result.stderr.lower() or "overwritten" in result.stderr.lower():
+                # Local changes blocking pull - try stash, pull, unstash
+                subprocess.run(
+                    ["git", "-C", str(agents_dir), "stash", "--include-untracked"],
+                    capture_output=True,
+                    timeout=10,
+                )
+                retry_result = subprocess.run(
+                    ["git", "-C", str(agents_dir), "pull", "--no-rebase"],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                subprocess.run(
+                    ["git", "-C", str(agents_dir), "stash", "pop"],
+                    capture_output=True,
+                    timeout=10,
+                )
+                if retry_result.returncode != 0:
+                    return False
             else:
                 # Other error - print warning but continue
                 print(f"Warning: Failed to pull _agenttree repo: {result.stderr}")
