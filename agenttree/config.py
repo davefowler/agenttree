@@ -548,4 +548,14 @@ def load_config(path: Optional[Path] = None) -> Config:
     if data is None:
         return Config()
 
+    # Auto-populate 'name' field for substages from the key
+    if "stages" in data:
+        for stage in data["stages"]:
+            if "substages" in stage and isinstance(stage["substages"], dict):
+                for substage_name, substage_config in stage["substages"].items():
+                    if substage_config is None:
+                        stage["substages"][substage_name] = {"name": substage_name}
+                    elif "name" not in substage_config:
+                        substage_config["name"] = substage_name
+
     return Config(**data)
