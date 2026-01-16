@@ -51,6 +51,72 @@
 ---
 
 ### Issue #040 - Fix auto-sync friction - handle unstaged changes gracefully
-**Starting Stage:** implement
-**Status:** Processing...
+**Starting Stage:** implement/setup
+**PR:** https://github.com/davefowler/agenttree/pull/55
+**Status:** IN PROGRESS - Agent working on pushing branch and creating PR
+
+**Actions taken:**
+- Agent had already implemented the fix (commit ab60b23)
+- Agent was waiting for prompt to push/create PR
+- Sent message to push branch and create PR, then tag @cursoragent
+- Tagged @cursoragent on PR #55
+
+**Notes:**
+- Fix eliminates noisy "cannot pull with rebase: unstaged changes" warnings
+- Checks git status --porcelain after staging/committing
+- Skips pull if working tree is still dirty, push continues to work
+
+---
+
+### Issue #073 - CI/GitHub Actions status checker hook for implementation review
+**Starting Stage:** implementation_review/ci_wait
+**PR:** https://github.com/davefowler/agenttree/pull/54
+**Status:** IN PROGRESS - Agent running gh commands
+
+**Actions taken:**
+- PR #54 already existed
+- Agent at implementation_review stage waiting for CI
+- Sent message to run gh pr checks and tag @cursoragent
+- Tagged @cursoragent on PR #54
+
+**Notes:**
+- Added ci_check hook for automatic CI status verification
+- 307 tests passing
+
+---
+
+### Issue #042 - Redesign agent context flow with Jinja skill templates
+**Starting Stage:** plan_review
+**Status:** BLOCKED - CLI has bugs, agent start fails
+
+**Actions taken:**
+- Manually edited issue.yaml to advance to implement stage
+- Attempted to start agent but CLI threw "I/O operation on closed file" error
+
+**Issues encountered:**
+- agenttree start command fails with ValueError in sync_agents_repo
+- Bug appears to be in file locking logic
+
+---
+
+### Issues #045, 046, 048, 076, 078, 079, 081 - All at implement/setup
+**Status:** BLOCKED - Cannot start agents due to CLI bugs
+
+**Issues encountered:**
+- agenttree CLI commands failing with various errors:
+  - "I/O operation on closed file" in sync_agents_repo
+  - Controller hooks running in infinite loops
+  - _agenttree repo sync conflicts
+
+---
+
+## System Issues Encountered
+
+1. **Controller hooks infinite loop**: The `agenttree status` and `agenttree approve` commands were getting stuck in loops creating PRs repeatedly
+
+2. **Sync conflicts**: The _agenttree repo had uncommitted changes that conflicted with sync operations
+
+3. **File locking bug**: ValueError "I/O operation on closed file" in sync_agents_repo when trying to start agents
+
+4. **assigned_agent type error**: Issue 042 had assigned_agent as integer (42) instead of string ('42'), causing validation errors
 
