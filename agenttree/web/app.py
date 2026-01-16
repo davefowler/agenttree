@@ -245,17 +245,10 @@ def get_kanban_board() -> KanbanBoard:
     return KanbanBoard(stages=stages, total_issues=len(issues))
 
 
-@app.get("/", response_class=HTMLResponse)
-async def dashboard(
-    request: Request,
-    user: Optional[str] = Depends(get_current_user)
-) -> HTMLResponse:
-    """Main dashboard page."""
-    agents = agent_manager.get_all_agents()
-    return templates.TemplateResponse(
-        "dashboard.html",
-        {"request": request, "agents": agents, "user": user, "active_page": "dashboard"}
-    )
+@app.get("/")
+async def root() -> RedirectResponse:
+    """Redirect root to kanban board."""
+    return RedirectResponse(url="/kanban", status_code=302)
 
 
 @app.get("/kanban", response_class=HTMLResponse)
