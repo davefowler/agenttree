@@ -27,18 +27,20 @@ tools:
 
 # Host configurations
 # Hosts are execution environments that handle stages in the workflow.
-# Built-in hosts (don't need to be defined, but can be overridden):
-#   - controller: Human-driven, runs on host machine (no container)
-#   - agent: Default AI agent, runs in container with default tool/model
-#
-# Custom hosts can be defined for specialized agents:
+# Each host can specify container settings, AI tool, model, and skills.
 hosts:
-  # Override default agent settings if needed
-  # agent:
-  #   container:
-  #     image: agenttree-agent:latest
-  #   tool: claude
-  #   model: opus
+  # Controller: Human-driven, runs on host machine (no container)
+  controller:
+    description: "Human-driven controller"
+    # No container - runs directly on host
+
+  # Default AI agent: runs in container
+  agent:
+    description: "Default AI agent"
+    container:
+      image: agenttree-agent:latest
+    tool: claude
+    model: opus
 
   # Custom review agent host
   review:
