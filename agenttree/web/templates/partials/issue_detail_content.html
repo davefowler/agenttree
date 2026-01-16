@@ -50,8 +50,11 @@
                     <button class="btn btn-approve"
                             hx-post="/api/issues/{{ issue.number }}/approve"
                             hx-target="#approve-status-{{ issue.number }}"
-                            hx-swap="innerHTML">
-                        Approve
+                            hx-swap="innerHTML"
+                            hx-indicator="#approve-spinner-{{ issue.number }}"
+                            hx-disabled-elt="this">
+                        <span class="btn-text">Approve</span>
+                        <span class="htmx-indicator" id="approve-spinner-{{ issue.number }}">Approving...</span>
                     </button>
                     <span id="approve-status-{{ issue.number }}"></span>
                     {% endif %}

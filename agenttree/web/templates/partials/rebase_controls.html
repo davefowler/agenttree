@@ -5,8 +5,11 @@
     <button class="btn btn-rebase"
             hx-post="/api/issues/{{ issue_number }}/rebase"
             hx-target="#rebase-controls-{{ issue_number }}"
-            hx-swap="innerHTML">
-        Rebase
+            hx-swap="innerHTML"
+            hx-indicator="#rebase-spinner-{{ issue_number }}"
+            hx-disabled-elt="this">
+        <span class="btn-text">Rebase</span>
+        <span class="htmx-indicator" id="rebase-spinner-{{ issue_number }}">Rebasing...</span>
     </button>
 </div>
 {% elif commits_behind == 0 %}
