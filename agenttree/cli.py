@@ -74,6 +74,8 @@ def main() -> None:
 @click.option("--project", help="Project name for tmux sessions")
 def init(worktrees_dir: Optional[str], project: Optional[str]) -> None:
     """Initialize AgentTree in the current repository."""
+    import importlib.resources
+
     repo_path = Path.cwd()
 
     # Check if we're in a git repo
@@ -92,29 +94,13 @@ def init(worktrees_dir: Optional[str], project: Optional[str]) -> None:
     if not project:
         project = repo_path.name
 
-    # Create config
-    config_data = {
-        "project": project,
-        "worktrees_dir": worktrees_dir or ".worktrees",
-        "port_range": "9001-9099",  # Less conflicting range (9000 + agent number)
-        "default_tool": "claude",
-        "tools": {
-            "claude": {
-                "command": "claude",
-                "startup_prompt": "Check TASK.md and start working on it.",
-            },
-            "aider": {
-                "command": "aider --model sonnet",
-                "startup_prompt": "/read TASK.md",
-            },
-        },
-    }
-
-    import yaml
-
-    with open(config_file, "w") as f:
-        yaml.dump(config_data, f, default_flow_style=False)
-
+    # Copy default config template and substitute project name
+    template_path = importlib.resources.files("agenttree.templates").joinpath("default.agenttree.yaml")
+    config_content = template_path.read_text()
+    config_content = config_content.replace("{{PROJECT_NAME}}", project)
+    if worktrees_dir:
+        config_content = config_content.replace("worktrees_dir: .worktrees", f"worktrees_dir: {worktrees_dir}")
+    config_file.write_text(config_content)
     console.print(f"[green]✓ Created {config_file}[/green]")
 
     # Create _agenttree/scripts directory
@@ -2157,6 +2143,158 @@ def lint(extra_args: tuple[str, ...]) -> None:
         sys.exit(1)
 
     console.print(f"\n[green]All {len(commands)} lint command(s) passed[/green]")
+
+
+# =============================================================================
+# Sync Command
+# =============================================================================
+
+
+@main.command("sync")
+def sync_command() -> None:
+    """Force sync with agents repository.
+
+    This command:
+    1. Pushes any pending branches to remote
+    2. Creates PRs for issues at implementation_review that don't have PRs
+    3. Detects PRs that were merged externally and advances issues to accepted
+
+    Sync happens automatically on most agenttree commands, but use this
+    to force it immediately (e.g., right after an agent finishes).
+
+    Example:
+        agenttree sync
+    """
+    from agenttree.agents_repo import sync_agents_repo
+
+    console.print("[dim]Syncing agents repository...[/dim]")
+    success = sync_agents_repo()
+
+    if success:
+        console.print("[green]✓ Sync complete[/green]")
+    else:
+        console.print("[yellow]Sync completed with warnings[/yellow]")
+
+
+# =============================================================================
+# Hooks Commands
+# =============================================================================
+
+
+@main.group("hooks")
+def hooks_group() -> None:
+    """Hook management commands."""
+    pass
+
+
+@hooks_group.command("check")
+@click.argument("issue_id", type=str)
+@click.option("--event", type=click.Choice(["pre_completion", "post_start", "both"]), default="both",
+              help="Which hooks to show (default: both)")
+def hooks_check(issue_id: str, event: str) -> None:
+    """Preview which hooks would run for an issue.
+
+    Shows the hooks that would execute for the issue's current stage,
+    without actually running them. Useful for debugging workflow issues.
+
+    Example:
+        agenttree hooks check 042
+        agenttree hooks check 042 --event pre_completion
+    """
+    from agenttree.config import load_config
+    from agenttree.hooks import parse_hook, is_running_in_container
+
+    # Normalize issue ID
+    issue_id_normalized = issue_id.lstrip("0") or "0"
+    issue = get_issue_func(issue_id_normalized)
+    if not issue:
+        console.print(f"[red]Issue {issue_id} not found[/red]")
+        sys.exit(1)
+
+    config = load_config()
+    stage_config = config.get_stage(issue.stage)
+    if not stage_config:
+        console.print(f"[yellow]No hooks configured for stage: {issue.stage}[/yellow]")
+        return
+
+    in_container = is_running_in_container()
+    context = "container" if in_container else "host"
+
+    console.print(f"\n[bold]Issue #{issue.id}[/bold]: {issue.title}")
+    console.print(f"[dim]Stage: {issue.stage}" + (f".{issue.substage}" if issue.substage else "") + f"[/dim]")
+    console.print(f"[dim]Context: {context}[/dim]")
+    console.print()
+
+    def show_hooks(hooks: list, event_name: str, source: str) -> None:
+        if not hooks:
+            console.print(f"[dim]{event_name} ({source}): none[/dim]")
+            return
+
+        console.print(f"[cyan]{event_name} ({source}):[/cyan]")
+        for hook in hooks:
+            hook_type, params = parse_hook(hook)
+            host_only = hook.get("host_only", False)
+            optional = hook.get("optional", False)
+
+            # Check if would be skipped
+            skipped = ""
+            if host_only and in_container:
+                skipped = " [yellow](would skip - host only)[/yellow]"
+            elif hook_type in ("merge_pr", "pr_approved", "cleanup_agent", "start_blocked_issues") and in_container:
+                skipped = " [yellow](would skip - needs host)[/yellow]"
+
+            optional_str = " [dim](optional)[/dim]" if optional else ""
+
+            # Format params
+            if hook_type == "run":
+                param_str = params.get("command", "")
+            elif hook_type == "file_exists":
+                param_str = params.get("file", "")
+            elif hook_type == "section_check":
+                param_str = f"{params.get('file', '')} → {params.get('section', '')} ({params.get('expect', '')})"
+            elif hook_type == "field_check":
+                param_str = f"{params.get('file', '')} → {params.get('path', '')} (min: {params.get('min', 'n/a')})"
+            elif hook_type == "create_file":
+                param_str = f"{params.get('template', '')} → {params.get('dest', '')}"
+            else:
+                param_str = str(params) if params else ""
+
+            console.print(f"  • [green]{hook_type}[/green]: {param_str}{optional_str}{skipped}")
+
+    # Get substage config if applicable
+    substage_config = None
+    if issue.substage:
+        substage_config = stage_config.get_substage(issue.substage)
+
+    # Show hooks based on event filter
+    if event in ("pre_completion", "both"):
+        # Substage pre_completion hooks
+        if substage_config:
+            show_hooks(substage_config.pre_completion, "pre_completion", f"{issue.stage}.{issue.substage}")
+
+        # Check if exiting stage (last substage or no substages)
+        substages = stage_config.substage_order()
+        is_exiting_stage = not substages or (issue.substage and substages[-1] == issue.substage)
+
+        if is_exiting_stage:
+            show_hooks(stage_config.pre_completion, "pre_completion", f"{issue.stage} (stage-level)")
+        elif not substage_config:
+            show_hooks(stage_config.pre_completion, "pre_completion", issue.stage)
+
+    if event in ("post_start", "both"):
+        # For post_start, show what would run on NEXT stage
+        next_stage, next_substage, _ = get_next_stage(issue.stage, issue.substage)
+        if next_stage:
+            next_stage_config = config.get_stage(next_stage)
+            if next_stage_config:
+                if next_substage:
+                    next_substage_config = next_stage_config.get_substage(next_substage)
+                    if next_substage_config:
+                        show_hooks(next_substage_config.post_start, "post_start", f"{next_stage}.{next_substage} (next)")
+                else:
+                    show_hooks(next_stage_config.post_start, "post_start", f"{next_stage} (next)")
+
+    console.print()
 
 
 if __name__ == "__main__":

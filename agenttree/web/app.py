@@ -295,7 +295,7 @@ def get_issue_files(issue_id: str) -> list[dict[str, str | int]]:
 _STAGE_LIST = list(StageEnum)
 
 
-def _sort_flow_issues(issues: list[Issue]) -> list[Issue]:
+def _sort_flow_issues(issues: list[WebIssue]) -> list[WebIssue]:
     """Sort issues for flow view: review stages first, higher stage order, then number."""
     return sorted(issues, key=lambda x: (not x.is_review, -_STAGE_LIST.index(x.stage), x.number))
 
