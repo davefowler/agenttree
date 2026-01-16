@@ -157,6 +157,7 @@ stages:
 
   - name: accepted
     terminal: true
+    host: controller  # Host handles merge/cleanup (agents can't push)
     post_start:
       - merge_pr:
       - cleanup_agent:
