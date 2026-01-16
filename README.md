@@ -95,7 +95,7 @@ agenttree remote start my-home-pc 1
 **Setup:**
 1. Install Tailscale on remote machine
 2. Start agent tmux session on remote
-3. Dispatch tasks from anywhere
+3. Start tasks from anywhere
 
 ### Multi-CLI Support
 Use any AI coding CLI with your agents:
