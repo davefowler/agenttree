@@ -706,6 +706,9 @@ def execute_enter_hooks(issue: "Issue", stage: str, substage: Optional[str] = No
 
     This is the config-driven replacement for execute_post_hooks.
 
+    For controller stages (host: controller), hooks are skipped when running in a container.
+    The host will execute them via check_controller_stages() during sync.
+
     Args:
         issue: Issue that was transitioned
         stage: New stage name
@@ -718,6 +721,12 @@ def execute_enter_hooks(issue: "Issue", stage: str, substage: Optional[str] = No
     stage_config = config.get_stage(stage)
     if not stage_config:
         return  # Unknown stage, skip hooks
+
+    # Skip hooks for controller stages when in a container
+    # Host will run them via check_controller_stages() during sync
+    if stage_config.host == "controller" and is_running_in_container():
+        console.print(f"[dim]Controller stage - hooks will run on host sync[/dim]")
+        return
 
     # Get the appropriate config (substage or stage)
     if substage:
