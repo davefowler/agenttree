@@ -268,11 +268,12 @@ class TestSyncAgentsRepo:
         result = sync_agents_repo(not_git)
         assert result is False
 
+    @patch("agenttree.hooks.is_running_in_container", return_value=False)
     @patch("agenttree.agents_repo.check_merged_prs")
     @patch("agenttree.agents_repo.check_controller_stages")
     @patch("agenttree.agents_repo.push_pending_branches")
     @patch("agenttree.agents_repo.subprocess.run")
-    def test_sync_pull_only_success(self, mock_run, mock_push_pending, mock_check_controller, mock_check_merged, git_repo):
+    def test_sync_pull_only_success(self, mock_run, mock_push_pending, mock_check_controller, mock_check_merged, mock_container, git_repo):
         """Test sync with pull_only=True succeeds."""
         # Mock responses for: status --porcelain (no changes), pull
         mock_run.side_effect = [
@@ -290,8 +291,9 @@ class TestSyncAgentsRepo:
         assert "pull" in pull_call
         assert "--no-rebase" in pull_call
 
+    @patch("agenttree.hooks.is_running_in_container", return_value=False)
     @patch("agenttree.agents_repo.subprocess.run")
-    def test_sync_pull_only_offline(self, mock_run, git_repo):
+    def test_sync_pull_only_offline(self, mock_run, mock_container, git_repo):
         """Test sync returns False when offline."""
         # Mock responses for: status --porcelain (no changes), pull (fails offline)
         mock_run.side_effect = [
@@ -303,8 +305,9 @@ class TestSyncAgentsRepo:
 
         assert result is False
 
+    @patch("agenttree.hooks.is_running_in_container", return_value=False)
     @patch("agenttree.agents_repo.subprocess.run")
-    def test_sync_pull_only_no_remote(self, mock_run, git_repo):
+    def test_sync_pull_only_no_remote(self, mock_run, mock_container, git_repo):
         """Test sync returns False when no remote configured."""
         # Mock responses for: status --porcelain (no changes), pull (fails no remote)
         mock_run.side_effect = [
@@ -316,8 +319,9 @@ class TestSyncAgentsRepo:
 
         assert result is False
 
+    @patch("agenttree.hooks.is_running_in_container", return_value=False)
     @patch("agenttree.agents_repo.subprocess.run")
-    def test_sync_pull_only_conflict(self, mock_run, git_repo, capsys):
+    def test_sync_pull_only_conflict(self, mock_run, mock_container, git_repo, capsys):
         """Test sync returns False on merge conflict."""
         # Mock responses for: status --porcelain (no changes), pull (conflict)
         mock_run.side_effect = [
@@ -331,11 +335,12 @@ class TestSyncAgentsRepo:
         captured = capsys.readouterr()
         assert "Merge conflict" in captured.out
 
+    @patch("agenttree.hooks.is_running_in_container", return_value=False)
     @patch("agenttree.agents_repo.check_merged_prs")
     @patch("agenttree.agents_repo.check_controller_stages")
     @patch("agenttree.agents_repo.push_pending_branches")
     @patch("agenttree.agents_repo.subprocess.run")
-    def test_sync_write_commits_and_pushes(self, mock_run, mock_push_pending, mock_check_controller, mock_check_merged, git_repo):
+    def test_sync_write_commits_and_pushes(self, mock_run, mock_push_pending, mock_check_controller, mock_check_merged, mock_container, git_repo):
         """Test sync with write commits and pushes changes."""
         # Mock responses for: status --porcelain (has changes), add, commit, pull, push
         mock_run.side_effect = [
@@ -360,11 +365,12 @@ class TestSyncAgentsRepo:
         assert "commit" in commit_call[0][0]
         assert "Test commit" in commit_call[0][0]
 
+    @patch("agenttree.hooks.is_running_in_container", return_value=False)
     @patch("agenttree.agents_repo.check_merged_prs")
     @patch("agenttree.agents_repo.check_controller_stages")
     @patch("agenttree.agents_repo.push_pending_branches")
     @patch("agenttree.agents_repo.subprocess.run")
-    def test_sync_write_no_changes(self, mock_run, mock_push_pending, mock_check_controller, mock_check_merged, git_repo):
+    def test_sync_write_no_changes(self, mock_run, mock_push_pending, mock_check_controller, mock_check_merged, mock_container, git_repo):
         """Test sync with write but no changes to commit."""
         # Mock responses for: status --porcelain (no changes), pull, push
         mock_run.side_effect = [
@@ -378,8 +384,9 @@ class TestSyncAgentsRepo:
         assert result is True
         assert mock_run.call_count == 3  # status, pull, push (no commit since no changes)
 
+    @patch("agenttree.hooks.is_running_in_container", return_value=False)
     @patch("agenttree.agents_repo.subprocess.run")
-    def test_sync_write_push_offline(self, mock_run, git_repo, capsys):
+    def test_sync_write_push_offline(self, mock_run, mock_container, git_repo, capsys):
         """Test sync handles offline push gracefully."""
         mock_run.side_effect = [
             Mock(returncode=0),  # add -A
@@ -395,8 +402,9 @@ class TestSyncAgentsRepo:
         captured = capsys.readouterr()
         assert "Offline" in captured.out
 
+    @patch("agenttree.hooks.is_running_in_container", return_value=False)
     @patch("agenttree.agents_repo.subprocess.run")
-    def test_sync_timeout(self, mock_run, git_repo, capsys):
+    def test_sync_timeout(self, mock_run, mock_container, git_repo, capsys):
         """Test sync handles timeout gracefully."""
         mock_run.side_effect = subprocess.TimeoutExpired(cmd="git", timeout=30)
 
@@ -406,8 +414,9 @@ class TestSyncAgentsRepo:
         captured = capsys.readouterr()
         assert "timed out" in captured.out
 
+    @patch("agenttree.hooks.is_running_in_container", return_value=False)
     @patch("agenttree.agents_repo.subprocess.run")
-    def test_sync_uses_default_commit_message(self, mock_run, git_repo):
+    def test_sync_uses_default_commit_message(self, mock_run, mock_container, git_repo):
         """Test sync uses default commit message when not provided."""
         mock_run.side_effect = [
             Mock(returncode=0),  # add -A
@@ -423,8 +432,9 @@ class TestSyncAgentsRepo:
         commit_call = mock_run.call_args_list[2]
         assert "Auto-sync: update issue data" in commit_call[0][0]
 
+    @patch("agenttree.hooks.is_running_in_container", return_value=False)
     @patch("agenttree.agents_repo.subprocess.run")
-    def test_sync_commit_failure(self, mock_run, git_repo, capsys):
+    def test_sync_commit_failure(self, mock_run, mock_container, git_repo, capsys):
         """Test sync continues even if commit fails (commit result not checked)."""
         # Note: The current implementation doesn't check commit return code,
         # so sync continues to pull/push even if commit fails
