@@ -169,10 +169,14 @@ def sync_agents_repo(
         print(f"Warning: Error syncing _agenttree repo: {e}")
         return False
     finally:
-        # Always release the lock
+        # Always release the lock and reset the global
         if _sync_lock_fd:
-            fcntl.flock(_sync_lock_fd, fcntl.LOCK_UN)
-            _sync_lock_fd.close()
+            try:
+                fcntl.flock(_sync_lock_fd, fcntl.LOCK_UN)
+                _sync_lock_fd.close()
+            except (IOError, OSError, ValueError):
+                pass  # Already closed or invalid
+            _sync_lock_fd = None
 
 
 def check_controller_stages(agents_dir: Path) -> int:
@@ -232,14 +236,15 @@ def check_controller_stages(agents_dir: Path) -> int:
                 if hooks_executed_stage == stage:
                     continue
 
-                issue = Issue(**data)
-                # Execute the post_start hooks for this stage (host side)
-                execute_enter_hooks(issue, stage, data.get("substage"))
-
-                # Mark hooks as executed for this stage
+                # Mark hooks as executed BEFORE running them to prevent infinite loop
+                # (hooks may call sync_agents_repo which calls check_controller_stages)
                 data["controller_hooks_executed"] = stage
                 with open(issue_yaml, "w") as f:
                     yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
+
+                issue = Issue(**data)
+                # Execute the post_start hooks for this stage (host side)
+                execute_enter_hooks(issue, stage, data.get("substage"))
 
                 processed += 1
 
