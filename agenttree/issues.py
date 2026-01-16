@@ -71,7 +71,6 @@ class Issue(BaseModel):
     pr_number: Optional[int] = None
     pr_url: Optional[str] = None
     relevant_url: Optional[str] = None
-    needs_push: bool = False  # Set by agent when commits need to be pushed by host
 
     history: list[HistoryEntry] = Field(default_factory=list)
 
@@ -628,7 +627,6 @@ def update_issue_metadata(
     github_issue: Optional[int] = None,
     relevant_url: Optional[str] = None,
     worktree_dir: Optional[str] = None,
-    needs_push: Optional[bool] = None,
     assigned_agent: Optional[int] = None,
     clear_assigned_agent: bool = False,
 ) -> Optional[Issue]:
@@ -642,7 +640,6 @@ def update_issue_metadata(
         github_issue: GitHub issue number (optional)
         relevant_url: Relevant URL (optional)
         worktree_dir: Worktree directory path (optional)
-        needs_push: Whether host needs to push commits (optional)
         assigned_agent: Assigned agent number (optional)
         clear_assigned_agent: If True, sets assigned_agent to None
 
@@ -680,8 +677,6 @@ def update_issue_metadata(
         issue.relevant_url = relevant_url
     if worktree_dir is not None:
         issue.worktree_dir = worktree_dir
-    if needs_push is not None:
-        issue.needs_push = needs_push
     if assigned_agent is not None:
         issue.assigned_agent = assigned_agent
     if clear_assigned_agent:

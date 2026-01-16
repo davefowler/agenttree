@@ -178,14 +178,11 @@ def _action_create_pr(issue_dir: Path, issue_id: str = "", issue_title: str = ""
         worktree_path = str(issue_dir.resolve()) if issue_dir else None
         update_issue_metadata(issue_id, branch=branch, worktree_dir=worktree_path)
 
-    # If in container, skip remote operations but signal host to push
+    # If in container, skip remote operations - host will detect and push unpushed commits
     if is_running_in_container():
         console.print(f"[yellow]Running in container - PR will be created by host[/yellow]")
         console.print(f"[dim]Branch: {branch} (committed locally, awaiting push)[/dim]")
         console.print(f"[dim]Worktree: {issue_dir}[/dim]")
-        # Signal host that push is needed
-        if issue_id:
-            update_issue_metadata(issue_id, needs_push=True)
         return
 
     # On host: do the full push/PR
