@@ -110,6 +110,29 @@ def send_keys(session_name: str, keys: str, submit: bool = True) -> None:
         )
 
 
+def send_message(session_name: str, message: str) -> bool:
+    """Send a message to a tmux session if it's alive.
+
+    This is the preferred way to send messages to agents - it checks
+    if the session exists before sending and handles errors gracefully.
+
+    Args:
+        session_name: Name of the tmux session
+        message: Message to send
+
+    Returns:
+        True if message was sent, False if session doesn't exist
+    """
+    if not session_exists(session_name):
+        return False
+
+    try:
+        send_keys(session_name, message, submit=True)
+        return True
+    except subprocess.CalledProcessError:
+        return False
+
+
 def attach_session(session_name: str) -> None:
     """Attach to a tmux session (interactive).
 

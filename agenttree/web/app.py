@@ -459,25 +459,23 @@ async def send_to_agent(
     user: Optional[str] = Depends(get_current_user)
 ) -> HTMLResponse:
     """Send a message to an agent via tmux."""
+    from agenttree.tmux import send_message
+
     config = load_config()
     # Pad agent number to 3 digits to match tmux session naming
     padded_num = agent_num.zfill(3)
     session_name = f"{config.project}-issue-{padded_num}"
 
-    try:
-        subprocess.run(
-            ["tmux", "send-keys", "-t", session_name, message, "Enter"],
-            check=True,
-            timeout=2
-        )
-
-        status = "Message sent successfully"
-    except subprocess.CalledProcessError:
-        status = "Failed to send message"
+    if send_message(session_name, message):
+        status = "Message sent"
+        success = True
+    else:
+        status = "Agent not running"
+        success = False
 
     return templates.TemplateResponse(
         "partials/send_status.html",
-        {"request": request, "status": status, "success": True}
+        {"request": request, "status": status, "success": success}
     )
 
 
@@ -749,31 +747,18 @@ async def rebase_issue(
 
     # Notify the agent if one is assigned and has an active tmux session
     if issue.assigned_agent:
+        from agenttree.tmux import send_message
+
         config = load_config()
         padded_num = issue.assigned_agent.zfill(3)
         session_name = f"{config.project}-issue-{padded_num}"
 
-        # Check if tmux session is alive before sending
-        try:
-            check_result = subprocess.run(
-                ["tmux", "has-session", "-t", session_name],
-                capture_output=True,
-                timeout=2
-            )
-            if check_result.returncode == 0:
-                # Session is active, send notification
-                notification = (
-                    "Your branch has been rebased onto the latest main. "
-                    "Please review the recent changes and update your work if needed. "
-                    "Run 'git log --oneline -10' to see recent commits."
-                )
-                subprocess.run(
-                    ["tmux", "send-keys", "-t", session_name, notification, "Enter"],
-                    check=False,
-                    timeout=2
-                )
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            pass  # Agent notification is best-effort
+        notification = (
+            "Your branch has been rebased onto the latest main. "
+            "Please review the recent changes and update your work if needed. "
+            "Run 'git log --oneline -10' to see recent commits."
+        )
+        send_message(session_name, notification)  # Best-effort, returns False if not running
 
     # Return updated rebase controls
     commits_behind = get_commits_behind_main(issue_id_normalized)
