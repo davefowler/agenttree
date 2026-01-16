@@ -299,11 +299,19 @@ def check_merged_prs(agents_dir: Path) -> int:
                 console.print(f"[green]PR #{pr_number} was merged externally, advancing issue #{issue_id} to accepted[/green]")
                 _update_issue_stage_direct(issue_yaml, data, "accepted")
                 issues_advanced += 1
+                # Clean up the agent since we bypassed normal hooks
+                from agenttree.hooks import cleanup_issue_agent
+                from agenttree.issues import Issue
+                cleanup_issue_agent(Issue(**data))
             elif state == "CLOSED":
                 # PR was closed without merging - advance to not_doing
                 console.print(f"[yellow]PR #{pr_number} was closed without merge, advancing issue #{issue_id} to not_doing[/yellow]")
                 _update_issue_stage_direct(issue_yaml, data, "not_doing")
                 issues_advanced += 1
+                # Clean up the agent since we bypassed normal hooks
+                from agenttree.hooks import cleanup_issue_agent
+                from agenttree.issues import Issue
+                cleanup_issue_agent(Issue(**data))
 
         except subprocess.TimeoutExpired:
             console.print(f"[yellow]Timeout checking PR status[/yellow]")
