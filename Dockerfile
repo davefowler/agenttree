@@ -17,10 +17,6 @@ RUN apt-get update && apt-get install -y \
 # Install Claude CLI
 RUN npm install -g @anthropic-ai/claude-code
 
-# Install uv (fast Python package manager)
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
-ENV PATH="/root/.local/bin:$PATH"
-
 # Install agenttree runtime dependencies (for dogfooding - symlink approach)
 RUN pip install --break-system-packages \
     click>=8.1.0 \
@@ -38,6 +34,10 @@ RUN useradd -m -s /bin/bash agent && \
 USER agent
 RUN git config --global user.email "agent@agenttree.dev" && \
     git config --global user.name "AgentTree Agent"
+
+# Install uv for agent user (fast Python package manager)
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/home/agent/.local/bin:$PATH"
 
 # Create workspace directory
 WORKDIR /workspace
