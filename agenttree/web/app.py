@@ -753,18 +753,25 @@ async def rebase_issue(
         padded_num = issue.assigned_agent.zfill(3)
         session_name = f"{config.project}-issue-{padded_num}"
 
-        notification = (
-            "Your branch has been rebased onto the latest main. "
-            "Please review the recent changes and update your work if needed. "
-            "Run 'git log --oneline -10' to see recent commits."
-        )
-
+        # Check if tmux session is alive before sending
         try:
-            subprocess.run(
-                ["tmux", "send-keys", "-t", session_name, notification, "Enter"],
-                check=False,
+            check_result = subprocess.run(
+                ["tmux", "has-session", "-t", session_name],
+                capture_output=True,
                 timeout=2
             )
+            if check_result.returncode == 0:
+                # Session is active, send notification
+                notification = (
+                    "Your branch has been rebased onto the latest main. "
+                    "Please review the recent changes and update your work if needed. "
+                    "Run 'git log --oneline -10' to see recent commits."
+                )
+                subprocess.run(
+                    ["tmux", "send-keys", "-t", session_name, notification, "Enter"],
+                    check=False,
+                    timeout=2
+                )
         except (subprocess.TimeoutExpired, FileNotFoundError):
             pass  # Agent notification is best-effort
 
