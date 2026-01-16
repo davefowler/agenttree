@@ -30,9 +30,10 @@ tools:
 # Each host can specify container settings, AI tool, model, and skills.
 hosts:
   # Controller: Human-driven, runs on host machine (no container)
+  # Runs the sync server which spawns agents and runs hooks
   controller:
     description: "Human-driven controller"
-    # No container - runs directly on host
+    process: "agenttree serve"  # Runs in tmux, handles syncs
 
   # Default AI agent: runs in container
   agent:
