@@ -13,6 +13,7 @@ from agenttree.worktree import WorktreeManager
 from agenttree.tmux import TmuxManager
 from agenttree.github import ensure_gh_cli
 from agenttree.container import get_container_runtime
+from agenttree.dependencies import check_all_dependencies, print_dependency_report
 from agenttree.agents_repo import AgentsRepository
 from agenttree.cli_docs import create_rfc, create_investigation, create_note, complete, resume
 from agenttree.issues import (
@@ -75,9 +76,10 @@ def init(worktrees_dir: Optional[str], project: Optional[str]) -> None:
 
     repo_path = Path.cwd()
 
-    # Check if we're in a git repo
-    if not (repo_path / ".git").exists():
-        console.print("[red]Error: Not a git repository[/red]")
+    # Batch check all dependencies upfront
+    success, results = check_all_dependencies(repo_path)
+    print_dependency_report(results)
+    if not success:
         sys.exit(1)
 
     config_file = repo_path / ".agenttree.yaml"
@@ -522,9 +524,9 @@ Good luck, Agent-${AGENT_NUM}! 🚀
     console.print(f"[dim]  → This guide will be copied to each agent's worktree[/dim]")
 
     # Initialize agents repository
+    # Note: gh CLI and auth were already validated in check_all_dependencies()
     console.print("\n[cyan]Initializing agents repository...[/cyan]")
     try:
-        ensure_gh_cli()
         agents_repo = AgentsRepository(repo_path)
         agents_repo.ensure_repo()
         console.print("[green]✓ _agenttree/ repository created[/green]")
