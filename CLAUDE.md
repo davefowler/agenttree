@@ -82,14 +82,4 @@ When working on web UI (HTML, CSS, templates):
 
 ---
 
-## About AgentTree
-
-This project uses AgentTree, a workflow system for AI agents working on software development tasks. It provides structured stages (define → research → plan → implement), automated validation, and human review checkpoints.
-
-**For detailed workflow documentation, see:** [`_agenttree/skills/overview.md`](_agenttree/skills/overview.md)
-
-**Key commands:**
-- `agenttree issue create "title"` - Create a new issue
-- `agenttree start <id>` - Start an agent to work on an issue
-- `agenttree status` - Show status of issues and agents
-- `agenttree next` - Get instructions for current stage (used by agents)
+This project uses AgentTree. See `_agenttree/skills/overview.md` for workflow documentation.

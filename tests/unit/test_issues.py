@@ -552,6 +552,99 @@ class TestLoadSkill:
         assert skill is None
 
 
+class TestLoadSkillJinja:
+    """Tests for load_skill Jinja template rendering."""
+
+    @pytest.fixture
+    def temp_agenttrees_jinja(self, monkeypatch, tmp_path):
+        """Create a temporary _agenttree directory with skills and issues for Jinja tests."""
+        agenttrees_path = tmp_path / "_agenttree"
+        agenttrees_path.mkdir()
+        (agenttrees_path / "issues").mkdir()
+        (agenttrees_path / "skills").mkdir()
+        (agenttrees_path / "templates").mkdir()
+
+        # Create problem template (needed for create_issue)
+        template = agenttrees_path / "templates" / "problem.md"
+        template.write_text("# Problem Statement\n\n")
+
+        # Monkeypatch get_agenttree_path to return our temp dir
+        monkeypatch.setattr(
+            "agenttree.issues.get_agenttree_path",
+            lambda: agenttrees_path
+        )
+
+        # Disable sync to avoid git operations
+        monkeypatch.setattr(
+            "agenttree.issues.sync_agents_repo",
+            lambda *args, **kwargs: True
+        )
+
+        return agenttrees_path
+
+    def test_load_skill_renders_basic_variables(self, temp_agenttrees_jinja):
+        """load_skill should render basic issue variables with Jinja."""
+        # Create skill file with Jinja template
+        skill_path = temp_agenttrees_jinja / "skills" / "define.md"
+        skill_path.write_text("Issue #{{issue_id}}: {{issue_title}}")
+
+        # Create an issue
+        issue = create_issue("Test Issue")
+
+        # Load skill with issue context
+        skill = load_skill(DEFINE, issue=issue)
+
+        assert skill == "Issue #001: Test Issue"
+
+    def test_load_skill_renders_document_content(self, temp_agenttrees_jinja):
+        """load_skill should render document content variables."""
+        # Create skill file that references problem_md
+        skill_path = temp_agenttrees_jinja / "skills" / "research.md"
+        skill_path.write_text("## Problem\n{{problem_md}}")
+
+        # Create an issue and update its problem.md
+        issue = create_issue("Test Issue")
+        issue_dir = temp_agenttrees_jinja / "issues" / f"{issue.id}-{issue.slug}"
+        (issue_dir / "problem.md").write_text("This is the problem description.")
+
+        # Load skill with issue context
+        skill = load_skill(RESEARCH, issue=issue)
+
+        assert "This is the problem description." in skill
+
+    def test_load_skill_includes_system_prompt(self, temp_agenttrees_jinja):
+        """load_skill should prepend AGENTS.md when include_system=True."""
+        # Create AGENTS.md system prompt
+        agents_md = temp_agenttrees_jinja / "skills" / "AGENTS.md"
+        agents_md.write_text("# System Prompt\nYou are an AI agent.")
+
+        # Create skill file
+        skill_path = temp_agenttrees_jinja / "skills" / "define.md"
+        skill_path.write_text("# Define Stage")
+
+        # Create an issue
+        issue = create_issue("Test Issue")
+
+        # Load skill with include_system=True
+        skill = load_skill(DEFINE, issue=issue, include_system=True)
+
+        assert skill.startswith("# System Prompt")
+        assert "You are an AI agent." in skill
+        assert "# Define Stage" in skill
+
+    def test_load_skill_without_issue_returns_raw(self, temp_agenttrees_jinja):
+        """load_skill without issue should return raw template content."""
+        # Create skill file with Jinja template
+        skill_path = temp_agenttrees_jinja / "skills" / "define.md"
+        skill_path.write_text("Issue #{{issue_id}}: {{issue_title}}")
+
+        # Load skill without issue context
+        skill = load_skill(DEFINE)
+
+        # Should return raw template, not rendered
+        assert skill == "Issue #{{issue_id}}: {{issue_title}}"
+
+
 class TestSessionManagement:
     """Tests for session management (restart detection)."""
 
