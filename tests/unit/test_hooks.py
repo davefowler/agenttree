@@ -375,16 +375,16 @@ class TestExecuteHooks:
 
         config = SubstageConfig(
             name="test",
-            on_exit=[
+            pre_completion=[
                 {"type": "file_exists", "file": "missing1.md"},
                 {"type": "file_exists", "file": "missing2.md"},
             ]
         )
 
-        errors = execute_hooks(tmp_path, "test", config, "on_exit")
+        errors = execute_hooks(tmp_path, "test", config, "pre_completion")
         assert len(errors) == 2
 
-    def test_execute_hooks_checks_output_file_on_exit(self, tmp_path):
+    def test_execute_hooks_checks_output_file_on_pre_completion(self, tmp_path):
         """Should check output file exists when not optional."""
         from agenttree.hooks import execute_hooks
         from agenttree.config import SubstageConfig
@@ -393,10 +393,10 @@ class TestExecuteHooks:
             name="test",
             output="required.md",
             output_optional=False,
-            on_exit=[],
+            pre_completion=[],
         )
 
-        errors = execute_hooks(tmp_path, "test", config, "on_exit")
+        errors = execute_hooks(tmp_path, "test", config, "pre_completion")
         assert len(errors) == 1
         assert "required.md" in errors[0]
 
@@ -409,10 +409,10 @@ class TestExecuteHooks:
             name="test",
             output="optional.md",
             output_optional=True,
-            on_exit=[],
+            pre_completion=[],
         )
 
-        errors = execute_hooks(tmp_path, "test", config, "on_exit")
+        errors = execute_hooks(tmp_path, "test", config, "pre_completion")
         assert errors == []
 
 
@@ -1189,3 +1189,310 @@ class TestBackwardCompatibility:
         from agenttree.hooks import execute_post_hooks, execute_enter_hooks
 
         assert execute_post_hooks is execute_enter_hooks
+
+
+class TestHostOnlyOption:
+    """Tests for host_only option in shell command hooks."""
+
+    @patch('agenttree.hooks.is_running_in_container', return_value=True)
+    def test_host_only_skips_in_container(self, mock_in_container, tmp_path):
+        """Shell commands with host_only=True should be skipped in container."""
+        from agenttree.hooks import run_command_hook
+
+        hook = {"command": "echo 'should not run'", "host_only": True}
+        errors = run_command_hook(tmp_path, hook)
+
+        # Should return empty (skipped), not error
+        assert errors == []
+
+    @patch('agenttree.hooks.is_running_in_container', return_value=False)
+    def test_host_only_runs_on_host(self, mock_in_container, tmp_path):
+        """Shell commands with host_only=True should run on host."""
+        from agenttree.hooks import run_command_hook
+
+        hook = {"command": "echo 'running on host'", "host_only": True}
+        errors = run_command_hook(tmp_path, hook)
+
+        assert errors == []
+
+    @patch('agenttree.hooks.is_running_in_container', return_value=True)
+    def test_non_host_only_runs_in_container(self, mock_in_container, tmp_path):
+        """Shell commands without host_only should run in container."""
+        from agenttree.hooks import run_command_hook
+
+        hook = {"command": "echo 'running'"}
+        errors = run_command_hook(tmp_path, hook)
+
+        assert errors == []
+
+
+class TestMergeStrategyUsage:
+    """Tests for configurable merge strategy."""
+
+    @patch('agenttree.hooks.is_running_in_container', return_value=False)
+    @patch('agenttree.github.merge_pr')
+    @patch('agenttree.config.load_config')
+    def test_merge_uses_config_strategy(self, mock_load_config, mock_merge_pr, mock_container):
+        """_action_merge_pr should use config.merge_strategy."""
+        from agenttree.hooks import _action_merge_pr
+        from agenttree.config import Config
+
+        # Set up config with rebase strategy
+        mock_config = Config(merge_strategy="rebase")
+        mock_load_config.return_value = mock_config
+
+        _action_merge_pr(pr_number=123)
+
+        mock_merge_pr.assert_called_once_with(123, method="rebase")
+
+    @patch('agenttree.hooks.is_running_in_container', return_value=False)
+    @patch('agenttree.github.merge_pr')
+    @patch('agenttree.config.load_config')
+    def test_merge_default_squash(self, mock_load_config, mock_merge_pr, mock_container):
+        """Default merge strategy should be squash."""
+        from agenttree.hooks import _action_merge_pr
+        from agenttree.config import Config
+
+        mock_config = Config()  # Uses default squash
+        mock_load_config.return_value = mock_config
+
+        _action_merge_pr(pr_number=456)
+
+        mock_merge_pr.assert_called_once_with(456, method="squash")
+
+
+class TestHostActionHooks:
+    """Tests for host action hooks (post_pr_create, post_merge, post_accepted)."""
+
+    @patch('agenttree.hooks.run_host_hooks')
+    @patch('agenttree.hooks.is_running_in_container', return_value=False)
+    @patch('agenttree.hooks.push_branch_to_remote')
+    @patch('agenttree.github.create_pr')
+    @patch('agenttree.issues.update_issue_metadata')
+    @patch('agenttree.hooks.get_current_branch', return_value='test-branch')
+    @patch('agenttree.hooks.has_uncommitted_changes', return_value=False)
+    @patch('agenttree.config.load_config')
+    def test_post_pr_create_hooks_called(
+        self, mock_load_config, mock_uncommitted, mock_branch,
+        mock_update, mock_create_pr, mock_push, mock_container, mock_run_hooks
+    ):
+        """post_pr_create hooks should be called after PR creation."""
+        from agenttree.hooks import _action_create_pr
+        from agenttree.config import Config, HooksConfig
+
+        mock_pr = MagicMock()
+        mock_pr.number = 123
+        mock_pr.url = "https://github.com/owner/repo/pull/123"
+        mock_create_pr.return_value = mock_pr
+
+        hooks_config = HooksConfig(
+            post_pr_create=[{"command": "echo 'PR created'", "host_only": True}]
+        )
+        mock_config = Config(hooks=hooks_config)
+        mock_load_config.return_value = mock_config
+
+        _action_create_pr(Path("/tmp"), issue_id="001", issue_title="Test")
+
+        # Verify run_host_hooks was called with post_pr_create hooks
+        mock_run_hooks.assert_called_once()
+        call_args = mock_run_hooks.call_args
+        assert call_args[0][0] == hooks_config.post_pr_create
+
+    @patch('agenttree.hooks.run_host_hooks')
+    @patch('agenttree.hooks.is_running_in_container', return_value=False)
+    @patch('agenttree.github.merge_pr')
+    @patch('agenttree.config.load_config')
+    def test_post_merge_hooks_called(
+        self, mock_load_config, mock_merge_pr, mock_container, mock_run_hooks
+    ):
+        """post_merge hooks should be called after merge."""
+        from agenttree.hooks import _action_merge_pr
+        from agenttree.config import Config, HooksConfig
+
+        hooks_config = HooksConfig(
+            post_merge=[{"command": "echo 'merged'"}]
+        )
+        mock_config = Config(hooks=hooks_config)
+        mock_load_config.return_value = mock_config
+
+        _action_merge_pr(pr_number=123)
+
+        # Verify run_host_hooks was called with post_merge hooks
+        mock_run_hooks.assert_called_once()
+        call_args = mock_run_hooks.call_args
+        assert call_args[0][0] == hooks_config.post_merge
+
+    @patch('agenttree.hooks.run_host_hooks')
+    @patch('agenttree.hooks.is_running_in_container', return_value=False)
+    @patch('agenttree.issues.get_blocked_issues', return_value=[])
+    @patch('agenttree.config.load_config')
+    def test_post_accepted_hooks_called(
+        self, mock_load_config, mock_blocked, mock_container, mock_run_hooks
+    ):
+        """post_accepted hooks should be called when issue is accepted."""
+        from agenttree.hooks import check_and_start_blocked_issues
+        from agenttree.config import Config, HooksConfig
+
+        hooks_config = HooksConfig(
+            post_accepted=[{"command": "echo 'completed'"}]
+        )
+        mock_config = Config(hooks=hooks_config)
+        mock_load_config.return_value = mock_config
+
+        issue = Issue(
+            id="001",
+            slug="test-issue",
+            title="Test Issue",
+            created="2026-01-11T12:00:00Z",
+            updated="2026-01-11T12:00:00Z",
+            stage=ACCEPTED,
+        )
+
+        check_and_start_blocked_issues(issue)
+
+        # Verify run_host_hooks was called with post_accepted hooks
+        mock_run_hooks.assert_called_once()
+        call_args = mock_run_hooks.call_args
+        assert call_args[0][0] == hooks_config.post_accepted
+
+
+class TestRunHostHooks:
+    """Tests for run_host_hooks function."""
+
+    def test_run_host_hooks_executes_commands(self, tmp_path):
+        """run_host_hooks should execute command hooks."""
+        from agenttree.hooks import run_host_hooks
+
+        # Create a marker file to verify execution
+        hooks = [{"command": f"touch {tmp_path}/marker.txt"}]
+        run_host_hooks(hooks, {"issue_id": "001"})
+
+        assert (tmp_path / "marker.txt").exists()
+
+    @patch('agenttree.hooks.is_running_in_container', return_value=True)
+    def test_run_host_hooks_respects_host_only(self, mock_container, tmp_path):
+        """run_host_hooks should skip host_only commands in container."""
+        from agenttree.hooks import run_host_hooks
+
+        hooks = [{"command": f"touch {tmp_path}/marker.txt", "host_only": True}]
+        run_host_hooks(hooks, {"issue_id": "001"})
+
+        # File should NOT be created because we're "in container"
+        assert not (tmp_path / "marker.txt").exists()
+
+    def test_run_host_hooks_substitutes_variables(self, tmp_path):
+        """run_host_hooks should substitute template variables."""
+        from agenttree.hooks import run_host_hooks
+
+        hooks = [{"command": f"echo '{{{{issue_id}}}}' > {tmp_path}/output.txt"}]
+        run_host_hooks(hooks, {"issue_id": "042"})
+
+        content = (tmp_path / "output.txt").read_text().strip()
+        assert content == "042"
+
+    def test_run_host_hooks_handles_errors_gracefully(self, tmp_path, capsys):
+        """run_host_hooks should log errors but not raise."""
+        from agenttree.hooks import run_host_hooks
+
+        hooks = [{"command": "exit 1"}]  # Command that fails
+
+        # Should not raise
+        run_host_hooks(hooks, {"issue_id": "001"})
+
+
+class TestCursorReviewRemoved:
+    """Tests verifying hardcoded Cursor review is removed."""
+
+    @patch('agenttree.hooks.is_running_in_container', return_value=False)
+    @patch('agenttree.hooks.push_branch_to_remote')
+    @patch('agenttree.github.create_pr')
+    @patch('agenttree.issues.update_issue_metadata')
+    @patch('agenttree.hooks.get_current_branch', return_value='test-branch')
+    @patch('agenttree.hooks.has_uncommitted_changes', return_value=False)
+    @patch('agenttree.config.load_config')
+    @patch('subprocess.run')
+    def test_no_hardcoded_cursor_comment(
+        self, mock_subprocess, mock_load_config, mock_uncommitted, mock_branch,
+        mock_update, mock_create_pr, mock_push, mock_container
+    ):
+        """_action_create_pr should NOT make hardcoded cursor review comment."""
+        from agenttree.hooks import _action_create_pr
+        from agenttree.config import Config, HooksConfig
+
+        mock_pr = MagicMock()
+        mock_pr.number = 123
+        mock_pr.url = "https://github.com/owner/repo/pull/123"
+        mock_create_pr.return_value = mock_pr
+
+        # No hooks configured
+        mock_config = Config(hooks=HooksConfig())
+        mock_load_config.return_value = mock_config
+
+        _action_create_pr(Path("/tmp"), issue_id="001", issue_title="Test")
+
+        # Verify subprocess.run was NOT called with cursor comment
+        for call in mock_subprocess.call_args_list:
+            args = call[0][0] if call[0] else call[1].get('args', [])
+            if isinstance(args, list) and "gh" in args and "comment" in args:
+                assert "@cursor" not in str(args), "Hardcoded cursor comment found!"
+
+
+class TestPreCompletionPostStartHooks:
+    """Tests for renamed hook fields (pre_completion/post_start)."""
+
+    @patch('agenttree.hooks.execute_hooks')
+    @patch('agenttree.config.load_config')
+    @patch('agenttree.issues.get_issue_dir')
+    def test_execute_exit_hooks_uses_pre_completion(
+        self, mock_get_dir, mock_load_config, mock_execute_hooks
+    ):
+        """execute_exit_hooks should use pre_completion field."""
+        from agenttree.hooks import execute_exit_hooks
+        from agenttree.config import Config
+
+        config = Config()
+        mock_load_config.return_value = config
+        mock_get_dir.return_value = Path("/tmp/issue")
+        mock_execute_hooks.return_value = []
+
+        issue = Mock(spec=Issue)
+        issue.id = "123"
+        issue.title = "Test"
+        issue.branch = "test-branch"
+        issue.pr_number = None
+
+        execute_exit_hooks(issue, "implement", "code")
+
+        # Verify execute_hooks was called with "pre_completion" event
+        mock_execute_hooks.assert_called_once()
+        call_args = mock_execute_hooks.call_args
+        assert call_args[0][3] == "pre_completion"
+
+    @patch('agenttree.hooks.execute_hooks')
+    @patch('agenttree.config.load_config')
+    @patch('agenttree.issues.get_issue_dir')
+    def test_execute_enter_hooks_uses_post_start(
+        self, mock_get_dir, mock_load_config, mock_execute_hooks
+    ):
+        """execute_enter_hooks should use post_start field."""
+        from agenttree.hooks import execute_enter_hooks
+        from agenttree.config import Config
+
+        config = Config()
+        mock_load_config.return_value = config
+        mock_get_dir.return_value = Path("/tmp/issue")
+        mock_execute_hooks.return_value = []
+
+        issue = Mock(spec=Issue)
+        issue.id = "123"
+        issue.title = "Test"
+        issue.branch = "test-branch"
+        issue.pr_number = None
+        issue.stage = IMPLEMENT
+
+        execute_enter_hooks(issue, "implement", "code")
+
+        # Verify execute_hooks was called with "post_start" event
+        mock_execute_hooks.assert_called_once()
+        call_args = mock_execute_hooks.call_args
+        assert call_args[0][3] == "post_start"
