@@ -467,10 +467,10 @@ async def send_to_agent(
     session_name = f"{config.project}-issue-{padded_num}"
 
     if send_message(session_name, message):
-        status = "Message sent"
+        status = "Sent"
         success = True
     else:
-        status = "Agent not running"
+        status = "Agent not running - click the light to start"
         success = False
 
     return templates.TemplateResponse(
