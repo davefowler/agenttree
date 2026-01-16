@@ -360,6 +360,11 @@
     </div>
 
     <script>
+    (function() {
+        // Wrap in IIFE to avoid duplicate declarations on HTMX swaps
+        if (window._kanbanScriptLoaded) return;
+        window._kanbanScriptLoaded = true;
+
         // Minimal JS for drag-drop and modal
 
         // Human review stages - only these can be dragged
@@ -705,6 +710,7 @@
                 lightElement.title = 'Error - click to retry';
             }
         }
+    })();
     </script>
 </body>
 </html>

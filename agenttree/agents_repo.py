@@ -196,9 +196,20 @@ def check_controller_stages(agents_dir: Path) -> int:
 
             # Check if in a controller stage
             if stage in controller_stages:
+                # Skip if hooks already executed for this stage
+                hooks_executed_stage = data.get("controller_hooks_executed")
+                if hooks_executed_stage == stage:
+                    continue
+
                 issue = Issue(**data)
                 # Execute the post_start hooks for this stage (host side)
                 execute_enter_hooks(issue, stage, data.get("substage"))
+
+                # Mark hooks as executed for this stage
+                data["controller_hooks_executed"] = stage
+                with open(issue_yaml, "w") as f:
+                    yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
+
                 processed += 1
 
         except Exception:
