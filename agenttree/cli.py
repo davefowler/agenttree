@@ -2170,9 +2170,11 @@ def sync_command() -> None:
         agenttree sync
     """
     from agenttree.agents_repo import sync_agents_repo
+    from agenttree.issues import get_agenttree_path
 
     console.print("[dim]Syncing agents repository...[/dim]")
-    success = sync_agents_repo()
+    agents_path = get_agenttree_path()
+    success = sync_agents_repo(agents_path)
 
     if success:
         console.print("[green]✓ Sync complete[/green]")
