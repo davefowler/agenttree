@@ -48,6 +48,7 @@ class Issue(IssueBase):
     pr_url: Optional[str] = None
     pr_number: Optional[int] = None
     assigned_agent: Optional[int] = None
+    tmux_active: bool = False
     created_at: datetime
     updated_at: datetime
 

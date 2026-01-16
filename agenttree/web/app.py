@@ -196,6 +196,11 @@ def convert_issue_to_web(issue: issue_crud.Issue) -> WebIssue:
     except ValueError:
         stage = StageEnum.BACKLOG
 
+    # Check if tmux session is active for assigned agent
+    tmux_active = False
+    if issue.assigned_agent:
+        tmux_active = agent_manager._check_tmux_session(issue.assigned_agent)
+
     return WebIssue(
         number=int(issue.id),
         title=issue.title,
@@ -204,6 +209,7 @@ def convert_issue_to_web(issue: issue_crud.Issue) -> WebIssue:
         assignees=[],
         stage=stage,
         assigned_agent=issue.assigned_agent,
+        tmux_active=tmux_active,
         pr_url=issue.pr_url,
         pr_number=issue.pr_number,
         created_at=datetime.fromisoformat(issue.created.replace("Z", "+00:00")),
@@ -280,18 +286,18 @@ async def flow(
     """Flow view page."""
     issues = issue_crud.list_issues(sync=False)  # Skip sync for fast web reads
     web_issues = [convert_issue_to_web(i) for i in issues]
-    # Sort by stage order and then by number
-    web_issues.sort(key=lambda x: (list(StageEnum).index(x.stage), x.number))
+    # Sort by: 1) human review stages first, 2) higher stage order first (impl_review before plan_review), 3) issue number
+    web_issues.sort(key=lambda x: (not x.is_review, -list(StageEnum).index(x.stage), x.number))
     selected_issue = web_issues[0] if web_issues else None
 
     # Load body content and files for selected issue
     files = []
-    if selected_issue and issues:
-        raw_issue = issues[0]
-        issue_dir = issue_crud.get_issue_dir(raw_issue.id)
+    if selected_issue:
+        issue_id = str(selected_issue.number).zfill(3)
+        issue_dir = issue_crud.get_issue_dir(issue_id)
         if issue_dir:
             # Get list of markdown files
-            files = get_issue_files(raw_issue.id)
+            files = get_issue_files(issue_id)
             # Load first file content (problem.md by default)
             problem_path = issue_dir / "problem.md"
             if problem_path.exists():
@@ -318,7 +324,8 @@ async def flow_issues(
     """Flow issues list (HTMX endpoint)."""
     issues = issue_crud.list_issues(sync=False)  # Skip sync for fast web reads
     web_issues = [convert_issue_to_web(i) for i in issues]
-    web_issues.sort(key=lambda x: (list(StageEnum).index(x.stage), x.number))
+    # Sort by: 1) human review stages first, 2) higher stage order first (impl_review before plan_review), 3) issue number
+    web_issues.sort(key=lambda x: (not x.is_review, -list(StageEnum).index(x.stage), x.number))
     return templates.TemplateResponse(
         "partials/flow_issues_list.html",
         {"request": request, "issues": web_issues}
