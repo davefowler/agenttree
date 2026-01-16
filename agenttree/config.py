@@ -14,18 +14,52 @@ class ToolConfig(BaseModel):
     skip_permissions: bool = False  # Add --dangerously-skip-permissions to command
 
 
-class AgentHostConfig(BaseModel):
-    """Configuration for a custom agent host.
+class ContainerConfig(BaseModel):
+    """Configuration for container settings.
 
-    Custom agent hosts allow defining specialized agents that handle
-    specific stages in the workflow (e.g., code review, security audit).
+    Defines how a host runs in a container (or doesn't).
     """
 
-    name: str  # Host name (e.g., "review", "security")
-    tool: str  # AI tool to use (e.g., "codex", "claude")
-    model: str  # Model to use (e.g., "gpt-5.2", "opus")
-    skill: str  # Skill file path relative to _agenttree/skills/agents/
+    enabled: bool = True  # Whether to run in a container
+    image: str = "agenttree-agent:latest"  # Container image to use
+    # Future: additional container options (memory limits, env vars, etc.)
+
+
+class HostConfig(BaseModel):
+    """Configuration for a host in the workflow.
+
+    Hosts are execution environments that handle stages. Built-in hosts:
+    - controller: Human-driven, runs on host machine (no container)
+    - agent: Default AI agent, runs in container
+
+    Custom hosts can be defined for specialized agents (e.g., code review).
+    """
+
+    name: str  # Host name (e.g., "controller", "agent", "review")
     description: str = ""  # Human-readable description
+
+    # Container configuration (None = no container, runs on host)
+    container: Optional[ContainerConfig] = None
+
+    # AI agent settings (only for agent hosts, not controller)
+    tool: Optional[str] = None  # AI tool to use (e.g., "claude", "codex")
+    model: Optional[str] = None  # Model to use (e.g., "opus", "gpt-5.2")
+    skill: Optional[str] = None  # Skill file path for custom agents
+
+    # Process to run (for controller, this could be "agenttree watch")
+    process: Optional[str] = None
+
+    def is_containerized(self) -> bool:
+        """Check if this host runs in a container."""
+        return self.container is not None and self.container.enabled
+
+    def is_agent(self) -> bool:
+        """Check if this host is an AI agent (has tool configured)."""
+        return self.tool is not None
+
+
+# Legacy alias for backwards compatibility
+AgentHostConfig = HostConfig
 
 
 class HooksConfig(BaseModel):
@@ -112,7 +146,9 @@ class Config(BaseModel):
     default_model: str = "opus"  # Model to use for Claude CLI (opus, sonnet)
     refresh_interval: int = 10
     tools: Dict[str, ToolConfig] = Field(default_factory=dict)
-    agents: Dict[str, AgentHostConfig] = Field(default_factory=dict)  # Custom agent hosts
+    hosts: Dict[str, HostConfig] = Field(default_factory=dict)  # Host configurations
+    # Legacy alias - will be merged into hosts during load
+    agents: Dict[str, HostConfig] = Field(default_factory=dict)
     test_commands: list[str] = Field(default_factory=list)  # Commands to run tests
     lint_commands: list[str] = Field(default_factory=list)  # Commands to run linting
     stages: list[StageConfig] = Field(default_factory=list)  # Must be defined in .agenttree.yaml
@@ -265,32 +301,87 @@ class Config(BaseModel):
         """
         return [stage.name for stage in self.stages if stage.host == "controller"]
 
+    def get_all_hosts(self) -> Dict[str, HostConfig]:
+        """Get all hosts including built-in defaults.
+
+        Returns dict with:
+        - Built-in 'controller' host (no container)
+        - Built-in 'agent' host (containerized, uses default tool/model)
+        - Any custom hosts from config
+
+        Returns:
+            Dict of host name -> HostConfig
+        """
+        # Start with built-in defaults
+        all_hosts: Dict[str, HostConfig] = {
+            "controller": HostConfig(
+                name="controller",
+                description="Human-driven controller (runs on host)",
+                container=None,  # No container
+                process=None,  # Could be "agenttree watch" in future
+            ),
+            "agent": HostConfig(
+                name="agent",
+                description="Default AI agent",
+                container=ContainerConfig(enabled=True),
+                tool=self.default_tool,
+                model=self.default_model,
+            ),
+        }
+
+        # Merge in hosts from config (can override defaults)
+        all_hosts.update(self.hosts)
+
+        # Merge in legacy agents section (backwards compatibility)
+        for name, agent_config in self.agents.items():
+            if name not in all_hosts:
+                all_hosts[name] = agent_config
+
+        return all_hosts
+
+    def get_host(self, host_name: str) -> Optional[HostConfig]:
+        """Get configuration for a host (including built-in defaults).
+
+        Args:
+            host_name: Name of the host
+
+        Returns:
+            HostConfig or None if not found
+        """
+        return self.get_all_hosts().get(host_name)
+
     def get_custom_agent_stages(self) -> list[str]:
         """Get list of stages that use custom agent hosts.
 
-        Custom agent stages have a host value that matches a key in the agents dict.
+        Custom agent stages have a host value that is neither "agent" nor "controller"
+        and exists in the hosts configuration.
 
         Returns:
             List of stage names where host is a custom agent
         """
+        all_hosts = self.get_all_hosts()
         return [
             stage.name for stage in self.stages
-            if stage.host not in ("agent", "controller") and stage.host in self.agents
+            if stage.host not in ("agent", "controller") and stage.host in all_hosts
         ]
 
-    def get_agent_host(self, host_name: str) -> Optional[AgentHostConfig]:
+    def get_agent_host(self, host_name: str) -> Optional[HostConfig]:
         """Get configuration for a custom agent host.
 
         Args:
             host_name: Name of the agent host
 
         Returns:
-            AgentHostConfig or None if not found
+            HostConfig or None if not found
         """
+        # First check hosts, then legacy agents
+        host = self.hosts.get(host_name)
+        if host:
+            return host
         return self.agents.get(host_name)
 
     def is_custom_agent_host(self, host_name: str) -> bool:
-        """Check if a host name is a custom agent host.
+        """Check if a host name is a custom agent host (not controller or default agent).
 
         Args:
             host_name: Name to check
@@ -298,7 +389,9 @@ class Config(BaseModel):
         Returns:
             True if it's a custom agent host, False otherwise
         """
-        return host_name in self.agents
+        if host_name in ("controller", "agent"):
+            return False
+        return host_name in self.hosts or host_name in self.agents
 
     def get_non_agent_stages(self) -> list[str]:
         """Get list of stages NOT executed by the default agent.
@@ -310,6 +403,21 @@ class Config(BaseModel):
             List of stage names where host != "agent"
         """
         return [stage.name for stage in self.stages if stage.host != "agent"]
+
+    def host_is_containerized(self, host_name: str) -> bool:
+        """Check if a host runs in a container.
+
+        Args:
+            host_name: Name of the host
+
+        Returns:
+            True if containerized, False otherwise
+        """
+        host = self.get_host(host_name)
+        if host:
+            return host.is_containerized()
+        # Default: assume custom hosts are containerized
+        return host_name != "controller"
 
     def substages_for(self, stage_name: str) -> list[str]:
         """Get ordered list of substage names for a stage.
@@ -545,12 +653,29 @@ def load_config(path: Optional[Path] = None) -> Config:
                     elif "name" not in substage_config:
                         substage_config["name"] = substage_name
 
-    # Auto-populate 'name' field for agents from the key
+    # Auto-populate 'name' field for hosts from the key
+    if "hosts" in data and isinstance(data["hosts"], dict):
+        for host_name, host_config in data["hosts"].items():
+            if host_config is None:
+                data["hosts"][host_name] = {"name": host_name}
+            elif isinstance(host_config, dict):
+                if "name" not in host_config:
+                    host_config["name"] = host_name
+                # Ensure container config is properly structured
+                if "container" in host_config and host_config["container"] is True:
+                    host_config["container"] = {"enabled": True}
+                elif "container" in host_config and host_config["container"] is False:
+                    host_config["container"] = None
+
+    # Legacy: Auto-populate 'name' field for agents from the key (backwards compatibility)
     if "agents" in data and isinstance(data["agents"], dict):
         for agent_name, agent_config in data["agents"].items():
             if agent_config is None:
                 data["agents"][agent_name] = {"name": agent_name}
-            elif "name" not in agent_config:
+            elif isinstance(agent_config, dict) and "name" not in agent_config:
                 agent_config["name"] = agent_name
+                # Legacy agents are containerized by default
+                if "container" not in agent_config:
+                    agent_config["container"] = {"enabled": True}
 
     return Config(**data)

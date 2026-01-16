@@ -25,14 +25,29 @@ tools:
     command: codex
     startup_prompt: "Read TASK.md for your instructions."
 
-# Custom agent hosts for specialized tasks
-# These agents handle specific stages that require different tools/models
-agents:
+# Host configurations
+# Hosts are execution environments that handle stages in the workflow.
+# Built-in hosts (don't need to be defined, but can be overridden):
+#   - controller: Human-driven, runs on host machine (no container)
+#   - agent: Default AI agent, runs in container with default tool/model
+#
+# Custom hosts can be defined for specialized agents:
+hosts:
+  # Override default agent settings if needed
+  # agent:
+  #   container:
+  #     image: agenttree-agent:latest
+  #   tool: claude
+  #   model: opus
+
+  # Custom review agent host
   review:
+    description: "Independent code reviewer using OpenAI Codex"
+    container:
+      image: agenttree-agent:latest
     tool: codex
     model: gpt-5.2
     skill: agents/review.md
-    description: "Independent code reviewer using OpenAI Codex"
 
 stages:
   - name: backlog

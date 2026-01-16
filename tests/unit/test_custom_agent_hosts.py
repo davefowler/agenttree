@@ -10,6 +10,8 @@ import yaml
 
 from agenttree.config import (
     AgentHostConfig,
+    HostConfig,
+    ContainerConfig,
     Config,
     StageConfig,
     load_config,
@@ -21,8 +23,49 @@ from agenttree.hooks import (
 )
 
 
+class TestHostConfig:
+    """Tests for HostConfig dataclass."""
+
+    def test_host_config_with_container(self):
+        """Test HostConfig with container settings."""
+        config = HostConfig(
+            name="review",
+            description="Code reviewer",
+            container=ContainerConfig(
+                enabled=True,
+                image="custom-image:latest"
+            ),
+            tool="codex",
+            model="gpt-5.2",
+            skill="agents/review.md"
+        )
+        assert config.name == "review"
+        assert config.is_containerized() is True
+        assert config.is_agent() is True
+        assert config.container.image == "custom-image:latest"
+
+    def test_host_config_without_container(self):
+        """Test HostConfig without container (like controller)."""
+        config = HostConfig(
+            name="controller",
+            description="Human-driven controller",
+            container=None
+        )
+        assert config.name == "controller"
+        assert config.is_containerized() is False
+        assert config.is_agent() is False
+
+    def test_host_config_disabled_container(self):
+        """Test HostConfig with disabled container."""
+        config = HostConfig(
+            name="local-agent",
+            container=ContainerConfig(enabled=False)
+        )
+        assert config.is_containerized() is False
+
+
 class TestAgentHostConfig:
-    """Tests for AgentHostConfig dataclass."""
+    """Tests for AgentHostConfig dataclass (legacy alias)."""
 
     def test_agent_host_config_basic(self):
         """Test basic AgentHostConfig creation."""
@@ -50,8 +93,73 @@ class TestAgentHostConfig:
         assert config.description == ""
 
 
+class TestConfigWithHosts:
+    """Tests for Config with hosts section."""
+
+    def test_get_all_hosts_includes_defaults(self):
+        """Test that get_all_hosts includes built-in controller and agent."""
+        config = Config()
+        all_hosts = config.get_all_hosts()
+
+        # Should have at least controller and agent
+        assert "controller" in all_hosts
+        assert "agent" in all_hosts
+
+        # Controller should not be containerized
+        assert all_hosts["controller"].is_containerized() is False
+
+        # Agent should be containerized
+        assert all_hosts["agent"].is_containerized() is True
+
+    def test_get_all_hosts_with_custom_hosts(self):
+        """Test that custom hosts are merged with defaults."""
+        config = Config(
+            hosts={
+                "review": HostConfig(
+                    name="review",
+                    container=ContainerConfig(enabled=True),
+                    tool="codex",
+                    model="gpt-5.2"
+                )
+            }
+        )
+        all_hosts = config.get_all_hosts()
+
+        # Should have defaults plus custom
+        assert "controller" in all_hosts
+        assert "agent" in all_hosts
+        assert "review" in all_hosts
+
+    def test_get_host_returns_builtin(self):
+        """Test get_host returns built-in hosts."""
+        config = Config()
+
+        controller = config.get_host("controller")
+        assert controller is not None
+        assert controller.name == "controller"
+
+        agent = config.get_host("agent")
+        assert agent is not None
+        assert agent.name == "agent"
+
+    def test_host_is_containerized(self):
+        """Test host_is_containerized method."""
+        config = Config(
+            hosts={
+                "review": HostConfig(
+                    name="review",
+                    container=ContainerConfig(enabled=True)
+                )
+            }
+        )
+
+        assert config.host_is_containerized("controller") is False
+        assert config.host_is_containerized("agent") is True
+        assert config.host_is_containerized("review") is True
+
+
 class TestConfigWithAgents:
-    """Tests for Config with agents section."""
+    """Tests for Config with agents section (legacy)."""
 
     def test_config_with_agents(self):
         """Test Config creation with agents."""

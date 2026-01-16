@@ -405,6 +405,11 @@ def spawn_custom_agent(
         console.print(f"[yellow]Could not find worktree for issue #{issue.id}[/yellow]")
         return False
 
+    # Check if host is containerized
+    if not agent_config.is_containerized():
+        console.print(f"[red]Host '{agent_config.name}' is not configured to run in a container[/red]")
+        return False
+
     # Get container runtime
     runtime = get_container_runtime()
     if not runtime.is_available():
@@ -418,16 +423,22 @@ def spawn_custom_agent(
     container_name = f"{config.project}-{agent_config.name}-{issue.id}"
 
     # Get the tool config
-    tool_config = config.get_tool_config(agent_config.tool)
+    tool_config = config.get_tool_config(agent_config.tool) if agent_config.tool else None
+
+    # Get container image from host config
+    container_image = "agenttree-agent:latest"  # Default
+    if agent_config.container and agent_config.container.image:
+        container_image = agent_config.container.image
 
     # Build the container run command with custom agent environment
     cmd = runtime.build_run_command(
         worktree_path=worktree_path,
-        ai_tool=agent_config.tool,
-        dangerous=tool_config.skip_permissions,
+        ai_tool=agent_config.tool or config.default_tool,
+        dangerous=tool_config.skip_permissions if tool_config else False,
         agent_num=None,  # Custom agents don't use numbered agents
-        model=agent_config.model,
+        model=agent_config.model or config.default_model,
         agent_host=agent_config.name,  # Set the custom agent host type
+        image=container_image,
     )
 
     # Update the container name in the command
