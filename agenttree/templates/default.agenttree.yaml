@@ -152,6 +152,14 @@ stages:
     host: controller  # Host handles PR creation (agents can't push)
     post_start:
       - create_pr:
+    substages:
+      ci_wait:
+        pre_completion:
+          - ci_check:
+              timeout: 600
+              poll_interval: 30
+            host_only: true
+      review: {}
     pre_completion:
       - pr_approved:
 
