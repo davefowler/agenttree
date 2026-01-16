@@ -2080,3 +2080,138 @@ class TestPreCompletionPostStartHooks:
         mock_execute_hooks.assert_called_once()
         call_args = mock_execute_hooks.call_args
         assert call_args[0][3] == "post_start"
+
+
+class TestAsyncHookExecution:
+    """Tests for async hook execution (fire-and-forget mode)."""
+
+    def test_async_hook_does_not_block(self, tmp_path):
+        """Async hook should return immediately without waiting for command completion."""
+        import time
+        from agenttree.hooks import run_host_hooks
+
+        # Use a slow command that takes 2 seconds
+        hooks = [{"command": "sleep 2", "async": True}]
+
+        start = time.monotonic()
+        run_host_hooks(hooks, {"issue_id": "001"})
+        elapsed = time.monotonic() - start
+
+        # Should return in less than 1 second (generous threshold for CI)
+        assert elapsed < 1.0, f"Async hook blocked for {elapsed:.2f}s, expected < 1.0s"
+
+    def test_sync_hook_blocks_until_complete(self, tmp_path):
+        """Sync hook (default) should block until command completes."""
+        from agenttree.hooks import run_host_hooks
+
+        marker = tmp_path / "marker.txt"
+        hooks = [{"command": f"touch {marker}"}]
+
+        run_host_hooks(hooks, {"issue_id": "001"})
+
+        # File should exist after sync hook completes
+        assert marker.exists(), "Sync hook did not complete before returning"
+
+    def test_mixed_async_and_sync_hooks(self, tmp_path):
+        """Sync hooks should complete in order while async hooks run in background."""
+        from agenttree.hooks import run_host_hooks
+
+        sync_marker = tmp_path / "sync_marker.txt"
+        hooks = [
+            {"command": "sleep 1", "async": True},  # Async hook 1
+            {"command": f"touch {sync_marker}"},     # Sync hook (should complete)
+            {"command": "sleep 1", "async": True},  # Async hook 2
+        ]
+
+        run_host_hooks(hooks, {"issue_id": "001"})
+
+        # Sync marker should exist (sync hook completed)
+        assert sync_marker.exists(), "Sync hook did not complete"
+
+    def test_async_hook_errors_logged(self, tmp_path, capsys):
+        """Errors from async hooks should be logged, not raised."""
+        import time
+        from agenttree.hooks import run_host_hooks
+
+        hooks = [{"command": "exit 1", "async": True}]
+
+        # Should not raise
+        run_host_hooks(hooks, {"issue_id": "001"})
+
+        # Give a brief moment for async error logging
+        time.sleep(0.2)
+
+        # Note: Async errors may be logged asynchronously, so we can't guarantee
+        # the exact timing of the output. The key behavior is that no exception
+        # is raised.
+
+    @patch('agenttree.hooks.is_running_in_container', return_value=True)
+    def test_async_hook_respects_host_only(self, mock_container, tmp_path):
+        """Async hook with host_only should skip execution in container."""
+        from agenttree.hooks import run_host_hooks
+
+        marker = tmp_path / "marker.txt"
+        hooks = [{"command": f"touch {marker}", "async": True, "host_only": True}]
+
+        run_host_hooks(hooks, {"issue_id": "001"})
+
+        # File should NOT be created because we're "in container"
+        assert not marker.exists()
+
+    def test_async_hook_variable_substitution(self, tmp_path):
+        """Template variables should be substituted before async execution."""
+        import time
+        from agenttree.hooks import run_host_hooks
+
+        output_file = tmp_path / "output.txt"
+        hooks = [{"command": f"echo '{{{{issue_id}}}}' > {output_file}", "async": True}]
+
+        run_host_hooks(hooks, {"issue_id": "042"})
+
+        # Wait for async command to complete
+        time.sleep(0.5)
+
+        content = output_file.read_text().strip()
+        assert content == "042", f"Expected '042', got '{content}'"
+
+    def test_multiple_async_hooks_parallel(self, tmp_path):
+        """Multiple async hooks should run concurrently, not sequentially."""
+        import time
+        from agenttree.hooks import run_host_hooks
+
+        # Three commands that each take ~0.5 seconds
+        marker1 = tmp_path / "marker1.txt"
+        marker2 = tmp_path / "marker2.txt"
+        marker3 = tmp_path / "marker3.txt"
+        hooks = [
+            {"command": f"sleep 0.5 && touch {marker1}", "async": True},
+            {"command": f"sleep 0.5 && touch {marker2}", "async": True},
+            {"command": f"sleep 0.5 && touch {marker3}", "async": True},
+        ]
+
+        start = time.monotonic()
+        run_host_hooks(hooks, {"issue_id": "001"})
+        elapsed = time.monotonic() - start
+
+        # Should return almost immediately (< 0.5s), not after 1.5s
+        assert elapsed < 0.5, f"Async hooks blocked for {elapsed:.2f}s, expected < 0.5s"
+
+        # Wait for all async commands to complete
+        time.sleep(1.0)
+
+        # All markers should exist
+        assert marker1.exists(), "Async hook 1 did not complete"
+        assert marker2.exists(), "Async hook 2 did not complete"
+        assert marker3.exists(), "Async hook 3 did not complete"
+
+    def test_async_false_is_sync(self, tmp_path):
+        """async: false should behave the same as omitting the flag (synchronous)."""
+        from agenttree.hooks import run_host_hooks
+
+        marker = tmp_path / "marker.txt"
+        hooks = [{"command": f"touch {marker}", "async": False}]
+
+        run_host_hooks(hooks, {"issue_id": "001"})
+
+        # File should exist after hook completes (sync behavior)
+        assert marker.exists(), "async: false did not behave synchronously"

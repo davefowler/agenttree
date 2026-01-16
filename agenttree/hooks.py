@@ -55,6 +55,7 @@ Hooks are configured in .agenttree.yaml via pre_completion and post_start lists:
 
 import re
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -874,24 +875,59 @@ def run_host_hooks(hooks: List[Dict[str, Any]], context: Dict[str, Any]) -> None
 
     These hooks log errors but don't block operations.
 
+    Hooks can optionally run asynchronously (fire-and-forget) by setting `async: true`:
+    - `async: true` - Start command immediately, don't wait for completion. Errors
+      are logged when they complete.
+    - No `async` or `async: false` - Wait for completion before proceeding (default)
+
+    Thread pool is limited to 5 concurrent workers to prevent resource exhaustion.
+
     Args:
         hooks: List of hook configurations
         context: Template variables for substitution (issue_id, pr_number, etc.)
     """
     from pathlib import Path
 
+    # Create executor for async hooks (max 5 concurrent)
+    executor = ThreadPoolExecutor(max_workers=5)
+
+    def execute_hook_sync(hook: Dict[str, Any]) -> List[str]:
+        """Execute a single hook synchronously and return errors."""
+        if "command" in hook:
+            return run_command_hook(
+                Path.cwd(),
+                hook,
+                issue_id=context.get("issue_id", ""),
+                issue_title=context.get("issue_title", ""),
+                branch=context.get("branch", ""),
+                pr_number=str(context.get("pr_number", "")),
+                pr_url=context.get("pr_url", ""),
+            )
+        return []
+
+    def async_done_callback(future: Any, hook: Dict[str, Any]) -> None:
+        """Log errors when async hook completes."""
+        try:
+            errors = future.result()
+            for error in errors:
+                console.print(f"[yellow]Warning (async): {error}[/yellow]")
+        except Exception as e:
+            console.print(f"[yellow]Hook error (async): {e}[/yellow]")
+
     for hook in hooks:
         try:
-            if "command" in hook:
-                errors = run_command_hook(
-                    Path.cwd(),
-                    hook,
-                    issue_id=context.get("issue_id", ""),
-                    issue_title=context.get("issue_title", ""),
-                    branch=context.get("branch", ""),
-                    pr_number=str(context.get("pr_number", "")),
-                    pr_url=context.get("pr_url", ""),
-                )
+            is_async = hook.get("async", False)
+
+            if is_async:
+                # Fire-and-forget: submit to thread pool and continue
+                future = executor.submit(execute_hook_sync, hook)
+                # Add callback to log errors when done (capture hook in closure)
+                def make_callback(h: Dict[str, Any]) -> Any:
+                    return lambda f: async_done_callback(f, h)
+                future.add_done_callback(make_callback(hook))
+            else:
+                # Synchronous: execute and wait for completion
+                errors = execute_hook_sync(hook)
                 for error in errors:
                     console.print(f"[yellow]Warning: {error}[/yellow]")
         except Exception as e:
