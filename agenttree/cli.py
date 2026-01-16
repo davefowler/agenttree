@@ -2147,5 +2147,83 @@ def context_init(agent_num: Optional[int], port: Optional[int]) -> None:
     console.print(f"\n[dim]Read CLAUDE.md for workflow instructions[/dim]")
 
 
+@main.command()
+@click.argument("extra_args", nargs=-1)
+def test(extra_args: tuple[str, ...]) -> None:
+    """Run the project's test commands.
+
+    Uses test_commands from .agenttree.yaml config.
+    Runs all commands and reports all errors (doesn't stop on first failure).
+    """
+    config = load_config()
+    commands = config.test_commands
+
+    if not commands:
+        console.print("[red]Error: No test_commands configured[/red]")
+        console.print("\nAdd to .agenttree.yaml:")
+        console.print("  test_commands:")
+        console.print("    - pytest")
+        sys.exit(1)
+
+    failed = []
+    for cmd in commands:
+        # Append extra arguments to each command
+        if extra_args:
+            cmd = f"{cmd} {' '.join(extra_args)}"
+
+        console.print(f"[dim]Running: {cmd}[/dim]")
+        result = subprocess.run(cmd, shell=True)
+
+        if result.returncode != 0:
+            failed.append(cmd)
+
+    if failed:
+        console.print(f"\n[red]Failed commands ({len(failed)}/{len(commands)}):[/red]")
+        for cmd in failed:
+            console.print(f"  - {cmd}")
+        sys.exit(1)
+
+    console.print(f"\n[green]All {len(commands)} test command(s) passed[/green]")
+
+
+@main.command()
+@click.argument("extra_args", nargs=-1)
+def lint(extra_args: tuple[str, ...]) -> None:
+    """Run the project's lint commands.
+
+    Uses lint_commands from .agenttree.yaml config.
+    Runs all commands and reports all errors (doesn't stop on first failure).
+    """
+    config = load_config()
+    commands = config.lint_commands
+
+    if not commands:
+        console.print("[red]Error: No lint_commands configured[/red]")
+        console.print("\nAdd to .agenttree.yaml:")
+        console.print("  lint_commands:")
+        console.print("    - ruff check .")
+        sys.exit(1)
+
+    failed = []
+    for cmd in commands:
+        # Append extra arguments to each command
+        if extra_args:
+            cmd = f"{cmd} {' '.join(extra_args)}"
+
+        console.print(f"[dim]Running: {cmd}[/dim]")
+        result = subprocess.run(cmd, shell=True)
+
+        if result.returncode != 0:
+            failed.append(cmd)
+
+    if failed:
+        console.print(f"\n[red]Failed commands ({len(failed)}/{len(commands)}):[/red]")
+        for cmd in failed:
+            console.print(f"  - {cmd}")
+        sys.exit(1)
+
+    console.print(f"\n[green]All {len(commands)} lint command(s) passed[/green]")
+
+
 if __name__ == "__main__":
     main()

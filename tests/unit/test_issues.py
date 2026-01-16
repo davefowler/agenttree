@@ -274,8 +274,8 @@ class TestStageTransitions:
         assert is_review is True
 
     def test_get_next_stage_within_implement_substages(self):
-        """implement.test -> implement.code"""
-        next_stage, next_substage, is_review = get_next_stage(IMPLEMENT, "test")
+        """implement.setup -> implement.code"""
+        next_stage, next_substage, is_review = get_next_stage(IMPLEMENT, "setup")
         assert next_stage == IMPLEMENT
         assert next_substage == "code"
         assert is_review is False

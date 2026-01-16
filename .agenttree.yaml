@@ -2,6 +2,10 @@ default_tool: claude
 default_model: opus
 port_range: 9001-9099
 project: agenttree
+test_commands:
+  - uv run pytest
+lint_commands:
+  - uv run mypy agenttree
 tools:
   aider:
     command: aider --model sonnet
