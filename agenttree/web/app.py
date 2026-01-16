@@ -481,15 +481,15 @@ async def send_to_agent(
     )
 
 
-@app.post("/agent/{agent_num}/dispatch", response_class=HTMLResponse)
-async def dispatch_task(
+@app.post("/agent/{agent_num}/start", response_class=HTMLResponse)
+async def start_task(
     request: Request,
     agent_num: int,
     issue_number: int = Form(default=None),
     task_description: str = Form(default=None),
     user: Optional[str] = Depends(get_current_user)
 ) -> HTMLResponse:
-    """Dispatch a task to an agent (adds to queue)."""
+    """Start a task on an agent (adds to queue)."""
     from agenttree.worktree import create_task_file
 
     try:
@@ -531,7 +531,7 @@ async def dispatch_task(
         status = f"Error: {str(e)}"
 
     return templates.TemplateResponse(
-        "partials/dispatch_status.html",
+        "partials/start_status.html",
         {
             "request": request,
             "agent_num": agent_num,
@@ -563,7 +563,7 @@ async def start_issue(
         success = False
 
     return templates.TemplateResponse(
-        "partials/dispatch_status.html",
+        "partials/start_status.html",
         {"request": request, "status": status, "success": success, "agent_num": 0}
     )
 

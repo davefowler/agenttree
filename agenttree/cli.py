@@ -315,7 +315,7 @@ echo $PORT
 
 ### 1. You Receive a Task
 
-When dispatched, you'll find:
+When started, you'll find:
 - **TASK.md** in your worktree root
 - **_agenttree/specs/issue-<num>.md** with the full specification
 - **_agenttree/tasks/agent-${AGENT_NUM}/<timestamp>-issue-<num>.md** your task log
@@ -541,7 +541,7 @@ Good luck, Agent-${AGENT_NUM}! 🚀
     console.print("[bold]2. Once agent-1 has the setup working, set up the rest:[/bold]")
     console.print("   agenttree setup 2 3  # They'll use agent-1's fixes!")
     console.print("")
-    console.print("[bold]3. Start dispatching real work:[/bold]")
+    console.print("[bold]3. Start assigning real work:[/bold]")
     console.print("   agenttree start 2 --task 'Fix the login bug'")
     console.print("   agenttree tui            # Or use the terminal dashboard")
     console.print("")
@@ -658,7 +658,7 @@ def preflight() -> None:
 @main.command(name="start")
 @click.argument("issue_id", type=str)
 @click.option("--tool", help="AI tool to use (default: from config)")
-@click.option("--force", is_flag=True, help="Force dispatch even if agent already exists")
+@click.option("--force", is_flag=True, help="Force start even if agent already exists")
 @click.option("--skip-preflight", is_flag=True, help="Skip preflight environment checks")
 def start_agent(
     issue_id: str,
@@ -789,7 +789,7 @@ def start_agent(
     # Save branch and worktree info to issue metadata
     update_issue_metadata(issue.id, branch=names["branch"], worktree_dir=str(worktree_path))
 
-    console.print(f"[green]✓ Dispatching agent for issue #{issue.id}: {issue.title}[/green]")
+    console.print(f"[green]✓ Starting agent for issue #{issue.id}: {issue.title}[/green]")
 
     # Create session for restart detection
     create_session(issue.id)
@@ -1074,7 +1074,7 @@ def web(host: str, port: int, config: Optional[str]) -> None:
     The dashboard provides:
     - Real-time agent status monitoring
     - Live tmux output streaming
-    - Task dispatch via web UI
+    - Task start via web UI
     - Command execution for agents
     """
     from agenttree.web.app import run_server
@@ -1161,13 +1161,13 @@ def remote_list() -> None:
     console.print(table)
 
 
-@remote.command("dispatch")
+@remote.command("start")
 @click.argument("hostname")
 @click.argument("agent_num", type=int)
 @click.option("--user", default="agent", help="SSH user")
 @click.option("--agents-repo", default="~/agents", help="Path to agents repo on remote")
-def remote_dispatch(hostname: str, agent_num: int, user: str, agents_repo: str) -> None:
-    """Dispatch a task to a remote agent.
+def remote_start(hostname: str, agent_num: int, user: str, agents_repo: str) -> None:
+    """Start a task on a remote agent.
 
     This will:
     1. SSH into the remote host
@@ -1175,13 +1175,13 @@ def remote_dispatch(hostname: str, agent_num: int, user: str, agents_repo: str) 
     3. Notify the agent's tmux session
 
     Example:
-        agenttree remote dispatch my-home-pc 1
+        agenttree remote start my-home-pc 1
     """
     from agenttree.remote import RemoteHost, dispatch_task_to_remote_agent
 
     host = RemoteHost(name=hostname, host=hostname, user=user, is_tailscale=True)
 
-    console.print(f"[cyan]Dispatching task to {hostname} agent-{agent_num}...[/cyan]")
+    console.print(f"[cyan]Starting task on {hostname} agent-{agent_num}...[/cyan]")
 
     success = dispatch_task_to_remote_agent(
         host,
@@ -1191,9 +1191,9 @@ def remote_dispatch(hostname: str, agent_num: int, user: str, agents_repo: str) 
     )
 
     if success:
-        console.print(f"[green]✓ Task dispatched to {hostname}[/green]")
+        console.print(f"[green]✓ Task started on {hostname}[/green]")
     else:
-        console.print(f"[red]✗ Failed to dispatch task[/red]")
+        console.print(f"[red]✗ Failed to start task[/red]")
         sys.exit(1)
 
 
@@ -1276,7 +1276,7 @@ def issue_create(
     - problem.md (from template or provided content)
 
     After creating, fill in problem.md then run 'agenttree start <id>' to
-    dispatch an agent.
+    start an agent.
 
     Issues with unmet dependencies are placed in backlog and auto-started when
     all dependencies are completed.

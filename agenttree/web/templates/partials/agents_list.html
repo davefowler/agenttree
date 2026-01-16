@@ -49,11 +49,11 @@
     </div>
 
     <h3 class="collapsible collapsed" style="font-size: 14px; margin-top: 15px; padding: 10px 0;">
-        Dispatch Task
+        Start Task
     </h3>
     <div class="collapsible-content hidden">
-        <form hx-post="/agent/{{ agent.agent_num }}/dispatch"
-              hx-target="#dispatch-status-{{ agent.agent_num }}">
+        <form hx-post="/agent/{{ agent.agent_num }}/start"
+              hx-target="#start-status-{{ agent.agent_num }}">
             <div style="margin-bottom: 10px;">
                 <input type="number"
                        name="issue_number"
@@ -64,9 +64,9 @@
                 <textarea name="task_description"
                           placeholder="Or enter ad-hoc task description..."></textarea>
             </div>
-            <button type="submit" class="btn btn-primary">Dispatch Task</button>
+            <button type="submit" class="btn btn-primary">Start Task</button>
         </form>
-        <div id="dispatch-status-{{ agent.agent_num }}" style="margin-top: 10px;"></div>
+        <div id="start-status-{{ agent.agent_num }}" style="margin-top: 10px;"></div>
     </div>
 </div>
 {% endfor %}

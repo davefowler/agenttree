@@ -19,9 +19,9 @@ agenttree init
 # Set up agents
 agenttree setup 1 2 3
 
-# Dispatch work
-agenttree dispatch 1 42           # Send GitHub issue #42 to agent-1
-agenttree dispatch 2 --task "Fix login bug"  # Ad-hoc task to agent-2
+# Assign work
+agenttree start 1 42              # Send GitHub issue #42 to agent-1
+agenttree start 2 --task "Fix login bug"  # Ad-hoc task to agent-2
 
 # Monitor agents
 agenttree status                   # View all agents (CLI)
@@ -35,7 +35,7 @@ agenttree auto-merge 123 --monitor # Wait for CI + approval, then merge
 
 # Remote agents (via Tailscale)
 agenttree remote list              # List available hosts
-agenttree remote dispatch my-pc 1  # Dispatch to remote agent
+agenttree remote start my-pc 1    # Start task on remote agent
 ```
 
 ## New Features ✨
@@ -60,7 +60,7 @@ agenttree web
 - Live agent status updates
 - Real-time tmux streaming via WebSocket
 - Send commands directly from browser
-- Dispatch tasks via web UI
+- Start tasks via web UI
 - Optional HTTP Basic Auth for public exposure
 
 See [docs/web-dashboard.md](docs/web-dashboard.md) for details.
@@ -88,14 +88,14 @@ Use idle computers as additional agent capacity via Tailscale:
 # List available hosts
 agenttree remote list
 
-# Dispatch task to remote agent
-agenttree remote dispatch my-home-pc 1
+# Start task on remote agent
+agenttree remote start my-home-pc 1
 ```
 
 **Setup:**
 1. Install Tailscale on remote machine
 2. Start agent tmux session on remote
-3. Dispatch tasks from anywhere
+3. Start tasks from anywhere
 
 ### Multi-CLI Support
 Use any AI coding CLI with your agents:
@@ -143,7 +143,7 @@ Tomorrow:  Problem validated → Plan validated → CI enforced → Auto-merge
 
 1. **Parallel agents** - Multiple agents on different issues simultaneously
 2. **Enforced gates** - Can't skip CI, can't bypass validation, can't ignore reviews
-3. **Auto-dispatch** - Agents start when you approve, not when you remember to ping
+3. **Auto-start** - Agents start when you approve, not when you remember to ping
 4. **Unified visibility** - One dashboard for all work across all agents
 5. **Structured handoffs** - Problem → Plan → Implementation with validated transitions
 
@@ -167,7 +167,7 @@ Tomorrow:  Problem validated → Plan validated → CI enforced → Auto-merge
 
 **Workflow:**
 1. GitHub issue created or ad-hoc task defined
-2. `agenttree dispatch 1 42` - Agent-1's worktree resets to latest main
+2. `agenttree start 1 42` - Agent-1's worktree resets to latest main
 3. Claude Code starts in a tmux session
 4. Agent works on the issue independently
 5. Agent creates PR when done
@@ -305,20 +305,20 @@ This creates:
 - Copies `.env` with unique PORT
 - Sets up virtual environment (if applicable)
 
-### Dispatch Tasks
+### Start Agents
 
 ```bash
 # From GitHub issue
-agenttree dispatch 1 42
+agenttree start 1 42
 
 # Ad-hoc task
-agenttree dispatch 2 --task "Fix the login bug"
+agenttree start 2 --task "Fix the login bug"
 
 # With specific tool
-agenttree dispatch 3 42 --tool aider
+agenttree start 3 42 --tool aider
 
 # Force (override busy agent)
-agenttree dispatch 1 43 --force
+agenttree start 1 43 --force
 ```
 
 ### Monitor Agents
@@ -454,10 +454,10 @@ See [Testing Strategy](docs/development/testing.md) for more details.
 # Set up 3 agents
 agenttree setup 1 2 3
 
-# Dispatch different features
-agenttree dispatch 1 101  # Issue #101: Add dark mode
-agenttree dispatch 2 102  # Issue #102: Add search
-agenttree dispatch 3 103  # Issue #103: Add export
+# Assign different features
+agenttree start 1 101  # Issue #101: Add dark mode
+agenttree start 2 102  # Issue #102: Add search
+agenttree start 3 103  # Issue #103: Add export
 
 # Monitor progress
 agenttree status
@@ -469,10 +469,10 @@ agenttree attach 1
 ### Example 2: Bug Fixing Sprint
 
 ```bash
-# Dispatch multiple bugs
-agenttree dispatch 1 --task "Fix login timeout"
-agenttree dispatch 2 --task "Fix cart calculation"
-agenttree dispatch 3 --task "Fix image upload"
+# Assign multiple bugs
+agenttree start 1 --task "Fix login timeout"
+agenttree start 2 --task "Fix cart calculation"
+agenttree start 3 --task "Fix image upload"
 
 # All agents work in parallel
 ```
@@ -488,7 +488,7 @@ tools:
 ```
 
 ```bash
-agenttree dispatch 1 42 --tool my_custom_tool
+agenttree start 1 42 --tool my_custom_tool
 ```
 
 ## Comparison with Other Tools
@@ -496,8 +496,8 @@ agenttree dispatch 1 42 --tool my_custom_tool
 | Tool | What it does | Limitation |
 |------|-------------|------------|
 | **AgentTree** | Multi-agent orchestration | New, under development |
-| Claude Code | Single-agent coding CLI | One at a time, no dispatch |
-| Aider | Single-agent coding CLI | One at a time, no dispatch |
+| Claude Code | Single-agent coding CLI | One at a time, single agent |
+| Aider | Single-agent coding CLI | One at a time, single agent |
 | Cursor | AI-enhanced IDE | Single workspace focus |
 | Devin | Autonomous agent | $500/mo, cloud-only, closed |
 | OpenHands | Autonomous agent | Heavy, Docker, single agent |

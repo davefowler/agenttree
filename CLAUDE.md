@@ -79,6 +79,6 @@ This project uses AgentTree, a workflow system for AI agents working on software
 
 **Key commands:**
 - `agenttree issue create "title"` - Create a new issue
-- `agenttree start <id>` - Dispatch an agent to work on an issue
+- `agenttree start <id>` - Start an agent to work on an issue
 - `agenttree status` - Show status of issues and agents
 - `agenttree next` - Get instructions for current stage (used by agents)

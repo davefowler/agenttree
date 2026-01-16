@@ -90,9 +90,9 @@ Documented workflows to test manually:
    agenttree setup 1
    ```
 
-2. **Issue dispatch**
+2. **Issue start**
    ```bash
-   agenttree dispatch 1 42
+   agenttree start 1 42
    agenttree attach 1  # Verify agent got task
    ```
 
