@@ -1102,9 +1102,8 @@ def ensure_pr_for_issue(issue_id: str) -> bool:
     if issue.stage != "implementation_review":
         return False
 
-    # Need branch info
+    # Need branch info (silently skip if not started yet)
     if not issue.branch:
-        console.print(f"[yellow]Issue #{issue_id} has no branch info[/yellow]")
         return False
 
     # Find the worktree for this issue

@@ -83,9 +83,9 @@ def sync_agents_repo(
                 timeout=10,
             )
 
-        # Now pull with rebase (safe because local changes are committed)
+        # Pull with merge (rebase causes issues with concurrent syncs)
         result = subprocess.run(
-            ["git", "-C", str(agents_dir), "pull", "--rebase"],
+            ["git", "-C", str(agents_dir), "pull", "--no-rebase"],
             capture_output=True,
             text=True,
             timeout=30,
