@@ -122,10 +122,25 @@ class AgentManager:
         self.agents: Dict[int, dict] = {}
 
     def _check_tmux_session(self, agent_num: int) -> bool:
-        """Check if tmux session exists for agent."""
+        """Check if tmux session exists for agent (legacy numbered agents)."""
         try:
             result = subprocess.run(
                 ["tmux", "has-session", "-t", f"agent-{agent_num}"],
+                capture_output=True,
+                timeout=1
+            )
+            return result.returncode == 0
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            return False
+
+    def _check_issue_tmux_session(self, issue_id: str) -> bool:
+        """Check if tmux session exists for an issue-bound agent."""
+        # Session names are: {project}-issue-{issue_id}
+        config = load_config()
+        session_name = f"{config.project}-issue-{issue_id}"
+        try:
+            result = subprocess.run(
+                ["tmux", "has-session", "-t", session_name],
                 capture_output=True,
                 timeout=1
             )
@@ -196,10 +211,8 @@ def convert_issue_to_web(issue: issue_crud.Issue) -> WebIssue:
     except ValueError:
         stage = StageEnum.BACKLOG
 
-    # Check if tmux session is active for assigned agent
-    tmux_active = False
-    if issue.assigned_agent:
-        tmux_active = agent_manager._check_tmux_session(issue.assigned_agent)
+    # Check if tmux session is active for this issue
+    tmux_active = agent_manager._check_issue_tmux_session(issue.id)
 
     return WebIssue(
         number=int(issue.id),
@@ -278,6 +291,15 @@ def get_issue_files(issue_id: str) -> list[dict[str, str | int]]:
     return files
 
 
+# Cache stage list for sorting efficiency
+_STAGE_LIST = list(StageEnum)
+
+
+def _sort_flow_issues(issues: list[Issue]) -> list[Issue]:
+    """Sort issues for flow view: review stages first, higher stage order, then number."""
+    return sorted(issues, key=lambda x: (not x.is_review, -_STAGE_LIST.index(x.stage), x.number))
+
+
 @app.get("/flow", response_class=HTMLResponse)
 async def flow(
     request: Request,
@@ -285,9 +307,7 @@ async def flow(
 ) -> HTMLResponse:
     """Flow view page."""
     issues = issue_crud.list_issues(sync=False)  # Skip sync for fast web reads
-    web_issues = [convert_issue_to_web(i) for i in issues]
-    # Sort by: 1) human review stages first, 2) higher stage order first (impl_review before plan_review), 3) issue number
-    web_issues.sort(key=lambda x: (not x.is_review, -list(StageEnum).index(x.stage), x.number))
+    web_issues = _sort_flow_issues([convert_issue_to_web(i) for i in issues])
     selected_issue = web_issues[0] if web_issues else None
 
     # Load body content and files for selected issue
@@ -323,9 +343,7 @@ async def flow_issues(
 ) -> HTMLResponse:
     """Flow issues list (HTMX endpoint)."""
     issues = issue_crud.list_issues(sync=False)  # Skip sync for fast web reads
-    web_issues = [convert_issue_to_web(i) for i in issues]
-    # Sort by: 1) human review stages first, 2) higher stage order first (impl_review before plan_review), 3) issue number
-    web_issues.sort(key=lambda x: (not x.is_review, -list(StageEnum).index(x.stage), x.number))
+    web_issues = _sort_flow_issues([convert_issue_to_web(i) for i in issues])
     return templates.TemplateResponse(
         "partials/flow_issues_list.html",
         {"request": request, "issues": web_issues}

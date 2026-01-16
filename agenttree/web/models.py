@@ -54,8 +54,8 @@ class Issue(IssueBase):
 
     @property
     def is_review(self) -> bool:
-        """Check if issue is in a review stage."""
-        return "review" in self.stage.value.lower()
+        """Check if issue is in a human review stage."""
+        return self.stage in (StageEnum.PLAN_REVIEW, StageEnum.IMPLEMENTATION_REVIEW)
 
 
 class IssueUpdate(BaseModel):
