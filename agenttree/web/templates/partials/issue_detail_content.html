@@ -12,17 +12,13 @@
                          onclick="toggleAgentFromDetail('{{ issue.number }}', this)"
                          title="{% if issue.tmux_active %}Agent running{% elif issue.assigned_agent %}Agent stalled - click to restart{% else %}Click to start agent{% endif %}">
                     </div>
-                    <a class="chat-toggle-icon"
-                       href="/{{ active_page }}?issue={{ issue.number }}&chat={% if chat_open %}0{% else %}1{% endif %}"
-                       hx-get="/{{ active_page }}?issue={{ issue.number }}&chat={% if chat_open %}0{% else %}1{% endif %}"
-                       hx-push-url="true"
-                       hx-target="body"
-                       hx-swap="outerHTML"
-                       title="Toggle agent chat">
+                    <button class="chat-toggle-icon"
+                            onclick="toggleChatPanel('{{ issue.number }}')"
+                            title="Toggle agent chat">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
                         </svg>
-                    </a>
+                    </button>
                 </div>
             </div>
             <div class="detail-meta-row">

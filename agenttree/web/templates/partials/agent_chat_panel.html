@@ -1,5 +1,5 @@
 <!-- Shared agent chat panel - used by both flow view and kanban modal -->
-<div class="agent-chat-panel{% if not chat_open %} collapsed{% endif %}" id="agent-chat-panel-{{ issue.number }}">
+<div class="agent-chat-panel" id="agent-chat-panel-{{ issue.number }}">
     <div class="agent-chat-header">
         <h4>Agent Chat</h4>
     </div>
@@ -35,3 +35,25 @@
         {% endif %}
     </div>
 </div>
+<script>
+// Chat panel toggle with localStorage persistence
+function toggleChatPanel(issueNumber) {
+    const panel = document.getElementById('agent-chat-panel-' + issueNumber);
+    if (panel) {
+        panel.classList.toggle('collapsed');
+        const isOpen = !panel.classList.contains('collapsed');
+        localStorage.setItem('chatPanelOpen', isOpen ? '1' : '0');
+    }
+}
+
+// Initialize chat panel state from localStorage on page load
+(function() {
+    const chatOpen = localStorage.getItem('chatPanelOpen') !== '0'; // Default to open
+    if (!chatOpen) {
+        // Find all chat panels and collapse them
+        document.querySelectorAll('.agent-chat-panel').forEach(function(panel) {
+            panel.classList.add('collapsed');
+        });
+    }
+})();
+</script>
