@@ -601,12 +601,12 @@
         }
 
         // Handle file tab clicks
-        function selectFileTab(issueId, filename) {
+        function selectFileTab(evt, issueId, filename) {
             // Update active tab
             document.querySelectorAll('.file-tab').forEach(tab => {
                 tab.classList.remove('active');
             });
-            event.target.classList.add('active');
+            evt.target.classList.add('active');
 
             // Load file content
             htmx.ajax('GET', '/api/issues/' + issueId + '/files/' + filename, {

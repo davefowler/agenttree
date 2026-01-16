@@ -250,13 +250,16 @@ async def kanban(
     )
 
 
-def get_issue_files(issue_id: str) -> list:
-    """Get list of markdown files for an issue."""
+def get_issue_files(issue_id: str) -> list[dict[str, str | int]]:
+    """Get list of markdown files for an issue.
+
+    Returns list of dicts with keys: name, display_name, size, modified
+    """
     issue_dir = issue_crud.get_issue_dir(issue_id)
     if not issue_dir:
         return []
 
-    files = []
+    files: list[dict[str, str | int]] = []
     for f in sorted(issue_dir.glob("*.md")):
         files.append({
             "name": f.name,
@@ -586,21 +589,11 @@ async def list_issue_files(
     user: Optional[str] = Depends(get_current_user)
 ) -> dict:
     """List markdown files in an issue directory."""
-    issue_dir = issue_crud.get_issue_dir(issue_id)
-    if not issue_dir:
+    files = get_issue_files(issue_id)
+    if not files and not issue_crud.get_issue_dir(issue_id):
         raise HTTPException(status_code=404, detail=f"Issue {issue_id} not found")
 
-    # Get all .md files in the issue directory
-    md_files = []
-    for f in sorted(issue_dir.glob("*.md")):
-        md_files.append({
-            "name": f.name,
-            "display_name": f.stem.replace("_", " ").title(),
-            "size": f.stat().st_size,
-            "modified": datetime.fromtimestamp(f.stat().st_mtime).isoformat()
-        })
-
-    return {"issue_id": issue_id, "files": md_files}
+    return {"issue_id": issue_id, "files": files}
 
 
 @app.get("/api/issues/{issue_id}/files/{filename}", response_class=HTMLResponse)
