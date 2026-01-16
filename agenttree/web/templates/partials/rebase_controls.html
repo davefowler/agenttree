@@ -1,0 +1,16 @@
+<!-- Rebase controls partial - loaded via HTMX -->
+{% if commits_behind > 0 %}
+<div class="rebase-controls">
+    <span class="commits-behind">{{ commits_behind }} commit{% if commits_behind != 1 %}s{% endif %} behind main</span>
+    <button class="btn btn-rebase"
+            hx-post="/api/issues/{{ issue_number }}/rebase"
+            hx-target="#rebase-controls-{{ issue_number }}"
+            hx-swap="innerHTML">
+        Rebase
+    </button>
+</div>
+{% elif commits_behind == 0 %}
+<div class="rebase-controls">
+    <span class="commits-synced">Up to date with main</span>
+</div>
+{% endif %}
