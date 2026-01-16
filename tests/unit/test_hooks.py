@@ -1281,34 +1281,57 @@ class TestHostActionHooks:
     """Tests for host action hooks (post_pr_create, post_merge, post_accepted)."""
 
     @patch('agenttree.hooks.run_host_hooks')
-    @patch('agenttree.hooks.is_running_in_container', return_value=False)
-    @patch('agenttree.hooks.push_branch_to_remote')
     @patch('agenttree.github.create_pr')
     @patch('agenttree.issues.update_issue_metadata')
-    @patch('agenttree.hooks.get_current_branch', return_value='test-branch')
-    @patch('agenttree.hooks.has_uncommitted_changes', return_value=False)
+    @patch('agenttree.issues.get_issue')
     @patch('agenttree.config.load_config')
+    @patch('subprocess.run')
     def test_post_pr_create_hooks_called(
-        self, mock_load_config, mock_uncommitted, mock_branch,
-        mock_update, mock_create_pr, mock_push, mock_container, mock_run_hooks
+        self, mock_subprocess, mock_load_config, mock_get_issue,
+        mock_update, mock_create_pr, mock_run_hooks, tmp_path
     ):
-        """post_pr_create hooks should be called after PR creation."""
-        from agenttree.hooks import _action_create_pr
+        """post_pr_create hooks should be called after PR creation via ensure_pr_for_issue."""
+        from agenttree.hooks import ensure_pr_for_issue
+        from agenttree.issues import Issue
         from agenttree.config import Config, HooksConfig
 
+        # Create a fake worktree directory
+        worktree_dir = tmp_path / "worktree"
+        worktree_dir.mkdir()
+
+        # Mock issue at implementation_review with branch but no PR
+        mock_issue = Issue(
+            id="001",
+            slug="test",
+            title="Test Issue",
+            created="2026-01-01T00:00:00Z",
+            updated="2026-01-01T00:00:00Z",
+            stage="implementation_review",
+            branch="issue-001-test",
+            worktree_dir=str(worktree_dir),
+        )
+        mock_get_issue.return_value = mock_issue
+
+        # Mock PR creation
         mock_pr = MagicMock()
         mock_pr.number = 123
         mock_pr.url = "https://github.com/owner/repo/pull/123"
         mock_create_pr.return_value = mock_pr
 
+        # Mock subprocess for git operations
+        mock_subprocess.return_value = MagicMock(returncode=0)
+
+        # Configure post_pr_create hooks
         hooks_config = HooksConfig(
             post_pr_create=[{"command": "echo 'PR created'", "host_only": True}]
         )
         mock_config = Config(hooks=hooks_config)
         mock_load_config.return_value = mock_config
 
-        _action_create_pr(Path("/tmp"), issue_id="001", issue_title="Test")
+        # Call ensure_pr_for_issue (the actual PR creation path on host)
+        result = ensure_pr_for_issue("001")
 
+        assert result is True
         # Verify run_host_hooks was called with post_pr_create hooks
         mock_run_hooks.assert_called_once()
         call_args = mock_run_hooks.call_args

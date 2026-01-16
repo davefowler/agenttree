@@ -150,15 +150,16 @@ def parse_hook(hook: Dict[str, Any]) -> tuple[str, Dict[str, Any]]:
 
 
 def _action_create_pr(issue_dir: Path, issue_id: str = "", issue_title: str = "", branch: str = "", **kwargs: Any) -> None:
-    """Create PR for an issue (action hook helper).
+    """Prepare for PR creation (agent hook - runs in container).
 
-    Workflow:
-    1. On host: auto-commit, push branch, create PR directly
-    2. In container: auto-commit, store branch info, return (host handles push/PR via sync)
+    Since agents run in containers without push access, this hook just:
+    1. Auto-commits any uncommitted changes
+    2. Stores branch info in issue metadata
 
-    The worktree_dir is already set when agent starts (cli.py:790), so we only update branch.
-    Host's `check_pending_prs()` / `ensure_pr_for_issue()` uses stored worktree_dir to find
-    the worktree and push from there.
+    Actual PR creation happens on host via:
+    - `agenttree sync` → `check_pending_prs()` → `ensure_pr_for_issue()`
+
+    The worktree_dir is already set when agent starts (cli.py:790).
     """
     from agenttree.issues import update_issue_metadata
 
@@ -184,45 +185,9 @@ def _action_create_pr(issue_dir: Path, issue_id: str = "", issue_title: str = ""
     if issue_id:
         update_issue_metadata(issue_id, branch=branch)
 
-    # If in container, skip remote operations - host will detect and push unpushed commits
-    if is_running_in_container():
-        console.print(f"[yellow]Running in container - PR will be created by host[/yellow]")
-        console.print(f"[dim]Branch: {branch} (committed locally, awaiting push)[/dim]")
-        console.print(f"[dim]Worktree: {issue_dir}[/dim]")
-        return
-
-    # On host: do the full push/PR
-    from agenttree.github import create_pr
-
-    # Push to remote
-    console.print(f"[dim]Pushing {branch} to origin/{branch}...[/dim]")
-    push_branch_to_remote(branch)
-
-    # Create PR
-    title = f"[Issue {issue_id}] {issue_title}" if issue_id else f"PR for {branch}"
-    body = f"## Summary\n\nImplementation for issue #{issue_id}: {issue_title}\n\n" if issue_id else ""
-    body += "🤖 Generated with [Claude Code](https://claude.com/claude-code)"
-
-    console.print(f"[dim]Creating pull request...[/dim]")
-    pr = create_pr(title=title, body=body, branch=branch, base="main")
-
-    # Update issue with PR info
-    if issue_id:
-        update_issue_metadata(issue_id, pr_number=pr.number, pr_url=pr.url, branch=branch)
-
-    console.print(f"[green]✓ PR created: {pr.url}[/green]")
-
-    # Run post_pr_create hooks
-    from agenttree.config import load_config
-    config = load_config()
-    if config.hooks.post_pr_create:
-        run_host_hooks(config.hooks.post_pr_create, {
-            "issue_id": issue_id,
-            "issue_title": issue_title,
-            "pr_number": pr.number,
-            "pr_url": pr.url,
-            "branch": branch,
-        })
+    console.print(f"[green]✓ Ready for PR creation[/green]")
+    console.print(f"[dim]Branch: {branch}[/dim]")
+    console.print(f"[dim]PR will be created by host on next sync[/dim]")
 
 
 def _action_merge_pr(pr_number: Optional[int], **kwargs: Any) -> None:

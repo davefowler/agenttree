@@ -2,9 +2,6 @@
 <div class="agent-chat-panel" id="agent-chat-panel-{{ issue.number }}">
     <div class="agent-chat-header">
         <h4>Agent Chat</h4>
-        <button class="agent-chat-toggle" onclick="toggleAgentChat('{{ issue.number }}')" title="Close chat panel">
-            <span id="chat-toggle-icon-{{ issue.number }}">&times;</span>
-        </button>
     </div>
     <div class="agent-chat-content">
         {% if issue.assigned_agent %}
