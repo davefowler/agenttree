@@ -3,13 +3,16 @@
 Manages the _agenttree/ git repository (separate from main project).
 """
 
-import os
+import fcntl
 import shutil
 import subprocess
 from pathlib import Path
 from datetime import datetime
 from typing import Optional
 import re
+
+# Global lock file handle (kept open during sync)
+_sync_lock_fd = None
 
 from agenttree.frontmatter import (
     create_frontmatter,
@@ -40,6 +43,8 @@ def sync_agents_repo(
 ) -> bool:
     """Sync _agenttree repo with remote.
 
+    Uses a file lock to prevent concurrent syncs from multiple agents.
+
     Args:
         agents_dir: Path to _agenttree directory
         pull_only: If True, only pull changes (for read operations)
@@ -48,6 +53,8 @@ def sync_agents_repo(
     Returns:
         True if sync succeeded, False otherwise
     """
+    global _sync_lock_fd
+
     # Skip sync in containers - no SSH access, host handles syncing
     from agenttree.hooks import is_running_in_container
     if is_running_in_container():
@@ -57,24 +64,35 @@ def sync_agents_repo(
     if not agents_dir.exists() or not (agents_dir / ".git").exists():
         return False
 
+    # Acquire lock to prevent concurrent syncs
+    lock_file = agents_dir / ".sync.lock"
+    try:
+        _sync_lock_fd = open(lock_file, "w")
+        fcntl.flock(_sync_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except (IOError, OSError):
+        # Another sync is running, skip this one
+        if _sync_lock_fd:
+            _sync_lock_fd.close()
+            _sync_lock_fd = None
+        return False
+
     try:
         # First, commit any local changes (prevents "unstaged changes" error on pull)
-        subprocess.run(
-            ["git", "-C", str(agents_dir), "add", "-A"],
-            check=False,
+        # Check for ANY changes (staged or unstaged)
+        status_result = subprocess.run(
+            ["git", "-C", str(agents_dir), "status", "--porcelain"],
             capture_output=True,
+            text=True,
             timeout=10,
         )
 
-        # Check if there are staged changes to commit
-        diff_result = subprocess.run(
-            ["git", "-C", str(agents_dir), "diff", "--cached", "--quiet"],
-            capture_output=True,
-            timeout=10,
-        )
-
-        # Commit local changes first (if any)
-        if diff_result.returncode != 0:
+        if status_result.stdout.strip():
+            # There are changes - stage and commit them
+            subprocess.run(
+                ["git", "-C", str(agents_dir), "add", "-A"],
+                capture_output=True,
+                timeout=10,
+            )
             message = commit_message or "Auto-sync: update issue data"
             subprocess.run(
                 ["git", "-C", str(agents_dir), "commit", "-m", message],
@@ -101,6 +119,13 @@ def sync_agents_repo(
                 # Merge conflict - print error and fail
                 print(f"Warning: Merge conflict in _agenttree repo: {result.stderr}")
                 return False
+            elif "local changes" in result.stderr.lower() or "overwritten" in result.stderr.lower():
+                # Shouldn't happen after auto-commit, but try stash as fallback
+                subprocess.run(["git", "-C", str(agents_dir), "stash", "--include-untracked"], capture_output=True, timeout=10)
+                retry = subprocess.run(["git", "-C", str(agents_dir), "pull", "--no-rebase"], capture_output=True, timeout=30)
+                subprocess.run(["git", "-C", str(agents_dir), "stash", "pop"], capture_output=True, timeout=10)
+                if retry.returncode != 0:
+                    return False
             else:
                 # Other error - print warning but continue
                 print(f"Warning: Failed to pull _agenttree repo: {result.stderr}")
@@ -109,7 +134,7 @@ def sync_agents_repo(
         # If pull-only, check for pending pushes, PRs, and merged PRs, then we're done
         if pull_only:
             push_pending_branches(agents_dir)
-            check_pending_prs(agents_dir)
+            check_controller_stages(agents_dir)
             check_merged_prs(agents_dir)
             return True
 
@@ -132,7 +157,7 @@ def sync_agents_repo(
         # After successful sync, push pending branches, check for issues needing PRs,
         # and check for externally merged/closed PRs
         push_pending_branches(agents_dir)
-        check_pending_prs(agents_dir)
+        check_controller_stages(agents_dir)
         check_merged_prs(agents_dir)
 
         return True
@@ -143,24 +168,36 @@ def sync_agents_repo(
     except Exception as e:
         print(f"Warning: Error syncing _agenttree repo: {e}")
         return False
+    finally:
+        # Always release the lock and reset the global
+        if _sync_lock_fd:
+            try:
+                fcntl.flock(_sync_lock_fd, fcntl.LOCK_UN)
+                _sync_lock_fd.close()
+            except (IOError, OSError, ValueError):
+                pass  # Already closed or invalid
+            _sync_lock_fd = None
 
 
-def check_pending_prs(agents_dir: Path) -> int:
-    """Check for issues at implementation_review without PRs and create them.
+def check_controller_stages(agents_dir: Path) -> int:
+    """Execute post_start hooks for issues in controller stages.
 
-    Called from host (sync, web server, etc.) to create PRs for issues
-    where agents couldn't push from containers.
+    Controller stages (host: controller) have their hooks executed by the host,
+    not by agents. This is for operations agents can't do (like pushing/creating PRs).
 
-    Bails early if running inside a container (containers can't push anyway).
+    Called from host (sync, web server, etc.) on every sync.
 
     Args:
         agents_dir: Path to _agenttree directory
 
     Returns:
-        Number of PRs created
+        Number of issues processed
     """
-    # Bail early if running in a container - no point checking since we can't push
-    from agenttree.hooks import is_running_in_container
+    # Bail early if running in a container - host operations only
+    from agenttree.hooks import is_running_in_container, execute_enter_hooks
+    from agenttree.config import load_config
+    from agenttree.issues import Issue
+
     if is_running_in_container():
         return 0
 
@@ -168,9 +205,15 @@ def check_pending_prs(agents_dir: Path) -> int:
     if not issues_dir.exists():
         return 0
 
+    config = load_config()
+    controller_stages = config.get_controller_stages()
+
+    if not controller_stages:
+        return 0
+
     import yaml
 
-    prs_created = 0
+    processed = 0
 
     for issue_dir in issues_dir.iterdir():
         if not issue_dir.is_dir():
@@ -184,17 +227,31 @@ def check_pending_prs(agents_dir: Path) -> int:
             with open(issue_yaml) as f:
                 data = yaml.safe_load(f)
 
-            # Check if at implementation_review without PR
-            if data.get("stage") == "implementation_review" and not data.get("pr_number"):
-                issue_id = data.get("id", "")
-                if issue_id:
-                    from agenttree.hooks import ensure_pr_for_issue
-                    if ensure_pr_for_issue(str(issue_id)):
-                        prs_created += 1
+            stage = data.get("stage", "")
+
+            # Check if in a controller stage
+            if stage in controller_stages:
+                # Skip if hooks already executed for this stage
+                hooks_executed_stage = data.get("controller_hooks_executed")
+                if hooks_executed_stage == stage:
+                    continue
+
+                # Mark hooks as executed BEFORE running them to prevent infinite loop
+                # (hooks may call sync_agents_repo which calls check_controller_stages)
+                data["controller_hooks_executed"] = stage
+                with open(issue_yaml, "w") as f:
+                    yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
+
+                issue = Issue(**data)
+                # Execute the post_start hooks for this stage (host side)
+                execute_enter_hooks(issue, stage, data.get("substage"))
+
+                processed += 1
+
         except Exception:
             continue
 
-    return prs_created
+    return processed
 
 
 def _update_issue_stage_direct(yaml_path: Path, data: dict, new_stage: str) -> None:

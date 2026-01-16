@@ -69,6 +69,17 @@ When working on web UI (HTML, CSS, templates):
 - The workflow supports both local and containerized agent execution
 - Hooks can be configured in `.agenttree.yaml` for stage transitions
 
+## Use CLI Commands, Not Manual Operations
+
+**Always use `agenttree` CLI commands** instead of manually editing YAML files or doing things "under the hood":
+
+- `agenttree approve <id>` - Advance an issue past a review stage (runs hooks, notifies agent)
+- `agenttree send <id> "message"` - Send a message to an agent
+- `agenttree start <id>` - Start an agent for an issue
+- `agenttree issue create "title"` - Create a new issue
+
+**Why:** CLI commands run the proper hooks and workflow logic. Manually editing `issue.yaml` or using raw commands bypasses hooks, breaks notifications, and causes state inconsistencies.
+
 ---
 
 ## About AgentTree
@@ -79,6 +90,6 @@ This project uses AgentTree, a workflow system for AI agents working on software
 
 **Key commands:**
 - `agenttree issue create "title"` - Create a new issue
-- `agenttree start <id>` - Dispatch an agent to work on an issue
+- `agenttree start <id>` - Start an agent to work on an issue
 - `agenttree status` - Show status of issues and agents
 - `agenttree next` - Get instructions for current stage (used by agents)

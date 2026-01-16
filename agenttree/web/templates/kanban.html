@@ -188,16 +188,19 @@
             border-radius: 6px;
             max-width: 1200px;
             width: 95%;
+            height: 90vh;
             max-height: 90vh;
-            overflow-y: auto;
-            padding: 30px;
+            overflow: hidden;
+            padding: 15px;
             position: relative;
+            display: flex;
+            flex-direction: column;
         }
 
         .modal-close {
             position: absolute;
-            top: 15px;
-            right: 15px;
+            top: 8px;
+            right: 8px;
             background: none;
             border: none;
             color: var(--text-muted);
@@ -208,6 +211,13 @@
 
         .modal-close:hover {
             color: var(--text-card);
+        }
+
+        #modal-issue-detail {
+            flex: 1;
+            display: flex;
+            min-height: 0;
+            overflow: hidden;
         }
 
         /* Mini dropzones for hidden columns */
@@ -301,7 +311,10 @@
                      data-stage="{{ issue.stage.value }}"
                      data-has-agent="{{ 'true' if issue.assigned_agent else 'false' }}"
                      draggable="{{ 'true' if issue.stage.value in ['plan_review', 'implementation_review'] else 'false' }}"
-                     onclick="openIssueModal({{ issue.number }})">
+                     hx-get="/kanban?issue={{ issue.number }}"
+                     hx-push-url="true"
+                     hx-target="body"
+                     hx-swap="outerHTML">
                     <div class="agent-light {% if issue.tmux_active %}on{% elif issue.assigned_agent %}stalled{% else %}off{% endif %}"
                          onclick="event.stopPropagation(); toggleAgent('{{ issue.number }}', this)"
                          title="{% if issue.tmux_active %}Agent running - click to view{% elif issue.assigned_agent %}Agent assigned but inactive{% else %}Click to start agent{% endif %}"></div>
@@ -334,16 +347,24 @@
     </div>
 
     <!-- Modal for issue detail -->
-    <div id="issue-modal" class="modal">
+    <div id="issue-modal" class="modal{% if selected_issue %} active{% endif %}">
         <div class="modal-content">
-            <button class="modal-close" onclick="closeIssueModal()">&times;</button>
+            <a href="/kanban" class="modal-close" hx-get="/kanban" hx-push-url="true" hx-target="body" hx-swap="outerHTML">&times;</a>
             <div id="modal-issue-detail">
-                <!-- Issue detail loaded here via HTMX -->
+                {% if selected_issue %}
+                {% set issue = selected_issue %}
+                {% include 'partials/issue_detail_content.html' %}
+                {% endif %}
             </div>
         </div>
     </div>
 
     <script>
+    (function() {
+        // Wrap in IIFE to avoid duplicate declarations on HTMX swaps
+        if (window._kanbanScriptLoaded) return;
+        window._kanbanScriptLoaded = true;
+
         // Minimal JS for drag-drop and modal
 
         // Human review stages - only these can be dragged
@@ -422,8 +443,8 @@
             }
         });
 
-        // Modal functions
-        function openIssueModal(issueNumber) {
+        // Modal functions - exposed globally for onclick handlers
+        window.openIssueModal = function(issueNumber) {
             const modal = document.getElementById('issue-modal');
             const detailDiv = document.getElementById('modal-issue-detail');
 
@@ -434,15 +455,15 @@
             });
 
             modal.classList.add('active');
-        }
+        };
 
-        function closeIssueModal() {
+        window.closeIssueModal = function() {
             const modal = document.getElementById('issue-modal');
             modal.classList.remove('active');
-        }
+        };
 
-        // Handle file tab clicks in issue detail
-        function selectFileTab(evt, issueId, filename) {
+        // Handle file tab clicks in issue detail - exposed globally for onclick handlers
+        window.selectFileTab = function(evt, issueId, filename) {
             // Update active tab within the same issue's tabs
             const tabContainer = evt.target.closest('.file-tabs');
             tabContainer.querySelectorAll('.file-tab').forEach(tab => {
@@ -455,10 +476,10 @@
                 target: '#file-content-' + issueId,
                 swap: 'innerHTML'
             });
-        }
+        };
 
-        // Toggle agent chat panel
-        function toggleAgentChat(issueNumber) {
+        // Toggle agent chat panel - exposed globally for onclick handlers
+        window.toggleAgentChat = function(issueNumber) {
             const panel = document.getElementById('agent-chat-panel-' + issueNumber);
             if (panel) {
                 panel.classList.toggle('collapsed');
@@ -467,19 +488,19 @@
                     icon.textContent = panel.classList.contains('collapsed') ? '\u00ab' : '\u00d7';
                 }
             }
-        }
+        };
 
         // Close modal on escape key
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape') {
-                closeIssueModal();
+                window.closeIssueModal();
             }
         });
 
         // Close modal on background click
         document.getElementById('issue-modal').addEventListener('click', (e) => {
             if (e.target.id === 'issue-modal') {
-                closeIssueModal();
+                window.closeIssueModal();
             }
         });
 
@@ -514,7 +535,8 @@
             }
         }
 
-        function setStageView(view) {
+        // Stage view toggle - exposed globally for onclick handlers
+        window.setStageView = function(view) {
             const columns = document.querySelectorAll('.kanban-column');
             const toggleReview = document.getElementById('toggle-review');
             const toggleNonempty = document.getElementById('toggle-nonempty');
@@ -555,11 +577,11 @@
 
             // Update mini dropzones visibility
             updateMiniDropzones();
-        }
+        };
 
         // Apply saved preference on load
         const savedView = localStorage.getItem('kanbanStageView') || 'review';
-        setStageView(savedView);
+        window.setStageView(savedView);
 
         // Mini dropzone drag/drop handlers
         document.querySelectorAll('.mini-dropzone').forEach(dropzone => {
@@ -611,18 +633,18 @@
             });
         });
 
-        // Agent light toggle
-        async function toggleAgent(issueNumber, lightElement) {
+        // Agent light toggle (for kanban cards) - exposed globally for onclick handlers
+        window.toggleAgent = async function(issueNumber, lightElement) {
             const isOn = lightElement.classList.contains('on');
 
             if (isOn) {
                 // Agent is running - open the modal to show details
-                openIssueModal(issueNumber);
+                window.openIssueModal(issueNumber);
                 return;
             }
 
-            // Start the agent
-            lightElement.classList.remove('off');
+            // Start/restart the agent (works for both 'off' and 'stalled')
+            lightElement.classList.remove('off', 'stalled');
             lightElement.classList.add('starting');
             lightElement.title = 'Starting agent...';
 
@@ -639,18 +661,57 @@
                         lightElement.title = 'Agent running - click to view';
                     }, 2000);
                 } else {
-                    // Revert to off state on error
+                    // Revert to stalled state on error
                     lightElement.classList.remove('starting');
-                    lightElement.classList.add('off');
+                    lightElement.classList.add('stalled');
                     lightElement.title = 'Failed to start - click to retry';
                 }
             } catch (error) {
                 console.error('Error starting agent:', error);
                 lightElement.classList.remove('starting');
-                lightElement.classList.add('off');
+                lightElement.classList.add('stalled');
                 lightElement.title = 'Error - click to retry';
             }
-        }
+        };
+
+        // Agent light toggle (for detail view) - exposed globally for onclick handlers
+        window.toggleAgentFromDetail = async function(issueNumber, lightElement) {
+            const isOn = lightElement.classList.contains('on');
+
+            if (isOn) {
+                // Already running - do nothing (use chat icon to toggle chat)
+                return;
+            }
+
+            // Start/restart the agent
+            lightElement.classList.remove('off', 'stalled');
+            lightElement.classList.add('starting');
+            lightElement.title = 'Starting agent...';
+
+            try {
+                const response = await fetch(`/api/issues/${issueNumber}/start`, {
+                    method: 'POST'
+                });
+
+                if (response.ok) {
+                    setTimeout(() => {
+                        lightElement.classList.remove('starting');
+                        lightElement.classList.add('on');
+                        lightElement.title = 'Agent running';
+                    }, 2000);
+                } else {
+                    lightElement.classList.remove('starting');
+                    lightElement.classList.add('stalled');
+                    lightElement.title = 'Failed to start - click to retry';
+                }
+            } catch (error) {
+                console.error('Error starting agent:', error);
+                lightElement.classList.remove('starting');
+                lightElement.classList.add('stalled');
+                lightElement.title = 'Error - click to retry';
+            }
+        };
+    })();
     </script>
 </body>
 </html>

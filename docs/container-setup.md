@@ -7,7 +7,7 @@ AgentTree runs AI coding agents in isolated containers for security. This guide 
 1. **Install a container runtime** (Docker or Apple Container)
    ```bash
    # Check if available
-   agenttree dispatch 1 --dry-run
+   agenttree start 1 --dry-run
    ```
 
 2. **Build the container image** (first time only)
@@ -15,14 +15,14 @@ AgentTree runs AI coding agents in isolated containers for security. This guide 
    docker build -t agenttree-agent .
    ```
 
-3. **Dispatch an agent**
+3. **Start an agent**
    ```bash
-   agenttree dispatch 23  # Creates container for issue #23
+   agenttree start 23  # Creates container for issue #23
    ```
 
 ## How It Works
 
-When you run `agenttree dispatch <issue>`:
+When you run `agenttree start <issue>`:
 
 1. **Worktree created**: `.worktrees/issue-023-fix-login/`
 2. **Branch created**: `issue-023-fix-login`
@@ -119,7 +119,7 @@ cmd.extend(["-v", f"{main_git_dir}:{main_git_dir}"])
 2. **Use GitHub token**:
    ```bash
    export GITHUB_TOKEN=ghp_xxx
-   agenttree dispatch 23
+   agenttree start 23
    ```
 
 3. **Let hooks handle it**: The PR workflow auto-pushes from the container using mounted credentials.

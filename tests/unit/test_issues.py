@@ -79,14 +79,14 @@ class TestIssueModel:
             updated="2026-01-11T12:00:00Z",
             stage=IMPLEMENT,
             substage="code",
-            assigned_agent=3,
+            assigned_agent="3",
             branch="agenttree-3/001-test",
             labels=["bug", "critical"],
             priority=Priority.CRITICAL,
         )
         assert issue.stage == IMPLEMENT
         assert issue.substage == "code"
-        assert issue.assigned_agent == 3
+        assert issue.assigned_agent == "3"
         assert "bug" in issue.labels
 
 

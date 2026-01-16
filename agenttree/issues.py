@@ -57,7 +57,7 @@ class Issue(BaseModel):
     stage: str = DEFINE
     substage: Optional[str] = "refine"
 
-    assigned_agent: Optional[int] = None
+    assigned_agent: Optional[str] = None
     branch: Optional[str] = None
     worktree_dir: Optional[str] = None  # Absolute path to worktree directory
 
@@ -271,7 +271,7 @@ def create_issue(
 def list_issues(
     stage: Optional[str] = None,
     priority: Optional[Priority] = None,
-    assigned_agent: Optional[int] = None,
+    assigned_agent: Optional[str] = None,
     sync: bool = True,
 ) -> list[Issue]:
     """List issues, optionally filtered.
@@ -605,7 +605,7 @@ def assign_agent(issue_id: str, agent_num: int) -> Optional[Issue]:
 
     # Update assignment
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    issue.assigned_agent = agent_num
+    issue.assigned_agent = str(agent_num)
     issue.updated = now
 
     # Write back
@@ -627,7 +627,7 @@ def update_issue_metadata(
     github_issue: Optional[int] = None,
     relevant_url: Optional[str] = None,
     worktree_dir: Optional[str] = None,
-    assigned_agent: Optional[int] = None,
+    assigned_agent: Optional[str] = None,
     clear_assigned_agent: bool = False,
 ) -> Optional[Issue]:
     """Update metadata fields on an issue.
