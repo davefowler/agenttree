@@ -987,6 +987,11 @@ def kill(issue_id: str) -> None:
 
     tmux_manager.stop_issue_agent(agent.tmux_session)
     unregister_agent(agent.issue_id)
+
+    # Clear assigned_agent in issue metadata to prevent ghost status
+    from agenttree.issues import update_issue_metadata
+    update_issue_metadata(agent.issue_id, clear_assigned_agent=True)
+
     console.print(f"[green]✓ Killed agent for issue #{agent.issue_id}[/green]")
 
 
@@ -2223,6 +2228,61 @@ def lint(extra_args: tuple[str, ...]) -> None:
         sys.exit(1)
 
     console.print(f"\n[green]All {len(commands)} lint command(s) passed[/green]")
+
+
+@main.command()
+@click.argument("issue_id")
+@click.argument("new_stage")
+@click.option("--substage", "-s", help="Substage to set (optional)")
+def stage(issue_id: str, new_stage: str, substage: Optional[str]) -> None:
+    """Manually change an issue's stage.
+
+    Example: agenttree stage 080 backlog
+    Example: agenttree stage 042 implement --substage code
+    """
+    from agenttree.config import load_config
+
+    # Validate stage exists
+    config = load_config()
+    valid_stages = [s.name for s in config.stages]
+
+    if new_stage not in valid_stages:
+        console.print(f"[red]Error: Invalid stage '{new_stage}'[/red]")
+        console.print(f"Valid stages: {', '.join(valid_stages)}")
+        sys.exit(1)
+
+    # Validate substage if provided
+    if substage:
+        stage_config = next((s for s in config.stages if s.name == new_stage), None)
+        if stage_config and stage_config.substages:
+            valid_substages = list(stage_config.substages.keys())
+            if substage not in valid_substages:
+                console.print(f"[red]Error: Invalid substage '{substage}' for stage '{new_stage}'[/red]")
+                console.print(f"Valid substages: {', '.join(valid_substages)}")
+                sys.exit(1)
+        elif substage:
+            console.print(f"[yellow]Warning: Stage '{new_stage}' has no substages, ignoring --substage[/yellow]")
+            substage = None
+
+    # Get issue first to show info
+    issue = get_issue_func(issue_id)
+    if not issue:
+        console.print(f"[red]Error: Issue {issue_id} not found[/red]")
+        sys.exit(1)
+
+    old_stage = issue.stage
+    old_substage = issue.substage
+
+    # Update the stage
+    updated = update_issue_stage(issue_id, new_stage, substage)
+
+    if updated:
+        old_str = f"{old_stage}.{old_substage}" if old_substage else old_stage
+        new_str = f"{new_stage}.{substage}" if substage else new_stage
+        console.print(f"[green]✓ Issue #{issue_id} moved from {old_str} → {new_str}[/green]")
+    else:
+        console.print(f"[red]Error: Failed to update issue {issue_id}[/red]")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

@@ -329,13 +329,11 @@
 
         /* Mini dropzones for hidden columns */
         .mini-dropzones {
-            position: fixed;
-            right: 20px;
-            top: 80px;
+            flex: 0 0 120px;
             display: none;
             flex-direction: column;
             gap: 8px;
-            z-index: 50;
+            padding-top: 32px;
         }
 
         .mini-dropzones.visible {
@@ -347,7 +345,7 @@
             padding: 12px 10px;
             border: 2px dashed var(--border-color);
             border-radius: 3px;
-            background: var(--bg-card);
+            background: transparent;
             text-align: center;
             font-size: 12px;
             font-weight: 600;
@@ -414,17 +412,17 @@
             </div>
         </div>
         {% endfor %}
-    </div>
 
-    <!-- Mini dropzones for hidden columns -->
-    <div class="mini-dropzones" id="mini-dropzones">
-        <div class="mini-dropzone" data-stage="done" id="mini-done">
-            <span class="dropzone-label">Done</span>
-            <span class="dropzone-count" id="done-count">0</span>
-        </div>
-        <div class="mini-dropzone" data-stage="not_doing" id="mini-not-doing">
-            <span class="dropzone-label">Not Doing</span>
-            <span class="dropzone-count" id="not-doing-count">0</span>
+        <!-- Mini dropzones for hidden columns -->
+        <div class="mini-dropzones" id="mini-dropzones">
+            <div class="mini-dropzone" data-stage="accepted" id="mini-accepted">
+                <span class="dropzone-label">Accepted</span>
+                <span class="dropzone-count" id="accepted-count">0</span>
+            </div>
+            <div class="mini-dropzone" data-stage="not_doing" id="mini-not-doing">
+                <span class="dropzone-label">Not Doing</span>
+                <span class="dropzone-count" id="not-doing-count">0</span>
+            </div>
         </div>
     </div>
 
@@ -538,26 +536,26 @@
 
         function updateMiniDropzones() {
             const miniDropzones = document.getElementById('mini-dropzones');
-            const doneCol = document.querySelector('.kanban-column[data-stage="done"]');
+            const acceptedCol = document.querySelector('.kanban-column[data-stage="accepted"]');
             const notDoingCol = document.querySelector('.kanban-column[data-stage="not_doing"]');
 
-            const doneHidden = doneCol && doneCol.classList.contains('hidden');
+            const acceptedHidden = acceptedCol && acceptedCol.classList.contains('hidden');
             const notDoingHidden = notDoingCol && notDoingCol.classList.contains('hidden');
 
             // Show mini dropzones if either is hidden
-            if (doneHidden || notDoingHidden) {
+            if (acceptedHidden || notDoingHidden) {
                 miniDropzones.classList.add('visible');
             } else {
                 miniDropzones.classList.remove('visible');
             }
 
             // Show/hide individual mini dropzones
-            document.getElementById('mini-done').style.display = doneHidden ? 'block' : 'none';
+            document.getElementById('mini-accepted').style.display = acceptedHidden ? 'block' : 'none';
             document.getElementById('mini-not-doing').style.display = notDoingHidden ? 'block' : 'none';
 
             // Update counts
-            if (doneCol) {
-                document.getElementById('done-count').textContent = doneCol.querySelectorAll('.kanban-card').length;
+            if (acceptedCol) {
+                document.getElementById('accepted-count').textContent = acceptedCol.querySelectorAll('.kanban-card').length;
             }
             if (notDoingCol) {
                 document.getElementById('not-doing-count').textContent = notDoingCol.querySelectorAll('.kanban-card').length;

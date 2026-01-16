@@ -629,6 +629,8 @@ def update_issue_metadata(
     relevant_url: Optional[str] = None,
     worktree_dir: Optional[str] = None,
     needs_push: Optional[bool] = None,
+    assigned_agent: Optional[int] = None,
+    clear_assigned_agent: bool = False,
 ) -> Optional[Issue]:
     """Update metadata fields on an issue.
 
@@ -641,6 +643,8 @@ def update_issue_metadata(
         relevant_url: Relevant URL (optional)
         worktree_dir: Worktree directory path (optional)
         needs_push: Whether host needs to push commits (optional)
+        assigned_agent: Assigned agent number (optional)
+        clear_assigned_agent: If True, sets assigned_agent to None
 
     Returns:
         Updated Issue object or None if not found
@@ -678,6 +682,10 @@ def update_issue_metadata(
         issue.worktree_dir = worktree_dir
     if needs_push is not None:
         issue.needs_push = needs_push
+    if assigned_agent is not None:
+        issue.assigned_agent = assigned_agent
+    if clear_assigned_agent:
+        issue.assigned_agent = None
     issue.updated = now
 
     # Write back
