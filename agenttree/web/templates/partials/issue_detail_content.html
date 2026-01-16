@@ -1,0 +1,75 @@
+<!-- Unified issue detail content - used by both kanban modal and flow panel -->
+<div class="issue-detail" data-issue-id="{{ issue.number }}" data-agent-num="{{ issue.assigned_agent or '' }}">
+    <!-- Issue header -->
+    <div class="detail-header">
+        <div class="detail-title">
+            #{{ issue.number }}: {{ issue.title }}
+        </div>
+        <div class="detail-meta">
+            <span>Stage: {{ issue.stage.value.replace('_', ' ').title() }}</span>
+            {% if issue.assigned_agent %}
+            <span>Agent: {{ issue.assigned_agent }}</span>
+            {% endif %}
+            {% if issue.pr_url %}
+            <span><a href="{{ issue.pr_url }}" target="_blank">PR #{{ issue.pr_number }}</a></span>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="detail-actions">
+        <button class="btn btn-primary"
+                hx-post="/api/issues/{{ issue.number }}/start"
+                hx-target="#dispatch-status-{{ issue.number }}"
+                hx-swap="innerHTML">
+            Start Agent
+        </button>
+        <span id="dispatch-status-{{ issue.number }}"></span>
+    </div>
+
+    <!-- File tabs -->
+    <div class="file-tabs-container">
+        <div class="file-tabs" id="file-tabs-{{ issue.number }}">
+            {% for file in files %}
+            <button class="file-tab{% if loop.first %} active{% endif %}"
+                    onclick="selectFileTab(event, '{{ issue.number }}', '{{ file.name }}')">
+                {{ file.display_name }}
+            </button>
+            {% else %}
+            <span class="no-files">No files found</span>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- File content -->
+    <div class="issue-content file-content" id="file-content-{{ issue.number }}">
+        {% if issue.body %}
+        <div class="markdown-content">
+            <div class="markdown-rendered"></div>
+            <script type="text/template">{{ issue.body }}</script>
+            <script>
+                (function() {
+                    const script = document.currentScript;
+                    const source = script.previousElementSibling.textContent;
+                    const display = script.previousElementSibling.previousElementSibling;
+                    if (typeof marked !== 'undefined') {
+                        display.innerHTML = marked.parse(source);
+                    } else {
+                        display.innerHTML = '<pre class="markdown-raw">' + source + '</pre>';
+                    }
+                })();
+            </script>
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <p>No content available</p>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Timestamps -->
+    <div class="detail-timestamps">
+        <small>Created: {{ issue.created_at.strftime('%Y-%m-%d %H:%M') }}</small>
+        <small>Updated: {{ issue.updated_at.strftime('%Y-%m-%d %H:%M') }}</small>
+    </div>
+</div>

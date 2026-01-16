@@ -592,7 +592,10 @@ async def issue_detail(
     if not issue:
         raise HTTPException(status_code=404, detail=f"Issue {issue_id} not found")
 
-    # Load problem.md content
+    # Get markdown files list
+    files = get_issue_files(issue_id)
+
+    # Load problem.md content (first tab)
     issue_dir = issue_crud.get_issue_dir(issue_id)
     problem_content = ""
     if issue_dir:
@@ -605,7 +608,7 @@ async def issue_detail(
 
     return templates.TemplateResponse(
         "partials/issue_detail.html",
-        {"request": request, "issue": web_issue}
+        {"request": request, "issue": web_issue, "files": files}
     )
 
 

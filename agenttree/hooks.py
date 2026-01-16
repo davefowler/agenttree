@@ -889,6 +889,28 @@ def rebase_issue_branch(issue_id: str) -> tuple[bool, str]:
         return False, f"Worktree not found: {issue.worktree_dir}"
 
     try:
+        # First, commit any uncommitted changes (so rebase doesn't fail)
+        # Stage all changes
+        subprocess.run(
+            ["git", "-C", str(worktree_path), "add", "-A"],
+            capture_output=True,
+            timeout=10,
+        )
+        # Check if there are staged changes
+        diff_result = subprocess.run(
+            ["git", "-C", str(worktree_path), "diff", "--cached", "--quiet"],
+            capture_output=True,
+            timeout=10,
+        )
+        if diff_result.returncode != 0:
+            # There are staged changes - commit them
+            subprocess.run(
+                ["git", "-C", str(worktree_path), "commit", "-m", "Auto-commit before rebase"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+
         # Fetch latest from origin
         result = subprocess.run(
             ["git", "-C", str(worktree_path), "fetch", "origin", "main"],
