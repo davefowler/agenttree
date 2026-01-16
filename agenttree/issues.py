@@ -59,6 +59,7 @@ class Issue(BaseModel):
 
     assigned_agent: Optional[int] = None
     branch: Optional[str] = None
+    worktree_dir: Optional[str] = None  # Absolute path to worktree directory
 
     labels: list[str] = Field(default_factory=list)
     priority: Priority = Priority.MEDIUM
@@ -625,6 +626,7 @@ def update_issue_metadata(
     branch: Optional[str] = None,
     github_issue: Optional[int] = None,
     relevant_url: Optional[str] = None,
+    worktree_dir: Optional[str] = None,
 ) -> Optional[Issue]:
     """Update metadata fields on an issue.
 
@@ -635,6 +637,7 @@ def update_issue_metadata(
         branch: Branch name (optional)
         github_issue: GitHub issue number (optional)
         relevant_url: Relevant URL (optional)
+        worktree_dir: Worktree directory path (optional)
 
     Returns:
         Updated Issue object or None if not found
@@ -668,6 +671,8 @@ def update_issue_metadata(
         issue.github_issue = github_issue
     if relevant_url is not None:
         issue.relevant_url = relevant_url
+    if worktree_dir is not None:
+        issue.worktree_dir = worktree_dir
     issue.updated = now
 
     # Write back

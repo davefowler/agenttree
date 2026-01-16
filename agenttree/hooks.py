@@ -106,14 +106,16 @@ def _action_create_pr(issue_dir: Path, issue_id: str = "", issue_title: str = ""
             check=False
         )
 
-    # Update issue with branch info
+    # Update issue with branch and worktree info
     if issue_id:
-        update_issue_metadata(issue_id, branch=branch)
+        worktree_path = str(issue_dir.resolve()) if issue_dir else None
+        update_issue_metadata(issue_id, branch=branch, worktree_dir=worktree_path)
 
     # If in container, skip remote operations
     if is_running_in_container():
         console.print(f"[yellow]Running in container - PR will be created by host[/yellow]")
         console.print(f"[dim]Branch: {branch} (committed locally, awaiting push)[/dim]")
+        console.print(f"[dim]Worktree: {issue_dir}[/dim]")
         return
 
     # On host: do the full push/PR
@@ -453,6 +455,9 @@ def execute_exit_hooks(issue: "Issue", stage: str, substage: Optional[str] = Non
 
     This is the config-driven replacement for execute_pre_hooks.
 
+    When exiting the LAST substage of a stage, this also runs stage-level on_exit hooks.
+    This ensures hooks like lint/test/create_pr run when leaving implement stage.
+
     Args:
         issue: Issue being transitioned
         stage: Current stage name
@@ -469,29 +474,46 @@ def execute_exit_hooks(issue: "Issue", stage: str, substage: Optional[str] = Non
     if not stage_config:
         return  # Unknown stage, skip hooks
 
-    # Get the appropriate config (substage or stage)
-    if substage:
-        hook_config = stage_config.get_substage(substage) or stage_config
-    else:
-        hook_config = stage_config
-
     # Get issue directory
     issue_dir = get_issue_dir(issue.id)
     if not issue_dir:
         return  # No issue directory, skip hooks
 
-    # Execute hooks
-    errors = execute_hooks(
-        issue_dir,
-        stage,
-        hook_config,
-        "on_exit",
-        pr_number=issue.pr_number,
-        issue_id=issue.id,
-        issue_title=issue.title,
-        branch=issue.branch or "",
-        substage=substage or "",
-    )
+    errors: List[str] = []
+    hook_kwargs = {
+        "issue_id": issue.id,
+        "issue_title": issue.title,
+        "branch": issue.branch or "",
+        "substage": substage or "",
+    }
+
+    # Execute substage hooks first (if applicable)
+    if substage:
+        substage_config = stage_config.get_substage(substage)
+        if substage_config:
+            errors.extend(execute_hooks(
+                issue_dir,
+                stage,
+                substage_config,
+                "on_exit",
+                pr_number=issue.pr_number,
+                **hook_kwargs,
+            ))
+
+    # Check if we're exiting the stage (last substage or no substages)
+    substages = stage_config.substage_order()
+    is_exiting_stage = not substages or (substage and substages[-1] == substage)
+
+    # Execute stage-level hooks when exiting the stage
+    if is_exiting_stage:
+        errors.extend(execute_hooks(
+            issue_dir,
+            stage,
+            stage_config,
+            "on_exit",
+            pr_number=issue.pr_number,
+            **hook_kwargs,
+        ))
 
     if errors:
         if len(errors) == 1:
@@ -885,14 +907,24 @@ def ensure_pr_for_issue(issue_id: str) -> bool:
         return False
 
     # Find the worktree for this issue
-    worktree_path = Path.cwd() / ".worktrees" / f"issue-{issue_id.zfill(3)}-{issue.slug[:30]}"
-    if not worktree_path.exists():
-        # Try without leading zeros
-        for p in Path.cwd().glob(f".worktrees/issue-{issue_id}*"):
-            worktree_path = p
-            break
+    # Prefer stored worktree_dir, fall back to path guessing
+    worktree_path: Optional[Path] = None
+    if issue.worktree_dir:
+        worktree_path = Path(issue.worktree_dir)
+        if not worktree_path.exists():
+            console.print(f"[yellow]Stored worktree_dir {issue.worktree_dir} doesn't exist[/yellow]")
+            worktree_path = None
 
-    if not worktree_path.exists():
+    # Fall back to guessing the path
+    if not worktree_path:
+        worktree_path = Path.cwd() / ".worktrees" / f"issue-{issue_id.zfill(3)}-{issue.slug[:30]}"
+        if not worktree_path.exists():
+            # Try without leading zeros
+            for p in Path.cwd().glob(f".worktrees/issue-{issue_id}*"):
+                worktree_path = p
+                break
+
+    if not worktree_path or not worktree_path.exists():
         console.print(f"[yellow]Worktree not found for issue #{issue_id}[/yellow]")
         return False
 
