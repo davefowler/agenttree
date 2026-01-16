@@ -341,8 +341,9 @@ def run_builtin_validator(
             section = params["section"]
             expect = params["expect"]
 
-            # Find section content (between ## Section and next ## or end)
-            pattern = rf'^##\s*{re.escape(section)}.*?\n(.*?)(?=\n##|\Z)'
+            # Find section content (between ##/### Section and next ##/### or end)
+            # Supports both h2 (##) and h3 (###) headers
+            pattern = rf'^##[#]?\s*{re.escape(section)}.*?\n(.*?)(?=\n##|\Z)'
             section_match = re.search(pattern, content, re.MULTILINE | re.DOTALL)
 
             if not section_match:
@@ -376,10 +377,36 @@ def run_builtin_validator(
                         )
 
     elif hook_type == "pr_approved":
-        if pr_number is None:
+        skip_approval = kwargs.get("skip_pr_approval", False)
+        if skip_approval:
+            console.print(f"[dim]Skipping PR approval check (--skip-approval)[/dim]")
+        elif pr_number is None:
             errors.append("No PR number available to check approval status")
-        elif not get_pr_approval_status(pr_number):
-            errors.append(f"PR #{pr_number} is not approved")
+        else:
+            # Auto-approve the PR if not already approved
+            if not get_pr_approval_status(pr_number):
+                try:
+                    console.print(f"[dim]Auto-approving PR #{pr_number}...[/dim]")
+                    result = subprocess.run(
+                        ["gh", "pr", "review", str(pr_number), "--approve"],
+                        capture_output=True,
+                        text=True,
+                        timeout=30,
+                    )
+                    if result.returncode != 0:
+                        # Check if it's because we're the author
+                        if "Can not approve your own pull request" in result.stderr:
+                            console.print(f"[yellow]Cannot self-approve PR #{pr_number} (you're the author)[/yellow]")
+                            console.print(f"[dim]Use --skip-approval to bypass, or have someone else approve[/dim]")
+                            errors.append(f"Cannot self-approve PR #{pr_number}. Use --skip-approval to bypass.")
+                        else:
+                            errors.append(f"Failed to approve PR #{pr_number}: {result.stderr}")
+                    else:
+                        console.print(f"[green]✓ PR #{pr_number} approved[/green]")
+                except subprocess.TimeoutExpired:
+                    errors.append(f"Timeout approving PR #{pr_number}")
+                except Exception as e:
+                    errors.append(f"Error approving PR #{pr_number}: {e}")
 
     # Action types (side effects, don't return errors on success)
     elif hook_type == "create_file":
@@ -559,7 +586,7 @@ def execute_hooks(
     return errors
 
 
-def execute_exit_hooks(issue: "Issue", stage: str, substage: Optional[str] = None) -> None:
+def execute_exit_hooks(issue: "Issue", stage: str, substage: Optional[str] = None, **extra_kwargs: Any) -> None:
     """Execute pre_completion hooks for a stage/substage. Raises ValidationError if any fail.
 
     This is the config-driven replacement for execute_pre_hooks.
@@ -571,6 +598,7 @@ def execute_exit_hooks(issue: "Issue", stage: str, substage: Optional[str] = Non
         issue: Issue being transitioned
         stage: Current stage name
         substage: Current substage name (optional)
+        **extra_kwargs: Additional args (e.g., skip_pr_approval=True)
 
     Raises:
         ValidationError: If any validation fails (blocks transition)
@@ -594,6 +622,7 @@ def execute_exit_hooks(issue: "Issue", stage: str, substage: Optional[str] = Non
         "issue_title": issue.title,
         "branch": issue.branch or "",
         "substage": substage or "",
+        **extra_kwargs,  # Pass through extra kwargs like skip_pr_approval
     }
 
     # Execute substage hooks first (if applicable)

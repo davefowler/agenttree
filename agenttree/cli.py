@@ -1849,14 +1849,19 @@ def stage_next(issue_id: Optional[str], reassess: bool) -> None:
 
 @main.command("approve")
 @click.argument("issue_id", type=str)
-def approve_issue(issue_id: str) -> None:
+@click.option("--skip-approval", is_flag=True, help="Skip PR approval check (useful if you're the PR author)")
+def approve_issue(issue_id: str, skip_approval: bool) -> None:
     """Approve an issue at a human review stage.
 
     Only works at human review stages (plan_review, implementation_review).
     Cannot be run from inside a container - humans only.
 
+    For implementation_review: will auto-approve the PR on GitHub unless you're the author.
+    Use --skip-approval to bypass if you've already reviewed the changes.
+
     Example:
         agenttree approve 042
+        agenttree approve 042 --skip-approval  # Skip PR approval check
     """
     # Block if in container
     if is_running_in_container():
@@ -1884,7 +1889,7 @@ def approve_issue(issue_id: str) -> None:
     from_stage = issue.stage
     from_substage = issue.substage
     try:
-        execute_pre_hooks(issue, from_stage, from_substage)
+        execute_pre_hooks(issue, from_stage, from_substage, skip_pr_approval=skip_approval)
     except ValidationError as e:
         console.print(f"[red]Cannot approve: {e}[/red]")
         sys.exit(1)
