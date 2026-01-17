@@ -20,6 +20,42 @@ from agenttree.worktree import WorktreeManager
 from agenttree.github import get_issue as get_github_issue
 from agenttree import issues as issue_crud
 from agenttree.web.models import StageEnum, KanbanBoard, Issue as WebIssue, IssueMoveRequest
+import re
+
+
+def _strip_claude_input_prompt(output: str) -> str:
+    """Strip Claude Code's input prompt area from tmux output.
+
+    Claude Code displays a separator (multiple horizontal bar lines) before
+    its input prompt. We truncate at this separator to show only the
+    conversation content.
+    """
+    lines = output.split('\n')
+
+    # Look for the separator pattern: 3+ consecutive lines that are mostly
+    # horizontal bars (─), underscores (_), or spaces
+    separator_pattern = re.compile(r'^[\s─_\-━]+$')
+
+    consecutive_bars = 0
+    cutoff_index = None
+
+    for i, line in enumerate(lines):
+        # Check if line is mostly horizontal bars/underscores (allowing some spaces)
+        stripped = line.strip()
+        if stripped and separator_pattern.match(line) and len(stripped) > 10:
+            consecutive_bars += 1
+            if consecutive_bars >= 3:
+                # Found the separator - cut from where it started
+                cutoff_index = i - 2  # Go back to first bar line
+                break
+        else:
+            consecutive_bars = 0
+
+    if cutoff_index is not None and cutoff_index > 0:
+        return '\n'.join(lines[:cutoff_index]).rstrip()
+
+    return output
+
 
 # Get the directory where this file is located
 BASE_DIR = Path(__file__).resolve().parent
@@ -445,6 +481,10 @@ async def agent_tmux(
         )
 
         output = result.stdout if result.returncode == 0 else "Tmux session not active"
+
+        # Strip Claude Code's input prompt area (appears as multiple horizontal bar lines)
+        # Look for 3+ consecutive lines that are mostly horizontal bars/underscores
+        output = _strip_claude_input_prompt(output)
     except (subprocess.TimeoutExpired, FileNotFoundError):
         output = "Could not capture tmux output"
 
