@@ -23,7 +23,10 @@
             </div>
             <div class="detail-meta-row">
                 <div class="detail-meta">
-                    <span>Stage: {{ issue.stage.value.replace('_', ' ').title() }}</span>
+                    <span id="issue-stage-{{ issue.number }}"
+                          hx-get="/api/issues/{{ issue.number }}/stage"
+                          hx-trigger="every 15s"
+                          hx-swap="innerHTML">Stage: {{ issue.stage.value.replace('_', ' ').title() }}</span>
                     {% if issue.assigned_agent %}
                     <span>Agent: {{ issue.assigned_agent }}</span>
                     {% endif %}

@@ -632,6 +632,21 @@ async def get_commits_behind(
     return {"commits_behind": commits_behind}
 
 
+@app.get("/api/issues/{issue_id}/stage", response_class=HTMLResponse)
+async def get_issue_stage(
+    issue_id: str,
+    user: Optional[str] = Depends(get_current_user)
+) -> HTMLResponse:
+    """Get just the issue stage text for polling updates."""
+    issue_id_normalized = issue_id.lstrip("0") or "0"
+    issue = issue_crud.get_issue(issue_id_normalized, sync=False)
+    if not issue:
+        raise HTTPException(status_code=404, detail=f"Issue {issue_id} not found")
+
+    stage_text = issue.stage.value.replace('_', ' ').title()
+    return HTMLResponse(content=f"Stage: {stage_text}")
+
+
 @app.get("/api/issues/{issue_id}/rebase-controls", response_class=HTMLResponse)
 async def get_rebase_controls(
     request: Request,
