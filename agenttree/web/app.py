@@ -11,6 +11,7 @@ import subprocess
 import asyncio
 import secrets
 import os
+import re
 from typing import List, Dict, Optional
 from datetime import datetime
 
@@ -20,6 +21,28 @@ from agenttree.worktree import WorktreeManager
 from agenttree.github import get_issue as get_github_issue
 from agenttree import issues as issue_crud
 from agenttree.web.models import StageEnum, KanbanBoard, Issue as WebIssue, IssueMoveRequest
+
+# Pattern to match Claude Code's input prompt separator line
+# The separator is a line of U+2500 (BOX DRAWINGS LIGHT HORIZONTAL) characters: ─
+# We match lines that are at least 20 of these characters (with optional whitespace)
+_PROMPT_SEPARATOR_PATTERN = re.compile(r'^\s*─{20,}\s*$')
+
+
+def _strip_claude_input_prompt(output: str) -> str:
+    """Strip Claude Code's input prompt area from tmux output.
+
+    Claude Code displays a separator (a line of ─ characters) before its input
+    prompt. We truncate at the first such separator to show only the conversation.
+    """
+    lines = output.split('\n')
+
+    for i, line in enumerate(lines):
+        if _PROMPT_SEPARATOR_PATTERN.match(line):
+            # Found the separator - return everything before it
+            return '\n'.join(lines[:i]).rstrip()
+
+    return output
+
 
 # Get the directory where this file is located
 BASE_DIR = Path(__file__).resolve().parent
@@ -115,23 +138,10 @@ def get_current_user(username: Optional[str] = Depends(verify_credentials)) -> O
 
 
 class AgentManager:
-    """Manages agent state for the dashboard."""
+    """Manages agent tmux session checks."""
 
     def __init__(self, worktree_manager: Optional[WorktreeManager] = None):
         self.worktree_manager = worktree_manager
-        self.agents: Dict[int, dict] = {}
-
-    def _check_tmux_session(self, agent_num: int) -> bool:
-        """Check if tmux session exists for agent (legacy numbered agents)."""
-        try:
-            result = subprocess.run(
-                ["tmux", "has-session", "-t", f"agent-{agent_num}"],
-                capture_output=True,
-                timeout=1
-            )
-            return result.returncode == 0
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            return False
 
     def _check_issue_tmux_session(self, issue_id: str) -> bool:
         """Check if tmux session exists for an issue-bound agent."""
@@ -147,56 +157,6 @@ class AgentManager:
             return result.returncode == 0
         except (subprocess.TimeoutExpired, FileNotFoundError):
             return False
-
-    def get_agent_status(self, agent_num: int) -> dict:
-        """Get status of an agent."""
-        if self.worktree_manager:
-            try:
-                status = self.worktree_manager.get_status(agent_num)
-                
-                # Build task description
-                task_desc = None
-                if status.has_task and status.current_task:
-                    task_desc = status.current_task
-                    if status.task_count > 1:
-                        task_desc += f" (+{status.task_count - 1} queued)"
-                
-                return {
-                    "agent_num": agent_num,
-                    "status": "working" if status.is_busy else "idle",
-                    "current_task": task_desc,
-                    "task_count": status.task_count,
-                    "tmux_active": self._check_tmux_session(agent_num),
-                    "last_activity": datetime.now().isoformat()
-                }
-            except Exception:
-                # Agent not set up yet
-                pass
-
-        # Fallback to basic check
-        return {
-            "agent_num": agent_num,
-            "status": "idle",
-            "current_task": None,
-            "task_count": 0,
-            "tmux_active": self._check_tmux_session(agent_num),
-            "last_activity": "Unknown"
-        }
-
-    def get_all_agents(self) -> List[dict]:
-        """Get all configured agents by scanning for existing worktrees."""
-        agents = []
-        if self.worktree_manager:
-            config = self.worktree_manager.config
-            worktrees_dir = Path(config.worktrees_dir).expanduser()
-            
-            # Scan for existing agent directories matching project namespace
-            for agent_num in range(1, 10):
-                agent_path = worktrees_dir / f"{config.project}-agent-{agent_num}"
-                if agent_path.exists():
-                    agents.append(self.get_agent_status(agent_num))
-        
-        return agents
 
 
 # Global agent manager - will be initialized in startup
@@ -245,17 +205,10 @@ def get_kanban_board() -> KanbanBoard:
     return KanbanBoard(stages=stages, total_issues=len(issues))
 
 
-@app.get("/", response_class=HTMLResponse)
-async def dashboard(
-    request: Request,
-    user: Optional[str] = Depends(get_current_user)
-) -> HTMLResponse:
-    """Main dashboard page."""
-    agents = agent_manager.get_all_agents()
-    return templates.TemplateResponse(
-        "dashboard.html",
-        {"request": request, "agents": agents, "user": user, "active_page": "dashboard"}
-    )
+@app.get("/")
+async def root() -> RedirectResponse:
+    """Redirect root to kanban board."""
+    return RedirectResponse(url="/kanban", status_code=302)
 
 
 @app.get("/kanban", response_class=HTMLResponse)
@@ -407,28 +360,18 @@ async def flow_issues(
     )
 
 
-@app.get("/agents", response_class=HTMLResponse)
-async def agents_list(
-    request: Request,
-    user: Optional[str] = Depends(get_current_user)
-) -> HTMLResponse:
-    """Get agents list (HTMX endpoint)."""
-    agents = agent_manager.get_all_agents()
-    return templates.TemplateResponse(
-        "partials/agents_list.html",
-        {"request": request, "agents": agents}
-    )
-
-
 @app.get("/agent/{agent_num}/tmux", response_class=HTMLResponse)
 async def agent_tmux(
     request: Request,
     agent_num: str,
     user: Optional[str] = Depends(get_current_user)
 ) -> HTMLResponse:
-    """Get tmux output for an agent (HTMX endpoint)."""
+    """Get tmux output for an issue's agent (HTMX endpoint).
+
+    Note: agent_num parameter is actually the issue number - sessions are named by issue.
+    """
     config = load_config()
-    # Pad agent number to 3 digits to match tmux session naming
+    # Pad issue number to 3 digits to match tmux session naming
     padded_num = agent_num.zfill(3)
     session_name = f"{config.project}-issue-{padded_num}"
 
@@ -441,7 +384,11 @@ async def agent_tmux(
             timeout=2
         )
 
-        output = result.stdout if result.returncode == 0 else "Tmux session not active"
+        if result.returncode == 0:
+            # Strip Claude Code's input prompt separator from the output
+            output = _strip_claude_input_prompt(result.stdout)
+        else:
+            output = "Tmux session not active"
     except (subprocess.TimeoutExpired, FileNotFoundError):
         output = "Could not capture tmux output"
 
@@ -458,25 +405,20 @@ async def send_to_agent(
     message: str = Form(...),
     user: Optional[str] = Depends(get_current_user)
 ) -> HTMLResponse:
-    """Send a message to an agent via tmux."""
+    """Send a message to an issue's agent via tmux.
+
+    Note: agent_num parameter is actually the issue number - sessions are named by issue.
+    """
     from agenttree.tmux import send_message
 
     config = load_config()
-    # Pad agent number to 3 digits to match tmux session naming
+    # Pad issue number to 3 digits to match tmux session naming
     padded_num = agent_num.zfill(3)
     session_name = f"{config.project}-issue-{padded_num}"
 
-    if send_message(session_name, message):
-        status = "Sent"
-        success = True
-    else:
-        status = "Agent not running - click the light to start"
-        success = False
-
-    return templates.TemplateResponse(
-        "partials/send_status.html",
-        {"request": request, "status": status, "success": success}
-    )
+    # Send message - result will appear in tmux output on next poll
+    send_message(session_name, message)
+    return HTMLResponse("")
 
 
 @app.post("/agent/{agent_num}/start", response_class=HTMLResponse)
