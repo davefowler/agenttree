@@ -31,14 +31,13 @@
                     <span><a href="{{ issue.pr_url }}" target="_blank">PR #{{ issue.pr_number }}</a></span>
                     {% endif %}
                 </div>
-                <div class="detail-actions">
+                <div class="detail-actions" id="detail-actions-{{ issue.number }}" hx-preserve="true">
                     {% if issue.assigned_agent %}
                     <!-- Rebase controls - loaded lazily via HTMX -->
                     <div id="rebase-controls-{{ issue.number }}"
                          hx-get="/api/issues/{{ issue.number }}/rebase-controls"
                          hx-trigger="load"
-                         hx-swap="innerHTML"
-                         hx-preserve="true">
+                         hx-swap="innerHTML">
                         <span class="rebase-loading">Checking...</span>
                     </div>
                     <span id="rebase-status-{{ issue.number }}"></span>
