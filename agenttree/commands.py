@@ -116,7 +116,8 @@ def get_referenced_commands(template: str, commands: dict[str, Union[str, list[s
     """Find command names referenced in a Jinja template.
 
     Scans the template for {{variable}} patterns and returns those
-    that exist in the commands dict.
+    that exist in the commands dict. Handles Jinja filters like
+    {{ var | upper }} by extracting the base variable name.
 
     Args:
         template: Jinja template string
@@ -127,8 +128,8 @@ def get_referenced_commands(template: str, commands: dict[str, Union[str, list[s
     """
     import re
 
-    # Match {{ variable }} patterns (allowing whitespace)
-    pattern = r'\{\{\s*(\w+)\s*\}\}'
+    # Match the first identifier after {{ (handles filters like {{ var | upper }})
+    pattern = r'\{\{\s*(\w+)'
     matches = re.findall(pattern, template)
 
     return {m for m in matches if m in commands}
