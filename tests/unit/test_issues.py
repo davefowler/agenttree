@@ -451,10 +451,85 @@ class TestDependencies:
 
     def test_create_issue_with_dependencies(self, temp_agenttrees_deps):
         """create_issue should normalize and store dependencies."""
+        # First create the dependency issues
+        dep1 = create_issue("Dependency 1")  # 001
+        dep2 = create_issue("Dependency 2")  # 002
+        dep3 = create_issue("Dependency 3")  # 003
+
+        # Now create an issue that depends on them (using various formats)
         issue = create_issue("Test Issue", dependencies=["1", "02", "003"])
 
         # Dependencies should be normalized to 3-digit format
         assert issue.dependencies == ["001", "002", "003"]
+
+    def test_detect_circular_dependency_none(self, temp_agenttrees_deps):
+        """No circular dependency when deps are valid."""
+        from agenttree.issues import detect_circular_dependency
+
+        # Create issue A
+        issue_a = create_issue("Issue A")
+
+        # Check if new issue B depending on A would be circular
+        cycle = detect_circular_dependency("002", [issue_a.id])
+        assert cycle is None
+
+    def test_detect_circular_dependency_direct(self, temp_agenttrees_deps):
+        """Detect direct circular dependency (A -> B -> A)."""
+        from agenttree.issues import detect_circular_dependency
+
+        # Create issue A depending on (future) issue B
+        issue_a = create_issue("Issue A", dependencies=["002"])
+
+        # Check if B depending on A would be circular
+        cycle = detect_circular_dependency("002", [issue_a.id])
+        assert cycle is not None
+        assert "001" in cycle
+        assert "002" in cycle
+
+    def test_detect_circular_dependency_indirect(self, temp_agenttrees_deps):
+        """Detect indirect circular dependency (A -> B -> C -> A)."""
+        from agenttree.issues import detect_circular_dependency
+
+        # Create A -> B -> C
+        issue_a = create_issue("Issue A", dependencies=["002"])
+        issue_b = create_issue("Issue B", dependencies=["003"])
+
+        # Check if C depending on A would be circular
+        cycle = detect_circular_dependency("003", [issue_a.id])
+        assert cycle is not None
+        # Cycle should contain all three
+        assert len([c for c in cycle if c in ["001", "002", "003"]]) >= 2
+
+    def test_detect_circular_dependency_self(self, temp_agenttrees_deps):
+        """Detect self-dependency (A -> A)."""
+        from agenttree.issues import detect_circular_dependency
+
+        # Check if A depending on itself would be circular
+        cycle = detect_circular_dependency("001", ["001"])
+        assert cycle is not None
+        assert "001" in cycle
+
+    def test_create_issue_rejects_circular_dependency(self, temp_agenttrees_deps):
+        """create_issue should raise ValueError for circular dependencies."""
+        # Create A -> B
+        issue_a = create_issue("Issue A", dependencies=["002"])
+
+        # Creating B -> A should fail
+        with pytest.raises(ValueError, match="Circular dependency detected"):
+            create_issue("Issue B", dependencies=["001"])
+
+    def test_create_issue_allows_valid_dependency_chain(self, temp_agenttrees_deps):
+        """create_issue should allow valid (non-circular) dependency chains."""
+        # Create A
+        issue_a = create_issue("Issue A")
+
+        # Create B -> A (valid)
+        issue_b = create_issue("Issue B", dependencies=[issue_a.id])
+        assert issue_b.dependencies == ["001"]
+
+        # Create C -> B (valid)
+        issue_c = create_issue("Issue C", dependencies=[issue_b.id])
+        assert issue_c.dependencies == ["002"]
 
 
 class TestUpdateIssueStage:

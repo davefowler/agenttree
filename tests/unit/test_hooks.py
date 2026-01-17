@@ -482,7 +482,7 @@ class TestCommandHooks:
         hook = {"command": "sleep 10", "timeout": 0.1}
         errors = run_command_hook(tmp_path, hook)
         assert len(errors) == 1
-        assert "timed out" in errors[0]
+        assert "timeout" in errors[0].lower()
 
     def test_command_variable_substitution(self, tmp_path):
         """Should substitute template variables in command."""

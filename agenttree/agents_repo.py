@@ -131,11 +131,10 @@ def sync_agents_repo(
                 print(f"Warning: Failed to pull _agenttree repo: {result.stderr}")
                 return False
 
-        # If pull-only, check for pending pushes, PRs, and merged PRs, then we're done
+        # If pull-only, run post-sync hooks then we're done
         if pull_only:
-            push_pending_branches(agents_dir)
-            check_controller_stages(agents_dir)
-            check_merged_prs(agents_dir)
+            from agenttree.controller_hooks import run_post_controller_hooks
+            run_post_controller_hooks(agents_dir)
             return True
 
         # Push changes (local commits + any we just made)
@@ -154,11 +153,9 @@ def sync_agents_repo(
                 print(f"Warning: Failed to push changes: {push_result.stderr}")
             return False
 
-        # After successful sync, push pending branches, check for issues needing PRs,
-        # and check for externally merged/closed PRs
-        push_pending_branches(agents_dir)
-        check_controller_stages(agents_dir)
-        check_merged_prs(agents_dir)
+        # After successful sync, run configurable post-sync hooks
+        from agenttree.controller_hooks import run_post_controller_hooks
+        run_post_controller_hooks(agents_dir)
 
         return True
 

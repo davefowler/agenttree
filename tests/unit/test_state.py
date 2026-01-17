@@ -9,57 +9,50 @@ import pytest
 from agenttree.state import (
     load_state,
     save_state,
-    allocate_port,
-    free_port,
+    get_port_for_issue,
     register_agent,
     unregister_agent,
     ActiveAgent,
 )
 
 
+class TestDeterministicPorts:
+    """Tests for deterministic port allocation from issue ID."""
+
+    def test_get_port_for_issue_basic(self):
+        """Port should be base + issue_id % 1000."""
+        assert get_port_for_issue("001", base_port=9000) == 9001
+        assert get_port_for_issue("023", base_port=9000) == 9023
+        assert get_port_for_issue("100", base_port=9000) == 9100
+        assert get_port_for_issue("999", base_port=9000) == 9999
+
+    def test_get_port_for_issue_modulo_wrapping(self):
+        """Issues over 1000 should wrap around."""
+        # Issue 1001 should get same port as issue 1
+        assert get_port_for_issue("1001", base_port=9000) == 9001
+        assert get_port_for_issue("1023", base_port=9000) == 9023
+        assert get_port_for_issue("2045", base_port=9000) == 9045
+
+    def test_get_port_for_issue_custom_base(self):
+        """Should work with different base ports."""
+        assert get_port_for_issue("023", base_port=3000) == 3023
+        assert get_port_for_issue("023", base_port=8000) == 8023
+        assert get_port_for_issue("023", base_port=10000) == 10023
+
+    def test_get_port_for_issue_string_parsing(self):
+        """Should handle both padded and unpadded issue IDs."""
+        # Leading zeros shouldn't matter
+        assert get_port_for_issue("023", base_port=9000) == 9023
+        assert get_port_for_issue("23", base_port=9000) == 9023
+
+    def test_port_determinism(self):
+        """Same issue ID should always return same port."""
+        for _ in range(100):
+            assert get_port_for_issue("042", base_port=9000) == 9042
+
+
 class TestStateLocking:
     """Tests for state file locking to prevent race conditions."""
-
-    def test_concurrent_port_allocation_returns_unique_ports(self, tmp_path, monkeypatch):
-        """Multiple threads allocating ports simultaneously should get unique ports.
-
-        This is the core race condition test. Without locking, concurrent allocations
-        could return the same port number.
-        """
-        # Setup: use temp directory for state file
-        state_file = tmp_path / "_agenttree" / "state.yaml"
-        monkeypatch.setattr("agenttree.state.get_state_path", lambda: state_file)
-
-        # Also patch the lock path to use temp directory
-        lock_file = tmp_path / "_agenttree" / "state.yaml.lock"
-        if hasattr(__import__("agenttree.state", fromlist=["get_state_lock_path"]), "get_state_lock_path"):
-            monkeypatch.setattr("agenttree.state.get_state_lock_path", lambda: lock_file)
-
-        num_threads = 10
-        allocated_ports = []
-        errors = []
-
-        def allocate_and_record():
-            try:
-                port = allocate_port(base_port=3000)
-                allocated_ports.append(port)
-            except Exception as e:
-                errors.append(str(e))
-
-        # Run allocations concurrently
-        with ThreadPoolExecutor(max_workers=num_threads) as executor:
-            futures = [executor.submit(allocate_and_record) for _ in range(num_threads)]
-            for future in as_completed(futures):
-                future.result()  # Raise any exceptions
-
-        # Verify: all ports should be unique
-        assert len(errors) == 0, f"Errors occurred: {errors}"
-        assert len(allocated_ports) == num_threads, f"Expected {num_threads} ports, got {len(allocated_ports)}"
-        assert len(set(allocated_ports)) == num_threads, f"Duplicate ports found: {allocated_ports}"
-
-        # Verify ports are sequential starting from 3001
-        expected_ports = set(range(3001, 3001 + num_threads))
-        assert set(allocated_ports) == expected_ports, f"Expected {expected_ports}, got {set(allocated_ports)}"
 
     def test_concurrent_register_unregister_agents(self, tmp_path, monkeypatch):
         """Concurrent agent registration and unregistration should not corrupt state."""
@@ -74,12 +67,14 @@ class TestStateLocking:
 
         def register_and_unregister(issue_id: str):
             try:
+                # Use deterministic port from issue ID
+                port = get_port_for_issue(issue_id, base_port=9000)
                 agent = ActiveAgent(
                     issue_id=issue_id,
                     container=f"container-{issue_id}",
                     worktree=Path(f"/tmp/worktree-{issue_id}"),
                     branch=f"branch-{issue_id}",
-                    port=3000 + int(issue_id),
+                    port=port,
                     tmux_session=f"session-{issue_id}",
                     started="2024-01-01T00:00:00Z",
                 )
@@ -111,7 +106,7 @@ class TestStateLocking:
         if hasattr(__import__("agenttree.state", fromlist=["get_state_lock_path"]), "get_state_lock_path"):
             monkeypatch.setattr("agenttree.state.get_state_lock_path", lambda: lock_file)
 
-        test_state = {"active_agents": {}, "port_pool": {"base": 3000, "allocated": []}}
+        test_state = {"active_agents": {}}
         save_state(test_state)
 
         assert state_file.exists()
@@ -126,39 +121,7 @@ class TestStateLocking:
         state = load_state()
 
         assert "active_agents" in state
-        assert "port_pool" in state
         assert state["active_agents"] == {}
-
-    def test_allocate_port_starts_from_base_plus_one(self, tmp_path, monkeypatch):
-        """allocate_port should return base_port + 1 for first allocation."""
-        state_file = tmp_path / "_agenttree" / "state.yaml"
-        monkeypatch.setattr("agenttree.state.get_state_path", lambda: state_file)
-
-        lock_file = tmp_path / "_agenttree" / "state.yaml.lock"
-        if hasattr(__import__("agenttree.state", fromlist=["get_state_lock_path"]), "get_state_lock_path"):
-            monkeypatch.setattr("agenttree.state.get_state_lock_path", lambda: lock_file)
-
-        port = allocate_port(base_port=5000)
-        assert port == 5001
-
-    def test_free_port_removes_from_allocated(self, tmp_path, monkeypatch):
-        """free_port should remove port from allocated list."""
-        state_file = tmp_path / "_agenttree" / "state.yaml"
-        monkeypatch.setattr("agenttree.state.get_state_path", lambda: state_file)
-
-        lock_file = tmp_path / "_agenttree" / "state.yaml.lock"
-        if hasattr(__import__("agenttree.state", fromlist=["get_state_lock_path"]), "get_state_lock_path"):
-            monkeypatch.setattr("agenttree.state.get_state_lock_path", lambda: lock_file)
-
-        # Allocate then free
-        port = allocate_port(base_port=3000)
-        assert port == 3001
-
-        free_port(port)
-
-        # Next allocation should reuse the freed port
-        next_port = allocate_port(base_port=3000)
-        assert next_port == 3001
 
 
 class TestStateLockPath:
