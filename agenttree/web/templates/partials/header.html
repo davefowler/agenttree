@@ -47,8 +47,8 @@
         }
     })();
 
-    // Auto-refresh page every 15 seconds to keep issue status current
-    // Only refresh if user isn't actively typing in an input
+    // Auto-refresh page every 15 seconds using HTMX morph (smart DOM diffing)
+    // This preserves elements that haven't changed and doesn't disrupt in-flight polls
     (function() {
         let refreshInterval = 15000; // 15 seconds
 
@@ -58,19 +58,11 @@
             if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
                 return;
             }
-            // Preserve scroll position in URL hash for restoration
-            const scrollY = window.scrollY;
-            if (scrollY > 0) {
-                sessionStorage.setItem('scrollPos', scrollY);
-            }
-            location.reload();
+            // Use HTMX to fetch and morph the page
+            htmx.ajax('GET', window.location.href, {
+                target: 'body',
+                swap: 'morph:innerHTML'
+            });
         }, refreshInterval);
-
-        // Restore scroll position after reload
-        const savedScroll = sessionStorage.getItem('scrollPos');
-        if (savedScroll) {
-            window.scrollTo(0, parseInt(savedScroll));
-            sessionStorage.removeItem('scrollPos');
-        }
     })();
 </script>

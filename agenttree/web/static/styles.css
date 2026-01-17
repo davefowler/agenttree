@@ -1,4 +1,27 @@
-/* CSS Variables for theming */
+/* ==============================================
+   AgentTree Styles
+   ============================================== */
+
+/* Reset */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    line-height: 1.6;
+    height: 100vh;
+    overflow: hidden;
+}
+
+/* ==============================================
+   CSS Variables (Theming)
+   ============================================== */
+
 :root, [data-theme="light"] {
     --bg-primary: #e8f4ec;
     --bg-secondary: #d5ebe0;
@@ -37,7 +60,10 @@
     --badge-text: #4ade80;
 }
 
-/* Shared header styles */
+/* ==============================================
+   Header
+   ============================================== */
+
 header {
     padding: 10px 20px;
     position: sticky;
@@ -128,11 +154,10 @@ header h1 {
     background: var(--btn-bg-hover);
 }
 
-/* ========================================
-   Shared Component Styles
-   ======================================== */
+/* ==============================================
+   Buttons
+   ============================================== */
 
-/* Buttons */
 .btn {
     padding: 8px 16px;
     border: 1px solid var(--border-color);
@@ -169,7 +194,31 @@ header h1 {
     background: var(--btn-bg-hover);
 }
 
-/* Badges */
+.btn-approve {
+    padding: 4px 12px;
+    font-size: 13px;
+    background: var(--btn-bg-active);
+    border: 1px solid var(--text-accent);
+    color: var(--text-primary);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-approve:hover {
+    background: var(--text-accent);
+    color: white;
+}
+
+button[disabled] {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* ==============================================
+   Badges
+   ============================================== */
+
 .badge {
     padding: 2px 8px;
     border-radius: 10px;
@@ -179,7 +228,25 @@ header h1 {
     color: var(--badge-text);
 }
 
-/* File tabs */
+.badge-review {
+    background: #f8e8e8;
+    color: #c44;
+}
+
+.badge-stage {
+    background: var(--badge-bg);
+    color: var(--badge-text);
+}
+
+.badge-label {
+    background: var(--border-color);
+    color: var(--text-primary);
+}
+
+/* ==============================================
+   File Tabs
+   ============================================== */
+
 .file-tabs-container {
     background: var(--bg-card-alt);
     border-bottom: 1px solid var(--border-light);
@@ -225,7 +292,14 @@ header h1 {
     font-size: 13px;
 }
 
-/* Markdown rendering */
+.file-content {
+    padding: 15px;
+}
+
+/* ==============================================
+   Markdown Rendering
+   ============================================== */
+
 .markdown-content {
     background: var(--bg-card-alt);
     border: 1px solid var(--border-light);
@@ -334,12 +408,15 @@ header h1 {
     margin: 24px 0;
 }
 
-/* Issue detail */
+/* ==============================================
+   Issue Detail
+   ============================================== */
+
 .issue-detail-wrapper {
     display: flex;
     gap: 20px;
     flex: 1;
-    min-height: 0;  /* Allow flex shrinking */
+    min-height: 0;
     overflow: hidden;
 }
 
@@ -415,6 +492,84 @@ header h1 {
     margin-left: auto;
 }
 
+.detail-meta {
+    display: flex;
+    gap: 20px;
+    font-size: 14px;
+    color: var(--text-muted);
+    flex-wrap: wrap;
+}
+
+.detail-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-left: auto;
+}
+
+.detail-timestamps {
+    display: flex;
+    gap: 20px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border-light);
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+.empty-state {
+    color: var(--text-muted);
+    text-align: center;
+    padding: 40px 20px;
+}
+
+/* ==============================================
+   Agent Light (shared)
+   ============================================== */
+
+.agent-light {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: all 0.2s;
+    z-index: 10;
+}
+
+.agent-light.off {
+    background: #c4c0b4;
+    border: 2px solid #a8a498;
+    box-shadow: inset 0 1px 3px rgba(0,0,0,0.2);
+}
+
+.agent-light.off:hover {
+    background: #b8e4c8;
+    border-color: #6b9a7a;
+    box-shadow: 0 0 6px rgba(107, 154, 122, 0.5);
+}
+
+.agent-light.on {
+    background: #4ade80;
+    border: 2px solid #22c55e;
+    box-shadow: 0 0 6px rgba(74, 222, 128, 0.5);
+}
+
+.agent-light.starting {
+    background: #fbbf24;
+    border: 2px solid #f59e0b;
+    box-shadow: 0 0 8px rgba(251, 191, 36, 0.6);
+    animation: blink 0.5s ease-in-out infinite;
+}
+
+.agent-light.stalled {
+    background: #f97316;
+    border: 2px solid #ea580c;
+    box-shadow: 0 0 6px rgba(249, 115, 22, 0.5);
+}
+
 /* Large agent light for detail view */
 .agent-light-large {
     width: 20px;
@@ -460,39 +615,15 @@ header h1 {
     animation: blink 0.5s ease-in-out infinite;
 }
 
-.detail-meta {
-    display: flex;
-    gap: 20px;
-    font-size: 14px;
-    color: var(--text-muted);
-    flex-wrap: wrap;
+@keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
 }
 
-.btn-approve {
-    padding: 4px 12px;
-    font-size: 13px;
-    background: var(--btn-bg-active);
-    border: 1px solid var(--text-accent);
-    color: var(--text-primary);
-    border-radius: 4px;
-    cursor: pointer;
-    transition: all 0.2s;
-}
+/* ==============================================
+   Rebase Controls
+   ============================================== */
 
-.btn-approve:hover {
-    background: var(--text-accent);
-    color: white;
-}
-
-/* Detail actions container */
-.detail-actions {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin-left: auto;
-}
-
-/* Rebase controls */
 .rebase-controls {
     display: flex;
     align-items: center;
@@ -546,7 +677,10 @@ header h1 {
     color: #fbbf24;
 }
 
-/* HTMX loading indicators */
+/* ==============================================
+   HTMX Loading Indicators
+   ============================================== */
+
 .htmx-indicator {
     display: none;
 }
@@ -559,42 +693,19 @@ header h1 {
     display: none;
 }
 
-button[disabled] {
-    opacity: 0.6;
-    cursor: not-allowed;
-}
+/* ==============================================
+   Agent Chat Panel
+   ============================================== */
 
-.detail-timestamps {
-    display: flex;
-    gap: 20px;
-    margin-top: 10px;
-    padding-top: 10px;
-    border-top: 1px solid var(--border-light);
-    color: var(--text-muted);
-    font-size: 12px;
-}
-
-.file-content {
-    padding: 15px;
-}
-
-.empty-state {
-    color: var(--text-muted);
-    text-align: center;
-    padding: 40px 20px;
-}
-
-/* Agent chat panel */
 .agent-chat-panel {
     width: 350px;
     flex-shrink: 0;
     background: #1e3a2f;
-    border-radius: 6px;
     display: flex;
     flex-direction: column;
     overflow: hidden;
     transition: width 0.3s ease, opacity 0.3s ease;
-    height: 100%;  /* Fill wrapper height */
+    height: 100%;
 }
 
 .agent-chat-panel.collapsed {
@@ -670,7 +781,7 @@ button[disabled] {
     white-space: pre-wrap;
     word-break: break-all;
     color: #e8e4d9;
-    min-height: 0;  /* Allow flex shrink */
+    min-height: 0;
 }
 
 .agent-chat-panel .tmux-input-container {
@@ -750,4 +861,316 @@ button[disabled] {
 .agent-chat-panel .no-agent-message p {
     font-size: 13px;
     margin-bottom: 10px;
+}
+
+/* ==============================================
+   Scrollbars
+   ============================================== */
+
+::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--bg-secondary);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--btn-bg-active);
+}
+
+/* ==============================================
+   KANBAN-SPECIFIC STYLES
+   ============================================== */
+
+.kanban-board {
+    display: flex;
+    gap: 15px;
+    padding: 15px;
+    overflow-x: auto;
+    height: calc(100vh - 60px);
+}
+
+.kanban-column {
+    flex: 0 0 280px;
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100vh - 90px);
+}
+
+.kanban-column.hidden {
+    display: none;
+}
+
+.column-header {
+    padding: 10px 0;
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--text-primary);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.column-count {
+    background: var(--btn-bg);
+    color: var(--text-accent);
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 12px;
+}
+
+.column-cards {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0;
+    min-height: 100px;
+}
+
+.kanban-card {
+    background: var(--bg-card);
+    border-radius: 3px;
+    padding: 12px;
+    margin-bottom: 10px;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.kanban-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1), 0 3px 6px rgba(0, 0, 0, 0.06);
+}
+
+.kanban-card.dragging {
+    opacity: 0.5;
+    cursor: grabbing;
+}
+
+.kanban-card.drag-over {
+    border-color: var(--text-accent);
+    border-style: dashed;
+}
+
+.card-number {
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 600;
+    margin-bottom: 5px;
+}
+
+.card-title {
+    color: var(--text-card);
+    font-size: 14px;
+    font-weight: 500;
+    margin-bottom: 8px;
+}
+
+.card-badges {
+    display: flex;
+    gap: 5px;
+    flex-wrap: wrap;
+}
+
+/* Kanban Modal */
+.modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal.active {
+    display: flex;
+}
+
+.modal-content {
+    background: var(--bg-card);
+    border-radius: 6px;
+    max-width: 1200px;
+    width: 95%;
+    height: 90vh;
+    max-height: 90vh;
+    overflow: hidden;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+}
+
+.modal-close {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 24px;
+    cursor: pointer;
+    padding: 5px 10px;
+}
+
+.modal-close:hover {
+    color: var(--text-card);
+}
+
+#modal-issue-detail {
+    flex: 1;
+    display: flex;
+    min-height: 0;
+    overflow: hidden;
+}
+
+/* Mini dropzones for hidden columns */
+.mini-dropzones {
+    flex: 0 0 120px;
+    display: none;
+    flex-direction: column;
+    gap: 8px;
+    padding-top: 32px;
+}
+
+.mini-dropzones.visible {
+    display: flex;
+}
+
+.mini-dropzone {
+    width: 120px;
+    padding: 12px 10px;
+    border: 2px dashed var(--border-color);
+    border-radius: 3px;
+    background: transparent;
+    text-align: center;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.mini-dropzone:hover {
+    border-color: var(--text-accent);
+    color: var(--text-primary);
+}
+
+.mini-dropzone.drag-over {
+    border-color: var(--text-accent);
+    background: var(--badge-bg);
+    transform: scale(1.05);
+}
+
+.mini-dropzone .dropzone-label {
+    display: block;
+    margin-bottom: 2px;
+}
+
+.mini-dropzone .dropzone-count {
+    font-size: 11px;
+    font-weight: 400;
+    opacity: 0.7;
+}
+
+/* Kanban-specific file tabs margin adjustment */
+.kanban-board .file-tabs-container {
+    margin: 15px -30px;
+}
+
+/* ==============================================
+   FLOW-SPECIFIC STYLES
+   ============================================== */
+
+.flow-container {
+    display: flex;
+    height: calc(100vh - 60px);
+    overflow: hidden;
+}
+
+.flow-sidebar {
+    width: 320px;
+    background: #2d4a3e;
+    border-right: 1px solid #4a7c6f;
+    overflow-y: auto;
+    flex-shrink: 0;
+    padding: 15px;
+}
+
+.flow-main {
+    flex: 1;
+    overflow-y: auto;
+    background: #f8f6f0;
+    display: flex;
+    flex-direction: column;
+    padding: 20px;
+}
+
+/* Issue list items in sidebar */
+.issue-item {
+    background: var(--bg-card);
+    padding: 12px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    position: relative;
+    border-radius: 3px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.issue-item:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
+}
+
+.issue-item.active {
+    box-shadow: 0 0 0 2px var(--text-accent), 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
+.issue-number {
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 600;
+    margin-bottom: 5px;
+}
+
+.issue-title {
+    color: var(--text-card);
+    font-size: 14px;
+    font-weight: 500;
+    margin-bottom: 8px;
+}
+
+.issue-badges {
+    display: flex;
+    gap: 5px;
+    flex-wrap: wrap;
+}
+
+/* Flow-specific wrapper height */
+.flow-container .issue-detail-wrapper {
+    min-height: calc(100vh - 120px);
+}
+
+/* Flow-specific chat panel width */
+.flow-container .agent-chat-panel {
+    width: 400px;
+}
+
+/* Flow-specific scrollbars */
+.flow-main::-webkit-scrollbar-track {
+    background: #eae8e0;
+}
+
+.flow-main::-webkit-scrollbar-thumb {
+    background: #c4c0b4;
 }
