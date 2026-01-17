@@ -251,6 +251,24 @@ async def kanban(
     )
 
 
+@app.get("/kanban/board", response_class=HTMLResponse)
+async def kanban_board(
+    request: Request,
+    user: Optional[str] = Depends(get_current_user)
+) -> HTMLResponse:
+    """Kanban board content (HTMX polling endpoint)."""
+    board = get_kanban_board()
+
+    return templates.TemplateResponse(
+        "partials/kanban_board_content.html",
+        {
+            "request": request,
+            "board": board,
+            "stages": list(StageEnum),
+        }
+    )
+
+
 def get_issue_files(issue_id: str) -> list[dict[str, str | int]]:
     """Get list of markdown files for an issue.
 
@@ -551,11 +569,11 @@ async def move_issue(
     return {"success": True, "stage": move_request.stage.value}
 
 
-@app.post("/api/issues/{issue_id}/approve")
+@app.post("/api/issues/{issue_id}/approve", response_class=HTMLResponse)
 async def approve_issue(
     issue_id: str,
     user: Optional[str] = Depends(get_current_user)
-) -> dict:
+) -> HTMLResponse:
     """Approve an issue at a human review stage.
 
     Runs the proper workflow: executes exit hooks, advances to next stage,
@@ -571,13 +589,16 @@ async def approve_issue(
     issue_id_normalized = issue_id.lstrip("0") or "0"
     issue = issue_crud.get_issue(issue_id_normalized, sync=False)
     if not issue:
-        raise HTTPException(status_code=404, detail=f"Issue {issue_id} not found")
+        return HTMLResponse(
+            content='<span class="approve-error">Issue not found</span>',
+            status_code=200
+        )
 
     # Check if at human review stage
     if issue.stage not in HUMAN_REVIEW_STAGES:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Issue is at '{issue.stage}', not a human review stage. Can only approve from: {', '.join(HUMAN_REVIEW_STAGES)}"
+        return HTMLResponse(
+            content=f'<span class="approve-error">Not at review stage</span>',
+            status_code=200
         )
 
     # Calculate next stage
@@ -588,18 +609,23 @@ async def approve_issue(
     try:
         execute_exit_hooks(issue, issue.stage, issue.substage)
     except ValidationError as e:
-        raise HTTPException(status_code=400, detail=f"Cannot approve: {str(e)}")
+        return HTMLResponse(
+            content=f'<span class="approve-error">{str(e)}</span>',
+            status_code=200
+        )
 
     # Update issue stage
     updated = issue_crud.update_issue_stage(issue_id_normalized, next_stage, next_substage)
     if not updated:
-        raise HTTPException(status_code=500, detail="Failed to update issue")
+        return HTMLResponse(
+            content='<span class="approve-error">Failed to update</span>',
+            status_code=200
+        )
 
-    # Update session
-    try:
-        update_session_stage(issue_id_normalized, next_stage, next_substage)
-    except Exception:
-        pass  # Session update is optional
+    # Note: We intentionally DON'T call update_session_stage here because that would
+    # sync last_stage with issue.stage, defeating the stage mismatch detection.
+    # When the agent runs `next`, is_restart() will detect session.last_stage != issue.stage
+    # and show them the current stage instructions instead of advancing.
 
     # Execute enter hooks
     try:
@@ -607,12 +633,26 @@ async def approve_issue(
     except Exception:
         pass  # Enter hooks shouldn't block
 
-    return {
-        "success": True,
-        "message": f"Approved! Moved from {issue.stage} to {next_stage}",
-        "new_stage": next_stage,
-        "new_substage": next_substage
-    }
+    # Notify agent to continue (if active)
+    try:
+        from agenttree.state import get_active_agent
+        from agenttree.tmux import send_message, session_exists
+
+        agent = get_active_agent(issue_id_normalized)
+        if agent and agent.tmux_session:
+            if session_exists(agent.tmux_session):
+                message = "Your work was approved! Run `agenttree next` for instructions."
+                send_message(agent.tmux_session, message)
+    except Exception:
+        pass  # Agent notification is best-effort
+
+    # Return success HTML with auto-reload
+    stage_display = next_stage.replace('_', ' ').title()
+    return HTMLResponse(
+        content=f'''<span class="approve-success">✓ Approved → {stage_display}</span>
+        <script>setTimeout(function() {{ location.reload(); }}, 1500);</script>''',
+        status_code=200
+    )
 
 
 @app.get("/api/issues/{issue_id}/commits-behind")
@@ -643,7 +683,8 @@ async def get_issue_stage(
     if not issue:
         raise HTTPException(status_code=404, detail=f"Issue {issue_id} not found")
 
-    stage_text = issue.stage.value.replace('_', ' ').title()
+    # issue.stage is already a string from issue_crud
+    stage_text = issue.stage.replace('_', ' ').title()
     return HTMLResponse(content=f"Stage: {stage_text}")
 
 

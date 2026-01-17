@@ -1012,29 +1012,48 @@ def update_session_stage(issue_id: str, stage: str, substage: Optional[str] = No
     save_session(session)
 
 
-def mark_session_oriented(issue_id: str) -> None:
-    """Mark that agent has been oriented in this session."""
+def mark_session_oriented(issue_id: str, stage: str = None, substage: str = None) -> None:
+    """Mark that agent has been oriented in this session.
+
+    Also syncs last_stage/last_substage if provided, so is_restart()
+    won't keep detecting a stage mismatch.
+    """
     session = get_session(issue_id)
     if not session:
         return
 
     session.oriented = True
+    if stage:
+        session.last_stage = stage
+    if substage is not None:
+        session.last_substage = substage
     save_session(session)
 
 
-def is_restart(issue_id: str) -> bool:
-    """Check if this is a restart (session exists but not oriented).
+def is_restart(issue_id: str, current_stage: str = None, current_substage: str = None) -> bool:
+    """Check if agent should re-orient (show instructions without advancing).
 
     Returns True if:
-    - Session exists AND agent hasn't been oriented in this session
+    - Stage changed externally (e.g., human approval) - detected by comparing
+      session.last_stage with current issue stage
+    - Session exists but agent hasn't been oriented yet (tmux restart)
 
     Returns False if:
     - No session exists (fresh start)
-    - Session exists and agent has been oriented
+    - Session exists, stage matches, and agent has been oriented
     """
     session = get_session(issue_id)
     if not session:
         return False  # No session = fresh start
+
+    # Stage changed externally (e.g., human approval advanced us)
+    # This handles the case where controller moved us to a new stage
+    if current_stage and session.last_stage != current_stage:
+        return True
+    if current_substage is not None and session.last_substage != current_substage:
+        return True
+
+    # Tmux restarted but same stage - use oriented flag
     return not session.oriented
 
 

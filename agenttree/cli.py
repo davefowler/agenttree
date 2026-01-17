@@ -1729,7 +1729,7 @@ def stage_next(issue_id: Optional[str], reassess: bool) -> None:
         # No session exists - create one (fresh start or legacy case)
         session = create_session(issue_id)
 
-    if is_restart(issue_id):
+    if is_restart(issue_id, issue.stage, issue.substage):
         # This is a restart - re-orient the agent instead of advancing
         console.print(f"\n[cyan]🔄 Session restart detected[/cyan]")
         console.print(f"[dim]Resuming work on issue #{issue.id}: {issue.title}[/dim]\n")
@@ -1769,8 +1769,8 @@ def stage_next(issue_id: Optional[str], reassess: bool) -> None:
 
         console.print(f"\n[dim]When ready to advance, run 'agenttree next' again.[/dim]")
 
-        # Mark as oriented so next call will advance
-        mark_session_oriented(issue_id)
+        # Mark as oriented and sync stage so next call will advance
+        mark_session_oriented(issue_id, issue.stage, issue.substage)
         return
 
     # Handle --reassess flag for plan revision cycling
@@ -1892,8 +1892,9 @@ def approve_issue(issue_id: str, skip_approval: bool) -> None:
         console.print(f"[red]Failed to update issue[/red]")
         sys.exit(1)
 
-    # Update session
-    update_session_stage(issue_id_normalized, next_stage, next_substage)
+    # Update session (last_stage will differ from issue.stage, triggering re-orient)
+    # Note: We intentionally DON'T call update_session_stage here because that would
+    # sync last_stage, defeating the stage mismatch detection in is_restart()
 
     # Execute post-hooks (after stage updated)
     execute_post_hooks(updated, next_stage, next_substage)

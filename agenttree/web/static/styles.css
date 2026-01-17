@@ -685,12 +685,61 @@ button[disabled] {
     display: none;
 }
 
-.htmx-request .htmx-indicator {
+/* When using hx-indicator, htmx-request is added to the indicator element itself */
+.htmx-indicator.htmx-request {
     display: inline;
 }
 
-.htmx-request .btn-text {
+/* Hide button text when indicator is showing */
+.btn:has(.htmx-indicator.htmx-request) .btn-text {
     display: none;
+}
+
+/* Approve/Rebase status messages */
+.approve-success {
+    color: #166534;
+    font-weight: 500;
+    padding: 4px 8px;
+    background: #dcfce7;
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+.approve-error {
+    color: #991b1b;
+    font-weight: 500;
+    padding: 4px 8px;
+    background: #fee2e2;
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+.rebase-error {
+    color: #991b1b;
+    font-size: 12px;
+}
+
+.commits-synced {
+    color: #166534;
+    font-size: 12px;
+}
+
+[data-theme="dark"] .approve-success {
+    color: #86efac;
+    background: #14532d;
+}
+
+[data-theme="dark"] .approve-error {
+    color: #fca5a5;
+    background: #7f1d1d;
+}
+
+[data-theme="dark"] .rebase-error {
+    color: #fca5a5;
+}
+
+[data-theme="dark"] .commits-synced {
+    color: #86efac;
 }
 
 /* ==============================================

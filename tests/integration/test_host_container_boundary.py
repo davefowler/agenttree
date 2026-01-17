@@ -323,6 +323,69 @@ class TestApprovalBoundary:
                         next_stage, next_substage, _ = get_next_stage("plan_review", None)
                         assert next_stage == "implement"
 
+    def test_agent_reorients_after_approval_not_skip(self, workflow_repo: Path, host_environment, mock_sync: MagicMock):
+        """After human approval, agent should re-orient at new stage, not skip past it.
+
+        This tests the critical bug where:
+        1. Agent reaches plan_review, session.last_stage = plan_review
+        2. Human approves -> issue.stage = implement (session.last_stage unchanged)
+        3. Agent runs `next` -> should detect stage mismatch and re-orient
+        4. Agent runs `next` again -> should advance normally
+
+        Without the fix, step 3 would skip implement entirely.
+        """
+        from agenttree.issues import (
+            create_issue, update_issue_stage, get_next_stage,
+            create_session, get_session, is_restart, mark_session_oriented,
+        )
+
+        agenttree_path = workflow_repo / "_agenttree"
+
+        with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
+            with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
+                # Create issue and simulate agent reaching plan_review
+                issue = create_issue(title="Test Agent Reorient After Approval")
+                issue_dir = agenttree_path / "issues" / f"{issue.id}-{issue.slug}"
+
+                # Agent creates session and works through to plan_review
+                session = create_session(issue.id)
+                update_issue_stage(issue.id, "plan_review", None)
+
+                # Simulate agent having worked on plan_review (oriented = True, last_stage synced)
+                mark_session_oriented(issue.id, "plan_review", None)
+
+                # Verify agent is oriented at plan_review
+                session = get_session(issue.id)
+                assert session.last_stage == "plan_review"
+                assert session.oriented is True
+                assert is_restart(issue.id, "plan_review", None) is False  # Not a restart
+
+                # === HUMAN APPROVAL ===
+                # Human approves - updates issue stage but NOT session
+                # (This is what approve command does - intentionally skips update_session_stage)
+                update_issue_stage(issue.id, "implement", "setup")
+
+                # === AGENT RUNS NEXT ===
+                # Agent calls next - should detect stage mismatch
+                # issue.stage = implement, session.last_stage = plan_review
+                assert is_restart(issue.id, "implement", "setup") is True  # Stage changed externally!
+
+                # Agent re-orients (shows implement instructions, syncs session)
+                mark_session_oriented(issue.id, "implement", "setup")
+
+                # Verify session is now synced
+                session = get_session(issue.id)
+                assert session.last_stage == "implement"
+                assert session.oriented is True
+
+                # === AGENT RUNS NEXT AGAIN ===
+                # Now it should NOT be a restart - can advance normally
+                assert is_restart(issue.id, "implement", "setup") is False
+
+                # Verify next stage would be implementation_review (not skipping implement)
+                next_stage, next_substage, _ = get_next_stage("implement", "setup")
+                # Should advance within implement or to next stage, NOT skip implement
+
 
 class TestCleanupBoundary:
     """Test agent cleanup boundary."""
