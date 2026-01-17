@@ -223,19 +223,18 @@ async def kanban(
 
     # If issue param provided, load issue detail for modal
     selected_issue = None
-    files: list[dict[str, str | int]] = []
+    files: list[dict[str, str]] = []
+    commits_behind = 0
     if issue:
         issue_obj = issue_crud.get_issue(issue, sync=False)
         if issue_obj:
             selected_issue = convert_issue_to_web(issue_obj)
-            files = get_issue_files(issue)
-            # Load last file content
-            issue_dir = issue_crud.get_issue_dir(issue)
-            if issue_dir and files:
-                last_file = files[-1]
-                file_path = issue_dir / last_file["name"]
-                if file_path.exists():
-                    selected_issue.body = file_path.read_text()
+            # Load all file contents upfront for CSS toggle tabs
+            files = get_issue_files(issue, include_content=True)
+            # Get commits behind for rebase button
+            if selected_issue.assigned_agent:
+                from agenttree.hooks import get_commits_behind_main
+                commits_behind = get_commits_behind_main(issue_obj)
 
     return templates.TemplateResponse(
         "kanban.html",
@@ -246,46 +245,36 @@ async def kanban(
             "active_page": "kanban",
             "selected_issue": selected_issue,
             "files": files,
+            "commits_behind": commits_behind,
             "chat_open": chat == "1",
         }
     )
 
 
-@app.get("/kanban/board", response_class=HTMLResponse)
-async def kanban_board(
-    request: Request,
-    user: Optional[str] = Depends(get_current_user)
-) -> HTMLResponse:
-    """Kanban board content (HTMX polling endpoint)."""
-    board = get_kanban_board()
-
-    return templates.TemplateResponse(
-        "partials/kanban_board_content.html",
-        {
-            "request": request,
-            "board": board,
-            "stages": list(StageEnum),
-        }
-    )
-
-
-def get_issue_files(issue_id: str) -> list[dict[str, str | int]]:
+def get_issue_files(issue_id: str, include_content: bool = False) -> list[dict[str, str]]:
     """Get list of markdown files for an issue.
 
     Returns list of dicts with keys: name, display_name, size, modified
+    If include_content=True, also includes 'content' key with file contents.
     """
     issue_dir = issue_crud.get_issue_dir(issue_id)
     if not issue_dir:
         return []
 
-    files: list[dict[str, str | int]] = []
+    files: list[dict[str, str]] = []
     for f in sorted(issue_dir.glob("*.md")):
-        files.append({
+        file_info: dict[str, str] = {
             "name": f.name,
             "display_name": f.stem.replace("_", " ").title(),
-            "size": f.stat().st_size,
+            "size": str(f.stat().st_size),
             "modified": datetime.fromtimestamp(f.stat().st_mtime).isoformat()
-        })
+        }
+        if include_content:
+            try:
+                file_info["content"] = f.read_text()
+            except Exception:
+                file_info["content"] = ""
+        files.append(file_info)
     return files
 
 
@@ -319,20 +308,19 @@ async def flow(
     if not selected_issue and web_issues:
         selected_issue = web_issues[0]
 
-    # Load body content and files for selected issue
-    files: list[dict[str, str | int]] = []
+    # Load all file contents upfront for selected issue
+    files: list[dict[str, str]] = []
+    commits_behind = 0
     if selected_issue:
         issue_id = str(selected_issue.number).zfill(3)
-        issue_dir = issue_crud.get_issue_dir(issue_id)
-        if issue_dir:
-            # Get list of markdown files
-            files = get_issue_files(issue_id)
-            # Load last file content (rightmost tab selected by default)
-            if files:
-                last_file = files[-1]
-                file_path = issue_dir / last_file["name"]
-                if file_path.exists():
-                    selected_issue.body = file_path.read_text()
+        # Load all file contents upfront for CSS toggle tabs
+        files = get_issue_files(issue_id, include_content=True)
+        # Get commits behind for rebase button
+        if selected_issue.assigned_agent:
+            from agenttree.hooks import get_commits_behind_main
+            issue_obj = issue_crud.get_issue(issue_id, sync=False)
+            if issue_obj:
+                commits_behind = get_commits_behind_main(issue_obj)
 
     return templates.TemplateResponse(
         "flow.html",
@@ -342,37 +330,8 @@ async def flow(
             "selected_issue": selected_issue,
             "issue": selected_issue,  # issue_detail.html expects 'issue'
             "files": files,
+            "commits_behind": commits_behind,
             "active_page": "flow",
-            "chat_open": chat == "1",
-        }
-    )
-
-
-@app.get("/flow/issues", response_class=HTMLResponse)
-async def flow_issues(
-    request: Request,
-    issue: Optional[str] = None,
-    chat: Optional[str] = None,
-    user: Optional[str] = Depends(get_current_user)
-) -> HTMLResponse:
-    """Flow issues list (HTMX endpoint)."""
-    issues = issue_crud.list_issues(sync=False)  # Skip sync for fast web reads
-    web_issues = _sort_flow_issues([convert_issue_to_web(i) for i in issues])
-
-    # Find selected issue for active state
-    selected_issue = None
-    if issue:
-        for wi in web_issues:
-            if str(wi.number) == issue or str(wi.number).zfill(3) == issue:
-                selected_issue = wi
-                break
-
-    return templates.TemplateResponse(
-        "partials/flow_issues_list.html",
-        {
-            "request": request,
-            "issues": web_issues,
-            "selected_issue": selected_issue,
             "chat_open": chat == "1",
         }
     )
@@ -488,22 +447,14 @@ async def start_task(
     except Exception as e:
         status = f"Error: {str(e)}"
 
-    return templates.TemplateResponse(
-        "partials/start_status.html",
-        {
-            "request": request,
-            "agent_num": agent_num,
-            "status": status
-        }
-    )
+    return {"ok": True, "status": status}
 
 
-@app.post("/api/issues/{issue_id}/start", response_class=HTMLResponse)
+@app.post("/api/issues/{issue_id}/start")
 async def start_issue(
-    request: Request,
     issue_id: str,
     user: Optional[str] = Depends(get_current_user)
-) -> HTMLResponse:
+) -> dict:
     """Start an agent to work on an issue (calls agenttree start)."""
     try:
         # Use --force to restart stalled agents (tmux dead but state exists)
@@ -514,16 +465,9 @@ async def start_issue(
             cwd=Path.cwd(),
             start_new_session=True  # Detach from parent process
         )
-        status = f"Starting agent for issue #{issue_id}..."
-        success = True
+        return {"ok": True, "status": f"Starting agent for issue #{issue_id}..."}
     except Exception as e:
-        status = f"Error: {str(e)}"
-        success = False
-
-    return templates.TemplateResponse(
-        "partials/start_status.html",
-        {"request": request, "status": status, "success": success, "agent_num": 0}
-    )
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/api/issues/{issue_id}/move")
@@ -569,11 +513,11 @@ async def move_issue(
     return {"success": True, "stage": move_request.stage.value}
 
 
-@app.post("/api/issues/{issue_id}/approve", response_class=HTMLResponse)
+@app.post("/api/issues/{issue_id}/approve")
 async def approve_issue(
     issue_id: str,
     user: Optional[str] = Depends(get_current_user)
-) -> HTMLResponse:
+) -> dict:
     """Approve an issue at a human review stage.
 
     Runs the proper workflow: executes exit hooks, advances to next stage,
@@ -581,7 +525,6 @@ async def approve_issue(
     """
     from agenttree.config import load_config
     from agenttree.hooks import execute_exit_hooks, execute_enter_hooks, ValidationError
-    from agenttree.issues import update_session_stage
 
     HUMAN_REVIEW_STAGES = ["plan_review", "implementation_review"]
 
@@ -589,17 +532,11 @@ async def approve_issue(
     issue_id_normalized = issue_id.lstrip("0") or "0"
     issue = issue_crud.get_issue(issue_id_normalized, sync=False)
     if not issue:
-        return HTMLResponse(
-            content='<span class="approve-error">Issue not found</span>',
-            status_code=200
-        )
+        raise HTTPException(status_code=404, detail="Issue not found")
 
     # Check if at human review stage
     if issue.stage not in HUMAN_REVIEW_STAGES:
-        return HTMLResponse(
-            content=f'<span class="approve-error">Not at review stage</span>',
-            status_code=200
-        )
+        raise HTTPException(status_code=400, detail="Not at review stage")
 
     # Calculate next stage
     config = load_config()
@@ -609,18 +546,12 @@ async def approve_issue(
     try:
         execute_exit_hooks(issue, issue.stage, issue.substage)
     except ValidationError as e:
-        return HTMLResponse(
-            content=f'<span class="approve-error">{str(e)}</span>',
-            status_code=200
-        )
+        raise HTTPException(status_code=400, detail=str(e))
 
     # Update issue stage
     updated = issue_crud.update_issue_stage(issue_id_normalized, next_stage, next_substage)
     if not updated:
-        return HTMLResponse(
-            content='<span class="approve-error">Failed to update</span>',
-            status_code=200
-        )
+        raise HTTPException(status_code=500, detail="Failed to update")
 
     # Note: We intentionally DON'T call update_session_stage here because that would
     # sync last_stage with issue.stage, defeating the stage mismatch detection.
@@ -646,13 +577,7 @@ async def approve_issue(
     except Exception:
         pass  # Agent notification is best-effort
 
-    # Return success HTML with auto-reload
-    stage_display = next_stage.replace('_', ' ').title()
-    return HTMLResponse(
-        content=f'''<span class="approve-success">✓ Approved → {stage_display}</span>
-        <script>setTimeout(function() {{ location.reload(); }}, 1500);</script>''',
-        status_code=200
-    )
+    return {"ok": True}
 
 
 @app.get("/api/issues/{issue_id}/commits-behind")
@@ -688,44 +613,16 @@ async def get_issue_stage(
     return HTMLResponse(content=f"Stage: {stage_text}")
 
 
-@app.get("/api/issues/{issue_id}/rebase-controls", response_class=HTMLResponse)
-async def get_rebase_controls(
-    request: Request,
-    issue_id: str,
-    user: Optional[str] = Depends(get_current_user)
-) -> HTMLResponse:
-    """Get rebase controls HTML partial."""
-    from agenttree.hooks import get_commits_behind_main
-
-    issue_id_normalized = issue_id.lstrip("0") or "0"
-    issue = issue_crud.get_issue(issue_id_normalized, sync=False)
-    if not issue:
-        raise HTTPException(status_code=404, detail=f"Issue {issue_id} not found")
-
-    commits_behind = get_commits_behind_main(issue_id_normalized)
-
-    return templates.TemplateResponse(
-        "partials/rebase_controls.html",
-        {
-            "request": request,
-            "issue_number": issue.id,
-            "commits_behind": commits_behind
-        }
-    )
-
-
-@app.post("/api/issues/{issue_id}/rebase", response_class=HTMLResponse)
+@app.post("/api/issues/{issue_id}/rebase")
 async def rebase_issue(
-    request: Request,
     issue_id: str,
     user: Optional[str] = Depends(get_current_user)
-) -> HTMLResponse:
+) -> dict:
     """Rebase an issue's branch onto the latest main.
 
-    Performs the rebase from the host and notifies the agent of the changes.
-    Returns updated rebase controls HTML for HTMX.
+    Performs the rebase and notifies the agent. Client reloads page after.
     """
-    from agenttree.hooks import rebase_issue_branch, get_commits_behind_main
+    from agenttree.hooks import rebase_issue_branch
 
     # Get issue
     issue_id_normalized = issue_id.lstrip("0") or "0"
@@ -737,11 +634,7 @@ async def rebase_issue(
     success, message = rebase_issue_branch(issue_id_normalized)
 
     if not success:
-        # Return error message in the controls area
-        return HTMLResponse(
-            content=f'<div class="rebase-controls"><span class="rebase-error" style="color: #dc2626; font-size: 12px;">{message}</span></div>',
-            status_code=200  # Use 200 so HTMX still swaps content
-        )
+        raise HTTPException(status_code=400, detail=message)
 
     # Notify the agent if one is assigned and has an active tmux session
     if issue.assigned_agent:
@@ -756,82 +649,9 @@ async def rebase_issue(
             "Please review the recent changes and update your work if needed. "
             "Run 'git log --oneline -10' to see recent commits."
         )
-        send_message(session_name, notification)  # Best-effort, returns False if not running
+        send_message(session_name, notification)
 
-    # Return updated rebase controls
-    commits_behind = get_commits_behind_main(issue_id_normalized)
-    return templates.TemplateResponse(
-        "partials/rebase_controls.html",
-        {
-            "request": request,
-            "issue_number": issue.id,
-            "commits_behind": commits_behind
-        }
-    )
-
-
-@app.get("/api/issues/{issue_id}/detail", response_class=HTMLResponse)
-async def issue_detail(
-    request: Request,
-    issue_id: str,
-    user: Optional[str] = Depends(get_current_user)
-) -> HTMLResponse:
-    """Get issue detail HTML (for modal)."""
-    issue = issue_crud.get_issue(issue_id, sync=False)  # Skip sync for fast web reads
-    if not issue:
-        raise HTTPException(status_code=404, detail=f"Issue {issue_id} not found")
-
-    # Get markdown files list
-    files = get_issue_files(issue_id)
-
-    # Load last file content (rightmost tab selected by default)
-    issue_dir = issue_crud.get_issue_dir(issue_id)
-    default_content = ""
-    if issue_dir and files:
-        last_file = files[-1]
-        file_path = issue_dir / last_file["name"]
-        if file_path.exists():
-            default_content = file_path.read_text()
-
-    web_issue = convert_issue_to_web(issue)
-    web_issue.body = default_content
-
-    return templates.TemplateResponse(
-        "partials/issue_detail.html",
-        {"request": request, "issue": web_issue, "files": files}
-    )
-
-
-@app.get("/flow/issue/{issue_id}", response_class=HTMLResponse)
-async def flow_issue_detail(
-    request: Request,
-    issue_id: str,
-    user: Optional[str] = Depends(get_current_user)
-) -> HTMLResponse:
-    """Get issue detail for flow view (HTMX endpoint)."""
-    issue = issue_crud.get_issue(issue_id, sync=False)  # Skip sync for fast web reads
-    if not issue:
-        raise HTTPException(status_code=404, detail=f"Issue {issue_id} not found")
-
-    # Get markdown files list
-    files = get_issue_files(issue_id)
-
-    # Load last file content (rightmost tab selected by default)
-    issue_dir = issue_crud.get_issue_dir(issue_id)
-    default_content = ""
-    if issue_dir and files:
-        last_file = files[-1]
-        file_path = issue_dir / last_file["name"]
-        if file_path.exists():
-            default_content = file_path.read_text()
-
-    web_issue = convert_issue_to_web(issue)
-    web_issue.body = default_content
-
-    return templates.TemplateResponse(
-        "partials/flow_issue_detail.html",
-        {"request": request, "issue": web_issue, "files": files}
-    )
+    return {"ok": True}
 
 
 @app.websocket("/ws/agent/{agent_num}/tmux")
@@ -875,34 +695,6 @@ async def list_issue_files(
         raise HTTPException(status_code=404, detail=f"Issue {issue_id} not found")
 
     return {"issue_id": issue_id, "files": files}
-
-
-@app.get("/api/issues/{issue_id}/files/{filename}", response_class=HTMLResponse)
-async def get_issue_file(
-    request: Request,
-    issue_id: str,
-    filename: str,
-    user: Optional[str] = Depends(get_current_user)
-) -> HTMLResponse:
-    """Get content of a markdown file in an issue directory."""
-    issue_dir = issue_crud.get_issue_dir(issue_id)
-    if not issue_dir:
-        raise HTTPException(status_code=404, detail=f"Issue {issue_id} not found")
-
-    # Security: ensure filename is safe (no path traversal)
-    if "/" in filename or "\\" in filename or ".." in filename:
-        raise HTTPException(status_code=400, detail="Invalid filename")
-
-    file_path = issue_dir / filename
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail=f"File {filename} not found")
-
-    content = file_path.read_text()
-
-    return templates.TemplateResponse(
-        "partials/markdown_content.html",
-        {"request": request, "content": content, "filename": filename}
-    )
 
 
 @app.get("/health")

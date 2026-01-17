@@ -12,18 +12,35 @@
     {% include 'partials/header.html' %}
 
     <div class="flow-container">
-        <!-- Left sidebar: Issue list -->
-        <div class="flow-sidebar"
-             hx-get="/flow/issues"
-             hx-trigger="load, every 10s"
-             hx-swap="innerHTML">
-            {% include 'partials/flow_issues_list.html' %}
+        <!-- Left sidebar: Issue list (no polling - refresh page for updates) -->
+        <div class="flow-sidebar">
+            {% if issues %}
+                {% for issue in issues %}
+                <a class="issue-item {% if selected_issue and issue.number == selected_issue.number %}active{% endif %}"
+                   href="/flow?issue={{ issue.number }}{% if chat_open %}&chat=1{% endif %}">
+                    <div class="issue-number">#{{ issue.number }}</div>
+                    <div class="issue-title">{{ issue.title }}</div>
+                    <div class="issue-badges">
+                        {% for label in issue.labels[:2] %}
+                        {% if not label.startswith('stage-') %}
+                        <span class="badge">{{ label }}</span>
+                        {% endif %}
+                        {% endfor %}
+                    </div>
+                </a>
+                {% endfor %}
+            {% else %}
+                <div class="empty-state">
+                    <p>No open issues</p>
+                </div>
+            {% endif %}
         </div>
 
         <!-- Main panel: Issue detail with file tabs -->
         <div class="flow-main" id="issue-detail">
             {% if selected_issue %}
-                {% include 'partials/flow_issue_detail.html' %}
+                {% set issue = selected_issue %}
+                {% include 'partials/issue_detail_content.html' %}
             {% else %}
                 <div class="empty-state">
                     <h2>No issues found</h2>
@@ -34,33 +51,26 @@
     </div>
 
     <script>
-        let currentIssueId = '{{ selected_issue.number if selected_issue else "" }}';
-
-        // Handle file tab clicks
+        // Handle file tab clicks - CSS toggle approach
         function selectFileTab(evt, issueId, filename) {
-            // Update active tab within the same issue's tabs
             const tabContainer = evt.target.closest('.file-tabs');
             tabContainer.querySelectorAll('.file-tab').forEach(tab => {
                 tab.classList.remove('active');
             });
             evt.target.classList.add('active');
 
-            // Load file content - target the specific issue's content area
-            htmx.ajax('GET', '/api/issues/' + issueId + '/files/' + filename, {
-                target: '#file-content-' + issueId,
-                swap: 'innerHTML'
+            // Show/hide content areas
+            const contentContainer = document.getElementById('file-content-' + issueId);
+            contentContainer.querySelectorAll('.file-content-item').forEach(item => {
+                item.style.display = item.dataset.filename === filename ? 'block' : 'none';
             });
         }
 
         // Toggle agent chat panel
-        function toggleAgentChat(issueNumber) {
+        function toggleChatPanel(issueNumber) {
             const panel = document.getElementById('agent-chat-panel-' + issueNumber);
             if (panel) {
                 panel.classList.toggle('collapsed');
-                const icon = document.getElementById('chat-toggle-icon-' + issueNumber);
-                if (icon) {
-                    icon.textContent = panel.classList.contains('collapsed') ? '\u00ab' : '\u00d7';
-                }
             }
         }
 
@@ -83,11 +93,7 @@
                 });
 
                 if (response.ok) {
-                    setTimeout(() => {
-                        lightElement.classList.remove('starting');
-                        lightElement.classList.add('on');
-                        lightElement.title = 'Agent running';
-                    }, 2000);
+                    setTimeout(() => location.reload(), 2000);
                 } else {
                     lightElement.classList.remove('starting');
                     lightElement.classList.add('stalled');
@@ -100,41 +106,6 @@
                 lightElement.title = 'Error - click to retry';
             }
         }
-
-        // Handle issue selection
-        document.body.addEventListener('htmx:afterSwap', function(event) {
-            if (event.detail.target.classList.contains('flow-sidebar')) {
-                // After sidebar refresh, restore active state
-                if (currentIssueId) {
-                    document.querySelectorAll('.issue-item').forEach(item => {
-                        if (item.dataset.issue === currentIssueId) {
-                            item.classList.add('active');
-                        }
-                    });
-                }
-            }
-
-            // When issue detail is loaded, update current issue ID
-            if (event.detail.target.id === 'issue-detail') {
-                const newIssueId = event.detail.target.querySelector('[data-issue-id]')?.dataset.issueId;
-                if (newIssueId) {
-                    currentIssueId = newIssueId;
-                }
-            }
-        });
-
-        // Click handler for issue items
-        document.body.addEventListener('click', function(event) {
-            const issueItem = event.target.closest('.issue-item');
-            if (issueItem) {
-                // Update active state
-                document.querySelectorAll('.issue-item').forEach(item => {
-                    item.classList.remove('active');
-                });
-                issueItem.classList.add('active');
-                currentIssueId = issueItem.dataset.issue;
-            }
-        });
     </script>
 </body>
 </html>

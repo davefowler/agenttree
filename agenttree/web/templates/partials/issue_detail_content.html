@@ -23,10 +23,7 @@
             </div>
             <div class="detail-meta-row">
                 <div class="detail-meta">
-                    <span id="issue-stage-{{ issue.number }}"
-                          hx-get="/api/issues/{{ issue.number }}/stage"
-                          hx-trigger="every 15s"
-                          hx-swap="innerHTML">Stage: {{ issue.stage.value.replace('_', ' ').title() }}</span>
+                    <span>Stage: {{ issue.stage.replace('_', ' ').title() if issue.stage is string else issue.stage.value.replace('_', ' ').title() }}</span>
                     {% if issue.assigned_agent %}
                     <span>Agent: {{ issue.assigned_agent }}</span>
                     {% endif %}
@@ -35,27 +32,17 @@
                     {% endif %}
                 </div>
                 <div class="detail-actions" id="detail-actions-{{ issue.number }}">
-                    {% if issue.assigned_agent %}
-                    <!-- Rebase controls - loaded lazily via HTMX (once only) -->
-                    <div id="rebase-controls-{{ issue.number }}"
-                         hx-get="/api/issues/{{ issue.number }}/rebase-controls"
-                         hx-trigger="load once"
-                         hx-swap="innerHTML">
-                        <span class="rebase-loading">Checking...</span>
-                    </div>
-                    <span id="rebase-status-{{ issue.number }}"></span>
+                    {% if issue.assigned_agent and commits_behind is defined and commits_behind > 0 %}
+                    <button class="btn btn-rebase"
+                            onclick="rebaseIssue('{{ issue.number }}', this)">
+                        Rebase ({{ commits_behind }} behind)
+                    </button>
                     {% endif %}
                     {% if issue.is_review %}
                     <button class="btn btn-approve"
-                            hx-post="/api/issues/{{ issue.number }}/approve"
-                            hx-target="#approve-status-{{ issue.number }}"
-                            hx-swap="innerHTML"
-                            hx-indicator="#approve-spinner-{{ issue.number }}"
-                            hx-disabled-elt="this">
-                        <span class="btn-text">Approve</span>
-                        <span class="htmx-indicator" id="approve-spinner-{{ issue.number }}">Approving...</span>
+                            onclick="approveIssue('{{ issue.number }}', this)">
+                        Approve
                     </button>
-                    <span id="approve-status-{{ issue.number }}"></span>
                     {% endif %}
                 </div>
             </div>
@@ -66,7 +53,8 @@
             <div class="file-tabs" id="file-tabs-{{ issue.number }}">
                 {% for file in files %}
                 <button class="file-tab{% if loop.last %} active{% endif %}"
-                        onclick="selectFileTab(event, '{{ issue.number }}', '{{ file.name }}')">
+                        onclick="selectFileTab(event, '{{ issue.number }}', '{{ file.name }}')"
+                        data-filename="{{ file.name }}">
                     {{ file.display_name }}
                 </button>
                 {% else %}
@@ -75,28 +63,37 @@
             </div>
         </div>
 
-        <!-- File content -->
-        <div class="issue-content file-content" id="file-content-{{ issue.number }}">
-            {% if issue.body %}
-            <div class="markdown-rendered"></div>
-            <script type="text/template">{{ issue.body }}</script>
-            <script>
-                (function() {
-                    const script = document.currentScript;
-                    const source = script.previousElementSibling.textContent;
-                    const display = script.previousElementSibling.previousElementSibling;
-                    if (typeof marked !== 'undefined') {
-                        display.innerHTML = marked.parse(source);
-                    } else {
-                        display.innerHTML = '<pre class="markdown-raw">' + source + '</pre>';
-                    }
-                })();
-            </script>
+        <!-- File content - all files loaded upfront, CSS toggles visibility -->
+        <div class="issue-content" id="file-content-{{ issue.number }}">
+            {% for file in files %}
+            <div class="file-content-item"
+                 data-filename="{{ file.name }}"
+                 style="display: {% if loop.last %}block{% else %}none{% endif %};">
+                {% if file.content %}
+                <div class="markdown-rendered" id="markdown-{{ issue.number }}-{{ loop.index }}"></div>
+                <script type="text/template" id="source-{{ issue.number }}-{{ loop.index }}">{{ file.content }}</script>
+                <script>
+                    (function() {
+                        const source = document.getElementById('source-{{ issue.number }}-{{ loop.index }}').textContent;
+                        const display = document.getElementById('markdown-{{ issue.number }}-{{ loop.index }}');
+                        if (typeof marked !== 'undefined') {
+                            display.innerHTML = marked.parse(source);
+                        } else {
+                            display.innerHTML = '<pre class="markdown-raw">' + source + '</pre>';
+                        }
+                    })();
+                </script>
+                {% else %}
+                <div class="empty-state">
+                    <p>No content available</p>
+                </div>
+                {% endif %}
+            </div>
             {% else %}
             <div class="empty-state">
-                <p>No content available</p>
+                <p>No files found for this issue</p>
             </div>
-            {% endif %}
+            {% endfor %}
         </div>
 
         <!-- Timestamps -->
@@ -109,3 +106,58 @@
     <!-- Agent Chat Panel -->
     {% include "partials/agent_chat_panel.html" %}
 </div>
+
+<script>
+// Action handlers for this issue detail - AJAX + reload pattern
+async function approveIssue(issueNumber, btn) {
+    btn.disabled = true;
+    btn.textContent = 'Approving...';
+
+    try {
+        const response = await fetch(`/api/issues/${issueNumber}/approve`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'}
+        });
+
+        if (response.ok) {
+            btn.textContent = 'Approved!';
+            setTimeout(() => location.reload(), 500);
+        } else {
+            const data = await response.json();
+            alert(`Cannot approve: ${data.detail || 'Unknown error'}`);
+            btn.disabled = false;
+            btn.textContent = 'Approve';
+        }
+    } catch (error) {
+        console.error('Error approving:', error);
+        btn.disabled = false;
+        btn.textContent = 'Approve';
+    }
+}
+
+async function rebaseIssue(issueNumber, btn) {
+    btn.disabled = true;
+    btn.textContent = 'Rebasing...';
+
+    try {
+        const response = await fetch(`/api/issues/${issueNumber}/rebase`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'}
+        });
+
+        if (response.ok) {
+            btn.textContent = 'Rebased!';
+            setTimeout(() => location.reload(), 500);
+        } else {
+            const data = await response.json();
+            alert(`Cannot rebase: ${data.detail || 'Unknown error'}`);
+            btn.disabled = false;
+            btn.textContent = 'Rebase';
+        }
+    } catch (error) {
+        console.error('Error rebasing:', error);
+        btn.disabled = false;
+        btn.textContent = 'Rebase';
+    }
+}
+</script>

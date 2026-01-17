@@ -11,17 +11,59 @@
 <body>
     {% include 'partials/header.html' %}
 
-    <div class="kanban-board"
-         hx-get="/kanban/board"
-         hx-trigger="every 30s"
-         hx-swap="innerHTML">
-        {% include 'partials/kanban_board_content.html' %}
+    <div class="kanban-board">
+        {% for stage in stages %}
+        <div class="kanban-column" data-stage="{{ stage.value }}">
+            <div class="column-header">
+                <span>{{ stage.value.replace('_', ' ').title() }}</span>
+                <span class="column-count">{{ board.stages[stage]|length }}</span>
+            </div>
+            <div class="column-cards">
+                {% for issue in board.stages[stage] %}
+                <div class="kanban-card"
+                     data-issue="{{ issue.number }}"
+                     data-stage="{{ issue.stage.value }}"
+                     data-has-agent="{{ 'true' if issue.assigned_agent else 'false' }}"
+                     draggable="{{ 'true' if issue.stage.value in ['plan_review', 'implementation_review'] else 'false' }}"
+                     hx-get="/kanban?issue={{ issue.number }}"
+                     hx-push-url="true"
+                     hx-target="body"
+                     hx-swap="outerHTML">
+                    <div class="agent-light {% if issue.tmux_active %}on{% elif issue.assigned_agent %}stalled{% else %}off{% endif %}"
+                         onclick="event.stopPropagation(); toggleAgent('{{ issue.number }}', this)"
+                         title="{% if issue.tmux_active %}Agent running - click to view{% elif issue.assigned_agent %}Agent assigned but inactive{% else %}Click to start agent{% endif %}"></div>
+                    <div class="card-number">#{{ issue.number }}</div>
+                    <div class="card-title">{{ issue.title }}</div>
+                    <div class="card-badges">
+                        {% for label in issue.labels[:2] %}
+                        {% if not label.startswith('stage-') %}
+                        <span class="badge">{{ label }}</span>
+                        {% endif %}
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+
+        <!-- Mini dropzones for hidden columns -->
+        <div class="mini-dropzones" id="mini-dropzones">
+            <div class="mini-dropzone" data-stage="accepted" id="mini-accepted">
+                <span class="dropzone-label">Accepted</span>
+                <span class="dropzone-count" id="accepted-count">0</span>
+            </div>
+            <div class="mini-dropzone" data-stage="not_doing" id="mini-not-doing">
+                <span class="dropzone-label">Not Doing</span>
+                <span class="dropzone-count" id="not-doing-count">0</span>
+            </div>
+        </div>
     </div>
 
     <!-- Modal for issue detail -->
     <div id="issue-modal" class="modal{% if selected_issue %} active{% endif %}">
         <div class="modal-content">
-            <a href="/kanban" class="modal-close" hx-get="/kanban" hx-push-url="true" hx-target="body" hx-swap="outerHTML">&times;</a>
+            <a href="/kanban" class="modal-close">&times;</a>
             <div id="modal-issue-detail">
                 {% if selected_issue %}
                 {% set issue = selected_issue %}
@@ -36,8 +78,6 @@
         // Wrap in IIFE to avoid duplicate declarations on HTMX swaps
         if (window._kanbanScriptLoaded) return;
         window._kanbanScriptLoaded = true;
-
-        // Minimal JS for drag-drop and modal
 
         // Human review stages - only these can be dragged
         const HUMAN_REVIEW_STAGES = ['plan_review', 'implementation_review'];
@@ -98,15 +138,13 @@
                             headers: {'Content-Type': 'application/json'}
                         });
 
-                        const data = await response.json();
                         if (response.ok) {
-                            console.log(`Approved issue #${issueNumber}: ${data.message}`);
-                            // Reload to show new state
-                            location.reload();
+                            console.log(`Approved issue #${issueNumber}`);
                         } else {
+                            const data = await response.json();
                             alert(`Cannot approve: ${data.detail || 'Unknown error'}`);
-                            location.reload();
                         }
+                        location.reload();
                     } catch (error) {
                         console.error('Error approving issue:', error);
                         location.reload();
@@ -115,66 +153,55 @@
             }
         });
 
-        // Modal functions - exposed globally for onclick handlers
+        // Modal functions
         window.openIssueModal = function(issueNumber) {
-            const modal = document.getElementById('issue-modal');
-            const detailDiv = document.getElementById('modal-issue-detail');
-
-            // Load issue detail via HTMX
-            htmx.ajax('GET', `/api/issues/${issueNumber}/detail`, {
-                target: '#modal-issue-detail',
-                swap: 'innerHTML'
-            });
-
-            modal.classList.add('active');
+            // Navigate to issue URL - simpler than AJAX modal loading
+            window.location.href = `/kanban?issue=${issueNumber}`;
         };
 
         window.closeIssueModal = function() {
-            const modal = document.getElementById('issue-modal');
-            modal.classList.remove('active');
+            window.location.href = '/kanban';
         };
 
-        // Handle file tab clicks in issue detail - exposed globally for onclick handlers
+        // Handle file tab clicks - CSS toggle approach
         window.selectFileTab = function(evt, issueId, filename) {
-            // Update active tab within the same issue's tabs
             const tabContainer = evt.target.closest('.file-tabs');
             tabContainer.querySelectorAll('.file-tab').forEach(tab => {
                 tab.classList.remove('active');
             });
             evt.target.classList.add('active');
 
-            // Load file content - target the specific issue's content area
-            htmx.ajax('GET', '/api/issues/' + issueId + '/files/' + filename, {
-                target: '#file-content-' + issueId,
-                swap: 'innerHTML'
+            // Show/hide content areas
+            const contentContainer = document.getElementById('file-content-' + issueId);
+            contentContainer.querySelectorAll('.file-content-item').forEach(item => {
+                item.style.display = item.dataset.filename === filename ? 'block' : 'none';
             });
         };
 
-        // Toggle agent chat panel - exposed globally for onclick handlers
-        window.toggleAgentChat = function(issueNumber) {
+        // Toggle agent chat panel
+        window.toggleChatPanel = function(issueNumber) {
             const panel = document.getElementById('agent-chat-panel-' + issueNumber);
             if (panel) {
                 panel.classList.toggle('collapsed');
-                const icon = document.getElementById('chat-toggle-icon-' + issueNumber);
-                if (icon) {
-                    icon.textContent = panel.classList.contains('collapsed') ? '\u00ab' : '\u00d7';
-                }
             }
         };
 
         // Close modal on escape key
         document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') {
+            if (e.key === 'Escape' && document.getElementById('issue-modal').classList.contains('active')) {
                 window.closeIssueModal();
             }
         });
 
         // Close modal on background click
-        document.getElementById('issue-modal').addEventListener('click', (e) => {
-            if (e.target.id === 'issue-modal') {
-                window.closeIssueModal();
-            }
-        });
+        const modal = document.getElementById('issue-modal');
+        if (modal) {
+            modal.addEventListener('click', (e) => {
+                if (e.target.id === 'issue-modal') {
+                    window.closeIssueModal();
+                }
+            });
+        }
 
         // Stage toggle functionality
         const reviewStages = ['backlog', 'define', 'plan_review', 'implementation_review'];
@@ -207,7 +234,7 @@
             }
         }
 
-        // Stage view toggle - exposed globally for onclick handlers
+        // Stage view toggle
         window.setStageView = function(view) {
             const columns = document.querySelectorAll('.kanban-column');
             const toggleReview = document.getElementById('toggle-review');
@@ -254,14 +281,6 @@
         // Apply saved preference on load
         const savedView = localStorage.getItem('kanbanStageView') || 'review';
         window.setStageView(savedView);
-
-        // Re-apply stage view after HTMX swaps board content
-        document.body.addEventListener('htmx:afterSwap', function(evt) {
-            if (evt.detail.target.classList.contains('kanban-board')) {
-                const currentView = localStorage.getItem('kanbanStageView') || 'review';
-                window.setStageView(currentView);
-            }
-        });
 
         // Mini dropzone drag/drop handlers
         document.querySelectorAll('.mini-dropzone').forEach(dropzone => {
@@ -313,7 +332,7 @@
             });
         });
 
-        // Agent light toggle (for kanban cards) - exposed globally for onclick handlers
+        // Agent light toggle (for kanban cards)
         window.toggleAgent = async function(issueNumber, lightElement) {
             const isOn = lightElement.classList.contains('on');
 
@@ -334,12 +353,8 @@
                 });
 
                 if (response.ok) {
-                    // Switch to "on" state after a brief delay
-                    setTimeout(() => {
-                        lightElement.classList.remove('starting');
-                        lightElement.classList.add('on');
-                        lightElement.title = 'Agent running - click to view';
-                    }, 2000);
+                    // Reload to show new state
+                    setTimeout(() => location.reload(), 2000);
                 } else {
                     // Revert to stalled state on error
                     lightElement.classList.remove('starting');
@@ -354,7 +369,7 @@
             }
         };
 
-        // Agent light toggle (for detail view) - exposed globally for onclick handlers
+        // Agent light toggle (for detail view)
         window.toggleAgentFromDetail = async function(issueNumber, lightElement) {
             const isOn = lightElement.classList.contains('on');
 
@@ -363,7 +378,6 @@
                 return;
             }
 
-            // Start/restart the agent
             lightElement.classList.remove('off', 'stalled');
             lightElement.classList.add('starting');
             lightElement.title = 'Starting agent...';
@@ -374,11 +388,7 @@
                 });
 
                 if (response.ok) {
-                    setTimeout(() => {
-                        lightElement.classList.remove('starting');
-                        lightElement.classList.add('on');
-                        lightElement.title = 'Agent running';
-                    }, 2000);
+                    setTimeout(() => location.reload(), 2000);
                 } else {
                     lightElement.classList.remove('starting');
                     lightElement.classList.add('stalled');
