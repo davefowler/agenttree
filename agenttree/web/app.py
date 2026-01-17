@@ -234,7 +234,7 @@ async def kanban(
             # Get commits behind for rebase button
             if selected_issue.assigned_agent:
                 from agenttree.hooks import get_commits_behind_main
-                commits_behind = get_commits_behind_main(issue_obj)
+                commits_behind = get_commits_behind_main(issue)
 
     return templates.TemplateResponse(
         "kanban.html",
@@ -318,9 +318,7 @@ async def flow(
         # Get commits behind for rebase button
         if selected_issue.assigned_agent:
             from agenttree.hooks import get_commits_behind_main
-            issue_obj = issue_crud.get_issue(issue_id, sync=False)
-            if issue_obj:
-                commits_behind = get_commits_behind_main(issue_obj)
+            commits_behind = get_commits_behind_main(issue_id)
 
     return templates.TemplateResponse(
         "flow.html",
