@@ -37,7 +37,8 @@
                     <div id="rebase-controls-{{ issue.number }}"
                          hx-get="/api/issues/{{ issue.number }}/rebase-controls"
                          hx-trigger="load"
-                         hx-swap="innerHTML">
+                         hx-swap="innerHTML"
+                         hx-preserve="true">
                         <span class="rebase-loading">Checking...</span>
                     </div>
                     <span id="rebase-status-{{ issue.number }}"></span>
