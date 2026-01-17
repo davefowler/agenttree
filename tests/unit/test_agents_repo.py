@@ -492,7 +492,8 @@ class TestCheckCiStatus:
             result = check_ci_status(agents_dir)
             assert result == 0
 
-    def test_check_ci_status_skips_non_implementation_review_issues(self, agents_dir):
+    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    def test_check_ci_status_skips_non_implementation_review_issues(self, mock_container, agents_dir):
         """Verify hook only processes issues at implementation_review stage."""
         import yaml
         from agenttree.agents_repo import check_ci_status
@@ -516,7 +517,8 @@ class TestCheckCiStatus:
             mock_get_checks.assert_not_called()
             assert result == 0
 
-    def test_check_ci_status_skips_issues_without_pr(self, agents_dir):
+    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    def test_check_ci_status_skips_issues_without_pr(self, mock_container, agents_dir):
         """Verify hook skips issues without pr_number."""
         import yaml
         from agenttree.agents_repo import check_ci_status
@@ -540,7 +542,8 @@ class TestCheckCiStatus:
             mock_get_checks.assert_not_called()
             assert result == 0
 
-    def test_check_ci_status_on_ci_success_does_nothing(self, agents_dir, issue_at_implementation_review):
+    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    def test_check_ci_status_on_ci_success_does_nothing(self, mock_container, agents_dir, issue_at_implementation_review):
         """Verify hook is a no-op when CI passes."""
         from agenttree.agents_repo import check_ci_status
         from agenttree.github import CheckStatus
@@ -558,7 +561,8 @@ class TestCheckCiStatus:
             assert not (issue_dir / "ci_feedback.md").exists()
             assert result == 0
 
-    def test_check_ci_status_on_ci_pending_does_nothing(self, agents_dir, issue_at_implementation_review):
+    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    def test_check_ci_status_on_ci_pending_does_nothing(self, mock_container, agents_dir, issue_at_implementation_review):
         """Verify hook waits for CI to complete (no action on pending)."""
         from agenttree.agents_repo import check_ci_status
         from agenttree.github import CheckStatus
@@ -575,7 +579,8 @@ class TestCheckCiStatus:
             assert not (issue_dir / "ci_feedback.md").exists()
             assert result == 0
 
-    def test_check_ci_status_on_ci_failure_writes_feedback(self, agents_dir, issue_at_implementation_review):
+    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    def test_check_ci_status_on_ci_failure_writes_feedback(self, mock_container, agents_dir, issue_at_implementation_review):
         """Verify ci_feedback.md is created with failure details."""
         from agenttree.agents_repo import check_ci_status
         from agenttree.github import CheckStatus
@@ -598,7 +603,8 @@ class TestCheckCiStatus:
                 assert "FAILURE" in content or "failure" in content
                 assert result == 1
 
-    def test_check_ci_status_on_ci_failure_transitions_to_implement(self, agents_dir, issue_at_implementation_review):
+    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    def test_check_ci_status_on_ci_failure_transitions_to_implement(self, mock_container, agents_dir, issue_at_implementation_review):
         """Verify issue is moved back to implement stage."""
         import yaml
         from agenttree.agents_repo import check_ci_status
@@ -618,7 +624,8 @@ class TestCheckCiStatus:
                     data = yaml.safe_load(f)
                 assert data["stage"] == "implement"
 
-    def test_check_ci_status_on_ci_failure_sends_tmux_message(self, agents_dir, issue_at_implementation_review):
+    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    def test_check_ci_status_on_ci_failure_sends_tmux_message(self, mock_container, agents_dir, issue_at_implementation_review):
         """Verify agent is notified via tmux."""
         from agenttree.agents_repo import check_ci_status
         from agenttree.github import CheckStatus
@@ -646,7 +653,8 @@ class TestCheckCiStatus:
                     assert "agent-42" in call_args[0]
                     assert "CI" in call_args[1] or "failed" in call_args[1].lower()
 
-    def test_check_ci_status_skips_already_notified(self, agents_dir):
+    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    def test_check_ci_status_skips_already_notified(self, mock_container, agents_dir):
         """Verify duplicate notifications are prevented using ci_notified flag."""
         import yaml
         from agenttree.agents_repo import check_ci_status
@@ -679,7 +687,8 @@ class TestCheckCiStatus:
                 new_data = yaml.safe_load(f)
             assert new_data["stage"] == "implementation_review"
 
-    def test_check_ci_status_sets_ci_notified_flag(self, agents_dir, issue_at_implementation_review):
+    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    def test_check_ci_status_sets_ci_notified_flag(self, mock_container, agents_dir, issue_at_implementation_review):
         """Verify ci_notified flag is set after notification."""
         import yaml
         from agenttree.agents_repo import check_ci_status
@@ -698,7 +707,8 @@ class TestCheckCiStatus:
                 # But let's verify the feedback file was created
                 assert (issue_dir / "ci_feedback.md").exists()
 
-    def test_check_ci_status_handles_no_active_agent_gracefully(self, agents_dir, issue_at_implementation_review):
+    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    def test_check_ci_status_handles_no_active_agent_gracefully(self, mock_container, agents_dir, issue_at_implementation_review):
         """Verify graceful degradation when agent's tmux session isn't running."""
         from agenttree.agents_repo import check_ci_status
         from agenttree.github import CheckStatus
