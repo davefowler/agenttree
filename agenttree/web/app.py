@@ -234,7 +234,7 @@ async def kanban(
             # Get commits behind for rebase button
             if selected_issue.assigned_agent:
                 from agenttree.hooks import get_commits_behind_main
-                commits_behind = get_commits_behind_main(issue_obj)
+                commits_behind = get_commits_behind_main(issue)
 
     return templates.TemplateResponse(
         "kanban.html",
@@ -318,9 +318,7 @@ async def flow(
         # Get commits behind for rebase button
         if selected_issue.assigned_agent:
             from agenttree.hooks import get_commits_behind_main
-            issue_obj = issue_crud.get_issue(issue_id, sync=False)
-            if issue_obj:
-                commits_behind = get_commits_behind_main(issue_obj)
+            commits_behind = get_commits_behind_main(issue_id)
 
     return templates.TemplateResponse(
         "flow.html",
@@ -468,6 +466,27 @@ async def start_issue(
         return {"ok": True, "status": f"Starting agent for issue #{issue_id}..."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/issues/{issue_id}/agent-status")
+async def get_agent_status(
+    issue_id: str,
+    user: Optional[str] = Depends(get_current_user)
+) -> dict:
+    """Check if an agent's tmux session is running for an issue."""
+    # Normalize issue ID
+    padded_id = issue_id.zfill(3)
+    tmux_active = agent_manager._check_issue_tmux_session(padded_id)
+
+    # Also check if agent is assigned
+    issue = issue_crud.get_issue(issue_id, sync=False)
+    assigned_agent = issue.assigned_agent if issue else None
+
+    return {
+        "tmux_active": tmux_active,
+        "assigned_agent": assigned_agent,
+        "status": "running" if tmux_active else ("stalled" if assigned_agent else "off")
+    }
 
 
 @app.post("/api/issues/{issue_id}/move")
