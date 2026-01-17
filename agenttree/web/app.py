@@ -138,23 +138,10 @@ def get_current_user(username: Optional[str] = Depends(verify_credentials)) -> O
 
 
 class AgentManager:
-    """Manages agent state for the dashboard."""
+    """Manages agent tmux session checks."""
 
     def __init__(self, worktree_manager: Optional[WorktreeManager] = None):
         self.worktree_manager = worktree_manager
-        self.agents: Dict[int, dict] = {}
-
-    def _check_tmux_session(self, agent_num: int) -> bool:
-        """Check if tmux session exists for agent (legacy numbered agents)."""
-        try:
-            result = subprocess.run(
-                ["tmux", "has-session", "-t", f"agent-{agent_num}"],
-                capture_output=True,
-                timeout=1
-            )
-            return result.returncode == 0
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            return False
 
     def _check_issue_tmux_session(self, issue_id: str) -> bool:
         """Check if tmux session exists for an issue-bound agent."""
@@ -170,56 +157,6 @@ class AgentManager:
             return result.returncode == 0
         except (subprocess.TimeoutExpired, FileNotFoundError):
             return False
-
-    def get_agent_status(self, agent_num: int) -> dict:
-        """Get status of an agent."""
-        if self.worktree_manager:
-            try:
-                status = self.worktree_manager.get_status(agent_num)
-                
-                # Build task description
-                task_desc = None
-                if status.has_task and status.current_task:
-                    task_desc = status.current_task
-                    if status.task_count > 1:
-                        task_desc += f" (+{status.task_count - 1} queued)"
-                
-                return {
-                    "agent_num": agent_num,
-                    "status": "working" if status.is_busy else "idle",
-                    "current_task": task_desc,
-                    "task_count": status.task_count,
-                    "tmux_active": self._check_tmux_session(agent_num),
-                    "last_activity": datetime.now().isoformat()
-                }
-            except Exception:
-                # Agent not set up yet
-                pass
-
-        # Fallback to basic check
-        return {
-            "agent_num": agent_num,
-            "status": "idle",
-            "current_task": None,
-            "task_count": 0,
-            "tmux_active": self._check_tmux_session(agent_num),
-            "last_activity": "Unknown"
-        }
-
-    def get_all_agents(self) -> List[dict]:
-        """Get all configured agents by scanning for existing worktrees."""
-        agents = []
-        if self.worktree_manager:
-            config = self.worktree_manager.config
-            worktrees_dir = Path(config.worktrees_dir).expanduser()
-            
-            # Scan for existing agent directories matching project namespace
-            for agent_num in range(1, 10):
-                agent_path = worktrees_dir / f"{config.project}-agent-{agent_num}"
-                if agent_path.exists():
-                    agents.append(self.get_agent_status(agent_num))
-        
-        return agents
 
 
 # Global agent manager - will be initialized in startup
@@ -268,17 +205,10 @@ def get_kanban_board() -> KanbanBoard:
     return KanbanBoard(stages=stages, total_issues=len(issues))
 
 
-@app.get("/", response_class=HTMLResponse)
-async def dashboard(
-    request: Request,
-    user: Optional[str] = Depends(get_current_user)
-) -> HTMLResponse:
-    """Main dashboard page."""
-    agents = agent_manager.get_all_agents()
-    return templates.TemplateResponse(
-        "dashboard.html",
-        {"request": request, "agents": agents, "user": user, "active_page": "dashboard"}
-    )
+@app.get("/")
+async def root() -> RedirectResponse:
+    """Redirect root to kanban board."""
+    return RedirectResponse(url="/kanban", status_code=302)
 
 
 @app.get("/kanban", response_class=HTMLResponse)
@@ -427,19 +357,6 @@ async def flow_issues(
             "selected_issue": selected_issue,
             "chat_open": chat == "1",
         }
-    )
-
-
-@app.get("/agents", response_class=HTMLResponse)
-async def agents_list(
-    request: Request,
-    user: Optional[str] = Depends(get_current_user)
-) -> HTMLResponse:
-    """Get agents list (HTMX endpoint)."""
-    agents = agent_manager.get_all_agents()
-    return templates.TemplateResponse(
-        "partials/agents_list.html",
-        {"request": request, "agents": agents}
     )
 
 
