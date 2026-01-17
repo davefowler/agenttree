@@ -11,6 +11,7 @@ import subprocess
 import asyncio
 import secrets
 import os
+import re
 from typing import List, Dict, Optional
 from datetime import datetime
 
@@ -20,39 +21,25 @@ from agenttree.worktree import WorktreeManager
 from agenttree.github import get_issue as get_github_issue
 from agenttree import issues as issue_crud
 from agenttree.web.models import StageEnum, KanbanBoard, Issue as WebIssue, IssueMoveRequest
-import re
+
+# Pattern to match Claude Code's input prompt separator line
+# The separator is a line of U+2500 (BOX DRAWINGS LIGHT HORIZONTAL) characters: ─
+# We match lines that are at least 20 of these characters (with optional whitespace)
+_PROMPT_SEPARATOR_PATTERN = re.compile(r'^\s*─{20,}\s*$')
 
 
 def _strip_claude_input_prompt(output: str) -> str:
     """Strip Claude Code's input prompt area from tmux output.
 
-    Claude Code displays a separator (multiple horizontal bar lines) before
-    its input prompt. We truncate at this separator to show only the
-    conversation content.
+    Claude Code displays a separator (a line of ─ characters) before its input
+    prompt. We truncate at the first such separator to show only the conversation.
     """
     lines = output.split('\n')
 
-    # Look for the separator pattern: 3+ consecutive lines that are mostly
-    # horizontal bars (─), underscores (_), or spaces
-    separator_pattern = re.compile(r'^[\s─_\-━]+$')
-
-    consecutive_bars = 0
-    cutoff_index = None
-
     for i, line in enumerate(lines):
-        # Check if line is mostly horizontal bars/underscores (allowing some spaces)
-        stripped = line.strip()
-        if stripped and separator_pattern.match(line) and len(stripped) > 10:
-            consecutive_bars += 1
-            if consecutive_bars >= 3:
-                # Found the separator - cut from where it started
-                cutoff_index = i - 2  # Go back to first bar line
-                break
-        else:
-            consecutive_bars = 0
-
-    if cutoff_index is not None and cutoff_index > 0:
-        return '\n'.join(lines[:cutoff_index]).rstrip()
+        if _PROMPT_SEPARATOR_PATTERN.match(line):
+            # Found the separator - return everything before it
+            return '\n'.join(lines[:i]).rstrip()
 
     return output
 
@@ -480,11 +467,11 @@ async def agent_tmux(
             timeout=2
         )
 
-        output = result.stdout if result.returncode == 0 else "Tmux session not active"
-
-        # Strip Claude Code's input prompt area (appears as multiple horizontal bar lines)
-        # Look for 3+ consecutive lines that are mostly horizontal bars/underscores
-        output = _strip_claude_input_prompt(output)
+        if result.returncode == 0:
+            # Strip Claude Code's input prompt separator from the output
+            output = _strip_claude_input_prompt(result.stdout)
+        else:
+            output = "Tmux session not active"
     except (subprocess.TimeoutExpired, FileNotFoundError):
         output = "Could not capture tmux output"
 
