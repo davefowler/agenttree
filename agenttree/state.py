@@ -100,26 +100,17 @@ def load_state() -> dict:
     """Load state from file.
 
     Returns:
-        State dictionary with 'active_agents' and 'port_pool' keys
+        State dictionary with 'active_agents' key
     """
     state_path = get_state_path()
 
     if not state_path.exists():
-        return {
-            "active_agents": {},
-            "port_pool": {
-                "base": 3000,
-                "allocated": [],
-            },
-        }
+        return {"active_agents": {}}
 
     with open(state_path) as f:
         data = yaml.safe_load(f)
 
-    return data or {
-        "active_agents": {},
-        "port_pool": {"base": 3000, "allocated": []},
-    }
+    return data or {"active_agents": {}}
 
 
 def save_state(state: dict) -> None:
@@ -184,12 +175,8 @@ def register_agent(agent: ActiveAgent) -> None:
 
         state["active_agents"][agent.issue_id] = agent.to_dict()
 
-        # Track port allocation
-        if "port_pool" not in state:
-            state["port_pool"] = {"base": 3000, "allocated": []}
-
-        if agent.port not in state["port_pool"]["allocated"]:
-            state["port_pool"]["allocated"].append(agent.port)
+        # Note: Port tracking removed - ports are now deterministic from issue ID
+        # via get_port_for_issue()
 
         save_state(state)
 
@@ -212,63 +199,11 @@ def unregister_agent(issue_id: str) -> Optional[ActiveAgent]:
 
         if agent_data:
             agent = ActiveAgent.from_dict(agent_data)
-
-            # Free port
-            if agent.port in state.get("port_pool", {}).get("allocated", []):
-                state["port_pool"]["allocated"].remove(agent.port)
-
+            # Note: Port freeing removed - ports are deterministic from issue ID
             save_state(state)
             return agent
 
         return None
-
-
-def allocate_port(base_port: int = 3000) -> int:
-    """Allocate an available port.
-
-    Uses file locking to prevent race conditions when multiple processes
-    allocate ports concurrently (e.g., starting multiple agents at once).
-
-    Args:
-        base_port: Starting port number
-
-    Returns:
-        Allocated port number
-    """
-    with state_lock():
-        state = load_state()
-
-        if "port_pool" not in state:
-            state["port_pool"] = {"base": base_port, "allocated": []}
-
-        allocated = set(state["port_pool"].get("allocated", []))
-
-        # Find first available port starting from base + 1
-        port = base_port + 1
-        while port in allocated:
-            port += 1
-
-        state["port_pool"]["allocated"].append(port)
-        save_state(state)
-
-        return port
-
-
-def free_port(port: int) -> None:
-    """Free an allocated port.
-
-    Uses file locking to prevent race conditions during concurrent operations.
-
-    Args:
-        port: Port number to free
-    """
-    with state_lock():
-        state = load_state()
-
-        allocated = state.get("port_pool", {}).get("allocated", [])
-        if port in allocated:
-            allocated.remove(port)
-            save_state(state)
 
 
 def get_issue_names(issue_id: str, slug: str, project: str = "agenttree") -> dict:
@@ -291,6 +226,29 @@ def get_issue_names(issue_id: str, slug: str, project: str = "agenttree") -> dic
         "branch": f"issue-{issue_id}-{short_slug}",
         "tmux_session": f"{project}-issue-{issue_id}",
     }
+
+
+def get_port_for_issue(issue_id: str, base_port: int = 9000) -> int:
+    """Get deterministic port for an issue.
+
+    Derives port from issue number: base_port + (issue_num % 1000).
+    This eliminates the need for dynamic port allocation and port_pool state.
+
+    Args:
+        issue_id: Issue ID (e.g., "023" or "1045")
+        base_port: Base port number (default 9000)
+
+    Returns:
+        Port number for this issue
+
+    Note:
+        Issues 1 and 1001 would get the same port. This is acceptable because:
+        - Having 1000+ issues is rare
+        - Both would need active agents simultaneously (even rarer)
+        - The conflict would be immediately obvious
+    """
+    issue_num = int(issue_id)
+    return base_port + (issue_num % 1000)
 
 
 def create_agent_for_issue(

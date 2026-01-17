@@ -197,6 +197,13 @@ def create_issue(
             dep_num = dep.lstrip("0") or "0"
             normalized_deps.append(f"{int(dep_num):03d}")
 
+        # Check for circular dependencies before creating
+        cycle = detect_circular_dependency(issue_id, normalized_deps)
+        if cycle:
+            raise ValueError(
+                f"Circular dependency detected: {' -> '.join(cycle)}"
+            )
+
     # Create issue object
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     issue = Issue(
@@ -417,6 +424,70 @@ def check_dependencies_met(issue: Issue) -> tuple[bool, list[str]]:
     return len(unmet) == 0, unmet
 
 
+def detect_circular_dependency(
+    issue_id: str,
+    new_dependencies: list[str],
+) -> Optional[list[str]]:
+    """Detect if adding dependencies would create a circular dependency.
+
+    Uses DFS to detect cycles in the dependency graph.
+
+    Args:
+        issue_id: The issue ID to check
+        new_dependencies: List of dependency IDs to validate
+
+    Returns:
+        List of issue IDs forming the cycle if found, None otherwise
+    """
+    if not new_dependencies:
+        return None
+
+    # Normalize issue ID
+    normalized_id = f"{int(issue_id.lstrip('0') or '0'):03d}"
+
+    # Build adjacency list of all existing dependencies
+    dep_graph: dict[str, list[str]] = {}
+    for issue in list_issues():
+        issue_normalized = f"{int(issue.id.lstrip('0') or '0'):03d}"
+        dep_graph[issue_normalized] = [
+            f"{int(d.lstrip('0') or '0'):03d}" for d in issue.dependencies
+        ]
+
+    # Add the new dependencies we're validating
+    dep_graph[normalized_id] = [
+        f"{int(d.lstrip('0') or '0'):03d}" for d in new_dependencies
+    ]
+
+    # DFS to detect cycle starting from issue_id
+    visited: set[str] = set()
+    path: list[str] = []
+    path_set: set[str] = set()
+
+    def dfs(node: str) -> Optional[list[str]]:
+        if node in path_set:
+            # Found cycle - return path from cycle start
+            cycle_start = path.index(node)
+            return path[cycle_start:] + [node]
+
+        if node in visited:
+            return None
+
+        visited.add(node)
+        path.append(node)
+        path_set.add(node)
+
+        for neighbor in dep_graph.get(node, []):
+            cycle = dfs(neighbor)
+            if cycle:
+                return cycle
+
+        path.pop()
+        path_set.remove(node)
+        return None
+
+    return dfs(normalized_id)
+
+
 def get_blocked_issues(completed_issue_id: str) -> list[Issue]:
     """Get all issues in backlog that were waiting on a completed issue.
 
@@ -476,6 +547,7 @@ STAGE_ORDER = [
     IMPLEMENT,
     IMPLEMENTATION_REVIEW,
     ACCEPTED,
+    NOT_DOING,
 ]
 
 STAGE_SUBSTAGES = {

@@ -681,7 +681,7 @@ def start_agent(
     """
     from agenttree.state import (
         get_active_agent,
-        allocate_port,
+        get_port_for_issue,
         create_agent_for_issue,
         get_issue_names,
     )
@@ -772,9 +772,10 @@ def start_agent(
             console.print(f"[dim]Creating worktree: {worktree_path.name}[/dim]")
             create_worktree(repo_path, worktree_path, names["branch"])
 
-    # Allocate port
-    port = allocate_port(base_port=int(config.port_range.split("-")[0]))
-    console.print(f"[dim]Allocated port: {port}[/dim]")
+    # Get deterministic port from issue number
+    base_port = int(config.port_range.split("-")[0])
+    port = get_port_for_issue(issue.id, base_port=base_port)
+    console.print(f"[dim]Using port: {port} (derived from issue #{issue.id})[/dim]")
 
     # Register agent in state
     agent = create_agent_for_issue(
