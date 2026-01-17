@@ -426,9 +426,12 @@ async def agent_tmux(
     agent_num: str,
     user: Optional[str] = Depends(get_current_user)
 ) -> HTMLResponse:
-    """Get tmux output for an agent (HTMX endpoint)."""
+    """Get tmux output for an issue's agent (HTMX endpoint).
+
+    Note: agent_num parameter is actually the issue number - sessions are named by issue.
+    """
     config = load_config()
-    # Pad agent number to 3 digits to match tmux session naming
+    # Pad issue number to 3 digits to match tmux session naming
     padded_num = agent_num.zfill(3)
     session_name = f"{config.project}-issue-{padded_num}"
 
@@ -458,11 +461,14 @@ async def send_to_agent(
     message: str = Form(...),
     user: Optional[str] = Depends(get_current_user)
 ) -> HTMLResponse:
-    """Send a message to an agent via tmux."""
+    """Send a message to an issue's agent via tmux.
+
+    Note: agent_num parameter is actually the issue number - sessions are named by issue.
+    """
     from agenttree.tmux import send_message
 
     config = load_config()
-    # Pad agent number to 3 digits to match tmux session naming
+    # Pad issue number to 3 digits to match tmux session naming
     padded_num = agent_num.zfill(3)
     session_name = f"{config.project}-issue-{padded_num}"
 

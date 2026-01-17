@@ -10,20 +10,22 @@
             Agent {{ issue.assigned_agent }} assigned
         </div>
         <div class="tmux-output" id="tmux-output-{{ issue.number }}"
-             hx-get="/agent/{{ issue.assigned_agent }}/tmux"
+             hx-get="/agent/{{ issue.number }}/tmux"
              hx-trigger="load, every 2s"
              hx-swap="innerHTML">
             Loading...
         </div>
         <div class="tmux-input-container">
-            <form hx-post="/agent/{{ issue.assigned_agent }}/send"
+            <form hx-post="/agent/{{ issue.number }}/send"
                   hx-trigger="submit"
                   hx-target="#send-status-{{ issue.number }}"
                   hx-swap="innerHTML"
-                  onsubmit="this.reset(); return true;">
+                  class="send-form">
                 <input type="text" name="message" class="tmux-input"
                        placeholder="Send message to agent..."
-                       autocomplete="off">
+                       autocomplete="off"
+                       required>
+                <button type="submit" class="send-button">Send</button>
             </form>
             <div id="send-status-{{ issue.number }}"></div>
         </div>
