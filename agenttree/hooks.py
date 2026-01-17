@@ -418,7 +418,7 @@ def run_builtin_validator(
             wrapup_match = re.search(wrapup_pattern, content, re.MULTILINE | re.DOTALL)
 
             if not wrapup_match:
-                errors.append("Implementation Wrapup section not found in review.md")
+                errors.append(f"Implementation Wrapup section not found in {params['file']}")
             else:
                 wrapup_content = wrapup_match.group(1)
 
@@ -433,7 +433,7 @@ def run_builtin_validator(
                     # Remove HTML comments
                     checklist_content = re.sub(r'<!--.*?-->', '', checklist_content, flags=re.DOTALL)
 
-                    # Find unchecked items (- [ ] pattern, case-insensitive for x)
+                    # Find unchecked items (empty [ ] checkboxes)
                     unchecked = re.findall(r'-\s*\[\s*\]\s*(.*)', checklist_content)
                     if unchecked:
                         items = ", ".join(item.strip() for item in unchecked[:3])
