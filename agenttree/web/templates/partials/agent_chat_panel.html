@@ -12,7 +12,8 @@
         <div class="tmux-output" id="tmux-output-{{ issue.number }}"
              hx-get="/agent/{{ issue.number }}/tmux"
              hx-trigger="load, every 2s"
-             hx-swap="innerHTML">
+             hx-swap="innerHTML"
+             hx-preserve="true">
             Loading...
         </div>
         <div class="tmux-input-container">
