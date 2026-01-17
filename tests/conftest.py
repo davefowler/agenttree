@@ -27,5 +27,11 @@ def host_environment(monkeypatch):
         def test_pr_creation(host_environment):
             # This test will run as if on host
             ...
+
+    Note: This also patches is_running_in_container() because the test runner
+    itself may be in a container (e.g., cloud agent environment with /.dockerenv).
     """
     monkeypatch.delenv("AGENTTREE_CONTAINER", raising=False)
+    # Patch is_running_in_container to return False since the test environment
+    # itself may be a container (/.dockerenv exists)
+    monkeypatch.setattr("agenttree.hooks.is_running_in_container", lambda: False)

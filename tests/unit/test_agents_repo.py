@@ -290,8 +290,11 @@ class TestSyncAgentsRepo:
         assert "pull" in pull_call
         assert "--no-rebase" in pull_call
 
+    @patch("agenttree.agents_repo.check_merged_prs")
+    @patch("agenttree.agents_repo.check_controller_stages")
+    @patch("agenttree.agents_repo.push_pending_branches")
     @patch("agenttree.agents_repo.subprocess.run")
-    def test_sync_pull_only_offline(self, mock_run, git_repo):
+    def test_sync_pull_only_offline(self, mock_run, mock_push_pending, mock_check_controller, mock_check_merged, git_repo):
         """Test sync returns False when offline."""
         # Mock responses for: status --porcelain (no changes), pull (fails offline)
         mock_run.side_effect = [
@@ -303,8 +306,11 @@ class TestSyncAgentsRepo:
 
         assert result is False
 
+    @patch("agenttree.agents_repo.check_merged_prs")
+    @patch("agenttree.agents_repo.check_controller_stages")
+    @patch("agenttree.agents_repo.push_pending_branches")
     @patch("agenttree.agents_repo.subprocess.run")
-    def test_sync_pull_only_no_remote(self, mock_run, git_repo):
+    def test_sync_pull_only_no_remote(self, mock_run, mock_push_pending, mock_check_controller, mock_check_merged, git_repo):
         """Test sync returns False when no remote configured."""
         # Mock responses for: status --porcelain (no changes), pull (fails no remote)
         mock_run.side_effect = [
@@ -316,8 +322,11 @@ class TestSyncAgentsRepo:
 
         assert result is False
 
+    @patch("agenttree.agents_repo.check_merged_prs")
+    @patch("agenttree.agents_repo.check_controller_stages")
+    @patch("agenttree.agents_repo.push_pending_branches")
     @patch("agenttree.agents_repo.subprocess.run")
-    def test_sync_pull_only_conflict(self, mock_run, git_repo, capsys):
+    def test_sync_pull_only_conflict(self, mock_run, mock_push_pending, mock_check_controller, mock_check_merged, git_repo, capsys):
         """Test sync returns False on merge conflict."""
         # Mock responses for: status --porcelain (no changes), pull (conflict)
         mock_run.side_effect = [
@@ -378,14 +387,16 @@ class TestSyncAgentsRepo:
         assert result is True
         assert mock_run.call_count == 3  # status, pull, push (no commit since no changes)
 
+    @patch("agenttree.agents_repo.check_merged_prs")
+    @patch("agenttree.agents_repo.check_controller_stages")
+    @patch("agenttree.agents_repo.push_pending_branches")
     @patch("agenttree.agents_repo.subprocess.run")
-    def test_sync_write_push_offline(self, mock_run, git_repo, capsys):
+    def test_sync_write_push_offline(self, mock_run, mock_push_pending, mock_check_controller, mock_check_merged, git_repo, capsys):
         """Test sync handles offline push gracefully."""
+        # Mock responses for: status --porcelain (no changes), pull, push (fails)
         mock_run.side_effect = [
-            Mock(returncode=0),  # add -A
-            Mock(returncode=1),  # diff (has changes)
-            Mock(returncode=0, stderr=""),  # commit
-            Mock(returncode=0, stderr=""),  # pull --rebase
+            Mock(returncode=0, stdout=""),  # status --porcelain (empty = no changes)
+            Mock(returncode=0, stderr=""),  # pull --no-rebase
             Mock(returncode=1, stderr="Could not resolve host"),  # push fails
         ]
 
@@ -395,8 +406,11 @@ class TestSyncAgentsRepo:
         captured = capsys.readouterr()
         assert "Offline" in captured.out
 
+    @patch("agenttree.agents_repo.check_merged_prs")
+    @patch("agenttree.agents_repo.check_controller_stages")
+    @patch("agenttree.agents_repo.push_pending_branches")
     @patch("agenttree.agents_repo.subprocess.run")
-    def test_sync_timeout(self, mock_run, git_repo, capsys):
+    def test_sync_timeout(self, mock_run, mock_push_pending, mock_check_controller, mock_check_merged, git_repo, capsys):
         """Test sync handles timeout gracefully."""
         mock_run.side_effect = subprocess.TimeoutExpired(cmd="git", timeout=30)
 
@@ -406,33 +420,41 @@ class TestSyncAgentsRepo:
         captured = capsys.readouterr()
         assert "timed out" in captured.out
 
+    @patch("agenttree.agents_repo.check_merged_prs")
+    @patch("agenttree.agents_repo.check_controller_stages")
+    @patch("agenttree.agents_repo.push_pending_branches")
     @patch("agenttree.agents_repo.subprocess.run")
-    def test_sync_uses_default_commit_message(self, mock_run, git_repo):
+    def test_sync_uses_default_commit_message(self, mock_run, mock_push_pending, mock_check_controller, mock_check_merged, git_repo):
         """Test sync uses default commit message when not provided."""
+        # Mock responses for: status --porcelain (has changes), add, commit, pull, push
         mock_run.side_effect = [
+            Mock(returncode=0, stdout="M some_file.yaml"),  # status --porcelain (has changes)
             Mock(returncode=0),  # add -A
-            Mock(returncode=1),  # diff (has changes)
             Mock(returncode=0, stderr=""),  # commit
-            Mock(returncode=0, stderr=""),  # pull --rebase
+            Mock(returncode=0, stderr=""),  # pull --no-rebase
             Mock(returncode=0, stderr=""),  # push
         ]
 
         sync_agents_repo(git_repo, pull_only=False)
 
-        # commit is at index 2: add, diff, commit, pull, push
+        # commit is at index 2: status, add, commit, pull, push
         commit_call = mock_run.call_args_list[2]
         assert "Auto-sync: update issue data" in commit_call[0][0]
 
+    @patch("agenttree.agents_repo.check_merged_prs")
+    @patch("agenttree.agents_repo.check_controller_stages")
+    @patch("agenttree.agents_repo.push_pending_branches")
     @patch("agenttree.agents_repo.subprocess.run")
-    def test_sync_commit_failure(self, mock_run, git_repo, capsys):
+    def test_sync_commit_failure(self, mock_run, mock_push_pending, mock_check_controller, mock_check_merged, git_repo, capsys):
         """Test sync continues even if commit fails (commit result not checked)."""
         # Note: The current implementation doesn't check commit return code,
         # so sync continues to pull/push even if commit fails
+        # Mock responses for: status --porcelain (has changes), add, commit (fails), pull, push
         mock_run.side_effect = [
+            Mock(returncode=0, stdout="M some_file.yaml"),  # status --porcelain (has changes)
             Mock(returncode=0),  # add -A
-            Mock(returncode=1),  # diff (has changes)
             Mock(returncode=1, stderr="error: unable to commit"),  # commit fails
-            Mock(returncode=0, stderr=""),  # pull --rebase (continues anyway)
+            Mock(returncode=0, stderr=""),  # pull --no-rebase (continues anyway)
             Mock(returncode=0, stderr=""),  # push
         ]
 
