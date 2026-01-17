@@ -47,22 +47,6 @@
         }
     })();
 
-    // Auto-refresh page every 15 seconds using HTMX morph (smart DOM diffing)
-    // This preserves elements that haven't changed and doesn't disrupt in-flight polls
-    (function() {
-        let refreshInterval = 15000; // 15 seconds
-
-        setInterval(() => {
-            // Don't refresh if user is typing in an input/textarea
-            const activeEl = document.activeElement;
-            if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
-                return;
-            }
-            // Use HTMX to fetch and morph the page
-            htmx.ajax('GET', window.location.href, {
-                target: 'body',
-                swap: 'morph:innerHTML'
-            });
-        }, refreshInterval);
-    })();
+    // Auto-refresh disabled - was causing loops with HTMX morph
+    // TODO: implement smarter partial refresh for issue status
 </script>
