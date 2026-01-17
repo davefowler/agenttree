@@ -495,11 +495,15 @@ def run_builtin_validator(
                 checks = get_pr_checks(pr_number)
 
                 # Filter to failed/incomplete checks
+                # A check is considered failed if:
+                # - It's still pending (not completed)
+                # - Its conclusion is "failure"
+                # - It's not successful and not skipped
                 failed_checks = [
                     check for check in checks
-                    if check.state != "SUCCESS" and check.conclusion not in ("success", "skipped", None)
-                    or (check.state == "PENDING")
+                    if (check.state == "PENDING")
                     or (check.conclusion == "failure")
+                    or (check.state != "SUCCESS" and check.conclusion not in ("success", "skipped", None))
                 ]
 
                 # If no specific failed checks but wait_for_ci returned False, it's a timeout
