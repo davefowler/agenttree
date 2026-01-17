@@ -1155,10 +1155,9 @@ def remote_list() -> None:
 
     table = Table(title="Tailscale Hosts")
     table.add_column("Hostname", style="cyan")
-    table.add_column("IP Address", style="green")
 
     for host in hosts:
-        table.add_row(host.get("name", "unknown"), host.get("ip", "unknown"))
+        table.add_row(host)
 
     console.print(table)
 
@@ -1380,11 +1379,12 @@ def issue_list(stage: Optional[str], priority: Optional[str], agent: Optional[in
     """
     stage_filter = stage if stage else None
     priority_filter = Priority(priority) if priority else None
+    agent_filter = str(agent) if agent is not None else None
 
     issues = list_issues_func(
         stage=stage_filter,
         priority=priority_filter,
-        assigned_agent=agent,
+        assigned_agent=agent_filter,
     )
 
     if as_json:
@@ -1642,12 +1642,12 @@ def stage_status(issue_id: Optional[str]) -> None:
         table.add_column("Stage", style="magenta")
         table.add_column("Agent", style="green")
 
-        for issue in active_issues:
-            stage_str = issue.stage
-            if issue.substage:
-                stage_str += f".{issue.substage}"
-            agent_str = f"Agent {issue.assigned_agent}" if issue.assigned_agent else "-"
-            table.add_row(issue.id, issue.title[:40], stage_str, agent_str)
+        for active_issue in active_issues:
+            stage_str = active_issue.stage
+            if active_issue.substage:
+                stage_str += f".{active_issue.substage}"
+            agent_str = f"Agent {active_issue.assigned_agent}" if active_issue.assigned_agent else "-"
+            table.add_row(active_issue.id, active_issue.title[:40], stage_str, agent_str)
 
         console.print(table)
         return
