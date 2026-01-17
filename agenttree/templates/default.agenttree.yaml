@@ -110,13 +110,6 @@ stages:
       - rebase:
 
   - name: implement
-    pre_completion:
-      - run: agenttree lint
-        optional: true
-        context: Lint
-      - run: agenttree test
-        optional: true
-        context: Tests
     substages:
       setup: {}
       code: {}
@@ -127,6 +120,12 @@ stages:
               template: review.md
               dest: review.md
         pre_completion:
+          - run:
+              command: uv run pytest tests/unit -q
+              must_pass: true
+          - run:
+              command: uv run mypy agenttree
+              must_pass: true
           - section_check:
               file: review.md
               section: Self-Review Checklist

@@ -63,7 +63,7 @@
     <!-- Modal for issue detail -->
     <div id="issue-modal" class="modal{% if selected_issue %} active{% endif %}">
         <div class="modal-content">
-            <a href="/kanban" class="modal-close">&times;</a>
+            <a href="/kanban" class="modal-close" onclick="event.preventDefault(); window.closeIssueModal();">&times;</a>
             <div id="modal-issue-detail">
                 {% if selected_issue %}
                 {% set issue = selected_issue %}
@@ -160,7 +160,11 @@
         };
 
         window.closeIssueModal = function() {
-            window.location.href = '/kanban';
+            // Immediately hide the modal for fast feedback
+            const modal = document.getElementById('issue-modal');
+            modal.classList.remove('active');
+            // Update URL without reload
+            history.pushState({}, '', '/kanban');
         };
 
         // Handle file tab clicks - CSS toggle approach
@@ -332,6 +336,34 @@
             });
         });
 
+        // Poll agent status until running or max attempts reached
+        async function pollAgentStatus(issueNumber, lightElement, maxAttempts = 15) {
+            for (let i = 0; i < maxAttempts; i++) {
+                await new Promise(r => setTimeout(r, 2000)); // Wait 2s between polls
+
+                try {
+                    const response = await fetch(`/api/issues/${issueNumber}/agent-status`);
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data.status === 'running') {
+                            lightElement.classList.remove('starting');
+                            lightElement.classList.add('on');
+                            lightElement.title = 'Agent running - click to view';
+                            return true;
+                        }
+                    }
+                } catch (e) {
+                    console.error('Error polling agent status:', e);
+                }
+            }
+
+            // Max attempts reached - show as stalled
+            lightElement.classList.remove('starting');
+            lightElement.classList.add('stalled');
+            lightElement.title = 'Agent failed to start - click to retry';
+            return false;
+        }
+
         // Agent light toggle (for kanban cards)
         window.toggleAgent = async function(issueNumber, lightElement) {
             const isOn = lightElement.classList.contains('on');
@@ -353,10 +385,9 @@
                 });
 
                 if (response.ok) {
-                    // Reload to show new state
-                    setTimeout(() => location.reload(), 2000);
+                    // Poll for actual agent status
+                    pollAgentStatus(issueNumber, lightElement);
                 } else {
-                    // Revert to stalled state on error
                     lightElement.classList.remove('starting');
                     lightElement.classList.add('stalled');
                     lightElement.title = 'Failed to start - click to retry';
@@ -388,7 +419,8 @@
                 });
 
                 if (response.ok) {
-                    setTimeout(() => location.reload(), 2000);
+                    // Poll for actual agent status
+                    pollAgentStatus(issueNumber, lightElement);
                 } else {
                     lightElement.classList.remove('starting');
                     lightElement.classList.add('stalled');
