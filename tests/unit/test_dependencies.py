@@ -153,6 +153,19 @@ class TestCheckGhAuthenticated:
 
             assert result.passed is False
 
+    def test_check_gh_authenticated_generic_exception(self):
+        """Test that check handles unexpected exceptions gracefully."""
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = OSError("Unexpected error")
+
+            result = check_gh_authenticated()
+
+            assert result.passed is False
+            assert result.name == "gh_authenticated"
+            assert "failed" in result.description.lower()
+            assert result.fix_instructions is not None
+            assert "manually" in result.fix_instructions.lower()
+
 
 class TestCheckContainerRuntime:
     """Tests for check_container_runtime function."""
@@ -360,3 +373,48 @@ class TestPrintDependencyReport:
         captured = capsys.readouterr()
 
         assert "https://cli.github.com" in captured.out
+
+    def test_format_results_warning_shows_warning_label(self, capsys):
+        """Test that warning checks (required=False) show warning styling."""
+        results = [
+            DependencyResult(
+                name="container_runtime",
+                passed=False,
+                description="No container runtime found",
+                fix_instructions="Install Docker",
+                required=False,  # This is a warning, not a hard failure
+            ),
+        ]
+
+        print_dependency_report(results)
+        captured = capsys.readouterr()
+
+        # Warning label should appear
+        assert "warning" in captured.out.lower()
+        # Description should appear
+        assert "container" in captured.out.lower()
+        # Fix instructions should appear
+        assert "docker" in captured.out.lower()
+
+    def test_format_results_all_pass_no_header(self, capsys):
+        """Test that when all checks pass, no dependency header is shown."""
+        results = [
+            DependencyResult(
+                name="git_repo",
+                passed=True,
+                description="Git repository detected",
+            ),
+            DependencyResult(
+                name="gh_installed",
+                passed=True,
+                description="GitHub CLI installed",
+            ),
+        ]
+
+        print_dependency_report(results)
+        captured = capsys.readouterr()
+
+        # Should not show the "requires the following dependencies" header
+        assert "requires the following dependencies" not in captured.out.lower()
+        # But should still show the passed checks
+        assert "git" in captured.out.lower()

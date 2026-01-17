@@ -53,7 +53,7 @@ def get_git_worktree_info(worktree_path: Path) -> Tuple[Optional[Path], Optional
 class ContainerRuntime:
     """Container runtime manager."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize container runtime."""
         self.runtime = self.detect_runtime()
 
