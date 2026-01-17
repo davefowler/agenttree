@@ -318,6 +318,7 @@ HOOK_TYPES = {
     "cleanup_agent", "start_blocked_issues",
     # Controller hooks (run on post-sync)
     "push_pending_branches", "check_controller_stages", "check_merged_prs",
+    "check_ci_status",
 }
 
 # =============================================================================
@@ -1037,6 +1038,12 @@ def run_builtin_validator(
         agents_dir = kwargs.get("agents_dir")
         if agents_dir:
             check_merged_prs(agents_dir)
+
+    elif hook_type == "check_ci_status":
+        from agenttree.agents_repo import check_ci_status
+        agents_dir = kwargs.get("agents_dir")
+        if agents_dir:
+            check_ci_status(agents_dir)
 
     else:
         # Unknown type - ignore silently (allows for future extensions)
