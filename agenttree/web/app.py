@@ -499,17 +499,9 @@ async def send_to_agent(
     padded_num = agent_num.zfill(3)
     session_name = f"{config.project}-issue-{padded_num}"
 
-    if send_message(session_name, message):
-        status = "Sent"
-        success = True
-    else:
-        status = "Agent not running - click the light to start"
-        success = False
-
-    return templates.TemplateResponse(
-        "partials/send_status.html",
-        {"request": request, "status": status, "success": success}
-    )
+    # Send message - result will appear in tmux output on next poll
+    send_message(session_name, message)
+    return HTMLResponse("")
 
 
 @app.post("/agent/{agent_num}/start", response_class=HTMLResponse)
