@@ -144,7 +144,7 @@ def run_post_controller_hooks(agents_dir: Path) -> None:
     hooks = config.get("controller_hooks", {}).get("post_sync", DEFAULT_POST_SYNC_HOOKS)
 
     # Load global hook state
-    state = load_sync_hook_state(agents_dir)
+    state = load_hook_state(agents_dir)
 
     for hook_entry in hooks:
         # Parse hook entry (can be string or dict)
@@ -170,7 +170,7 @@ def run_post_controller_hooks(agents_dir: Path) -> None:
             update_hook_state(hook_name, state, success=False, error=str(e))
 
     # Save updated state
-    save_sync_hook_state(agents_dir, state)
+    save_hook_state(agents_dir, state)
 
 
 def check_rate_limit(
@@ -259,21 +259,21 @@ def update_hook_state(
         hook_state["last_error"] = error
 
 
-def load_sync_hook_state(agents_dir: Path) -> dict:
-    """Load global sync hook state from _agenttree/.sync_hook_state.yaml"""
-    state_file = agents_dir / ".sync_hook_state.yaml"
+def load_hook_state(agents_dir: Path) -> dict:
+    """Load global sync hook state from _agenttree/.hook_state.yaml"""
+    state_file = agents_dir / ".hook_state.yaml"
     if state_file.exists():
         with open(state_file) as f:
             return yaml.safe_load(f) or {}
     return {}
 
 
-def save_sync_hook_state(agents_dir: Path, state: dict) -> None:
+def save_hook_state(agents_dir: Path, state: dict) -> None:
     """Save global sync hook state."""
     # Increment global sync count
     state["_sync_count"] = state.get("_sync_count", 0) + 1
 
-    state_file = agents_dir / ".sync_hook_state.yaml"
+    state_file = agents_dir / ".hook_state.yaml"
     with open(state_file, "w") as f:
         yaml.dump(state, f, default_flow_style=False, sort_keys=False)
 ```
@@ -350,7 +350,7 @@ controller_hooks:
 2. Built-in hooks (`push_pending_branches`, `check_controller_stages`, etc.) available by name
 3. Custom hooks via `command` (shell) or `webhook` (HTTP POST)
 4. Rate limiting via `min_interval_s` and/or `run_every_n_syncs`
-5. Global hook state in `_agenttree/.sync_hook_state.yaml`
+5. Global hook state in `_agenttree/.hook_state.yaml`
 6. Per-issue state in `issue.yaml` for issue-specific hooks
 
 **Files to create/modify:**
