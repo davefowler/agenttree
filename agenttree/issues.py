@@ -894,7 +894,8 @@ def load_skill(
                 context[var_name] = ""
 
     # Load project-level review checklist if it exists (for project-specific patterns)
-    project_review_path = agents_path / "PROJECT_REVIEW.md"
+    # Look in skills directory to keep all skill-related files together
+    project_review_path = agents_path / "skills" / "project_review.md"
     if project_review_path.exists():
         context["project_review_md"] = project_review_path.read_text()
     else:
