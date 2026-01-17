@@ -468,6 +468,27 @@ async def start_issue(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/issues/{issue_id}/agent-status")
+async def get_agent_status(
+    issue_id: str,
+    user: Optional[str] = Depends(get_current_user)
+) -> dict:
+    """Check if an agent's tmux session is running for an issue."""
+    # Normalize issue ID
+    padded_id = issue_id.zfill(3)
+    tmux_active = agent_manager._check_issue_tmux_session(padded_id)
+
+    # Also check if agent is assigned
+    issue = issue_crud.get_issue(issue_id, sync=False)
+    assigned_agent = issue.assigned_agent if issue else None
+
+    return {
+        "tmux_active": tmux_active,
+        "assigned_agent": assigned_agent,
+        "status": "running" if tmux_active else ("stalled" if assigned_agent else "off")
+    }
+
+
 @app.post("/api/issues/{issue_id}/move")
 async def move_issue(
     issue_id: str,
