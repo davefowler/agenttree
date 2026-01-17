@@ -19,8 +19,8 @@
             <form hx-post="/agent/{{ issue.number }}/send"
                   hx-trigger="submit"
                   hx-swap="none"
-                  class="send-form"
-                  onsubmit="this.reset();">
+                  hx-on::after-request="this.reset()"
+                  class="send-form">
                 <input type="text" name="message" class="tmux-input"
                        placeholder="Send message to agent..."
                        autocomplete="off"
