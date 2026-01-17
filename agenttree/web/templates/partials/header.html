@@ -46,4 +46,31 @@
             updateThemeIcon(savedTheme);
         }
     })();
+
+    // Auto-refresh page every 15 seconds to keep issue status current
+    // Only refresh if user isn't actively typing in an input
+    (function() {
+        let refreshInterval = 15000; // 15 seconds
+
+        setInterval(() => {
+            // Don't refresh if user is typing in an input/textarea
+            const activeEl = document.activeElement;
+            if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
+                return;
+            }
+            // Preserve scroll position in URL hash for restoration
+            const scrollY = window.scrollY;
+            if (scrollY > 0) {
+                sessionStorage.setItem('scrollPos', scrollY);
+            }
+            location.reload();
+        }, refreshInterval);
+
+        // Restore scroll position after reload
+        const savedScroll = sessionStorage.getItem('scrollPos');
+        if (savedScroll) {
+            window.scrollTo(0, parseInt(savedScroll));
+            sessionStorage.removeItem('scrollPos');
+        }
+    })();
 </script>
