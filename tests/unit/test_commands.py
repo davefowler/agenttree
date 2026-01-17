@@ -193,3 +193,35 @@ class TestGetReferencedCommands:
 
         result = get_referenced_commands(template, commands)
         assert result == {"git_branch"}
+
+    def test_jinja_filters(self) -> None:
+        """Should handle Jinja filters like {{ var | upper }}."""
+        template = "Branch: {{ git_branch | upper }}"
+        commands = {"git_branch": "git branch --show-current"}
+
+        result = get_referenced_commands(template, commands)
+        assert result == {"git_branch"}
+
+    def test_jinja_filters_with_arguments(self) -> None:
+        """Should handle Jinja filters with arguments."""
+        template = "Branch: {{ git_branch | default('main') | upper }}"
+        commands = {"git_branch": "git branch --show-current"}
+
+        result = get_referenced_commands(template, commands)
+        assert result == {"git_branch"}
+
+    def test_jinja_multiple_filters(self) -> None:
+        """Should handle multiple variables with filters."""
+        template = """
+- Branch: {{ git_branch | upper }}
+- Files: {{ files_changed | default(0) }}
+- Simple: {{ simple_var }}
+"""
+        commands = {
+            "git_branch": "git branch",
+            "files_changed": "git diff --stat | wc -l",
+            "simple_var": "echo simple",
+        }
+
+        result = get_referenced_commands(template, commands)
+        assert result == {"git_branch", "files_changed", "simple_var"}
