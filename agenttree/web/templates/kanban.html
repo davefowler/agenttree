@@ -47,8 +47,12 @@
         </div>
         {% endfor %}
 
-        <!-- Mini dropzones for hidden columns -->
+        <!-- Mini dropzones for hidden columns and backlog -->
         <div class="mini-dropzones" id="mini-dropzones">
+            <div class="mini-dropzone" data-stage="backlog" id="mini-backlog">
+                <span class="dropzone-label">Backlog</span>
+                <span class="dropzone-count" id="backlog-count">0</span>
+            </div>
             <div class="mini-dropzone" data-stage="accepted" id="mini-accepted">
                 <span class="dropzone-label">Accepted</span>
                 <span class="dropzone-count" id="accepted-count">0</span>
@@ -128,27 +132,43 @@
                     return;
                 }
 
-                // Dropping anywhere from human review = approve
-                // (except dropping back on same column)
-                if (newStage !== oldStage) {
-                    try {
-                        // Call approve endpoint - runs actual workflow
-                        const response = await fetch(`/api/issues/${issueNumber}/approve`, {
+                // Skip if dropping back on same column
+                if (newStage === oldStage) {
+                    return;
+                }
+
+                try {
+                    let response;
+                    // Dropping onto backlog = move (not approve)
+                    if (newStage === 'backlog') {
+                        response = await fetch(`/api/issues/${issueNumber}/move`, {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({stage: 'backlog'})
+                        });
+                        if (response.ok) {
+                            console.log(`Moved issue #${issueNumber} to backlog`);
+                        } else {
+                            const data = await response.json();
+                            alert(`Cannot move to backlog: ${data.detail || 'Unknown error'}`);
+                        }
+                    } else {
+                        // Dropping anywhere else from human review = approve
+                        response = await fetch(`/api/issues/${issueNumber}/approve`, {
                             method: 'POST',
                             headers: {'Content-Type': 'application/json'}
                         });
-
                         if (response.ok) {
                             console.log(`Approved issue #${issueNumber}`);
                         } else {
                             const data = await response.json();
                             alert(`Cannot approve: ${data.detail || 'Unknown error'}`);
                         }
-                        location.reload();
-                    } catch (error) {
-                        console.error('Error approving issue:', error);
-                        location.reload();
                     }
+                    location.reload();
+                } catch (error) {
+                    console.error('Error processing drop:', error);
+                    location.reload();
                 }
             }
         });
@@ -212,24 +232,30 @@
 
         function updateMiniDropzones() {
             const miniDropzones = document.getElementById('mini-dropzones');
+            const backlogCol = document.querySelector('.kanban-column[data-stage="backlog"]');
             const acceptedCol = document.querySelector('.kanban-column[data-stage="accepted"]');
             const notDoingCol = document.querySelector('.kanban-column[data-stage="not_doing"]');
 
+            const backlogHidden = backlogCol && backlogCol.classList.contains('hidden');
             const acceptedHidden = acceptedCol && acceptedCol.classList.contains('hidden');
             const notDoingHidden = notDoingCol && notDoingCol.classList.contains('hidden');
 
-            // Show mini dropzones if either is hidden
-            if (acceptedHidden || notDoingHidden) {
+            // Show mini dropzones if any target is hidden
+            if (backlogHidden || acceptedHidden || notDoingHidden) {
                 miniDropzones.classList.add('visible');
             } else {
                 miniDropzones.classList.remove('visible');
             }
 
             // Show/hide individual mini dropzones
+            document.getElementById('mini-backlog').style.display = backlogHidden ? 'block' : 'none';
             document.getElementById('mini-accepted').style.display = acceptedHidden ? 'block' : 'none';
             document.getElementById('mini-not-doing').style.display = notDoingHidden ? 'block' : 'none';
 
             // Update counts
+            if (backlogCol) {
+                document.getElementById('backlog-count').textContent = backlogCol.querySelectorAll('.kanban-card').length;
+            }
             if (acceptedCol) {
                 document.getElementById('accepted-count').textContent = acceptedCol.querySelectorAll('.kanban-card').length;
             }

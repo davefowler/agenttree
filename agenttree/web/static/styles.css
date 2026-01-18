@@ -677,6 +677,31 @@ button[disabled] {
     color: #fbbf24;
 }
 
+.btn-backlog {
+    padding: 4px 10px;
+    font-size: 12px;
+    background: #f3f4f6;
+    border: 1px solid #9ca3af;
+    color: #4b5563;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.btn-backlog:hover {
+    background: #e5e7eb;
+    border-color: #6b7280;
+}
+
+[data-theme="dark"] .btn-backlog {
+    background: #374151;
+    border-color: #6b7280;
+    color: #d1d5db;
+}
+
+[data-theme="dark"] .btn-backlog:hover {
+    background: #4b5563;
+}
+
 /* ==============================================
    HTMX Loading Indicators
    ============================================== */

@@ -38,6 +38,12 @@
                         Rebase ({{ commits_behind }} behind)
                     </button>
                     {% endif %}
+                    {% if issue.stage != 'backlog' %}
+                    <button class="btn btn-backlog"
+                            onclick="backlogIssue('{{ issue.number }}', this)">
+                        Backlog
+                    </button>
+                    {% endif %}
                     {% if issue.is_review %}
                     <button class="btn btn-approve"
                             onclick="approveIssue('{{ issue.number }}', this)">
@@ -158,6 +164,37 @@ async function rebaseIssue(issueNumber, btn) {
         console.error('Error rebasing:', error);
         btn.disabled = false;
         btn.textContent = 'Rebase';
+    }
+}
+
+async function backlogIssue(issueNumber, btn) {
+    if (!confirm('Move this issue to backlog? This will stop any running agent.')) {
+        return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Moving...';
+
+    try {
+        const response = await fetch(`/api/issues/${issueNumber}/move`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({stage: 'backlog'})
+        });
+
+        if (response.ok) {
+            btn.textContent = 'Moved!';
+            setTimeout(() => location.reload(), 500);
+        } else {
+            const data = await response.json();
+            alert(`Cannot move to backlog: ${data.detail || 'Unknown error'}`);
+            btn.disabled = false;
+            btn.textContent = 'Backlog';
+        }
+    } catch (error) {
+        console.error('Error moving to backlog:', error);
+        btn.disabled = false;
+        btn.textContent = 'Backlog';
     }
 }
 </script>
