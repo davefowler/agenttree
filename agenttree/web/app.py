@@ -16,8 +16,11 @@ from typing import List, Dict, Optional
 from datetime import datetime
 
 from agenttree import __version__
-from agenttree.config import load_config
+from agenttree.config import load_config, Config
 from agenttree.worktree import WorktreeManager
+
+# Load config once at module level - server reload on .agenttree.yaml changes
+_config: Config = load_config()
 from agenttree.github import get_issue as get_github_issue
 from agenttree import issues as issue_crud
 from agenttree.web.models import StageEnum, KanbanBoard, Issue as WebIssue, IssueMoveRequest
@@ -142,21 +145,38 @@ class AgentManager:
 
     def __init__(self, worktree_manager: Optional[WorktreeManager] = None):
         self.worktree_manager = worktree_manager
+        self._active_sessions: Optional[set[str]] = None
+
+    def _get_active_sessions(self) -> set[str]:
+        """Get all active tmux session names in one call."""
+        if self._active_sessions is not None:
+            return self._active_sessions
+
+        try:
+            result = subprocess.run(
+                ["tmux", "list-sessions", "-F", "#{session_name}"],
+                capture_output=True,
+                text=True,
+                timeout=2
+            )
+            if result.returncode == 0:
+                self._active_sessions = set(result.stdout.strip().split('\n'))
+            else:
+                self._active_sessions = set()
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            self._active_sessions = set()
+
+        return self._active_sessions
+
+    def clear_session_cache(self) -> None:
+        """Clear the cached session list (call at start of each request)."""
+        self._active_sessions = None
 
     def _check_issue_tmux_session(self, issue_id: str) -> bool:
         """Check if tmux session exists for an issue-bound agent."""
         # Session names are: {project}-issue-{issue_id}
-        config = load_config()
-        session_name = f"{config.project}-issue-{issue_id}"
-        try:
-            result = subprocess.run(
-                ["tmux", "has-session", "-t", session_name],
-                capture_output=True,
-                timeout=1
-            )
-            return result.returncode == 0
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            return False
+        session_name = f"{_config.project}-issue-{issue_id}"
+        return session_name in self._get_active_sessions()
 
 
 # Global agent manager - will be initialized in startup
@@ -219,6 +239,7 @@ async def kanban(
     user: Optional[str] = Depends(get_current_user)
 ) -> HTMLResponse:
     """Kanban board page."""
+    agent_manager.clear_session_cache()  # Fresh session data per request
     board = get_kanban_board()
 
     # If issue param provided, load issue detail for modal
@@ -232,9 +253,9 @@ async def kanban(
             # Load all file contents upfront for CSS toggle tabs
             files = get_issue_files(issue, include_content=True)
             # Get commits behind for rebase button
-            if selected_issue.assigned_agent:
+            if selected_issue.assigned_agent and issue_obj.worktree_dir:
                 from agenttree.hooks import get_commits_behind_main
-                commits_behind = get_commits_behind_main(issue)
+                commits_behind = get_commits_behind_main(issue_obj.worktree_dir)
 
     return templates.TemplateResponse(
         "kanban.html",
@@ -295,6 +316,7 @@ async def flow(
     user: Optional[str] = Depends(get_current_user)
 ) -> HTMLResponse:
     """Flow view page."""
+    agent_manager.clear_session_cache()  # Fresh session data per request
     issues = issue_crud.list_issues(sync=False)  # Skip sync for fast web reads
     web_issues = _sort_flow_issues([convert_issue_to_web(i) for i in issues])
 
@@ -317,8 +339,10 @@ async def flow(
         files = get_issue_files(issue_id, include_content=True)
         # Get commits behind for rebase button
         if selected_issue.assigned_agent:
-            from agenttree.hooks import get_commits_behind_main
-            commits_behind = get_commits_behind_main(issue_id)
+            issue_obj = issue_crud.get_issue(issue_id, sync=False)
+            if issue_obj and issue_obj.worktree_dir:
+                from agenttree.hooks import get_commits_behind_main
+                commits_behind = get_commits_behind_main(issue_obj.worktree_dir)
 
     return templates.TemplateResponse(
         "flow.html",
@@ -612,7 +636,7 @@ async def get_commits_behind(
     if not issue:
         raise HTTPException(status_code=404, detail=f"Issue {issue_id} not found")
 
-    commits_behind = get_commits_behind_main(issue_id_normalized)
+    commits_behind = get_commits_behind_main(issue.worktree_dir)
     return {"commits_behind": commits_behind}
 
 

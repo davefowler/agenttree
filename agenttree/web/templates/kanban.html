@@ -25,10 +25,8 @@
                      data-stage="{{ issue.stage.value }}"
                      data-has-agent="{{ 'true' if issue.assigned_agent else 'false' }}"
                      draggable="{{ 'true' if issue.stage.value in ['plan_review', 'implementation_review'] else 'false' }}"
-                     hx-get="/kanban?issue={{ issue.number }}"
-                     hx-push-url="true"
-                     hx-target="body"
-                     hx-swap="outerHTML">
+                     onclick="openIssueModal('{{ issue.number }}')"
+                     style="cursor: pointer;">
                     <div class="agent-light {% if issue.tmux_active %}on{% elif issue.assigned_agent %}stalled{% else %}off{% endif %}"
                          onclick="event.stopPropagation(); toggleAgent('{{ issue.number }}', this)"
                          title="{% if issue.tmux_active %}Agent running - click to view{% elif issue.assigned_agent %}Agent assigned but inactive{% else %}Click to start agent{% endif %}"></div>
@@ -175,16 +173,20 @@
 
         // Modal functions
         window.openIssueModal = function(issueNumber) {
-            // Navigate to issue URL - simpler than AJAX modal loading
-            window.location.href = `/kanban?issue=${issueNumber}`;
+            // Navigate to issue URL, preserving view param
+            const url = new URL(window.location);
+            url.searchParams.set('issue', issueNumber);
+            window.location.href = url.toString();
         };
 
         window.closeIssueModal = function() {
             // Immediately hide the modal for fast feedback
             const modal = document.getElementById('issue-modal');
             modal.classList.remove('active');
-            // Update URL without reload
-            history.pushState({}, '', '/kanban');
+            // Update URL without reload, preserving view param
+            const url = new URL(window.location);
+            url.searchParams.delete('issue');
+            history.pushState({}, '', url.toString());
         };
 
         // Handle file tab clicks - CSS toggle approach

@@ -1676,36 +1676,28 @@ def push_branch_to_remote(branch: str) -> None:
     )
 
 
-def get_commits_behind_main(issue_id: str) -> int:
-    """Get the number of commits the issue branch is behind origin/main.
+def get_commits_behind_main(worktree_dir: Optional[str]) -> int:
+    """Get the number of commits the worktree is behind local main.
+
+    Compares to local main branch (not origin/main) for fast lookups (~10ms).
+    Local main is kept up to date by separate pull operations.
 
     Args:
-        issue_id: Issue ID to check
+        worktree_dir: Path to the worktree directory
 
     Returns:
         Number of commits behind main, or 0 if unable to determine
     """
-    from agenttree.issues import get_issue
-
-    issue = get_issue(issue_id)
-    if not issue or not issue.worktree_dir:
+    if not worktree_dir:
         return 0
 
-    worktree_path = Path(issue.worktree_dir)
+    worktree_path = Path(worktree_dir)
     if not worktree_path.exists():
         return 0
 
     try:
-        # Fetch latest from origin (quiet, no output needed)
-        subprocess.run(
-            ["git", "-C", str(worktree_path), "fetch", "origin", "main"],
-            capture_output=True,
-            timeout=30,
-        )
-
-        # Count commits that are in origin/main but not in HEAD
         result = subprocess.run(
-            ["git", "-C", str(worktree_path), "rev-list", "--count", "HEAD..origin/main"],
+            ["git", "-C", str(worktree_path), "rev-list", "--count", "HEAD..main"],
             capture_output=True,
             text=True,
             timeout=10,
