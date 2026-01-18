@@ -301,15 +301,20 @@
                 columns.forEach(col => col.classList.remove('hidden'));
             }
 
-            // Save preference
+            // Save preference to localStorage and URL
             localStorage.setItem('kanbanStageView', view);
+            const url = new URL(window.location);
+            url.searchParams.set('view', view);
+            history.replaceState({}, '', url);
 
             // Update mini dropzones visibility
             updateMiniDropzones();
         };
 
-        // Apply saved preference on load
-        const savedView = localStorage.getItem('kanbanStageView') || 'review';
+        // Apply view from URL first, then localStorage, then default to 'review'
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlView = urlParams.get('view');
+        const savedView = urlView || localStorage.getItem('kanbanStageView') || 'review';
         window.setStageView(savedView);
 
         // Mini dropzone drag/drop handlers
