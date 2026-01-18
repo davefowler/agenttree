@@ -21,7 +21,6 @@ from agenttree.worktree import WorktreeManager
 
 # Load config once at module level - server reload on .agenttree.yaml changes
 _config: Config = load_config()
-from agenttree.github import get_issue as get_github_issue
 from agenttree import issues as issue_crud
 from agenttree.web.models import StageEnum, KanbanBoard, Issue as WebIssue, IssueMoveRequest
 
@@ -420,58 +419,6 @@ async def send_to_agent(
     return HTMLResponse("")
 
 
-@app.post("/agent/{agent_num}/start", response_class=HTMLResponse)
-async def start_task(
-    request: Request,
-    agent_num: int,
-    issue_number: int = Form(default=None),
-    task_description: str = Form(default=None),
-    user: Optional[str] = Depends(get_current_user)
-) -> HTMLResponse:
-    """Start a task on an agent (adds to queue)."""
-    from agenttree.worktree import create_task_file
-
-    try:
-        if agent_manager.worktree_manager:
-            worktree_path = agent_manager.worktree_manager.config.get_worktree_path(agent_num)
-
-            # Create task content
-            if issue_number:
-                try:
-                    issue = get_github_issue(issue_number)
-                    task_content = f"""# Task: {issue.title}
-
-**Issue:** [#{issue.number}]({issue.url})
-
-## Description
-
-{issue.body}
-"""
-                    task_path = create_task_file(
-                        worktree_path, issue.title, task_content, issue_number
-                    )
-                    status = f"Task queued: {task_path.name}"
-                except Exception as e:
-                    status = f"Error fetching issue: {e}"
-            else:
-                task_title = task_description[:50] if task_description else "Ad-hoc Task"
-                task_content = f"""# Task: {task_title}
-
-## Description
-
-{task_description or 'No description provided.'}
-"""
-                task_path = create_task_file(worktree_path, task_title, task_content)
-                status = f"Task queued: {task_path.name}"
-        else:
-            status = "Error: No worktree manager configured"
-
-    except Exception as e:
-        status = f"Error: {str(e)}"
-
-    return {"ok": True, "status": status}
-
-
 @app.post("/api/issues/{issue_id}/start")
 async def start_issue(
     issue_id: str,
@@ -623,39 +570,6 @@ async def approve_issue(
     return {"ok": True}
 
 
-@app.get("/api/issues/{issue_id}/commits-behind")
-async def get_commits_behind(
-    issue_id: str,
-    user: Optional[str] = Depends(get_current_user)
-) -> dict:
-    """Get the number of commits the issue branch is behind main."""
-    from agenttree.hooks import get_commits_behind_main
-
-    issue_id_normalized = issue_id.lstrip("0") or "0"
-    issue = issue_crud.get_issue(issue_id_normalized, sync=False)
-    if not issue:
-        raise HTTPException(status_code=404, detail=f"Issue {issue_id} not found")
-
-    commits_behind = get_commits_behind_main(issue.worktree_dir)
-    return {"commits_behind": commits_behind}
-
-
-@app.get("/api/issues/{issue_id}/stage", response_class=HTMLResponse)
-async def get_issue_stage(
-    issue_id: str,
-    user: Optional[str] = Depends(get_current_user)
-) -> HTMLResponse:
-    """Get just the issue stage text for polling updates."""
-    issue_id_normalized = issue_id.lstrip("0") or "0"
-    issue = issue_crud.get_issue(issue_id_normalized, sync=False)
-    if not issue:
-        raise HTTPException(status_code=404, detail=f"Issue {issue_id} not found")
-
-    # issue.stage is already a string from issue_crud
-    stage_text = issue.stage.replace('_', ' ').title()
-    return HTMLResponse(content=f"Stage: {stage_text}")
-
-
 @app.post("/api/issues/{issue_id}/rebase")
 async def rebase_issue(
     issue_id: str,
@@ -725,19 +639,6 @@ async def tmux_websocket(websocket: WebSocket, agent_num: int) -> None:
 
     except WebSocketDisconnect:
         pass
-
-
-@app.get("/api/issues/{issue_id}/files")
-async def list_issue_files(
-    issue_id: str,
-    user: Optional[str] = Depends(get_current_user)
-) -> dict:
-    """List markdown files in an issue directory."""
-    files = get_issue_files(issue_id)
-    if not files and not issue_crud.get_issue_dir(issue_id):
-        raise HTTPException(status_code=404, detail=f"Issue {issue_id} not found")
-
-    return {"issue_id": issue_id, "files": files}
 
 
 @app.get("/health")

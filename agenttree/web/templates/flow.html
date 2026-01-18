@@ -74,6 +74,32 @@
             }
         }
 
+        // Go to next issue in the flow sidebar
+        window.goToNextIssue = function() {
+            const items = document.querySelectorAll('.issue-item');
+            const activeItem = document.querySelector('.issue-item.active');
+
+            if (items.length === 0) {
+                location.reload();
+                return;
+            }
+
+            let nextItem = null;
+            if (activeItem) {
+                const activeIndex = Array.from(items).indexOf(activeItem);
+                // Get next item, or first if at end
+                nextItem = items[activeIndex + 1] || items[0];
+            } else {
+                nextItem = items[0];
+            }
+
+            if (nextItem && nextItem.href) {
+                window.location.href = nextItem.href;
+            } else {
+                location.reload();
+            }
+        };
+
         // Agent light toggle (for detail view)
         async function toggleAgentFromDetail(issueNumber, lightElement) {
             const isOn = lightElement.classList.contains('on');

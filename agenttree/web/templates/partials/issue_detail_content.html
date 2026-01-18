@@ -126,7 +126,23 @@
 </div>
 
 <script>
-// Action handlers for this issue detail - AJAX + reload pattern
+// Helper to move to next issue or close modal after action
+function afterAction() {
+    const isKanban = window.location.pathname.includes('/kanban');
+
+    if (isKanban && typeof window.closeIssueModal === 'function') {
+        // Kanban view: close modal
+        window.closeIssueModal();
+    } else if (typeof window.goToNextIssue === 'function') {
+        // Flow view: go to next issue
+        window.goToNextIssue();
+    } else {
+        // Fallback: reload
+        location.reload();
+    }
+}
+
+// Action handlers for this issue detail
 async function approveIssue(issueNumber, btn) {
     btn.disabled = true;
     btn.textContent = 'Approving...';
@@ -139,7 +155,7 @@ async function approveIssue(issueNumber, btn) {
 
         if (response.ok) {
             btn.textContent = 'Approved!';
-            setTimeout(() => location.reload(), 500);
+            setTimeout(afterAction, 500);
         } else {
             const data = await response.json();
             alert(`Cannot approve: ${data.detail || 'Unknown error'}`);
@@ -165,7 +181,7 @@ async function rebaseIssue(issueNumber, btn) {
 
         if (response.ok) {
             btn.textContent = 'Rebased!';
-            setTimeout(() => location.reload(), 500);
+            setTimeout(afterAction, 500);
         } else {
             const data = await response.json();
             alert(`Cannot rebase: ${data.detail || 'Unknown error'}`);
@@ -196,7 +212,7 @@ async function backlogIssue(issueNumber, btn) {
 
         if (response.ok) {
             btn.textContent = 'Moved!';
-            setTimeout(() => location.reload(), 500);
+            setTimeout(afterAction, 500);
         } else {
             const data = await response.json();
             alert(`Cannot move to backlog: ${data.detail || 'Unknown error'}`);
@@ -222,7 +238,7 @@ async function startIssue(issueNumber, btn) {
 
         if (response.ok) {
             btn.textContent = 'Started!';
-            setTimeout(() => location.reload(), 1000);
+            setTimeout(afterAction, 1000);
         } else {
             const data = await response.json();
             alert(`Cannot start: ${data.detail || 'Unknown error'}`);
@@ -253,7 +269,7 @@ async function archiveIssue(issueNumber, btn) {
 
         if (response.ok) {
             btn.textContent = 'Archived!';
-            setTimeout(() => location.reload(), 500);
+            setTimeout(afterAction, 500);
         } else {
             const data = await response.json();
             alert(`Cannot archive: ${data.detail || 'Unknown error'}`);
