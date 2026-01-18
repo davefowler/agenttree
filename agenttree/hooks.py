@@ -2029,10 +2029,37 @@ def ensure_pr_for_issue(issue_id: str) -> bool:
         console.print(f"[red]Failed to push: {result.stderr}[/red]")
         return False
 
-    # Create PR
+    # Create PR with link back to issue
     title = f"[Issue {issue.id}] {issue.title}"
-    body = f"## Summary\n\nImplementation for issue #{issue.id}: {issue.title}\n\n"
-    body += f"🤖 Generated with [Claude Code](https://claude.com/claude-code)"
+
+    # Build PR body with issue link and context
+    body = f"## Summary\n\n"
+    body += f"Implementation for **Issue #{issue.id}**: {issue.title}\n\n"
+    body += f"**Issue link:** [View in AgentTree Flow](http://localhost:8080/flow?issue={issue.id})\n\n"
+
+    # Try to include brief context from spec.md if it exists
+    spec_path = worktree_path / "_agenttree" / "issues" / f"{issue.id.zfill(3)}-{issue.slug[:40]}" / "spec.md"
+    if not spec_path.exists():
+        # Try finding it with glob
+        for p in (worktree_path / "_agenttree" / "issues").glob(f"{issue.id.zfill(3)}-*/spec.md"):
+            spec_path = p
+            break
+
+    if spec_path.exists():
+        try:
+            spec_content = spec_path.read_text()
+            # Extract first few lines of Approach section if present
+            if "## Approach" in spec_content:
+                approach_start = spec_content.index("## Approach")
+                approach_section = spec_content[approach_start:approach_start + 500]
+                # Find end of section (next ## or end)
+                if "\n## " in approach_section[10:]:
+                    approach_section = approach_section[:approach_section.index("\n## ", 10)]
+                body += f"### Approach\n{approach_section[12:].strip()[:400]}...\n\n"
+        except Exception:
+            pass
+
+    body += f"---\n🤖 Generated with [Claude Code](https://claude.com/claude-code)"
 
     try:
         pr = create_pr(title=title, body=body, branch=issue.branch, base="main")
