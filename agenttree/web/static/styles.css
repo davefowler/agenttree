@@ -702,6 +702,21 @@ button[disabled] {
     background: #4b5563;
 }
 
+.btn-start {
+    padding: 4px 12px;
+    font-size: 12px;
+    background: var(--btn-bg-active);
+    border: 1px solid var(--text-accent);
+    color: var(--text-primary);
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.btn-start:hover {
+    background: var(--text-accent);
+    color: white;
+}
+
 /* ==============================================
    HTMX Loading Indicators
    ============================================== */

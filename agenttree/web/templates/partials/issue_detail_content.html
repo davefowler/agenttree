@@ -32,13 +32,19 @@
                     {% endif %}
                 </div>
                 <div class="detail-actions" id="detail-actions-{{ issue.number }}">
+                    {% set stage_value = issue.stage if issue.stage is string else issue.stage.value %}
                     {% if issue.assigned_agent and commits_behind is defined and commits_behind > 0 %}
                     <button class="btn btn-rebase"
                             onclick="rebaseIssue('{{ issue.number }}', this)">
                         Rebase ({{ commits_behind }} behind)
                     </button>
                     {% endif %}
-                    {% if issue.stage != 'backlog' %}
+                    {% if stage_value == 'backlog' %}
+                    <button class="btn btn-start"
+                            onclick="startIssue('{{ issue.number }}', this)">
+                        Start
+                    </button>
+                    {% else %}
                     <button class="btn btn-backlog"
                             onclick="backlogIssue('{{ issue.number }}', this)">
                         Backlog
@@ -195,6 +201,32 @@ async function backlogIssue(issueNumber, btn) {
         console.error('Error moving to backlog:', error);
         btn.disabled = false;
         btn.textContent = 'Backlog';
+    }
+}
+
+async function startIssue(issueNumber, btn) {
+    btn.disabled = true;
+    btn.textContent = 'Starting...';
+
+    try {
+        const response = await fetch(`/api/issues/${issueNumber}/start`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'}
+        });
+
+        if (response.ok) {
+            btn.textContent = 'Started!';
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            const data = await response.json();
+            alert(`Cannot start: ${data.detail || 'Unknown error'}`);
+            btn.disabled = false;
+            btn.textContent = 'Start';
+        }
+    } catch (error) {
+        console.error('Error starting issue:', error);
+        btn.disabled = false;
+        btn.textContent = 'Start';
     }
 }
 </script>
