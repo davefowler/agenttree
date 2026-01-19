@@ -23,8 +23,11 @@ jobs:
         id: claude_review
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_args: '--allowed-tools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"'
           prompt: |
-            Review this pull request for the agenttree project.
+            Review this pull request for the agenttree project (PR #${{ github.event.pull_request.number }}).
+
+            Post your review as a comment on the PR using `gh pr comment`.
 
             Focus on:
             1. **Critical Issues** - Security vulnerabilities, data loss risks, breaking changes
