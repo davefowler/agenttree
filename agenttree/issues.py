@@ -932,6 +932,74 @@ def load_skill(
         return skill_content
 
 
+def load_overview(
+    issue: Optional["Issue"] = None,
+    is_takeover: bool = False,
+    current_stage: Optional[str] = None,
+    current_substage: Optional[str] = None,
+) -> Optional[str]:
+    """Load the overview document with takeover context for agents.
+
+    Used when an agent restarts to provide context about the AgentTree workflow.
+
+    Args:
+        issue: Optional Issue object for Jinja context
+        is_takeover: True if agent is taking over mid-workflow (not from backlog/define)
+        current_stage: Current stage name for template context
+        current_substage: Current substage name for template context
+
+    Returns:
+        Overview content as string (rendered with Jinja if issue provided), or None if not found
+    """
+    from jinja2 import Template
+
+    # Sync before reading
+    agents_path = get_agenttree_path()
+    sync_agents_repo(agents_path, pull_only=True)
+
+    overview_path = agents_path / "skills" / "overview.md"
+    if not overview_path.exists():
+        return None
+
+    overview_content = overview_path.read_text()
+
+    # Calculate completed stages (stages before current_stage)
+    completed_stages: list[str] = []
+    if current_stage:
+        for stage in STAGE_ORDER:
+            if stage == current_stage:
+                break
+            # Skip backlog and terminal stages
+            if stage not in (BACKLOG, ACCEPTED, NOT_DOING):
+                completed_stages.append(stage)
+
+    # Build Jinja context
+    context = {
+        "is_takeover": is_takeover,
+        "current_stage": current_stage or "",
+        "current_substage": current_substage or "",
+        "completed_stages": completed_stages,
+    }
+
+    # Add issue context if available
+    if issue:
+        issue_dir = get_issue_dir(issue.id)
+        context.update({
+            "issue_id": issue.id,
+            "issue_title": issue.title,
+            "issue_dir": str(issue_dir) if issue_dir else "",
+            "issue_dir_rel": f"_agenttree/issues/{issue.id}-{issue.slug}" if issue_dir else "",
+        })
+
+    # Render with Jinja
+    try:
+        template = Template(overview_content)
+        return template.render(**context)
+    except Exception:
+        # If rendering fails, return raw content
+        return overview_content
+
+
 # =============================================================================
 # Session Management (for restart detection)
 # =============================================================================
