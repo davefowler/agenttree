@@ -133,6 +133,7 @@ class StatusBar(Static):
         self.update(message)
 
 
+# type: ignore[type-arg] - Textual library has incomplete type stubs for generic DataTable
 class IssueTable(DataTable):  # type: ignore[type-arg]
     """DataTable widget for displaying issues."""
 
@@ -208,6 +209,7 @@ class IssueTable(DataTable):  # type: ignore[type-arg]
         return self._issues
 
 
+# type: ignore[type-arg] - Textual library has incomplete type stubs for generic App
 class TUIApp(App):  # type: ignore[type-arg]
     """Terminal User Interface for AgentTree issue management."""
 
@@ -261,6 +263,10 @@ class TUIApp(App):  # type: ignore[type-arg]
         """Handle worker completion."""
         if event.worker.name == "load_issues" and event.worker.is_finished:
             self._loading = False
+            # Check for worker errors before accessing result
+            if event.worker.error:
+                self.query_one(StatusBar).show_message(f"Error loading issues: {event.worker.error}")
+                return
             if event.worker.result:
                 issues = event.worker.result
                 table = self.query_one(IssueTable)
@@ -368,9 +374,10 @@ class TUIApp(App):  # type: ignore[type-arg]
         try:
             reject_to = REJECTION_MAPPINGS[issue.stage]
 
-            # Note: We skip execute_exit_hooks for rejection since we're not
-            # "completing" the review stage - we're rejecting it.
-            # We DO run execute_enter_hooks to set up the target stage properly.
+            # Execute exit hooks for the current stage (consistent with web UI)
+            from_stage = issue.stage
+            from_substage = issue.substage
+            execute_exit_hooks(issue, from_stage, from_substage)
 
             # Update issue stage
             updated = update_issue_stage(issue.id, reject_to)

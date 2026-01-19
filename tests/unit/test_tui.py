@@ -283,6 +283,7 @@ class TestActions:
         with patch("agenttree.tui.app.list_issues") as mock_list, \
              patch("agenttree.tui.app.get_issue") as mock_get_issue, \
              patch("agenttree.tui.app.update_issue_stage") as mock_update, \
+             patch("agenttree.tui.app.execute_exit_hooks") as mock_exit_hooks, \
              patch("agenttree.tui.app.execute_enter_hooks") as mock_enter_hooks:
 
             mock_list.return_value = sample_issues
@@ -305,6 +306,8 @@ class TestActions:
                 # Press 'r' to reject
                 await pilot.press("r")
 
+                # Exit hooks should be called for the current stage
+                mock_exit_hooks.assert_called()
                 # update_issue_stage should be called with "plan" (rejection mapping)
                 mock_update.assert_called_with("003", "plan")
                 # Enter hooks should be called for the target stage
