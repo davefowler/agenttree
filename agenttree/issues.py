@@ -1020,7 +1020,7 @@ def update_session_stage(issue_id: str, stage: str, substage: Optional[str] = No
     save_session(session)
 
 
-def mark_session_oriented(issue_id: str, stage: str = None, substage: str = None) -> None:
+def mark_session_oriented(issue_id: str, stage: Optional[str] = None, substage: Optional[str] = None) -> None:
     """Mark that agent has been oriented in this session.
 
     Also syncs last_stage/last_substage if provided, so is_restart()
@@ -1038,7 +1038,7 @@ def mark_session_oriented(issue_id: str, stage: str = None, substage: str = None
     save_session(session)
 
 
-def is_restart(issue_id: str, current_stage: str = None, current_substage: str = None) -> bool:
+def is_restart(issue_id: str, current_stage: Optional[str] = None, current_substage: Optional[str] = None) -> bool:
     """Check if agent should re-orient (show instructions without advancing).
 
     Returns True if:

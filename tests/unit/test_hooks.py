@@ -2165,9 +2165,10 @@ class TestPreCompletionPostStartHooks:
         execute_enter_hooks(issue, "implement", "code")
 
         # Verify execute_hooks was called with "post_start" event
-        mock_execute_hooks.assert_called_once()
-        call_args = mock_execute_hooks.call_args
-        assert call_args[0][3] == "post_start"
+        # May be called multiple times (substage + stage level on first substage)
+        mock_execute_hooks.assert_called()
+        for call in mock_execute_hooks.call_args_list:
+            assert call[0][3] == "post_start"
 
 
 class TestAsyncHookExecution:
@@ -2303,3 +2304,269 @@ class TestAsyncHookExecution:
 
         # File should exist after hook completes (sync behavior)
         assert marker.exists(), "async: false did not behave synchronously"
+
+
+class TestHookExecutionOrder:
+    """Tests for hook execution order in stage/substage transitions."""
+
+    @patch('agenttree.hooks.execute_hooks')
+    @patch('agenttree.config.load_config')
+    @patch('agenttree.issues.get_issue_dir')
+    def test_exit_hooks_stage_before_substage(
+        self, mock_get_dir, mock_load_config, mock_execute_hooks
+    ):
+        """execute_exit_hooks should run stage hooks before substage hooks (on last substage)."""
+        from agenttree.hooks import execute_exit_hooks
+        from agenttree.config import Config, StageConfig, SubstageConfig
+
+        # Create config with stage and substage, both with pre_completion hooks
+        config = Config(stages=[
+            StageConfig(
+                name="implement",
+                pre_completion=[{"file_exists": "stage.md"}],
+                substages={
+                    "code": SubstageConfig(name="code", pre_completion=[{"file_exists": "substage.md"}]),
+                    "review": SubstageConfig(name="review", pre_completion=[{"file_exists": "review.md"}]),
+                }
+            )
+        ])
+        mock_load_config.return_value = config
+        mock_get_dir.return_value = Path("/tmp/issue")
+        mock_execute_hooks.return_value = []
+
+        issue = Mock()
+        issue.id = "001"
+        issue.title = "Test"
+        issue.branch = "test-branch"
+        issue.pr_number = None
+
+        # Exit from last substage (review) - should run both stage and substage hooks
+        execute_exit_hooks(issue, "implement", "review")
+
+        # Should be called twice: once for stage, once for substage
+        assert mock_execute_hooks.call_count == 2
+
+        # Verify order: stage hooks first (position 0), substage hooks second (position 1)
+        calls = mock_execute_hooks.call_args_list
+        # First call should be with stage_config (stage hooks)
+        first_call_config = calls[0][0][2]  # Third positional arg is the config
+        assert hasattr(first_call_config, 'substages'), "First call should be stage config (has substages)"
+        # Second call should be with substage_config
+        second_call_config = calls[1][0][2]
+        assert not hasattr(second_call_config, 'substages') or second_call_config.substages is None, \
+            "Second call should be substage config (no substages)"
+
+    @patch('agenttree.hooks.execute_hooks')
+    @patch('agenttree.config.load_config')
+    @patch('agenttree.issues.get_issue_dir')
+    def test_exit_hooks_only_stage_on_non_last_substage(
+        self, mock_get_dir, mock_load_config, mock_execute_hooks
+    ):
+        """execute_exit_hooks should only run substage hooks on non-last substage."""
+        from agenttree.hooks import execute_exit_hooks
+        from agenttree.config import Config, StageConfig, SubstageConfig
+
+        config = Config(stages=[
+            StageConfig(
+                name="implement",
+                pre_completion=[{"file_exists": "stage.md"}],
+                substages={
+                    "code": SubstageConfig(name="code", pre_completion=[{"file_exists": "code.md"}]),
+                    "review": SubstageConfig(name="review", pre_completion=[{"file_exists": "review.md"}]),
+                }
+            )
+        ])
+        mock_load_config.return_value = config
+        mock_get_dir.return_value = Path("/tmp/issue")
+        mock_execute_hooks.return_value = []
+
+        issue = Mock()
+        issue.id = "001"
+        issue.title = "Test"
+        issue.branch = "test-branch"
+        issue.pr_number = None
+
+        # Exit from first substage (code) - should only run substage hooks, not stage
+        execute_exit_hooks(issue, "implement", "code")
+
+        # Should only be called once (substage hooks only, since not last substage)
+        assert mock_execute_hooks.call_count == 1
+
+        # Verify it was the substage config
+        call_config = mock_execute_hooks.call_args[0][2]
+        assert not hasattr(call_config, 'substages') or call_config.substages is None
+
+    @patch('agenttree.hooks.execute_hooks')
+    @patch('agenttree.config.load_config')
+    @patch('agenttree.issues.get_issue_dir')
+    def test_enter_hooks_substage_before_stage(
+        self, mock_get_dir, mock_load_config, mock_execute_hooks
+    ):
+        """execute_enter_hooks should run substage hooks before stage hooks (on first substage)."""
+        from agenttree.hooks import execute_enter_hooks
+        from agenttree.config import Config, StageConfig, SubstageConfig
+
+        config = Config(stages=[
+            StageConfig(
+                name="implementation_review",
+                post_start=[{"create_pr": {}}],
+                substages={
+                    "ci_wait": SubstageConfig(name="ci_wait", post_start=[{"file_exists": "ci.md"}]),
+                    "review": SubstageConfig(name="review", post_start=[{"file_exists": "review.md"}]),
+                }
+            )
+        ])
+        mock_load_config.return_value = config
+        mock_get_dir.return_value = Path("/tmp/issue")
+        mock_execute_hooks.return_value = []
+
+        issue = Mock()
+        issue.id = "001"
+        issue.title = "Test"
+        issue.branch = "test-branch"
+        issue.pr_number = None
+
+        # Enter first substage (ci_wait) - should run both substage and stage hooks
+        execute_enter_hooks(issue, "implementation_review", "ci_wait")
+
+        # Should be called twice: once for substage, once for stage
+        assert mock_execute_hooks.call_count == 2
+
+        # Verify order: substage hooks first (position 0), stage hooks second (position 1)
+        calls = mock_execute_hooks.call_args_list
+        # First call should be with substage_config (no substages attribute)
+        first_call_config = calls[0][0][2]
+        assert not hasattr(first_call_config, 'substages') or first_call_config.substages is None, \
+            "First call should be substage config"
+        # Second call should be with stage_config (has substages)
+        second_call_config = calls[1][0][2]
+        assert hasattr(second_call_config, 'substages'), "Second call should be stage config"
+
+    @patch('agenttree.hooks.execute_hooks')
+    @patch('agenttree.config.load_config')
+    @patch('agenttree.issues.get_issue_dir')
+    def test_enter_hooks_only_substage_on_non_first(
+        self, mock_get_dir, mock_load_config, mock_execute_hooks
+    ):
+        """execute_enter_hooks should only run substage hooks on non-first substage."""
+        from agenttree.hooks import execute_enter_hooks
+        from agenttree.config import Config, StageConfig, SubstageConfig
+
+        config = Config(stages=[
+            StageConfig(
+                name="implementation_review",
+                post_start=[{"create_pr": {}}],
+                substages={
+                    "ci_wait": SubstageConfig(name="ci_wait", post_start=[{"file_exists": "ci.md"}]),
+                    "review": SubstageConfig(name="review", post_start=[{"file_exists": "review.md"}]),
+                }
+            )
+        ])
+        mock_load_config.return_value = config
+        mock_get_dir.return_value = Path("/tmp/issue")
+        mock_execute_hooks.return_value = []
+
+        issue = Mock()
+        issue.id = "001"
+        issue.title = "Test"
+        issue.branch = "test-branch"
+        issue.pr_number = None
+
+        # Enter second substage (review) - should only run substage hooks, not stage
+        execute_enter_hooks(issue, "implementation_review", "review")
+
+        # Should only be called once (substage hooks only, since not first substage)
+        assert mock_execute_hooks.call_count == 1
+
+        # Verify it was the substage config
+        call_config = mock_execute_hooks.call_args[0][2]
+        assert not hasattr(call_config, 'substages') or call_config.substages is None
+
+    @patch('agenttree.hooks.execute_hooks')
+    @patch('agenttree.config.load_config')
+    @patch('agenttree.issues.get_issue_dir')
+    def test_enter_hooks_stage_only_when_no_substages(
+        self, mock_get_dir, mock_load_config, mock_execute_hooks
+    ):
+        """execute_enter_hooks should run stage hooks when entering without substage."""
+        from agenttree.hooks import execute_enter_hooks
+        from agenttree.config import Config, StageConfig
+
+        config = Config(stages=[
+            StageConfig(
+                name="backlog",
+                post_start=[{"file_exists": "issue.yaml"}],
+            )
+        ])
+        mock_load_config.return_value = config
+        mock_get_dir.return_value = Path("/tmp/issue")
+        mock_execute_hooks.return_value = []
+
+        issue = Mock()
+        issue.id = "001"
+        issue.title = "Test"
+        issue.branch = "test-branch"
+        issue.pr_number = None
+
+        # Enter stage without substage
+        execute_enter_hooks(issue, "backlog", None)
+
+        # Should be called once (stage hooks)
+        assert mock_execute_hooks.call_count == 1
+
+        # Verify it was the stage config
+        call_config = mock_execute_hooks.call_args[0][2]
+        assert hasattr(call_config, 'name') and call_config.name == "backlog"
+
+    @patch('agenttree.hooks.is_running_in_container', return_value=False)
+    @patch('agenttree.hooks.execute_hooks')
+    @patch('agenttree.config.load_config')
+    @patch('agenttree.issues.get_issue_dir')
+    def test_enter_hooks_fixes_pr_creation_bug(
+        self, mock_get_dir, mock_load_config, mock_execute_hooks, mock_container
+    ):
+        """Stage-level post_start hooks should run when entering first substage (PR creation bug fix)."""
+        from agenttree.hooks import execute_enter_hooks
+        from agenttree.config import Config, StageConfig, SubstageConfig
+
+        # This mimics the real implementation_review config that caused the bug
+        config = Config(stages=[
+            StageConfig(
+                name="implementation_review",
+                host="controller",
+                post_start=[{"create_pr": {}}],  # Stage-level hook
+                substages={
+                    "ci_wait": SubstageConfig(name="ci_wait"),  # No post_start hooks
+                    "review": SubstageConfig(name="review"),
+                }
+            )
+        ])
+        mock_load_config.return_value = config
+        mock_get_dir.return_value = Path("/tmp/issue")
+        mock_execute_hooks.return_value = []
+
+        issue = Mock()
+        issue.id = "048"
+        issue.title = "TUI for issue management"
+        issue.branch = "issue-048-tui"
+        issue.pr_number = None
+
+        # Enter implementation_review.ci_wait (first substage)
+        # This is where the bug was - create_pr never ran because only substage hooks were executed
+        execute_enter_hooks(issue, "implementation_review", "ci_wait")
+
+        # Should be called at least once for stage-level hooks
+        assert mock_execute_hooks.call_count >= 1
+
+        # Verify stage-level hooks were called (the one with create_pr)
+        stage_hooks_called = False
+        for call in mock_execute_hooks.call_args_list:
+            config_arg = call[0][2]
+            if hasattr(config_arg, 'post_start') and config_arg.post_start:
+                for hook in config_arg.post_start:
+                    if 'create_pr' in hook:
+                        stage_hooks_called = True
+                        break
+
+        assert stage_hooks_called, "Stage-level post_start hooks (with create_pr) should have been called"
+

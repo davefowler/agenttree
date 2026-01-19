@@ -1292,8 +1292,9 @@ def execute_exit_hooks(issue: "Issue", stage: str, substage: Optional[str] = Non
 
     This is the config-driven replacement for execute_pre_hooks.
 
-    When exiting the LAST substage of a stage, this also runs stage-level pre_completion hooks.
-    This ensures hooks like lint/test/create_pr run when leaving implement stage.
+    Hook execution order: stage → substage (outer to inner).
+    When exiting the LAST substage, runs stage-level hooks first, then substage hooks.
+    This ensures stage-level requirements are checked before substage-specific ones.
 
     Args:
         issue: Issue being transitioned
@@ -1327,7 +1328,22 @@ def execute_exit_hooks(issue: "Issue", stage: str, substage: Optional[str] = Non
         **extra_kwargs,  # Pass through extra kwargs like skip_pr_approval
     }
 
-    # Execute substage hooks first (if applicable)
+    # Check if we're exiting the stage (last substage or no substages)
+    substages = stage_config.substage_order()
+    is_exiting_stage = not substages or (substage and substages[-1] == substage)
+
+    # Execute stage-level hooks FIRST when exiting the stage (stage → substage order)
+    if is_exiting_stage:
+        errors.extend(execute_hooks(
+            issue_dir,
+            stage,
+            stage_config,
+            "pre_completion",
+            pr_number=issue.pr_number,
+            **hook_kwargs,
+        ))
+
+    # Execute substage hooks SECOND (if applicable)
     if substage:
         substage_config = stage_config.get_substage(substage)
         if substage_config:
@@ -1339,21 +1355,6 @@ def execute_exit_hooks(issue: "Issue", stage: str, substage: Optional[str] = Non
                 pr_number=issue.pr_number,
                 **hook_kwargs,
             ))
-
-    # Check if we're exiting the stage (last substage or no substages)
-    substages = stage_config.substage_order()
-    is_exiting_stage = not substages or (substage and substages[-1] == substage)
-
-    # Execute stage-level hooks when exiting the stage
-    if is_exiting_stage:
-        errors.extend(execute_hooks(
-            issue_dir,
-            stage,
-            stage_config,
-            "pre_completion",
-            pr_number=issue.pr_number,
-            **hook_kwargs,
-        ))
 
     if errors:
         if len(errors) == 1:
@@ -1369,6 +1370,10 @@ def execute_enter_hooks(issue: "Issue", stage: str, substage: Optional[str] = No
     """Execute post_start hooks for a stage/substage. Logs warnings but doesn't block.
 
     This is the config-driven replacement for execute_post_hooks.
+
+    Hook execution order: substage → stage (inner to outer).
+    When entering the FIRST substage, runs substage hooks first, then stage-level hooks.
+    This ensures stage-level setup (like create_pr) runs when entering a stage with substages.
 
     For controller stages (host: controller), hooks are skipped when running in a container.
     The host will execute them via check_controller_stages() during sync.
@@ -1392,30 +1397,47 @@ def execute_enter_hooks(issue: "Issue", stage: str, substage: Optional[str] = No
         console.print(f"[dim]Controller stage - hooks will run on host sync[/dim]")
         return
 
-    # Get the appropriate config (substage or stage)
-    if substage:
-        hook_config = stage_config.get_substage(substage) or stage_config
-    else:
-        hook_config = stage_config
-
     # Get issue directory
     issue_dir = get_issue_dir(issue.id)
     if not issue_dir:
         return  # No issue directory, skip hooks
 
-    # Execute hooks
-    errors = execute_hooks(
-        issue_dir,
-        stage,
-        hook_config,
-        "post_start",
-        pr_number=issue.pr_number,
-        issue_id=issue.id,
-        issue_title=issue.title,
-        branch=issue.branch or "",
-        substage=substage or "",
-        issue=issue,  # Pass issue object for cleanup_agent and start_blocked_issues hooks
-    )
+    errors: List[str] = []
+    hook_kwargs = {
+        "issue_id": issue.id,
+        "issue_title": issue.title,
+        "branch": issue.branch or "",
+        "substage": substage or "",
+        "issue": issue,  # Pass issue object for cleanup_agent and start_blocked_issues hooks
+    }
+
+    # Execute substage hooks FIRST (if applicable)
+    if substage:
+        substage_config = stage_config.get_substage(substage)
+        if substage_config:
+            errors.extend(execute_hooks(
+                issue_dir,
+                stage,
+                substage_config,
+                "post_start",
+                pr_number=issue.pr_number,
+                **hook_kwargs,
+            ))
+
+    # Check if we're entering the stage (first substage or no substages)
+    substages = stage_config.substage_order()
+    is_entering_stage = not substages or (substage and substages[0] == substage)
+
+    # Execute stage-level hooks SECOND when entering the stage (substage → stage order)
+    if is_entering_stage:
+        errors.extend(execute_hooks(
+            issue_dir,
+            stage,
+            stage_config,
+            "post_start",
+            pr_number=issue.pr_number,
+            **hook_kwargs,
+        ))
 
     # Log warnings but don't block
     if errors:

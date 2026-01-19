@@ -76,7 +76,7 @@ When working on web UI (HTML, CSS, templates):
 - `agenttree approve <id>` - Advance an issue past a review stage (runs hooks, notifies agent)
 - `agenttree send <id> "message"` - Send a message to an agent
 - `agenttree start <id>` - Start an agent for an issue
-- `agenttree issue create "title"` - Create a new issue
+- `agenttree issue create "title" --problem "..."` - Create a new issue (title min 10 chars, problem min 50 chars, always follow with `agenttree start <id>`)
 
 **Why:** CLI commands run the proper hooks and workflow logic. Manually editing `issue.yaml` or using raw commands bypasses hooks, breaks notifications, and causes state inconsistencies.
 
