@@ -82,8 +82,8 @@ class DetailPanel(Static):
                     if len(problem_content) > 500:
                         problem_content = problem_content[:500] + "..."
                     content += f"\n[dim]──── Problem ────[/dim]\n{problem_content}"
-                except Exception:
-                    pass
+                except (OSError, UnicodeDecodeError) as e:
+                    content += f"\n[dim]──── Problem ────[/dim]\n[red]Error reading problem.md: {e}[/red]"
 
         self.update(content)
 
