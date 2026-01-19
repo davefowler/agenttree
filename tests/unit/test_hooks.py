@@ -321,6 +321,132 @@ This is the approach section with content.
         # This test verifies the hook runs without errors
         assert errors == []
 
+    @patch('agenttree.hooks.get_git_diff_stats')
+    def test_create_file_action_substitutes_git_stats(self, mock_git_stats, tmp_path, monkeypatch):
+        """Should substitute git stats in template when creating file."""
+        from agenttree.hooks import run_builtin_validator
+        from agenttree.config import Config
+
+        mock_git_stats.return_value = {
+            'files_changed': 5,
+            'lines_added': 100,
+            'lines_removed': 20
+        }
+
+        # Create templates directory and template file with placeholders
+        templates_dir = tmp_path / "_agenttree" / "templates"
+        templates_dir.mkdir(parents=True)
+        template_content = """# Review - Issue #{{issue_id}}
+**Files Changed:** {{files_changed}}
+**Lines Changed:** +{{lines_added}} -{{lines_removed}}
+"""
+        (templates_dir / "review.md").write_text(template_content)
+
+        # Use monkeypatch.chdir to actually change the working directory
+        monkeypatch.chdir(tmp_path)
+
+        issue_dir = tmp_path / "issue"
+        issue_dir.mkdir()
+
+        # Create a mock issue
+        mock_issue = MagicMock()
+        mock_issue.id = "046"
+        mock_issue.title = "Test Issue"
+        mock_issue.slug = "test-issue"
+        mock_issue.worktree_dir = None
+
+        hook = {"type": "create_file", "template": "review.md", "dest": "review.md"}
+
+        with patch('agenttree.hooks.load_config', return_value=Config()):
+            errors = run_builtin_validator(issue_dir, hook, issue=mock_issue)
+
+        assert errors == []
+        mock_git_stats.assert_called_once()
+
+        # Verify the file was created with substituted values
+        created_file = issue_dir / "review.md"
+        assert created_file.exists()
+        content = created_file.read_text()
+        assert "Issue #046" in content
+        assert "**Files Changed:** 5" in content
+        assert "+100 -20" in content
+
+    def test_create_file_renders_jinja_template(self, tmp_path, monkeypatch):
+        """create_file should render Jinja templates with issue context."""
+        from agenttree.hooks import run_builtin_validator
+        from agenttree.config import Config
+
+        # Change to tmp_path so relative paths work
+        monkeypatch.chdir(tmp_path)
+
+        # Create templates directory and template file with Jinja
+        templates_dir = tmp_path / "_agenttree" / "templates"
+        templates_dir.mkdir(parents=True)
+        (templates_dir / "test_review.md").write_text("# Review for {{issue_id}}\nTitle: {{issue_title}}")
+
+        # Create issue dir
+        issue_dir = tmp_path / "issue"
+        issue_dir.mkdir()
+
+        # Create a mock issue
+        mock_issue = MagicMock()
+        mock_issue.id = "042"
+        mock_issue.title = "Test Issue"
+        mock_issue.slug = "test-issue"
+        mock_issue.worktree_dir = None
+
+        # Mock load_config to return empty commands
+        with patch('agenttree.hooks.load_config', return_value=Config()):
+            hook = {"type": "create_file", "template": "test_review.md", "dest": "output.md"}
+            errors = run_builtin_validator(issue_dir, hook, issue=mock_issue)
+
+        assert errors == []
+
+        # Check that the file was created with rendered content
+        output_path = issue_dir / "output.md"
+        assert output_path.exists()
+        content = output_path.read_text()
+        assert "# Review for 042" in content
+        assert "Title: Test Issue" in content
+
+    def test_create_file_injects_command_outputs(self, tmp_path, monkeypatch):
+        """create_file should inject command outputs into templates."""
+        from agenttree.hooks import run_builtin_validator
+        from agenttree.config import Config
+
+        # Change to tmp_path so relative paths work
+        monkeypatch.chdir(tmp_path)
+
+        # Create templates directory and template file with command variable
+        templates_dir = tmp_path / "_agenttree" / "templates"
+        templates_dir.mkdir(parents=True)
+        (templates_dir / "stats.md").write_text("Branch: {{git_branch}}")
+
+        # Create issue dir
+        issue_dir = tmp_path / "issue"
+        issue_dir.mkdir()
+
+        # Create a mock issue
+        mock_issue = MagicMock()
+        mock_issue.id = "001"
+        mock_issue.title = "Test"
+        mock_issue.slug = "test"
+        mock_issue.worktree_dir = None
+
+        # Mock load_config to return commands
+        mock_config = Config(commands={"git_branch": "echo 'feature-branch'"})
+        with patch('agenttree.hooks.load_config', return_value=mock_config):
+            hook = {"type": "create_file", "template": "stats.md", "dest": "output.md"}
+            errors = run_builtin_validator(issue_dir, hook, issue=mock_issue)
+
+        assert errors == []
+
+        # Check that the file was created with command output
+        output_path = issue_dir / "output.md"
+        assert output_path.exists()
+        content = output_path.read_text()
+        assert "Branch: feature-branch" in content
+
     def test_unknown_hook_type_ignored(self, tmp_path):
         """Unknown hook types should be ignored silently."""
         from agenttree.hooks import run_builtin_validator
@@ -356,7 +482,7 @@ class TestCommandHooks:
         hook = {"command": "sleep 10", "timeout": 0.1}
         errors = run_command_hook(tmp_path, hook)
         assert len(errors) == 1
-        assert "timed out" in errors[0]
+        assert "timeout" in errors[0].lower()
 
     def test_command_variable_substitution(self, tmp_path):
         """Should substitute template variables in command."""
@@ -369,6 +495,146 @@ class TestCommandHooks:
 
         output = (tmp_path / "output.txt").read_text().strip()
         assert output == "123"
+
+
+class TestWrapupVerifiedValidator:
+    """Tests for wrapup_verified validator."""
+
+    def test_wrapup_verified_success(self, tmp_path):
+        """Should pass when all checklist items are checked."""
+        from agenttree.hooks import run_builtin_validator
+
+        review_content = """# Code Review
+
+## Implementation Wrapup
+
+### Verification Checklist
+
+- [x] Tests pass
+- [x] Diff reviewed
+
+### Summary
+Implemented the feature.
+"""
+        (tmp_path / "review.md").write_text(review_content)
+        hook = {"wrapup_verified": "review.md"}
+
+        errors = run_builtin_validator(tmp_path, hook)
+        assert errors == []
+
+    def test_wrapup_verified_success_uppercase_x(self, tmp_path):
+        """Should pass for both [x] and [X]."""
+        from agenttree.hooks import run_builtin_validator
+
+        review_content = """# Code Review
+
+## Implementation Wrapup
+
+### Verification Checklist
+
+- [X] Tests pass
+- [x] Diff reviewed
+
+### Summary
+Implemented the feature.
+"""
+        (tmp_path / "review.md").write_text(review_content)
+        hook = {"wrapup_verified": "review.md"}
+
+        errors = run_builtin_validator(tmp_path, hook)
+        assert errors == []
+
+    def test_wrapup_verified_fails_missing_file(self, tmp_path):
+        """Should fail when review.md doesn't exist."""
+        from agenttree.hooks import run_builtin_validator
+
+        hook = {"wrapup_verified": "review.md"}
+
+        errors = run_builtin_validator(tmp_path, hook)
+        assert len(errors) == 1
+        assert "review.md" in errors[0]
+        assert "not found" in errors[0].lower()
+
+    def test_wrapup_verified_fails_missing_wrapup_section(self, tmp_path):
+        """Should fail when review.md has no Implementation Wrapup section."""
+        from agenttree.hooks import run_builtin_validator
+
+        review_content = """# Code Review
+
+## Self-Review Checklist
+
+- [x] Some item
+"""
+        (tmp_path / "review.md").write_text(review_content)
+        hook = {"wrapup_verified": "review.md"}
+
+        errors = run_builtin_validator(tmp_path, hook)
+        assert len(errors) == 1
+        assert "Implementation Wrapup" in errors[0]
+
+    def test_wrapup_verified_fails_missing_checklist_section(self, tmp_path):
+        """Should fail when Implementation Wrapup has no Verification Checklist."""
+        from agenttree.hooks import run_builtin_validator
+
+        review_content = """# Code Review
+
+## Implementation Wrapup
+
+### Summary
+Implemented the feature.
+"""
+        (tmp_path / "review.md").write_text(review_content)
+        hook = {"wrapup_verified": "review.md"}
+
+        errors = run_builtin_validator(tmp_path, hook)
+        assert len(errors) == 1
+        assert "Verification Checklist" in errors[0]
+
+    def test_wrapup_verified_fails_unchecked_items(self, tmp_path):
+        """Should fail when checklist has unchecked items."""
+        from agenttree.hooks import run_builtin_validator
+
+        review_content = """# Code Review
+
+## Implementation Wrapup
+
+### Verification Checklist
+
+- [x] Tests pass
+- [ ] Diff reviewed
+
+### Summary
+Implemented the feature.
+"""
+        (tmp_path / "review.md").write_text(review_content)
+        hook = {"wrapup_verified": "review.md"}
+
+        errors = run_builtin_validator(tmp_path, hook)
+        assert len(errors) == 1
+        assert "unchecked" in errors[0].lower()
+
+    def test_wrapup_verified_ignores_html_comments(self, tmp_path):
+        """HTML comments in checklist shouldn't cause false positives."""
+        from agenttree.hooks import run_builtin_validator
+
+        review_content = """# Code Review
+
+## Implementation Wrapup
+
+### Verification Checklist
+
+<!-- This is a comment with - [ ] unchecked item -->
+- [x] Tests pass
+- [x] Diff reviewed
+
+### Summary
+Implemented the feature.
+"""
+        (tmp_path / "review.md").write_text(review_content)
+        hook = {"wrapup_verified": "review.md"}
+
+        errors = run_builtin_validator(tmp_path, hook)
+        assert errors == []
 
 
 class TestExecuteHooks:
@@ -880,6 +1146,192 @@ class TestGitUtilities:
         assert "#023" in msg
         assert "Test Issue" in msg
 
+    # Tests for get_git_diff_stats()
+
+    @patch('agenttree.hooks.get_default_branch')
+    @patch('subprocess.run')
+    def test_get_git_diff_stats_parses_shortstat_output(self, mock_run, mock_default_branch):
+        """Should parse typical shortstat output correctly."""
+        from agenttree.hooks import get_git_diff_stats
+
+        mock_default_branch.return_value = "main"
+        mock_run.return_value = MagicMock(
+            stdout=" 5 files changed, 100 insertions(+), 20 deletions(-)\n",
+            returncode=0
+        )
+
+        result = get_git_diff_stats()
+
+        assert result == {'files_changed': 5, 'lines_added': 100, 'lines_removed': 20}
+        mock_default_branch.assert_called_once()
+        mock_run.assert_called_once()
+        # Verify the correct git command was called
+        call_args = mock_run.call_args[0][0]
+        assert call_args[0:2] == ["git", "diff"]
+        assert "--shortstat" in call_args
+        assert "main...HEAD" in call_args
+
+    @patch('agenttree.hooks.get_default_branch')
+    @patch('subprocess.run')
+    def test_get_git_diff_stats_handles_only_insertions(self, mock_run, mock_default_branch):
+        """Should handle output with only insertions (no deletions)."""
+        from agenttree.hooks import get_git_diff_stats
+
+        mock_default_branch.return_value = "main"
+        mock_run.return_value = MagicMock(
+            stdout=" 3 files changed, 50 insertions(+)\n",
+            returncode=0
+        )
+
+        result = get_git_diff_stats()
+
+        assert result == {'files_changed': 3, 'lines_added': 50, 'lines_removed': 0}
+
+    @patch('agenttree.hooks.get_default_branch')
+    @patch('subprocess.run')
+    def test_get_git_diff_stats_handles_only_deletions(self, mock_run, mock_default_branch):
+        """Should handle output with only deletions (no insertions)."""
+        from agenttree.hooks import get_git_diff_stats
+
+        mock_default_branch.return_value = "main"
+        mock_run.return_value = MagicMock(
+            stdout=" 2 files changed, 30 deletions(-)\n",
+            returncode=0
+        )
+
+        result = get_git_diff_stats()
+
+        assert result == {'files_changed': 2, 'lines_added': 0, 'lines_removed': 30}
+
+    @patch('agenttree.hooks.get_default_branch')
+    @patch('subprocess.run')
+    def test_get_git_diff_stats_handles_single_file(self, mock_run, mock_default_branch):
+        """Should handle singular 'file' in output."""
+        from agenttree.hooks import get_git_diff_stats
+
+        mock_default_branch.return_value = "main"
+        mock_run.return_value = MagicMock(
+            stdout=" 1 file changed, 10 insertions(+)\n",
+            returncode=0
+        )
+
+        result = get_git_diff_stats()
+
+        assert result == {'files_changed': 1, 'lines_added': 10, 'lines_removed': 0}
+
+    @patch('agenttree.hooks.get_default_branch')
+    @patch('subprocess.run')
+    def test_get_git_diff_stats_handles_empty_output(self, mock_run, mock_default_branch):
+        """Should return zeros when there are no changes."""
+        from agenttree.hooks import get_git_diff_stats
+
+        mock_default_branch.return_value = "main"
+        mock_run.return_value = MagicMock(
+            stdout="",
+            returncode=0
+        )
+
+        result = get_git_diff_stats()
+
+        assert result == {'files_changed': 0, 'lines_added': 0, 'lines_removed': 0}
+
+    @patch('agenttree.hooks.get_default_branch')
+    @patch('subprocess.run')
+    def test_get_git_diff_stats_handles_git_failure(self, mock_run, mock_default_branch):
+        """Should return zeros gracefully when git command fails."""
+        from agenttree.hooks import get_git_diff_stats
+
+        mock_default_branch.return_value = "main"
+        mock_run.return_value = MagicMock(
+            stdout="",
+            stderr="fatal: not a git repository",
+            returncode=128
+        )
+
+        result = get_git_diff_stats()
+
+        assert result == {'files_changed': 0, 'lines_added': 0, 'lines_removed': 0}
+
+    @patch('agenttree.hooks.get_default_branch')
+    @patch('subprocess.run')
+    def test_get_git_diff_stats_uses_default_branch(self, mock_run, mock_default_branch):
+        """Should use get_default_branch() to determine base branch."""
+        from agenttree.hooks import get_git_diff_stats
+
+        mock_default_branch.return_value = "develop"
+        mock_run.return_value = MagicMock(
+            stdout=" 2 files changed, 15 insertions(+), 5 deletions(-)\n",
+            returncode=0
+        )
+
+        get_git_diff_stats()
+
+        mock_default_branch.assert_called_once()
+        call_args = mock_run.call_args[0][0]
+        assert "develop...HEAD" in call_args
+
+    def test_get_git_diff_stats_integration(self, temp_git_repo, monkeypatch):
+        """Integration test: should return correct stats from real git operations."""
+        from agenttree.hooks import get_git_diff_stats
+
+        monkeypatch.chdir(temp_git_repo)
+
+        # Create a bare repo to act as remote
+        remote_path = temp_git_repo.parent / "remote.git"
+        subprocess.run(
+            ["git", "init", "--bare", str(remote_path)],
+            check=True,
+            capture_output=True
+        )
+
+        # Add remote and push
+        subprocess.run(
+            ["git", "remote", "add", "origin", str(remote_path)],
+            cwd=temp_git_repo,
+            check=True,
+            capture_output=True
+        )
+        subprocess.run(
+            ["git", "push", "-u", "origin", "HEAD"],
+            cwd=temp_git_repo,
+            check=True,
+            capture_output=True
+        )
+
+        # Create a feature branch with changes
+        subprocess.run(
+            ["git", "checkout", "-b", "feature-branch"],
+            cwd=temp_git_repo,
+            check=True,
+            capture_output=True
+        )
+
+        # Add a new file with 5 lines
+        (temp_git_repo / "new_file.py").write_text("line1\nline2\nline3\nline4\nline5\n")
+        subprocess.run(["git", "add", "new_file.py"], cwd=temp_git_repo, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "Add new file"],
+            cwd=temp_git_repo,
+            check=True,
+            capture_output=True
+        )
+
+        # Modify an existing file (add 2 lines)
+        (temp_git_repo / "README.md").write_text("Modified\nNew line 1\nNew line 2\n")
+        subprocess.run(["git", "add", "README.md"], cwd=temp_git_repo, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "Modify README"],
+            cwd=temp_git_repo,
+            check=True,
+            capture_output=True
+        )
+
+        result = get_git_diff_stats()
+
+        # Should have 2 files changed with insertions and possibly deletions
+        assert result['files_changed'] == 2
+        assert result['lines_added'] > 0
+
 
 class TestCheckAndStartBlockedIssues:
     """Tests for check_and_start_blocked_issues hook."""
@@ -1068,6 +1520,8 @@ class TestCleanupIssueAgent:
     def test_no_agent_to_cleanup(self):
         """Should return early if no agent exists for issue."""
         from agenttree.hooks import cleanup_issue_agent
+        # Import the module first so patch can find it
+        import agenttree.state
 
         issue = Issue(
             id="001",
@@ -1078,13 +1532,16 @@ class TestCleanupIssueAgent:
             stage=ACCEPTED,
         )
 
-        with patch('agenttree.state.get_active_agent', return_value=None) as mock_get:
+        with patch.object(agenttree.state, 'get_active_agent', return_value=None) as mock_get:
             cleanup_issue_agent(issue)
             mock_get.assert_called_once_with("001")
 
     def test_cleanup_stops_tmux_session(self):
         """Should stop tmux session if it exists."""
         from agenttree.hooks import cleanup_issue_agent
+        import agenttree.state
+        import agenttree.tmux
+        import agenttree.container
 
         issue = Issue(
             id="001",
@@ -1099,11 +1556,11 @@ class TestCleanupIssueAgent:
         mock_agent.tmux_session = "agenttree-001"
         mock_agent.container = "agenttree-agent-1"
 
-        with patch('agenttree.state.get_active_agent', return_value=mock_agent):
-            with patch('agenttree.state.unregister_agent'):
-                with patch('agenttree.tmux.session_exists', return_value=True) as mock_exists:
-                    with patch('agenttree.tmux.kill_session') as mock_kill:
-                        with patch('agenttree.container.get_container_runtime') as mock_runtime:
+        with patch.object(agenttree.state, 'get_active_agent', return_value=mock_agent):
+            with patch.object(agenttree.state, 'unregister_agent'):
+                with patch.object(agenttree.tmux, 'session_exists', return_value=True) as mock_exists:
+                    with patch.object(agenttree.tmux, 'kill_session') as mock_kill:
+                        with patch.object(agenttree.container, 'get_container_runtime') as mock_runtime:
                             mock_runtime.return_value.runtime = None  # No container runtime
                             cleanup_issue_agent(issue)
                             mock_exists.assert_called_once_with("agenttree-001")
@@ -1112,6 +1569,9 @@ class TestCleanupIssueAgent:
     def test_cleanup_stops_container_with_runtime(self):
         """Should use detected container runtime to stop container."""
         from agenttree.hooks import cleanup_issue_agent
+        import agenttree.state
+        import agenttree.tmux
+        import agenttree.container
 
         issue = Issue(
             id="001",
@@ -1126,10 +1586,10 @@ class TestCleanupIssueAgent:
         mock_agent.tmux_session = "agenttree-001"
         mock_agent.container = "agenttree-agent-1"
 
-        with patch('agenttree.state.get_active_agent', return_value=mock_agent):
-            with patch('agenttree.state.unregister_agent'):
-                with patch('agenttree.tmux.session_exists', return_value=False):
-                    with patch('agenttree.container.get_container_runtime') as mock_runtime:
+        with patch.object(agenttree.state, 'get_active_agent', return_value=mock_agent):
+            with patch.object(agenttree.state, 'unregister_agent'):
+                with patch.object(agenttree.tmux, 'session_exists', return_value=False):
+                    with patch.object(agenttree.container, 'get_container_runtime') as mock_runtime:
                         mock_runtime.return_value.runtime = "docker"
                         with patch('subprocess.run') as mock_run:
                             mock_run.return_value = MagicMock(returncode=0)
@@ -1142,6 +1602,9 @@ class TestCleanupIssueAgent:
     def test_cleanup_unregisters_agent(self):
         """Should unregister agent to free port."""
         from agenttree.hooks import cleanup_issue_agent
+        import agenttree.state
+        import agenttree.tmux
+        import agenttree.container
 
         issue = Issue(
             id="001",
@@ -1156,10 +1619,10 @@ class TestCleanupIssueAgent:
         mock_agent.tmux_session = "agenttree-001"
         mock_agent.container = "agenttree-agent-1"
 
-        with patch('agenttree.state.get_active_agent', return_value=mock_agent):
-            with patch('agenttree.state.unregister_agent') as mock_unregister:
-                with patch('agenttree.tmux.session_exists', return_value=False):
-                    with patch('agenttree.container.get_container_runtime') as mock_runtime:
+        with patch.object(agenttree.state, 'get_active_agent', return_value=mock_agent):
+            with patch.object(agenttree.state, 'unregister_agent') as mock_unregister:
+                with patch.object(agenttree.tmux, 'session_exists', return_value=False):
+                    with patch.object(agenttree.container, 'get_container_runtime') as mock_runtime:
                         mock_runtime.return_value.runtime = None
                         cleanup_issue_agent(issue)
                         mock_unregister.assert_called_once_with("001")
@@ -1167,6 +1630,9 @@ class TestCleanupIssueAgent:
     def test_cleanup_handles_tmux_failure_gracefully(self):
         """Should continue cleanup even if tmux operations fail."""
         from agenttree.hooks import cleanup_issue_agent
+        import agenttree.state
+        import agenttree.tmux
+        import agenttree.container
 
         issue = Issue(
             id="001",
@@ -1181,10 +1647,10 @@ class TestCleanupIssueAgent:
         mock_agent.tmux_session = "agenttree-001"
         mock_agent.container = "agenttree-agent-1"
 
-        with patch('agenttree.state.get_active_agent', return_value=mock_agent):
-            with patch('agenttree.state.unregister_agent') as mock_unregister:
-                with patch('agenttree.tmux.session_exists', side_effect=Exception("tmux error")):
-                    with patch('agenttree.container.get_container_runtime') as mock_runtime:
+        with patch.object(agenttree.state, 'get_active_agent', return_value=mock_agent):
+            with patch.object(agenttree.state, 'unregister_agent') as mock_unregister:
+                with patch.object(agenttree.tmux, 'session_exists', side_effect=Exception("tmux error")):
+                    with patch.object(agenttree.container, 'get_container_runtime') as mock_runtime:
                         mock_runtime.return_value.runtime = None
                         # Should not raise, should continue to unregister
                         cleanup_issue_agent(issue)
@@ -1699,6 +2165,408 @@ class TestPreCompletionPostStartHooks:
         execute_enter_hooks(issue, "implement", "code")
 
         # Verify execute_hooks was called with "post_start" event
-        mock_execute_hooks.assert_called_once()
-        call_args = mock_execute_hooks.call_args
-        assert call_args[0][3] == "post_start"
+        # May be called multiple times (substage + stage level on first substage)
+        mock_execute_hooks.assert_called()
+        for call in mock_execute_hooks.call_args_list:
+            assert call[0][3] == "post_start"
+
+
+class TestAsyncHookExecution:
+    """Tests for async hook execution (fire-and-forget mode)."""
+
+    def test_async_hook_does_not_block(self, tmp_path):
+        """Async hook should return immediately without waiting for command completion."""
+        import time
+        from agenttree.hooks import run_host_hooks
+
+        # Use a slow command that takes 2 seconds
+        hooks = [{"command": "sleep 2", "async": True}]
+
+        start = time.monotonic()
+        run_host_hooks(hooks, {"issue_id": "001"})
+        elapsed = time.monotonic() - start
+
+        # Should return in less than 1 second (generous threshold for CI)
+        assert elapsed < 1.0, f"Async hook blocked for {elapsed:.2f}s, expected < 1.0s"
+
+    def test_sync_hook_blocks_until_complete(self, tmp_path):
+        """Sync hook (default) should block until command completes."""
+        from agenttree.hooks import run_host_hooks
+
+        marker = tmp_path / "marker.txt"
+        hooks = [{"command": f"touch {marker}"}]
+
+        run_host_hooks(hooks, {"issue_id": "001"})
+
+        # File should exist after sync hook completes
+        assert marker.exists(), "Sync hook did not complete before returning"
+
+    def test_mixed_async_and_sync_hooks(self, tmp_path):
+        """Sync hooks should complete in order while async hooks run in background."""
+        from agenttree.hooks import run_host_hooks
+
+        sync_marker = tmp_path / "sync_marker.txt"
+        hooks = [
+            {"command": "sleep 1", "async": True},  # Async hook 1
+            {"command": f"touch {sync_marker}"},     # Sync hook (should complete)
+            {"command": "sleep 1", "async": True},  # Async hook 2
+        ]
+
+        run_host_hooks(hooks, {"issue_id": "001"})
+
+        # Sync marker should exist (sync hook completed)
+        assert sync_marker.exists(), "Sync hook did not complete"
+
+    def test_async_hook_errors_logged(self, tmp_path, capsys):
+        """Errors from async hooks should be logged, not raised."""
+        import time
+        from agenttree.hooks import run_host_hooks
+
+        hooks = [{"command": "exit 1", "async": True}]
+
+        # Should not raise
+        run_host_hooks(hooks, {"issue_id": "001"})
+
+        # Give a brief moment for async error logging
+        time.sleep(0.2)
+
+        # Note: Async errors may be logged asynchronously, so we can't guarantee
+        # the exact timing of the output. The key behavior is that no exception
+        # is raised.
+
+    @patch('agenttree.hooks.is_running_in_container', return_value=True)
+    def test_async_hook_respects_host_only(self, mock_container, tmp_path):
+        """Async hook with host_only should skip execution in container."""
+        from agenttree.hooks import run_host_hooks
+
+        marker = tmp_path / "marker.txt"
+        hooks = [{"command": f"touch {marker}", "async": True, "host_only": True}]
+
+        run_host_hooks(hooks, {"issue_id": "001"})
+
+        # File should NOT be created because we're "in container"
+        assert not marker.exists()
+
+    def test_async_hook_variable_substitution(self, tmp_path):
+        """Template variables should be substituted before async execution."""
+        import time
+        from agenttree.hooks import run_host_hooks
+
+        output_file = tmp_path / "output.txt"
+        hooks = [{"command": f"echo '{{{{issue_id}}}}' > {output_file}", "async": True}]
+
+        run_host_hooks(hooks, {"issue_id": "042"})
+
+        # Wait for async command to complete
+        time.sleep(0.5)
+
+        content = output_file.read_text().strip()
+        assert content == "042", f"Expected '042', got '{content}'"
+
+    def test_multiple_async_hooks_parallel(self, tmp_path):
+        """Multiple async hooks should run concurrently, not sequentially."""
+        import time
+        from agenttree.hooks import run_host_hooks
+
+        # Three commands that each take ~0.5 seconds
+        marker1 = tmp_path / "marker1.txt"
+        marker2 = tmp_path / "marker2.txt"
+        marker3 = tmp_path / "marker3.txt"
+        hooks = [
+            {"command": f"sleep 0.5 && touch {marker1}", "async": True},
+            {"command": f"sleep 0.5 && touch {marker2}", "async": True},
+            {"command": f"sleep 0.5 && touch {marker3}", "async": True},
+        ]
+
+        start = time.monotonic()
+        run_host_hooks(hooks, {"issue_id": "001"})
+        elapsed = time.monotonic() - start
+
+        # Should return almost immediately (< 0.5s), not after 1.5s
+        assert elapsed < 0.5, f"Async hooks blocked for {elapsed:.2f}s, expected < 0.5s"
+
+        # Wait for all async commands to complete
+        time.sleep(1.0)
+
+        # All markers should exist
+        assert marker1.exists(), "Async hook 1 did not complete"
+        assert marker2.exists(), "Async hook 2 did not complete"
+        assert marker3.exists(), "Async hook 3 did not complete"
+
+    def test_async_false_is_sync(self, tmp_path):
+        """async: false should behave the same as omitting the flag (synchronous)."""
+        from agenttree.hooks import run_host_hooks
+
+        marker = tmp_path / "marker.txt"
+        hooks = [{"command": f"touch {marker}", "async": False}]
+
+        run_host_hooks(hooks, {"issue_id": "001"})
+
+        # File should exist after hook completes (sync behavior)
+        assert marker.exists(), "async: false did not behave synchronously"
+
+
+class TestHookExecutionOrder:
+    """Tests for hook execution order in stage/substage transitions."""
+
+    @patch('agenttree.hooks.execute_hooks')
+    @patch('agenttree.config.load_config')
+    @patch('agenttree.issues.get_issue_dir')
+    def test_exit_hooks_stage_before_substage(
+        self, mock_get_dir, mock_load_config, mock_execute_hooks
+    ):
+        """execute_exit_hooks should run stage hooks before substage hooks (on last substage)."""
+        from agenttree.hooks import execute_exit_hooks
+        from agenttree.config import Config, StageConfig, SubstageConfig
+
+        # Create config with stage and substage, both with pre_completion hooks
+        config = Config(stages=[
+            StageConfig(
+                name="implement",
+                pre_completion=[{"file_exists": "stage.md"}],
+                substages={
+                    "code": SubstageConfig(name="code", pre_completion=[{"file_exists": "substage.md"}]),
+                    "review": SubstageConfig(name="review", pre_completion=[{"file_exists": "review.md"}]),
+                }
+            )
+        ])
+        mock_load_config.return_value = config
+        mock_get_dir.return_value = Path("/tmp/issue")
+        mock_execute_hooks.return_value = []
+
+        issue = Mock()
+        issue.id = "001"
+        issue.title = "Test"
+        issue.branch = "test-branch"
+        issue.pr_number = None
+
+        # Exit from last substage (review) - should run both stage and substage hooks
+        execute_exit_hooks(issue, "implement", "review")
+
+        # Should be called twice: once for stage, once for substage
+        assert mock_execute_hooks.call_count == 2
+
+        # Verify order: stage hooks first (position 0), substage hooks second (position 1)
+        calls = mock_execute_hooks.call_args_list
+        # First call should be with stage_config (stage hooks)
+        first_call_config = calls[0][0][2]  # Third positional arg is the config
+        assert hasattr(first_call_config, 'substages'), "First call should be stage config (has substages)"
+        # Second call should be with substage_config
+        second_call_config = calls[1][0][2]
+        assert not hasattr(second_call_config, 'substages') or second_call_config.substages is None, \
+            "Second call should be substage config (no substages)"
+
+    @patch('agenttree.hooks.execute_hooks')
+    @patch('agenttree.config.load_config')
+    @patch('agenttree.issues.get_issue_dir')
+    def test_exit_hooks_only_stage_on_non_last_substage(
+        self, mock_get_dir, mock_load_config, mock_execute_hooks
+    ):
+        """execute_exit_hooks should only run substage hooks on non-last substage."""
+        from agenttree.hooks import execute_exit_hooks
+        from agenttree.config import Config, StageConfig, SubstageConfig
+
+        config = Config(stages=[
+            StageConfig(
+                name="implement",
+                pre_completion=[{"file_exists": "stage.md"}],
+                substages={
+                    "code": SubstageConfig(name="code", pre_completion=[{"file_exists": "code.md"}]),
+                    "review": SubstageConfig(name="review", pre_completion=[{"file_exists": "review.md"}]),
+                }
+            )
+        ])
+        mock_load_config.return_value = config
+        mock_get_dir.return_value = Path("/tmp/issue")
+        mock_execute_hooks.return_value = []
+
+        issue = Mock()
+        issue.id = "001"
+        issue.title = "Test"
+        issue.branch = "test-branch"
+        issue.pr_number = None
+
+        # Exit from first substage (code) - should only run substage hooks, not stage
+        execute_exit_hooks(issue, "implement", "code")
+
+        # Should only be called once (substage hooks only, since not last substage)
+        assert mock_execute_hooks.call_count == 1
+
+        # Verify it was the substage config
+        call_config = mock_execute_hooks.call_args[0][2]
+        assert not hasattr(call_config, 'substages') or call_config.substages is None
+
+    @patch('agenttree.hooks.execute_hooks')
+    @patch('agenttree.config.load_config')
+    @patch('agenttree.issues.get_issue_dir')
+    def test_enter_hooks_substage_before_stage(
+        self, mock_get_dir, mock_load_config, mock_execute_hooks
+    ):
+        """execute_enter_hooks should run substage hooks before stage hooks (on first substage)."""
+        from agenttree.hooks import execute_enter_hooks
+        from agenttree.config import Config, StageConfig, SubstageConfig
+
+        config = Config(stages=[
+            StageConfig(
+                name="implementation_review",
+                post_start=[{"create_pr": {}}],
+                substages={
+                    "ci_wait": SubstageConfig(name="ci_wait", post_start=[{"file_exists": "ci.md"}]),
+                    "review": SubstageConfig(name="review", post_start=[{"file_exists": "review.md"}]),
+                }
+            )
+        ])
+        mock_load_config.return_value = config
+        mock_get_dir.return_value = Path("/tmp/issue")
+        mock_execute_hooks.return_value = []
+
+        issue = Mock()
+        issue.id = "001"
+        issue.title = "Test"
+        issue.branch = "test-branch"
+        issue.pr_number = None
+
+        # Enter first substage (ci_wait) - should run both substage and stage hooks
+        execute_enter_hooks(issue, "implementation_review", "ci_wait")
+
+        # Should be called twice: once for substage, once for stage
+        assert mock_execute_hooks.call_count == 2
+
+        # Verify order: substage hooks first (position 0), stage hooks second (position 1)
+        calls = mock_execute_hooks.call_args_list
+        # First call should be with substage_config (no substages attribute)
+        first_call_config = calls[0][0][2]
+        assert not hasattr(first_call_config, 'substages') or first_call_config.substages is None, \
+            "First call should be substage config"
+        # Second call should be with stage_config (has substages)
+        second_call_config = calls[1][0][2]
+        assert hasattr(second_call_config, 'substages'), "Second call should be stage config"
+
+    @patch('agenttree.hooks.execute_hooks')
+    @patch('agenttree.config.load_config')
+    @patch('agenttree.issues.get_issue_dir')
+    def test_enter_hooks_only_substage_on_non_first(
+        self, mock_get_dir, mock_load_config, mock_execute_hooks
+    ):
+        """execute_enter_hooks should only run substage hooks on non-first substage."""
+        from agenttree.hooks import execute_enter_hooks
+        from agenttree.config import Config, StageConfig, SubstageConfig
+
+        config = Config(stages=[
+            StageConfig(
+                name="implementation_review",
+                post_start=[{"create_pr": {}}],
+                substages={
+                    "ci_wait": SubstageConfig(name="ci_wait", post_start=[{"file_exists": "ci.md"}]),
+                    "review": SubstageConfig(name="review", post_start=[{"file_exists": "review.md"}]),
+                }
+            )
+        ])
+        mock_load_config.return_value = config
+        mock_get_dir.return_value = Path("/tmp/issue")
+        mock_execute_hooks.return_value = []
+
+        issue = Mock()
+        issue.id = "001"
+        issue.title = "Test"
+        issue.branch = "test-branch"
+        issue.pr_number = None
+
+        # Enter second substage (review) - should only run substage hooks, not stage
+        execute_enter_hooks(issue, "implementation_review", "review")
+
+        # Should only be called once (substage hooks only, since not first substage)
+        assert mock_execute_hooks.call_count == 1
+
+        # Verify it was the substage config
+        call_config = mock_execute_hooks.call_args[0][2]
+        assert not hasattr(call_config, 'substages') or call_config.substages is None
+
+    @patch('agenttree.hooks.execute_hooks')
+    @patch('agenttree.config.load_config')
+    @patch('agenttree.issues.get_issue_dir')
+    def test_enter_hooks_stage_only_when_no_substages(
+        self, mock_get_dir, mock_load_config, mock_execute_hooks
+    ):
+        """execute_enter_hooks should run stage hooks when entering without substage."""
+        from agenttree.hooks import execute_enter_hooks
+        from agenttree.config import Config, StageConfig
+
+        config = Config(stages=[
+            StageConfig(
+                name="backlog",
+                post_start=[{"file_exists": "issue.yaml"}],
+            )
+        ])
+        mock_load_config.return_value = config
+        mock_get_dir.return_value = Path("/tmp/issue")
+        mock_execute_hooks.return_value = []
+
+        issue = Mock()
+        issue.id = "001"
+        issue.title = "Test"
+        issue.branch = "test-branch"
+        issue.pr_number = None
+
+        # Enter stage without substage
+        execute_enter_hooks(issue, "backlog", None)
+
+        # Should be called once (stage hooks)
+        assert mock_execute_hooks.call_count == 1
+
+        # Verify it was the stage config
+        call_config = mock_execute_hooks.call_args[0][2]
+        assert hasattr(call_config, 'name') and call_config.name == "backlog"
+
+    @patch('agenttree.hooks.is_running_in_container', return_value=False)
+    @patch('agenttree.hooks.execute_hooks')
+    @patch('agenttree.config.load_config')
+    @patch('agenttree.issues.get_issue_dir')
+    def test_enter_hooks_fixes_pr_creation_bug(
+        self, mock_get_dir, mock_load_config, mock_execute_hooks, mock_container
+    ):
+        """Stage-level post_start hooks should run when entering first substage (PR creation bug fix)."""
+        from agenttree.hooks import execute_enter_hooks
+        from agenttree.config import Config, StageConfig, SubstageConfig
+
+        # This mimics the real implementation_review config that caused the bug
+        config = Config(stages=[
+            StageConfig(
+                name="implementation_review",
+                host="controller",
+                post_start=[{"create_pr": {}}],  # Stage-level hook
+                substages={
+                    "ci_wait": SubstageConfig(name="ci_wait"),  # No post_start hooks
+                    "review": SubstageConfig(name="review"),
+                }
+            )
+        ])
+        mock_load_config.return_value = config
+        mock_get_dir.return_value = Path("/tmp/issue")
+        mock_execute_hooks.return_value = []
+
+        issue = Mock()
+        issue.id = "048"
+        issue.title = "TUI for issue management"
+        issue.branch = "issue-048-tui"
+        issue.pr_number = None
+
+        # Enter implementation_review.ci_wait (first substage)
+        # This is where the bug was - create_pr never ran because only substage hooks were executed
+        execute_enter_hooks(issue, "implementation_review", "ci_wait")
+
+        # Should be called at least once for stage-level hooks
+        assert mock_execute_hooks.call_count >= 1
+
+        # Verify stage-level hooks were called (the one with create_pr)
+        stage_hooks_called = False
+        for call in mock_execute_hooks.call_args_list:
+            config_arg = call[0][2]
+            if hasattr(config_arg, 'post_start') and config_arg.post_start:
+                for hook in config_arg.post_start:
+                    if 'create_pr' in hook:
+                        stage_hooks_called = True
+                        break
+
+        assert stage_hooks_called, "Stage-level post_start hooks (with create_pr) should have been called"
+

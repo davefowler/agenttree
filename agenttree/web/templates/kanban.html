@@ -4,295 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Kanban - AgentTree</title>
+    <link rel="stylesheet" href="/static/styles.css">
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: var(--bg-primary);
-            color: var(--text-primary);
-            line-height: 1.6;
-            overflow: hidden;
-            height: 100vh;
-        }
-
-        {% include 'partials/header_styles.html' %}
-
-        /* Kanban-specific styles */
-        .kanban-board {
-            display: flex;
-            gap: 15px;
-            padding: 15px;
-            overflow-x: auto;
-            height: calc(100vh - 60px);
-        }
-
-        .kanban-column {
-            flex: 0 0 280px;
-            display: flex;
-            flex-direction: column;
-            max-height: calc(100vh - 90px);
-        }
-
-        .kanban-column.hidden {
-            display: none;
-        }
-
-        .column-header {
-            padding: 10px 0;
-            font-weight: 600;
-            font-size: 14px;
-            color: var(--text-primary);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .column-count {
-            background: var(--btn-bg);
-            color: var(--text-accent);
-            padding: 2px 8px;
-            border-radius: 10px;
-            font-size: 12px;
-        }
-
-        .column-cards {
-            flex: 1;
-            overflow-y: auto;
-            padding: 0;
-            min-height: 100px;
-        }
-
-        .kanban-card {
-            background: var(--bg-card);
-            border-radius: 3px;
-            padding: 12px;
-            margin-bottom: 10px;
-            cursor: pointer;
-            transition: all 0.2s;
-            position: relative;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
-        }
-
-        .kanban-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1), 0 3px 6px rgba(0, 0, 0, 0.06);
-        }
-
-        .kanban-card.dragging {
-            opacity: 0.5;
-            cursor: grabbing;
-        }
-
-        .kanban-card.drag-over {
-            border-color: var(--text-accent);
-            border-style: dashed;
-        }
-
-        .card-number {
-            color: var(--text-muted);
-            font-size: 12px;
-            font-weight: 600;
-            margin-bottom: 5px;
-        }
-
-        .card-title {
-            color: var(--text-card);
-            font-size: 14px;
-            font-weight: 500;
-            margin-bottom: 8px;
-        }
-
-        .card-badges {
-            display: flex;
-            gap: 5px;
-            flex-wrap: wrap;
-        }
-
-        /* Agent status light */
-        .agent-light {
-            position: absolute;
-            top: 8px;
-            right: 8px;
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            cursor: pointer;
-            transition: all 0.2s;
-            z-index: 10;
-        }
-
-        .agent-light.off {
-            background: #c4c0b4;
-            border: 2px solid #a8a498;
-            box-shadow: inset 0 1px 3px rgba(0,0,0,0.2);
-        }
-
-        .agent-light.off:hover {
-            background: #b8e4c8;
-            border-color: #6b9a7a;
-            box-shadow: 0 0 6px rgba(107, 154, 122, 0.5);
-        }
-
-        .agent-light.on {
-            background: #4ade80;
-            border: 2px solid #22c55e;
-            box-shadow: 0 0 6px rgba(74, 222, 128, 0.5);
-        }
-
-        .agent-light.starting {
-            background: #fbbf24;
-            border: 2px solid #f59e0b;
-            box-shadow: 0 0 8px rgba(251, 191, 36, 0.6);
-            animation: blink 0.5s ease-in-out infinite;
-        }
-
-        .agent-light.stalled {
-            background: #f97316;
-            border: 2px solid #ea580c;
-            box-shadow: 0 0 6px rgba(249, 115, 22, 0.5);
-        }
-
-        @keyframes blink {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
-
-        /* Modal */
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.8);
-            z-index: 1000;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .modal.active {
-            display: flex;
-        }
-
-        .modal-content {
-            background: var(--bg-card);
-            border: 1px solid var(--border-color);
-            border-radius: 6px;
-            max-width: 1200px;
-            width: 95%;
-            height: 90vh;
-            max-height: 90vh;
-            overflow: hidden;
-            padding: 15px;
-            position: relative;
-            display: flex;
-            flex-direction: column;
-        }
-
-        .modal-close {
-            position: absolute;
-            top: 8px;
-            right: 8px;
-            background: none;
-            border: none;
-            color: var(--text-muted);
-            font-size: 24px;
-            cursor: pointer;
-            padding: 5px 10px;
-        }
-
-        .modal-close:hover {
-            color: var(--text-card);
-        }
-
-        #modal-issue-detail {
-            flex: 1;
-            display: flex;
-            min-height: 0;
-            overflow: hidden;
-        }
-
-        /* Mini dropzones for hidden columns */
-        .mini-dropzones {
-            flex: 0 0 120px;
-            display: none;
-            flex-direction: column;
-            gap: 8px;
-            padding-top: 32px;
-        }
-
-        .mini-dropzones.visible {
-            display: flex;
-        }
-
-        .mini-dropzone {
-            width: 120px;
-            padding: 12px 10px;
-            border: 2px dashed var(--border-color);
-            border-radius: 3px;
-            background: transparent;
-            text-align: center;
-            font-size: 12px;
-            font-weight: 600;
-            color: var(--text-muted);
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .mini-dropzone:hover {
-            border-color: var(--text-accent);
-            color: var(--text-primary);
-        }
-
-        .mini-dropzone.drag-over {
-            border-color: var(--text-accent);
-            background: var(--badge-bg);
-            transform: scale(1.05);
-        }
-
-        .mini-dropzone .dropzone-label {
-            display: block;
-            margin-bottom: 2px;
-        }
-
-        .mini-dropzone .dropzone-count {
-            font-size: 11px;
-            font-weight: 400;
-            opacity: 0.7;
-        }
-
-        /* Kanban-specific file tabs margin adjustment */
-        .file-tabs-container {
-            margin: 15px -30px;
-        }
-
-        /* Scrollbar */
-        ::-webkit-scrollbar {
-            width: 10px;
-            height: 10px;
-        }
-
-        ::-webkit-scrollbar-track {
-            background: var(--bg-secondary);
-        }
-
-        ::-webkit-scrollbar-thumb {
-            background: var(--border-color);
-            border-radius: 5px;
-        }
-
-        ::-webkit-scrollbar-thumb:hover {
-            background: var(--btn-bg-active);
-        }
-    </style>
 </head>
 <body>
     {% include 'partials/header.html' %}
@@ -311,10 +25,8 @@
                      data-stage="{{ issue.stage.value }}"
                      data-has-agent="{{ 'true' if issue.assigned_agent else 'false' }}"
                      draggable="{{ 'true' if issue.stage.value in ['plan_review', 'implementation_review'] else 'false' }}"
-                     hx-get="/kanban?issue={{ issue.number }}"
-                     hx-push-url="true"
-                     hx-target="body"
-                     hx-swap="outerHTML">
+                     onclick="openIssueModal('{{ issue.number }}')"
+                     style="cursor: pointer;">
                     <div class="agent-light {% if issue.tmux_active %}on{% elif issue.assigned_agent %}stalled{% else %}off{% endif %}"
                          onclick="event.stopPropagation(); toggleAgent('{{ issue.number }}', this)"
                          title="{% if issue.tmux_active %}Agent running - click to view{% elif issue.assigned_agent %}Agent assigned but inactive{% else %}Click to start agent{% endif %}"></div>
@@ -333,8 +45,12 @@
         </div>
         {% endfor %}
 
-        <!-- Mini dropzones for hidden columns -->
+        <!-- Mini dropzones for hidden columns and backlog -->
         <div class="mini-dropzones" id="mini-dropzones">
+            <div class="mini-dropzone" data-stage="backlog" id="mini-backlog">
+                <span class="dropzone-label">Backlog</span>
+                <span class="dropzone-count" id="backlog-count">0</span>
+            </div>
             <div class="mini-dropzone" data-stage="accepted" id="mini-accepted">
                 <span class="dropzone-label">Accepted</span>
                 <span class="dropzone-count" id="accepted-count">0</span>
@@ -349,7 +65,7 @@
     <!-- Modal for issue detail -->
     <div id="issue-modal" class="modal{% if selected_issue %} active{% endif %}">
         <div class="modal-content">
-            <a href="/kanban" class="modal-close" hx-get="/kanban" hx-push-url="true" hx-target="body" hx-swap="outerHTML">&times;</a>
+            <a href="/kanban" class="modal-close" onclick="event.preventDefault(); window.closeIssueModal();">&times;</a>
             <div id="modal-issue-detail">
                 {% if selected_issue %}
                 {% set issue = selected_issue %}
@@ -364,8 +80,6 @@
         // Wrap in IIFE to avoid duplicate declarations on HTMX swaps
         if (window._kanbanScriptLoaded) return;
         window._kanbanScriptLoaded = true;
-
-        // Minimal JS for drag-drop and modal
 
         // Human review stages - only these can be dragged
         const HUMAN_REVIEW_STAGES = ['plan_review', 'implementation_review'];
@@ -416,117 +130,134 @@
                     return;
                 }
 
-                // Dropping anywhere from human review = approve
-                // (except dropping back on same column)
-                if (newStage !== oldStage) {
-                    try {
-                        // Call approve endpoint - runs actual workflow
-                        const response = await fetch(`/api/issues/${issueNumber}/approve`, {
+                // Skip if dropping back on same column
+                if (newStage === oldStage) {
+                    return;
+                }
+
+                try {
+                    let response;
+                    // Dropping onto backlog = move (not approve)
+                    if (newStage === 'backlog') {
+                        response = await fetch(`/api/issues/${issueNumber}/move`, {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({stage: 'backlog'})
+                        });
+                        if (response.ok) {
+                            console.log(`Moved issue #${issueNumber} to backlog`);
+                        } else {
+                            const data = await response.json();
+                            alert(`Cannot move to backlog: ${data.detail || 'Unknown error'}`);
+                        }
+                    } else {
+                        // Dropping anywhere else from human review = approve
+                        response = await fetch(`/api/issues/${issueNumber}/approve`, {
                             method: 'POST',
                             headers: {'Content-Type': 'application/json'}
                         });
-
-                        const data = await response.json();
                         if (response.ok) {
-                            console.log(`Approved issue #${issueNumber}: ${data.message}`);
-                            // Reload to show new state
-                            location.reload();
+                            console.log(`Approved issue #${issueNumber}`);
                         } else {
+                            const data = await response.json();
                             alert(`Cannot approve: ${data.detail || 'Unknown error'}`);
-                            location.reload();
                         }
-                    } catch (error) {
-                        console.error('Error approving issue:', error);
-                        location.reload();
                     }
+                    location.reload();
+                } catch (error) {
+                    console.error('Error processing drop:', error);
+                    location.reload();
                 }
             }
         });
 
-        // Modal functions - exposed globally for onclick handlers
+        // Modal functions
         window.openIssueModal = function(issueNumber) {
-            const modal = document.getElementById('issue-modal');
-            const detailDiv = document.getElementById('modal-issue-detail');
-
-            // Load issue detail via HTMX
-            htmx.ajax('GET', `/api/issues/${issueNumber}/detail`, {
-                target: '#modal-issue-detail',
-                swap: 'innerHTML'
-            });
-
-            modal.classList.add('active');
+            // Navigate to issue URL, preserving view param
+            const url = new URL(window.location);
+            url.searchParams.set('issue', issueNumber);
+            window.location.href = url.toString();
         };
 
         window.closeIssueModal = function() {
+            // Immediately hide the modal for fast feedback
             const modal = document.getElementById('issue-modal');
             modal.classList.remove('active');
+            // Update URL without reload, preserving view param
+            const url = new URL(window.location);
+            url.searchParams.delete('issue');
+            history.pushState({}, '', url.toString());
         };
 
-        // Handle file tab clicks in issue detail - exposed globally for onclick handlers
+        // Handle file tab clicks - CSS toggle approach
         window.selectFileTab = function(evt, issueId, filename) {
-            // Update active tab within the same issue's tabs
             const tabContainer = evt.target.closest('.file-tabs');
             tabContainer.querySelectorAll('.file-tab').forEach(tab => {
                 tab.classList.remove('active');
             });
             evt.target.classList.add('active');
 
-            // Load file content - target the specific issue's content area
-            htmx.ajax('GET', '/api/issues/' + issueId + '/files/' + filename, {
-                target: '#file-content-' + issueId,
-                swap: 'innerHTML'
+            // Show/hide content areas
+            const contentContainer = document.getElementById('file-content-' + issueId);
+            contentContainer.querySelectorAll('.file-content-item').forEach(item => {
+                item.style.display = item.dataset.filename === filename ? 'block' : 'none';
             });
         };
 
-        // Toggle agent chat panel - exposed globally for onclick handlers
-        window.toggleAgentChat = function(issueNumber) {
+        // Toggle agent chat panel
+        window.toggleChatPanel = function(issueNumber) {
             const panel = document.getElementById('agent-chat-panel-' + issueNumber);
             if (panel) {
                 panel.classList.toggle('collapsed');
-                const icon = document.getElementById('chat-toggle-icon-' + issueNumber);
-                if (icon) {
-                    icon.textContent = panel.classList.contains('collapsed') ? '\u00ab' : '\u00d7';
-                }
             }
         };
 
         // Close modal on escape key
         document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') {
+            if (e.key === 'Escape' && document.getElementById('issue-modal').classList.contains('active')) {
                 window.closeIssueModal();
             }
         });
 
         // Close modal on background click
-        document.getElementById('issue-modal').addEventListener('click', (e) => {
-            if (e.target.id === 'issue-modal') {
-                window.closeIssueModal();
-            }
-        });
+        const modal = document.getElementById('issue-modal');
+        if (modal) {
+            modal.addEventListener('click', (e) => {
+                if (e.target.id === 'issue-modal') {
+                    window.closeIssueModal();
+                }
+            });
+        }
 
         // Stage toggle functionality
-        const reviewStages = ['backlog', 'define', 'plan_review', 'implementation_review'];
+        const reviewStages = ['backlog', 'plan_review', 'implementation_review'];
 
         function updateMiniDropzones() {
             const miniDropzones = document.getElementById('mini-dropzones');
+            const backlogCol = document.querySelector('.kanban-column[data-stage="backlog"]');
             const acceptedCol = document.querySelector('.kanban-column[data-stage="accepted"]');
             const notDoingCol = document.querySelector('.kanban-column[data-stage="not_doing"]');
 
+            const backlogHidden = backlogCol && backlogCol.classList.contains('hidden');
             const acceptedHidden = acceptedCol && acceptedCol.classList.contains('hidden');
             const notDoingHidden = notDoingCol && notDoingCol.classList.contains('hidden');
 
-            // Show mini dropzones if either is hidden
-            if (acceptedHidden || notDoingHidden) {
+            // Show mini dropzones if any target is hidden
+            if (backlogHidden || acceptedHidden || notDoingHidden) {
                 miniDropzones.classList.add('visible');
             } else {
                 miniDropzones.classList.remove('visible');
             }
 
             // Show/hide individual mini dropzones
+            document.getElementById('mini-backlog').style.display = backlogHidden ? 'block' : 'none';
             document.getElementById('mini-accepted').style.display = acceptedHidden ? 'block' : 'none';
             document.getElementById('mini-not-doing').style.display = notDoingHidden ? 'block' : 'none';
 
             // Update counts
+            if (backlogCol) {
+                document.getElementById('backlog-count').textContent = backlogCol.querySelectorAll('.kanban-card').length;
+            }
             if (acceptedCol) {
                 document.getElementById('accepted-count').textContent = acceptedCol.querySelectorAll('.kanban-card').length;
             }
@@ -535,7 +266,7 @@
             }
         }
 
-        // Stage view toggle - exposed globally for onclick handlers
+        // Stage view toggle
         window.setStageView = function(view) {
             const columns = document.querySelectorAll('.kanban-column');
             const toggleReview = document.getElementById('toggle-review');
@@ -572,15 +303,20 @@
                 columns.forEach(col => col.classList.remove('hidden'));
             }
 
-            // Save preference
+            // Save preference to localStorage and URL
             localStorage.setItem('kanbanStageView', view);
+            const url = new URL(window.location);
+            url.searchParams.set('view', view);
+            history.replaceState({}, '', url);
 
             // Update mini dropzones visibility
             updateMiniDropzones();
         };
 
-        // Apply saved preference on load
-        const savedView = localStorage.getItem('kanbanStageView') || 'review';
+        // Apply view from URL first, then localStorage, then default to 'review'
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlView = urlParams.get('view');
+        const savedView = urlView || localStorage.getItem('kanbanStageView') || 'review';
         window.setStageView(savedView);
 
         // Mini dropzone drag/drop handlers
@@ -633,7 +369,35 @@
             });
         });
 
-        // Agent light toggle (for kanban cards) - exposed globally for onclick handlers
+        // Poll agent status until running or max attempts reached
+        async function pollAgentStatus(issueNumber, lightElement, maxAttempts = 15) {
+            for (let i = 0; i < maxAttempts; i++) {
+                await new Promise(r => setTimeout(r, 2000)); // Wait 2s between polls
+
+                try {
+                    const response = await fetch(`/api/issues/${issueNumber}/agent-status`);
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data.status === 'running') {
+                            lightElement.classList.remove('starting');
+                            lightElement.classList.add('on');
+                            lightElement.title = 'Agent running - click to view';
+                            return true;
+                        }
+                    }
+                } catch (e) {
+                    console.error('Error polling agent status:', e);
+                }
+            }
+
+            // Max attempts reached - show as stalled
+            lightElement.classList.remove('starting');
+            lightElement.classList.add('stalled');
+            lightElement.title = 'Agent failed to start - click to retry';
+            return false;
+        }
+
+        // Agent light toggle (for kanban cards)
         window.toggleAgent = async function(issueNumber, lightElement) {
             const isOn = lightElement.classList.contains('on');
 
@@ -654,14 +418,9 @@
                 });
 
                 if (response.ok) {
-                    // Switch to "on" state after a brief delay
-                    setTimeout(() => {
-                        lightElement.classList.remove('starting');
-                        lightElement.classList.add('on');
-                        lightElement.title = 'Agent running - click to view';
-                    }, 2000);
+                    // Poll for actual agent status
+                    pollAgentStatus(issueNumber, lightElement);
                 } else {
-                    // Revert to stalled state on error
                     lightElement.classList.remove('starting');
                     lightElement.classList.add('stalled');
                     lightElement.title = 'Failed to start - click to retry';
@@ -674,7 +433,7 @@
             }
         };
 
-        // Agent light toggle (for detail view) - exposed globally for onclick handlers
+        // Agent light toggle (for detail view)
         window.toggleAgentFromDetail = async function(issueNumber, lightElement) {
             const isOn = lightElement.classList.contains('on');
 
@@ -683,7 +442,6 @@
                 return;
             }
 
-            // Start/restart the agent
             lightElement.classList.remove('off', 'stalled');
             lightElement.classList.add('starting');
             lightElement.title = 'Starting agent...';
@@ -694,11 +452,8 @@
                 });
 
                 if (response.ok) {
-                    setTimeout(() => {
-                        lightElement.classList.remove('starting');
-                        lightElement.classList.add('on');
-                        lightElement.title = 'Agent running';
-                    }, 2000);
+                    // Poll for actual agent status
+                    pollAgentStatus(issueNumber, lightElement);
                 } else {
                     lightElement.classList.remove('starting');
                     lightElement.classList.add('stalled');

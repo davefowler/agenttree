@@ -13,6 +13,7 @@ from agenttree.worktree import WorktreeManager
 from agenttree.tmux import TmuxManager
 from agenttree.github import ensure_gh_cli
 from agenttree.container import get_container_runtime
+from agenttree.dependencies import check_all_dependencies, print_dependency_report
 from agenttree.agents_repo import AgentsRepository
 from agenttree.cli_docs import create_rfc, create_investigation, create_note, complete, resume
 from agenttree.issues import (
@@ -77,9 +78,10 @@ def init(worktrees_dir: Optional[str], project: Optional[str]) -> None:
 
     repo_path = Path.cwd()
 
-    # Check if we're in a git repo
-    if not (repo_path / ".git").exists():
-        console.print("[red]Error: Not a git repository[/red]")
+    # Batch check all dependencies upfront
+    success, results = check_all_dependencies(repo_path)
+    print_dependency_report(results)
+    if not success:
         sys.exit(1)
 
     config_file = repo_path / ".agenttree.yaml"
@@ -524,9 +526,9 @@ Good luck, Agent-${AGENT_NUM}! 🚀
     console.print(f"[dim]  → This guide will be copied to each agent's worktree[/dim]")
 
     # Initialize agents repository
+    # Note: gh CLI and auth were already validated in check_all_dependencies()
     console.print("\n[cyan]Initializing agents repository...[/cyan]")
     try:
-        ensure_gh_cli()
         agents_repo = AgentsRepository(repo_path)
         agents_repo.ensure_repo()
         console.print("[green]✓ _agenttree/ repository created[/green]")
@@ -681,7 +683,7 @@ def start_agent(
     """
     from agenttree.state import (
         get_active_agent,
-        allocate_port,
+        get_port_for_issue,
         create_agent_for_issue,
         get_issue_names,
     )
@@ -715,6 +717,13 @@ def start_agent(
         console.print(f"[red]Error: Issue #{issue_id} not found in _agenttree/issues/[/red]")
         console.print(f"[yellow]Create it with: agenttree issue create 'title'[/yellow]")
         sys.exit(1)
+
+    # If issue is in backlog, move it to define stage first
+    if issue.stage == "backlog":
+        from agenttree.issues import update_issue_stage
+        console.print(f"[cyan]Moving issue from backlog to define...[/cyan]")
+        update_issue_stage(issue.id, "define")
+        issue.stage = "define"  # Update local reference
 
     # Check if issue already has an active agent
     existing_agent = get_active_agent(issue.id)
@@ -772,9 +781,10 @@ def start_agent(
             console.print(f"[dim]Creating worktree: {worktree_path.name}[/dim]")
             create_worktree(repo_path, worktree_path, names["branch"])
 
-    # Allocate port
-    port = allocate_port(base_port=int(config.port_range.split("-")[0]))
-    console.print(f"[dim]Allocated port: {port}[/dim]")
+    # Get deterministic port from issue number
+    base_port = int(config.port_range.split("-")[0])
+    port = get_port_for_issue(issue.id, base_port=base_port)
+    console.print(f"[dim]Using port: {port} (derived from issue #{issue.id})[/dim]")
 
     # Register agent in state
     agent = create_agent_for_issue(
@@ -1110,8 +1120,8 @@ def serve(host: str, port: int) -> None:
     run_server(host=host, port=port)
 
 
-@main.command()
-def start() -> None:
+@main.command(name="controller-start")
+def controller_start() -> None:
     """Start the controller in a tmux session.
 
     Reads the controller host's 'process' config and runs it in a
@@ -1119,7 +1129,7 @@ def start() -> None:
     even after you close your terminal.
 
     Example:
-        agenttree start     # Starts controller in tmux
+        agenttree controller-start     # Starts controller in tmux
         tmux attach -t agenttree-controller  # Attach to see output
     """
     import subprocess
@@ -1169,11 +1179,11 @@ def start() -> None:
         sys.exit(1)
 
 
-@main.command()
-def stop() -> None:
+@main.command(name="controller-stop")
+def controller_stop() -> None:
     """Stop the controller tmux session.
 
-    Stops the background controller process started with 'agenttree start'.
+    Stops the background controller process started with 'agenttree controller-start'.
     """
     import subprocess
 
@@ -1269,10 +1279,9 @@ def remote_list() -> None:
 
     table = Table(title="Tailscale Hosts")
     table.add_column("Hostname", style="cyan")
-    table.add_column("IP Address", style="green")
 
     for host in hosts:
-        table.add_row(host.get("name", "unknown"), host.get("ip", "unknown"))
+        table.add_row(host)
 
     console.print(table)
 
@@ -1358,7 +1367,8 @@ def issue() -> None:
 )
 @click.option(
     "--problem",
-    help="Problem statement (fills problem.md)"
+    required=True,
+    help="Problem statement (fills problem.md) - required, min 50 chars"
 )
 @click.option(
     "--context",
@@ -1380,7 +1390,7 @@ def issue_create(
     priority: str,
     label: tuple,
     stage: str,
-    problem: Optional[str],
+    problem: str,
     context: Optional[str],
     solutions: Optional[str],
     depends_on: tuple,
@@ -1389,21 +1399,31 @@ def issue_create(
 
     Creates an issue directory in _agenttree/issues/ with:
     - issue.yaml (metadata)
-    - problem.md (from template or provided content)
+    - problem.md (from --problem content)
 
-    After creating, fill in problem.md then run 'agenttree start <id>' to
-    start an agent.
+    The --problem flag is required and must be at least 50 characters.
+    Title must be at least 10 characters.
 
     Issues with unmet dependencies are placed in backlog and auto-started when
     all dependencies are completed.
 
     Example:
-        agenttree issue create "Fix login validation"
-        agenttree issue create "Add dark mode" -p high -l ui -l feature
-        agenttree issue create "Quick fix" --stage implement
-        agenttree issue create "Bug" --problem "The login fails" --context "On Chrome only"
-        agenttree issue create "Feature B" --depends-on 053 --depends-on 060
+        agenttree issue create "Fix login validation bug" --problem "Login fails silently when password contains special chars. Should show error message."
+        agenttree issue create "Add dark mode toggle" -p high -l ui --problem "Users need dark mode. Add toggle in settings that persists preference."
+        agenttree issue create "Feature B depends on A" --depends-on 053 --problem "This feature requires issue 053 to be completed first. It builds on that work."
     """
+    # Validate title and problem length
+    MIN_TITLE_LENGTH = 10
+    MIN_PROBLEM_LENGTH = 50
+
+    if len(title.strip()) < MIN_TITLE_LENGTH:
+        console.print(f"[red]Error: Title must be at least {MIN_TITLE_LENGTH} characters (got {len(title.strip())})[/red]")
+        sys.exit(1)
+
+    if len(problem.strip()) < MIN_PROBLEM_LENGTH:
+        console.print(f"[red]Error: Problem statement must be at least {MIN_PROBLEM_LENGTH} characters (got {len(problem.strip())})[/red]")
+        console.print("[dim]Provide enough context for an agent to understand the issue.[/dim]")
+        sys.exit(1)
 
     dependencies = list(depends_on) if depends_on else None
 
@@ -1494,11 +1514,12 @@ def issue_list(stage: Optional[str], priority: Optional[str], agent: Optional[in
     """
     stage_filter = stage if stage else None
     priority_filter = Priority(priority) if priority else None
+    agent_filter = str(agent) if agent is not None else None
 
     issues = list_issues_func(
         stage=stage_filter,
         priority=priority_filter,
-        assigned_agent=agent,
+        assigned_agent=agent_filter,
     )
 
     if as_json:
@@ -1756,12 +1777,12 @@ def stage_status(issue_id: Optional[str]) -> None:
         table.add_column("Stage", style="magenta")
         table.add_column("Agent", style="green")
 
-        for issue in active_issues:
-            stage_str = issue.stage
-            if issue.substage:
-                stage_str += f".{issue.substage}"
-            agent_str = f"Agent {issue.assigned_agent}" if issue.assigned_agent else "-"
-            table.add_row(issue.id, issue.title[:40], stage_str, agent_str)
+        for active_issue in active_issues:
+            stage_str = active_issue.stage
+            if active_issue.substage:
+                stage_str += f".{active_issue.substage}"
+            agent_str = f"Agent {active_issue.assigned_agent}" if active_issue.assigned_agent else "-"
+            table.add_row(active_issue.id, active_issue.title[:40], stage_str, agent_str)
 
         console.print(table)
         return
@@ -1853,7 +1874,7 @@ def stage_next(issue_id: Optional[str], reassess: bool) -> None:
         # No session exists - create one (fresh start or legacy case)
         session = create_session(issue_id)
 
-    if is_restart(issue_id):
+    if is_restart(issue_id, issue.stage, issue.substage):
         # This is a restart - re-orient the agent instead of advancing
         console.print(f"\n[cyan]🔄 Session restart detected[/cyan]")
         console.print(f"[dim]Resuming work on issue #{issue.id}: {issue.title}[/dim]\n")
@@ -1893,8 +1914,8 @@ def stage_next(issue_id: Optional[str], reassess: bool) -> None:
 
         console.print(f"\n[dim]When ready to advance, run 'agenttree next' again.[/dim]")
 
-        # Mark as oriented so next call will advance
-        mark_session_oriented(issue_id)
+        # Mark as oriented and sync stage so next call will advance
+        mark_session_oriented(issue_id, issue.stage, issue.substage)
         return
 
     # Handle --reassess flag for plan revision cycling
@@ -2027,8 +2048,9 @@ def approve_issue(issue_id: str, skip_approval: bool) -> None:
         console.print(f"[red]Failed to update issue[/red]")
         sys.exit(1)
 
-    # Update session
-    update_session_stage(issue_id_normalized, next_stage, next_substage)
+    # Update session (last_stage will differ from issue.stage, triggering re-orient)
+    # Note: We intentionally DON'T call update_session_stage here because that would
+    # sync last_stage, defeating the stage mismatch detection in is_restart()
 
     # Execute post-hooks (after stage updated)
     execute_post_hooks(updated, next_stage, next_substage)
@@ -2038,9 +2060,17 @@ def approve_issue(issue_id: str, skip_approval: bool) -> None:
         stage_str += f".{next_substage}"
     console.print(f"[green]✓ Approved! Issue #{issue.id} moved to {stage_str}[/green]")
 
-    # Notify agent to continue (if active)
-    console.print(f"\n[dim]Notify the agent to continue:[/dim]")
-    console.print(f"  agenttree send {issue.id} 'Your work was approved! Run `agenttree next` for instructions.'")
+    # Auto-notify agent to continue (if active)
+    from agenttree.state import get_active_agent
+
+    agent = get_active_agent(issue_id_normalized)
+    if agent:
+        config = load_config()
+        tmux_manager = TmuxManager(config)
+        if tmux_manager.is_issue_running(agent.tmux_session):
+            message = "Your work was approved! Run `agenttree next` for instructions."
+            tmux_manager.send_message_to_issue(agent.tmux_session, message)
+            console.print(f"[green]✓ Notified agent to continue[/green]")
 
 
 @main.command("defer")
@@ -2213,18 +2243,21 @@ def context_init(agent_num: Optional[int], port: Optional[int]) -> None:
 def test(extra_args: tuple[str, ...]) -> None:
     """Run the project's test commands.
 
-    Uses test_commands from .agenttree.yaml config.
+    Uses commands.test from .agenttree.yaml config.
     Runs all commands and reports all errors (doesn't stop on first failure).
     """
     config = load_config()
-    commands = config.test_commands
+    test_cmd = config.commands.get("test")
 
-    if not commands:
-        console.print("[red]Error: test_commands not configured[/red]")
+    if not test_cmd:
+        console.print("[red]Error: test command not configured[/red]")
         console.print("\nAdd to .agenttree.yaml:")
-        console.print("  test_commands:")
-        console.print("    - pytest")
+        console.print("  commands:")
+        console.print("    test: pytest")
         sys.exit(1)
+
+    # Normalize to list
+    commands = test_cmd if isinstance(test_cmd, list) else [test_cmd]
 
     failed = []
     for cmd in commands:
@@ -2252,18 +2285,21 @@ def test(extra_args: tuple[str, ...]) -> None:
 def lint(extra_args: tuple[str, ...]) -> None:
     """Run the project's lint commands.
 
-    Uses lint_commands from .agenttree.yaml config.
+    Uses commands.lint from .agenttree.yaml config.
     Runs all commands and reports all errors (doesn't stop on first failure).
     """
     config = load_config()
-    commands = config.lint_commands
+    lint_cmd = config.commands.get("lint")
 
-    if not commands:
-        console.print("[red]Error: lint_commands not configured[/red]")
+    if not lint_cmd:
+        console.print("[red]Error: lint command not configured[/red]")
         console.print("\nAdd to .agenttree.yaml:")
-        console.print("  lint_commands:")
-        console.print("    - ruff check .")
+        console.print("  commands:")
+        console.print("    lint: ruff check .")
         sys.exit(1)
+
+    # Normalize to list
+    commands = lint_cmd if isinstance(lint_cmd, list) else [lint_cmd]
 
     failed = []
     for cmd in commands:
@@ -2307,9 +2343,11 @@ def sync_command() -> None:
         agenttree sync
     """
     from agenttree.agents_repo import sync_agents_repo
+    from agenttree.issues import get_agenttree_path
 
     console.print("[dim]Syncing agents repository...[/dim]")
-    success = sync_agents_repo()
+    agents_path = get_agenttree_path()
+    success = sync_agents_repo(agents_path)
 
     if success:
         console.print("[green]✓ Sync complete[/green]")

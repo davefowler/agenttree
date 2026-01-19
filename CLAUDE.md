@@ -76,20 +76,10 @@ When working on web UI (HTML, CSS, templates):
 - `agenttree approve <id>` - Advance an issue past a review stage (runs hooks, notifies agent)
 - `agenttree send <id> "message"` - Send a message to an agent
 - `agenttree start <id>` - Start an agent for an issue
-- `agenttree issue create "title"` - Create a new issue
+- `agenttree issue create "title" --problem "..."` - Create a new issue (title min 10 chars, problem min 50 chars, always follow with `agenttree start <id>`)
 
 **Why:** CLI commands run the proper hooks and workflow logic. Manually editing `issue.yaml` or using raw commands bypasses hooks, breaks notifications, and causes state inconsistencies.
 
 ---
 
-## About AgentTree
-
-This project uses AgentTree, a workflow system for AI agents working on software development tasks. It provides structured stages (define → research → plan → implement), automated validation, and human review checkpoints.
-
-**For detailed workflow documentation, see:** [`_agenttree/skills/overview.md`](_agenttree/skills/overview.md)
-
-**Key commands:**
-- `agenttree issue create "title"` - Create a new issue
-- `agenttree start <id>` - Start an agent to work on an issue
-- `agenttree status` - Show status of issues and agents
-- `agenttree next` - Get instructions for current stage (used by agents)
+This project uses AgentTree. See `_agenttree/skills/overview.md` for workflow documentation.

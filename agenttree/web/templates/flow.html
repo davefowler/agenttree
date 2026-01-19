@@ -4,162 +4,43 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Flow - AgentTree</title>
+    <link rel="stylesheet" href="/static/styles.css">
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: var(--bg-primary);
-            color: var(--text-primary);
-            line-height: 1.6;
-            height: 100vh;
-            overflow: hidden;
-        }
-
-        {% include 'partials/header_styles.html' %}
-
-        /* Flow-specific styles */
-        .flow-container {
-            display: flex;
-            height: calc(100vh - 60px);
-            overflow: hidden;
-        }
-
-        .flow-sidebar {
-            width: 320px;
-            background: #2d4a3e;
-            border-right: 1px solid #4a7c6f;
-            overflow-y: auto;
-            flex-shrink: 0;
-            padding: 15px;
-        }
-
-        .flow-main {
-            flex: 1;
-            overflow-y: auto;
-            background: #f8f6f0;
-            display: flex;
-            flex-direction: column;
-            padding: 20px;
-        }
-
-        /* Issue list items in sidebar */
-        .issue-item {
-            background: var(--bg-card);
-            padding: 12px;
-            margin-bottom: 8px;
-            cursor: pointer;
-            transition: all 0.2s;
-            position: relative;
-            border-radius: 3px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
-        }
-
-        .issue-item:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
-        }
-
-        .issue-item.active {
-            box-shadow: 0 0 0 2px var(--text-accent), 0 2px 8px rgba(0, 0, 0, 0.12);
-        }
-
-        .issue-number {
-            color: var(--text-muted);
-            font-size: 12px;
-            font-weight: 600;
-            margin-bottom: 5px;
-        }
-
-        .issue-title {
-            color: var(--text-card);
-            font-size: 14px;
-            font-weight: 500;
-            margin-bottom: 8px;
-        }
-
-        .issue-badges {
-            display: flex;
-            gap: 5px;
-            flex-wrap: wrap;
-        }
-
-        /* Badge variants */
-        .badge-review {
-            background: #f8e8e8;
-            color: #c44;
-        }
-
-        .badge-stage {
-            background: var(--badge-bg);
-            color: var(--badge-text);
-        }
-
-        .badge-label {
-            background: var(--border-color);
-            color: var(--text-primary);
-        }
-
-        /* Flow-specific wrapper height */
-        .issue-detail-wrapper {
-            min-height: calc(100vh - 120px);
-        }
-
-        /* Flow-specific chat panel width */
-        .agent-chat-panel {
-            width: 400px;
-        }
-
-        /* Flow-specific scrollbars */
-        ::-webkit-scrollbar {
-            width: 10px;
-            height: 10px;
-        }
-
-        ::-webkit-scrollbar-track {
-            background: var(--bg-secondary);
-        }
-
-        ::-webkit-scrollbar-thumb {
-            background: var(--border-color);
-            border-radius: 5px;
-        }
-
-        ::-webkit-scrollbar-thumb:hover {
-            background: var(--btn-bg-active);
-        }
-
-        .flow-main::-webkit-scrollbar-track {
-            background: #eae8e0;
-        }
-
-        .flow-main::-webkit-scrollbar-thumb {
-            background: #c4c0b4;
-        }
-    </style>
 </head>
 <body>
     {% include 'partials/header.html' %}
 
     <div class="flow-container">
-        <!-- Left sidebar: Issue list -->
-        <div class="flow-sidebar"
-             hx-get="/flow/issues"
-             hx-trigger="load, every 10s"
-             hx-swap="innerHTML">
-            {% include 'partials/flow_issues_list.html' %}
+        <!-- Left sidebar: Issue list (no polling - refresh page for updates) -->
+        <div class="flow-sidebar">
+            {% if issues %}
+                {% for issue in issues %}
+                <a class="issue-item {% if selected_issue and issue.number == selected_issue.number %}active{% endif %}"
+                   href="/flow?issue={{ issue.number }}{% if chat_open %}&chat=1{% endif %}">
+                    <div class="issue-number">#{{ issue.number }}</div>
+                    <div class="issue-title">{{ issue.title }}</div>
+                    <div class="issue-badges">
+                        {% for label in issue.labels[:2] %}
+                        {% if not label.startswith('stage-') %}
+                        <span class="badge">{{ label }}</span>
+                        {% endif %}
+                        {% endfor %}
+                    </div>
+                </a>
+                {% endfor %}
+            {% else %}
+                <div class="empty-state">
+                    <p>No open issues</p>
+                </div>
+            {% endif %}
         </div>
 
         <!-- Main panel: Issue detail with file tabs -->
         <div class="flow-main" id="issue-detail">
             {% if selected_issue %}
-                {% include 'partials/flow_issue_detail.html' %}
+                {% set issue = selected_issue %}
+                {% include 'partials/issue_detail_content.html' %}
             {% else %}
                 <div class="empty-state">
                     <h2>No issues found</h2>
@@ -170,35 +51,54 @@
     </div>
 
     <script>
-        let currentIssueId = '{{ selected_issue.number if selected_issue else "" }}';
-
-        // Handle file tab clicks
+        // Handle file tab clicks - CSS toggle approach
         function selectFileTab(evt, issueId, filename) {
-            // Update active tab within the same issue's tabs
             const tabContainer = evt.target.closest('.file-tabs');
             tabContainer.querySelectorAll('.file-tab').forEach(tab => {
                 tab.classList.remove('active');
             });
             evt.target.classList.add('active');
 
-            // Load file content - target the specific issue's content area
-            htmx.ajax('GET', '/api/issues/' + issueId + '/files/' + filename, {
-                target: '#file-content-' + issueId,
-                swap: 'innerHTML'
+            // Show/hide content areas
+            const contentContainer = document.getElementById('file-content-' + issueId);
+            contentContainer.querySelectorAll('.file-content-item').forEach(item => {
+                item.style.display = item.dataset.filename === filename ? 'block' : 'none';
             });
         }
 
         // Toggle agent chat panel
-        function toggleAgentChat(issueNumber) {
+        function toggleChatPanel(issueNumber) {
             const panel = document.getElementById('agent-chat-panel-' + issueNumber);
             if (panel) {
                 panel.classList.toggle('collapsed');
-                const icon = document.getElementById('chat-toggle-icon-' + issueNumber);
-                if (icon) {
-                    icon.textContent = panel.classList.contains('collapsed') ? '\u00ab' : '\u00d7';
-                }
             }
         }
+
+        // Go to next issue in the flow sidebar
+        window.goToNextIssue = function() {
+            const items = document.querySelectorAll('.issue-item');
+            const activeItem = document.querySelector('.issue-item.active');
+
+            if (items.length === 0) {
+                location.reload();
+                return;
+            }
+
+            let nextItem = null;
+            if (activeItem) {
+                const activeIndex = Array.from(items).indexOf(activeItem);
+                // Get next item, or first if at end
+                nextItem = items[activeIndex + 1] || items[0];
+            } else {
+                nextItem = items[0];
+            }
+
+            if (nextItem && nextItem.href) {
+                window.location.href = nextItem.href;
+            } else {
+                location.reload();
+            }
+        };
 
         // Agent light toggle (for detail view)
         async function toggleAgentFromDetail(issueNumber, lightElement) {
@@ -219,11 +119,7 @@
                 });
 
                 if (response.ok) {
-                    setTimeout(() => {
-                        lightElement.classList.remove('starting');
-                        lightElement.classList.add('on');
-                        lightElement.title = 'Agent running';
-                    }, 2000);
+                    setTimeout(() => location.reload(), 2000);
                 } else {
                     lightElement.classList.remove('starting');
                     lightElement.classList.add('stalled');
@@ -236,41 +132,6 @@
                 lightElement.title = 'Error - click to retry';
             }
         }
-
-        // Handle issue selection
-        document.body.addEventListener('htmx:afterSwap', function(event) {
-            if (event.detail.target.classList.contains('flow-sidebar')) {
-                // After sidebar refresh, restore active state
-                if (currentIssueId) {
-                    document.querySelectorAll('.issue-item').forEach(item => {
-                        if (item.dataset.issue === currentIssueId) {
-                            item.classList.add('active');
-                        }
-                    });
-                }
-            }
-
-            // When issue detail is loaded, update current issue ID
-            if (event.detail.target.id === 'issue-detail') {
-                const newIssueId = event.detail.target.querySelector('[data-issue-id]')?.dataset.issueId;
-                if (newIssueId) {
-                    currentIssueId = newIssueId;
-                }
-            }
-        });
-
-        // Click handler for issue items
-        document.body.addEventListener('click', function(event) {
-            const issueItem = event.target.closest('.issue-item');
-            if (issueItem) {
-                // Update active state
-                document.querySelectorAll('.issue-item').forEach(item => {
-                    item.classList.remove('active');
-                });
-                issueItem.classList.add('active');
-                currentIssueId = issueItem.dataset.issue;
-            }
-        });
     </script>
 </body>
 </html>

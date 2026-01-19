@@ -15,7 +15,7 @@ import re
 
 if TYPE_CHECKING:
     from agenttree.issues import Issue
-    from agenttree.config import AgentHostConfig, StageConfig
+    from agenttree.config import HostConfig, StageConfig
 
 # Global lock file handle (kept open during sync)
 _sync_lock_fd = None
@@ -137,12 +137,10 @@ def sync_agents_repo(
                 print(f"Warning: Failed to pull _agenttree repo: {result.stderr}")
                 return False
 
-        # If pull-only, check for pending pushes, PRs, merged PRs, and custom agents, then we're done
+        # If pull-only, run post-sync hooks then we're done
         if pull_only:
-            push_pending_branches(agents_dir)
-            check_controller_stages(agents_dir)
-            check_custom_agent_stages(agents_dir)
-            check_merged_prs(agents_dir)
+            from agenttree.controller_hooks import run_post_controller_hooks
+            run_post_controller_hooks(agents_dir)
             return True
 
         # Push changes (local commits + any we just made)
@@ -161,12 +159,9 @@ def sync_agents_repo(
                 print(f"Warning: Failed to push changes: {push_result.stderr}")
             return False
 
-        # After successful sync, push pending branches, check for issues needing PRs,
-        # check for custom agent stages, and check for externally merged/closed PRs
-        push_pending_branches(agents_dir)
-        check_controller_stages(agents_dir)
-        check_custom_agent_stages(agents_dir)
-        check_merged_prs(agents_dir)
+        # After successful sync, run configurable post-sync hooks
+        from agenttree.controller_hooks import run_post_controller_hooks
+        run_post_controller_hooks(agents_dir)
 
         return True
 
@@ -363,7 +358,7 @@ def check_custom_agent_stages(agents_dir: Path) -> int:
 
 def spawn_custom_agent(
     issue: Issue,
-    agent_config: AgentHostConfig,
+    agent_config: HostConfig,
     stage_config: StageConfig
 ) -> bool:
     """Spawn a custom agent for an issue.
@@ -596,6 +591,131 @@ def check_merged_prs(agents_dir: Path) -> int:
             continue
 
     return issues_advanced
+
+
+def check_ci_status(agents_dir: Path) -> int:
+    """Check CI status for issues at implementation_review and notify agents on failure.
+
+    For issues at implementation_review with a PR:
+    - Checks CI status via get_pr_checks()
+    - If CI failed: writes ci_feedback.md, sends tmux message, transitions to implement
+
+    Called from host during sync.
+
+    Args:
+        agents_dir: Path to _agenttree directory
+
+    Returns:
+        Number of issues with CI failures processed
+    """
+    from agenttree.hooks import is_running_in_container
+    if is_running_in_container():
+        return 0
+
+    issues_dir = agents_dir / "issues"
+    if not issues_dir.exists():
+        return 0
+
+    import yaml
+    from rich.console import Console
+    from agenttree.github import get_pr_checks
+    from agenttree.state import get_active_agent
+    from agenttree.config import load_config
+    from agenttree.tmux import TmuxManager
+
+    console = Console()
+    issues_notified = 0
+
+    for issue_dir in issues_dir.iterdir():
+        if not issue_dir.is_dir():
+            continue
+
+        issue_yaml = issue_dir / "issue.yaml"
+        if not issue_yaml.exists():
+            continue
+
+        try:
+            with open(issue_yaml) as f:
+                data = yaml.safe_load(f)
+
+            # Only check issues at implementation_review WITH a PR
+            if data.get("stage") != "implementation_review":
+                continue
+            pr_number = data.get("pr_number")
+            if not pr_number:
+                continue
+
+            # Skip if already notified for this CI failure
+            if data.get("ci_notified"):
+                continue
+
+            issue_id = data.get("id", "")
+            if not issue_id:
+                continue
+
+            # Check CI status
+            checks = get_pr_checks(pr_number)
+            if not checks:
+                # No checks yet, skip
+                continue
+
+            # Check if any check is still pending
+            any_pending = any(check.state == "PENDING" for check in checks)
+            if any_pending:
+                # CI still running, wait
+                continue
+
+            # Check if any check failed
+            failed_checks = [
+                check for check in checks
+                if check.state == "FAILURE" or check.conclusion == "failure"
+            ]
+
+            if not failed_checks:
+                # All checks passed, nothing to do
+                continue
+
+            # CI failed - create feedback file
+            feedback_content = "# CI Failure Report\n\n"
+            feedback_content += f"PR #{pr_number} has failing CI checks:\n\n"
+            for check in checks:
+                status = "PASSED" if check.state == "SUCCESS" or check.conclusion == "success" else "FAILED"
+                feedback_content += f"- **{check.name}**: {status}\n"
+                if check.state == "FAILURE" or check.conclusion == "failure":
+                    feedback_content += f"  - State: {check.state}\n"
+                    if check.conclusion:
+                        feedback_content += f"  - Conclusion: {check.conclusion}\n"
+            feedback_content += "\nPlease fix these issues and run `agenttree next` to re-submit.\n"
+
+            feedback_file = issue_dir / "ci_feedback.md"
+            feedback_file.write_text(feedback_content)
+
+            console.print(f"[yellow]CI failed for PR #{pr_number}, notifying issue #{issue_id}[/yellow]")
+
+            # Try to send tmux message to agent
+            agent = get_active_agent(issue_id)
+            if agent:
+                try:
+                    config = load_config()
+                    tmux_manager = TmuxManager(config)
+                    if tmux_manager.is_issue_running(agent.tmux_session):
+                        message = f"CI failed for PR #{pr_number}. See ci_feedback.md for details. Run `agenttree next` after fixing."
+                        tmux_manager.send_message_to_issue(agent.tmux_session, message)
+                        console.print(f"[green]✓ Notified agent for issue #{issue_id}[/green]")
+                except Exception as e:
+                    console.print(f"[yellow]Could not notify agent: {e}[/yellow]")
+
+            # Transition issue back to implement stage
+            _update_issue_stage_direct(issue_yaml, data, "implement")
+            console.print(f"[yellow]Issue #{issue_id} moved back to implement stage for CI fix[/yellow]")
+
+            issues_notified += 1
+
+        except Exception as e:
+            console.print(f"[yellow]Error checking CI status: {e}[/yellow]")
+            continue
+
+    return issues_notified
 
 
 def push_pending_branches(agents_dir: Path) -> int:

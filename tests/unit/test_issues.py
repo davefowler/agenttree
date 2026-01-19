@@ -460,10 +460,85 @@ class TestDependencies:
 
     def test_create_issue_with_dependencies(self, temp_agenttrees_deps):
         """create_issue should normalize and store dependencies."""
+        # First create the dependency issues
+        dep1 = create_issue("Dependency 1")  # 001
+        dep2 = create_issue("Dependency 2")  # 002
+        dep3 = create_issue("Dependency 3")  # 003
+
+        # Now create an issue that depends on them (using various formats)
         issue = create_issue("Test Issue", dependencies=["1", "02", "003"])
 
         # Dependencies should be normalized to 3-digit format
         assert issue.dependencies == ["001", "002", "003"]
+
+    def test_detect_circular_dependency_none(self, temp_agenttrees_deps):
+        """No circular dependency when deps are valid."""
+        from agenttree.issues import detect_circular_dependency
+
+        # Create issue A
+        issue_a = create_issue("Issue A")
+
+        # Check if new issue B depending on A would be circular
+        cycle = detect_circular_dependency("002", [issue_a.id])
+        assert cycle is None
+
+    def test_detect_circular_dependency_direct(self, temp_agenttrees_deps):
+        """Detect direct circular dependency (A -> B -> A)."""
+        from agenttree.issues import detect_circular_dependency
+
+        # Create issue A depending on (future) issue B
+        issue_a = create_issue("Issue A", dependencies=["002"])
+
+        # Check if B depending on A would be circular
+        cycle = detect_circular_dependency("002", [issue_a.id])
+        assert cycle is not None
+        assert "001" in cycle
+        assert "002" in cycle
+
+    def test_detect_circular_dependency_indirect(self, temp_agenttrees_deps):
+        """Detect indirect circular dependency (A -> B -> C -> A)."""
+        from agenttree.issues import detect_circular_dependency
+
+        # Create A -> B -> C
+        issue_a = create_issue("Issue A", dependencies=["002"])
+        issue_b = create_issue("Issue B", dependencies=["003"])
+
+        # Check if C depending on A would be circular
+        cycle = detect_circular_dependency("003", [issue_a.id])
+        assert cycle is not None
+        # Cycle should contain all three
+        assert len([c for c in cycle if c in ["001", "002", "003"]]) >= 2
+
+    def test_detect_circular_dependency_self(self, temp_agenttrees_deps):
+        """Detect self-dependency (A -> A)."""
+        from agenttree.issues import detect_circular_dependency
+
+        # Check if A depending on itself would be circular
+        cycle = detect_circular_dependency("001", ["001"])
+        assert cycle is not None
+        assert "001" in cycle
+
+    def test_create_issue_rejects_circular_dependency(self, temp_agenttrees_deps):
+        """create_issue should raise ValueError for circular dependencies."""
+        # Create A -> B
+        issue_a = create_issue("Issue A", dependencies=["002"])
+
+        # Creating B -> A should fail
+        with pytest.raises(ValueError, match="Circular dependency detected"):
+            create_issue("Issue B", dependencies=["001"])
+
+    def test_create_issue_allows_valid_dependency_chain(self, temp_agenttrees_deps):
+        """create_issue should allow valid (non-circular) dependency chains."""
+        # Create A
+        issue_a = create_issue("Issue A")
+
+        # Create B -> A (valid)
+        issue_b = create_issue("Issue B", dependencies=[issue_a.id])
+        assert issue_b.dependencies == ["001"]
+
+        # Create C -> B (valid)
+        issue_c = create_issue("Issue C", dependencies=[issue_b.id])
+        assert issue_c.dependencies == ["002"]
 
 
 class TestUpdateIssueStage:
@@ -559,6 +634,219 @@ class TestLoadSkill:
         """Return None when skill not found."""
         skill = load_skill(ACCEPTED)
         assert skill is None
+
+    def test_load_skill_with_command_variable(self, temp_agenttrees_with_skills, monkeypatch):
+        """Command outputs should be injected into templates."""
+        # Create a template with a command variable
+        skill_path = temp_agenttrees_with_skills / "skills" / "define.md"
+        skill_path.write_text("Branch: {{git_branch}}")
+
+        # Mock the config to include a command
+        from agenttree.config import Config
+        mock_config = Config(commands={"git_branch": "echo 'test-branch'"})
+        monkeypatch.setattr("agenttree.config.load_config", lambda *args, **kwargs: mock_config)
+
+        # Create a mock issue
+        from agenttree.issues import Issue
+        issue = Issue(
+            id="001",
+            slug="test",
+            title="Test",
+            created="2026-01-11T12:00:00Z",
+            updated="2026-01-11T12:00:00Z",
+        )
+
+        # Create issue dir
+        issue_dir = temp_agenttrees_with_skills / "issues" / "001-test"
+        issue_dir.mkdir(parents=True)
+
+        monkeypatch.setattr(
+            "agenttree.issues.get_issue_dir",
+            lambda x: issue_dir
+        )
+
+        skill = load_skill(DEFINE, issue=issue)
+        assert skill == "Branch: test-branch"
+
+    def test_load_skill_builtin_vars_take_precedence(self, temp_agenttrees_with_skills, monkeypatch):
+        """Built-in context variables should not be overwritten by commands."""
+        # Create a template using issue_id
+        skill_path = temp_agenttrees_with_skills / "skills" / "define.md"
+        skill_path.write_text("Issue: {{issue_id}}")
+
+        # Mock the config with a command named issue_id (should be ignored)
+        from agenttree.config import Config
+        mock_config = Config(commands={"issue_id": "echo 'WRONG'"})
+        monkeypatch.setattr("agenttree.config.load_config", lambda *args, **kwargs: mock_config)
+
+        # Create a mock issue
+        from agenttree.issues import Issue
+        issue = Issue(
+            id="042",
+            slug="test",
+            title="Test",
+            created="2026-01-11T12:00:00Z",
+            updated="2026-01-11T12:00:00Z",
+        )
+
+        # Create issue dir
+        issue_dir = temp_agenttrees_with_skills / "issues" / "042-test"
+        issue_dir.mkdir(parents=True)
+
+        monkeypatch.setattr(
+            "agenttree.issues.get_issue_dir",
+            lambda x: issue_dir
+        )
+
+        skill = load_skill(DEFINE, issue=issue)
+        # Should use the built-in issue_id, not the command output
+        assert skill == "Issue: 042"
+
+    def test_load_skill_only_runs_referenced_commands(self, temp_agenttrees_with_skills, monkeypatch):
+        """Only commands referenced in template should be executed."""
+        # Create a template with only one command reference
+        skill_path = temp_agenttrees_with_skills / "skills" / "define.md"
+        skill_path.write_text("Branch: {{git_branch}}")
+
+        # Track which commands are executed
+        executed_commands = []
+
+        from agenttree.config import Config
+        mock_config = Config(commands={
+            "git_branch": "echo 'main'",
+            "unused_cmd": "echo 'should not run'",
+        })
+        monkeypatch.setattr("agenttree.config.load_config", lambda *args, **kwargs: mock_config)
+
+        # Patch get_command_output to track calls
+        def tracking_get_output(commands, name, cwd=None):
+            executed_commands.append(name)
+            from agenttree.commands import execute_command
+            cmd = commands.get(name, "")
+            if isinstance(cmd, list):
+                cmd = cmd[0] if cmd else ""
+            return execute_command(cmd, cwd=cwd)
+
+        monkeypatch.setattr(
+            "agenttree.commands.get_command_output",
+            tracking_get_output
+        )
+
+        from agenttree.issues import Issue
+        issue = Issue(
+            id="001",
+            slug="test",
+            title="Test",
+            created="2026-01-11T12:00:00Z",
+            updated="2026-01-11T12:00:00Z",
+        )
+
+        issue_dir = temp_agenttrees_with_skills / "issues" / "001-test"
+        issue_dir.mkdir(parents=True)
+
+        monkeypatch.setattr(
+            "agenttree.issues.get_issue_dir",
+            lambda x: issue_dir
+        )
+
+        load_skill(DEFINE, issue=issue)
+
+        # Only git_branch should have been executed
+        assert "git_branch" in executed_commands
+        assert "unused_cmd" not in executed_commands
+
+
+class TestLoadSkillJinja:
+    """Tests for load_skill Jinja template rendering."""
+
+    @pytest.fixture
+    def temp_agenttrees_jinja(self, monkeypatch, tmp_path):
+        """Create a temporary _agenttree directory with skills and issues for Jinja tests."""
+        agenttrees_path = tmp_path / "_agenttree"
+        agenttrees_path.mkdir()
+        (agenttrees_path / "issues").mkdir()
+        (agenttrees_path / "skills").mkdir()
+        (agenttrees_path / "templates").mkdir()
+
+        # Create problem template (needed for create_issue)
+        template = agenttrees_path / "templates" / "problem.md"
+        template.write_text("# Problem Statement\n\n")
+
+        # Monkeypatch get_agenttree_path to return our temp dir
+        monkeypatch.setattr(
+            "agenttree.issues.get_agenttree_path",
+            lambda: agenttrees_path
+        )
+
+        # Disable sync to avoid git operations
+        monkeypatch.setattr(
+            "agenttree.issues.sync_agents_repo",
+            lambda *args, **kwargs: True
+        )
+
+        return agenttrees_path
+
+    def test_load_skill_renders_basic_variables(self, temp_agenttrees_jinja):
+        """load_skill should render basic issue variables with Jinja."""
+        # Create skill file with Jinja template
+        skill_path = temp_agenttrees_jinja / "skills" / "define.md"
+        skill_path.write_text("Issue #{{issue_id}}: {{issue_title}}")
+
+        # Create an issue
+        issue = create_issue("Test Issue")
+
+        # Load skill with issue context
+        skill = load_skill(DEFINE, issue=issue)
+
+        assert skill == "Issue #001: Test Issue"
+
+    def test_load_skill_renders_document_content(self, temp_agenttrees_jinja):
+        """load_skill should render document content variables."""
+        # Create skill file that references problem_md
+        skill_path = temp_agenttrees_jinja / "skills" / "research.md"
+        skill_path.write_text("## Problem\n{{problem_md}}")
+
+        # Create an issue and update its problem.md
+        issue = create_issue("Test Issue")
+        issue_dir = temp_agenttrees_jinja / "issues" / f"{issue.id}-{issue.slug}"
+        (issue_dir / "problem.md").write_text("This is the problem description.")
+
+        # Load skill with issue context
+        skill = load_skill(RESEARCH, issue=issue)
+
+        assert "This is the problem description." in skill
+
+    def test_load_skill_includes_system_prompt(self, temp_agenttrees_jinja):
+        """load_skill should prepend AGENTS.md when include_system=True."""
+        # Create AGENTS.md system prompt
+        agents_md = temp_agenttrees_jinja / "skills" / "AGENTS.md"
+        agents_md.write_text("# System Prompt\nYou are an AI agent.")
+
+        # Create skill file
+        skill_path = temp_agenttrees_jinja / "skills" / "define.md"
+        skill_path.write_text("# Define Stage")
+
+        # Create an issue
+        issue = create_issue("Test Issue")
+
+        # Load skill with include_system=True
+        skill = load_skill(DEFINE, issue=issue, include_system=True)
+
+        assert skill.startswith("# System Prompt")
+        assert "You are an AI agent." in skill
+        assert "# Define Stage" in skill
+
+    def test_load_skill_without_issue_returns_raw(self, temp_agenttrees_jinja):
+        """load_skill without issue should return raw template content."""
+        # Create skill file with Jinja template
+        skill_path = temp_agenttrees_jinja / "skills" / "define.md"
+        skill_path.write_text("Issue #{{issue_id}}: {{issue_title}}")
+
+        # Load skill without issue context
+        skill = load_skill(DEFINE)
+
+        # Should return raw template, not rendered
+        assert skill == "Issue #{{issue_id}}: {{issue_title}}"
 
 
 class TestSessionManagement:

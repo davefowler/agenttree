@@ -1,0 +1,73 @@
+name: Claude Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  claude-review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Run Claude Code Review
+        id: claude-review
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            Review this pull request for the agenttree project.
+
+            Focus on:
+            1. **Critical Issues** - Security vulnerabilities, data loss risks, breaking changes
+            2. **Bugs** - Logic errors, edge cases, null/undefined handling
+            3. **Code Quality** - Following existing patterns, type safety, test coverage
+
+            This is a Python project using:
+            - Python 3.12+ with type hints
+            - pytest for testing
+            - mypy for type checking
+            - Click for CLI
+
+            Reference CLAUDE.md in the repo for project conventions.
+
+            Format your review with clear sections:
+            - Start with a brief summary
+            - List any CRITICAL issues first (these should block merge)
+            - Then list other suggestions
+
+            Use `gh pr comment` with your Bash tool to leave your review as a comment on the PR.
+
+            If you find CRITICAL issues, include the text "CRITICAL_ISSUES_FOUND: YES" at the end.
+            If no critical issues, include "CRITICAL_ISSUES_FOUND: NO" at the end.
+
+          claude_args: '--allowed-tools "Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*)"'
+
+      - name: Check for Critical Issues
+        if: always()
+        run: |
+          # Check if Claude found critical issues
+          COMMENTS=$(gh pr view ${{ github.event.pull_request.number }} \
+            --json comments --jq '.comments[].body' 2>/dev/null || echo "")
+
+          if echo "$COMMENTS" | grep -q "CRITICAL_ISSUES_FOUND: YES"; then
+            echo "::error::Claude found critical issues in this PR"
+            echo "Please address the critical issues before merging."
+            exit 1
+          fi
+
+          echo "No critical issues detected by Claude review"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

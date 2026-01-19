@@ -198,6 +198,13 @@ def create_issue(
             dep_num = dep.lstrip("0") or "0"
             normalized_deps.append(f"{int(dep_num):03d}")
 
+        # Check for circular dependencies before creating
+        cycle = detect_circular_dependency(issue_id, normalized_deps)
+        if cycle:
+            raise ValueError(
+                f"Circular dependency detected: {' -> '.join(cycle)}"
+            )
+
     # Create issue object
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     issue = Issue(
@@ -418,6 +425,70 @@ def check_dependencies_met(issue: Issue) -> tuple[bool, list[str]]:
     return len(unmet) == 0, unmet
 
 
+def detect_circular_dependency(
+    issue_id: str,
+    new_dependencies: list[str],
+) -> Optional[list[str]]:
+    """Detect if adding dependencies would create a circular dependency.
+
+    Uses DFS to detect cycles in the dependency graph.
+
+    Args:
+        issue_id: The issue ID to check
+        new_dependencies: List of dependency IDs to validate
+
+    Returns:
+        List of issue IDs forming the cycle if found, None otherwise
+    """
+    if not new_dependencies:
+        return None
+
+    # Normalize issue ID
+    normalized_id = f"{int(issue_id.lstrip('0') or '0'):03d}"
+
+    # Build adjacency list of all existing dependencies
+    dep_graph: dict[str, list[str]] = {}
+    for issue in list_issues():
+        issue_normalized = f"{int(issue.id.lstrip('0') or '0'):03d}"
+        dep_graph[issue_normalized] = [
+            f"{int(d.lstrip('0') or '0'):03d}" for d in issue.dependencies
+        ]
+
+    # Add the new dependencies we're validating
+    dep_graph[normalized_id] = [
+        f"{int(d.lstrip('0') or '0'):03d}" for d in new_dependencies
+    ]
+
+    # DFS to detect cycle starting from issue_id
+    visited: set[str] = set()
+    path: list[str] = []
+    path_set: set[str] = set()
+
+    def dfs(node: str) -> Optional[list[str]]:
+        if node in path_set:
+            # Found cycle - return path from cycle start
+            cycle_start = path.index(node)
+            return path[cycle_start:] + [node]
+
+        if node in visited:
+            return None
+
+        visited.add(node)
+        path.append(node)
+        path_set.add(node)
+
+        for neighbor in dep_graph.get(node, []):
+            cycle = dfs(neighbor)
+            if cycle:
+                return cycle
+
+        path.pop()
+        path_set.remove(node)
+        return None
+
+    return dfs(normalized_id)
+
+
 def get_blocked_issues(completed_issue_id: str) -> list[Issue]:
     """Get all issues in backlog that were waiting on a completed issue.
 
@@ -477,6 +548,7 @@ STAGE_ORDER = [
     IMPLEMENT,
     IMPLEMENTATION_REVIEW,
     ACCEPTED,
+    NOT_DOING,
 ]
 
 STAGE_SUBSTAGES = {
@@ -822,6 +894,36 @@ def load_skill(
             else:
                 context[var_name] = ""
 
+    # Load project-level review checklist if it exists (for project-specific patterns)
+    # Look in skills directory to keep all skill-related files together
+    project_review_path = agents_path / "skills" / "project_review.md"
+    if project_review_path.exists():
+        context["project_review_md"] = project_review_path.read_text()
+    else:
+        context["project_review_md"] = ""
+
+    # Inject command outputs for referenced commands
+    # Commands run in worktree directory if available, otherwise issue directory
+    from agenttree.commands import get_referenced_commands, get_command_output
+
+    if config.commands:
+        # Determine working directory for commands
+        cwd = None
+        if issue.worktree_dir:
+            cwd = Path(issue.worktree_dir)
+        elif issue_dir:
+            cwd = issue_dir
+
+        # Find commands referenced in the template
+        referenced = get_referenced_commands(skill_content, config.commands)
+
+        for cmd_name in referenced:
+            # Don't overwrite built-in context variables
+            if cmd_name not in context:
+                context[cmd_name] = get_command_output(
+                    config.commands, cmd_name, cwd=cwd
+                )
+
     # Render with Jinja
     try:
         template = Template(skill_content)
@@ -919,29 +1021,48 @@ def update_session_stage(issue_id: str, stage: str, substage: Optional[str] = No
     save_session(session)
 
 
-def mark_session_oriented(issue_id: str) -> None:
-    """Mark that agent has been oriented in this session."""
+def mark_session_oriented(issue_id: str, stage: Optional[str] = None, substage: Optional[str] = None) -> None:
+    """Mark that agent has been oriented in this session.
+
+    Also syncs last_stage/last_substage if provided, so is_restart()
+    won't keep detecting a stage mismatch.
+    """
     session = get_session(issue_id)
     if not session:
         return
 
     session.oriented = True
+    if stage:
+        session.last_stage = stage
+    if substage is not None:
+        session.last_substage = substage
     save_session(session)
 
 
-def is_restart(issue_id: str) -> bool:
-    """Check if this is a restart (session exists but not oriented).
+def is_restart(issue_id: str, current_stage: Optional[str] = None, current_substage: Optional[str] = None) -> bool:
+    """Check if agent should re-orient (show instructions without advancing).
 
     Returns True if:
-    - Session exists AND agent hasn't been oriented in this session
+    - Stage changed externally (e.g., human approval) - detected by comparing
+      session.last_stage with current issue stage
+    - Session exists but agent hasn't been oriented yet (tmux restart)
 
     Returns False if:
     - No session exists (fresh start)
-    - Session exists and agent has been oriented
+    - Session exists, stage matches, and agent has been oriented
     """
     session = get_session(issue_id)
     if not session:
         return False  # No session = fresh start
+
+    # Stage changed externally (e.g., human approval advanced us)
+    # This handles the case where controller moved us to a new stage
+    if current_stage and session.last_stage != current_stage:
+        return True
+    if current_substage is not None and session.last_substage != current_substage:
+        return True
+
+    # Tmux restarted but same stage - use oriented flag
     return not session.oriented
 
 

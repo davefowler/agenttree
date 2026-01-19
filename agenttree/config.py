@@ -1,7 +1,7 @@
 """Configuration management for AgentTree."""
 
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, Union
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -56,10 +56,6 @@ class HostConfig(BaseModel):
     def is_agent(self) -> bool:
         """Check if this host is an AI agent (has tool configured)."""
         return self.tool is not None
-
-
-# Legacy alias for backwards compatibility
-AgentHostConfig = HostConfig
 
 
 class HooksConfig(BaseModel):
@@ -147,10 +143,7 @@ class Config(BaseModel):
     refresh_interval: int = 10
     tools: Dict[str, ToolConfig] = Field(default_factory=dict)
     hosts: Dict[str, HostConfig] = Field(default_factory=dict)  # Host configurations
-    # Legacy alias - will be merged into hosts during load
-    agents: Dict[str, HostConfig] = Field(default_factory=dict)
-    test_commands: list[str] = Field(default_factory=list)  # Commands to run tests
-    lint_commands: list[str] = Field(default_factory=list)  # Commands to run linting
+    commands: Dict[str, Union[str, list[str]]] = Field(default_factory=dict)  # Named shell commands
     stages: list[StageConfig] = Field(default_factory=list)  # Must be defined in .agenttree.yaml
     security: SecurityConfig = Field(default_factory=SecurityConfig)
     merge_strategy: str = "squash"  # squash, merge, or rebase
@@ -332,11 +325,6 @@ class Config(BaseModel):
         # Merge in hosts from config (can override defaults)
         all_hosts.update(self.hosts)
 
-        # Merge in legacy agents section (backwards compatibility)
-        for name, agent_config in self.agents.items():
-            if name not in all_hosts:
-                all_hosts[name] = agent_config
-
         return all_hosts
 
     def get_host(self, host_name: str) -> Optional[HostConfig]:
@@ -374,11 +362,7 @@ class Config(BaseModel):
         Returns:
             HostConfig or None if not found
         """
-        # First check hosts, then legacy agents
-        host = self.hosts.get(host_name)
-        if host:
-            return host
-        return self.agents.get(host_name)
+        return self.hosts.get(host_name)
 
     def is_custom_agent_host(self, host_name: str) -> bool:
         """Check if a host name is a custom agent host (not controller or default agent).
@@ -391,7 +375,7 @@ class Config(BaseModel):
         """
         if host_name in ("controller", "agent"):
             return False
-        return host_name in self.hosts or host_name in self.agents
+        return host_name in self.hosts
 
     def get_non_agent_stages(self) -> list[str]:
         """Get list of stages NOT executed by the default agent.
@@ -666,16 +650,5 @@ def load_config(path: Optional[Path] = None) -> Config:
                     host_config["container"] = {"enabled": True}
                 elif "container" in host_config and host_config["container"] is False:
                     host_config["container"] = None
-
-    # Legacy: Auto-populate 'name' field for agents from the key (backwards compatibility)
-    if "agents" in data and isinstance(data["agents"], dict):
-        for agent_name, agent_config in data["agents"].items():
-            if agent_config is None:
-                data["agents"][agent_name] = {"name": agent_name}
-            elif isinstance(agent_config, dict) and "name" not in agent_config:
-                agent_config["name"] = agent_name
-                # Legacy agents are containerized by default
-                if "container" not in agent_config:
-                    agent_config["container"] = {"enabled": True}
 
     return Config(**data)

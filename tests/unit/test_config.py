@@ -343,3 +343,76 @@ class TestStageHookNaming:
         assert stage.hooks_for("code", "post_start") == [{"command": "echo 'coding'"}]
 
     # DEFAULT_STAGES removed - config now comes entirely from .agenttree.yaml
+
+
+class TestCommandsConfig:
+    """Tests for commands config field."""
+
+    def test_commands_field_defaults_to_empty_dict(self) -> None:
+        """Commands field should default to empty dict."""
+        config = Config()
+        assert config.commands == {}
+
+    def test_commands_field_accepts_dict(self) -> None:
+        """Commands field should accept dict of name to command."""
+        config = Config(
+            commands={
+                "test": "pytest",
+                "lint": "ruff check .",
+            }
+        )
+        assert config.commands["test"] == "pytest"
+        assert config.commands["lint"] == "ruff check ."
+
+    def test_commands_supports_list_values(self) -> None:
+        """Commands field should accept list of commands."""
+        config = Config(
+            commands={
+                "lint": ["ruff check .", "mypy src/"],
+            }
+        )
+        assert config.commands["lint"] == ["ruff check .", "mypy src/"]
+
+    def test_commands_from_yaml(self, tmp_path: Path) -> None:
+        """Commands should be loadable from YAML config."""
+        config_file = tmp_path / ".agenttree.yaml"
+        config_data = {
+            "commands": {
+                "test": "pytest",
+                "lint": "ruff check .",
+                "git_branch": "git branch --show-current",
+            }
+        }
+        config_file.write_text(yaml.dump(config_data))
+
+        config = load_config(tmp_path)
+        assert config.commands["test"] == "pytest"
+        assert config.commands["git_branch"] == "git branch --show-current"
+
+    def test_commands_from_yaml_with_list(self, tmp_path: Path) -> None:
+        """Commands with list values should be loadable from YAML."""
+        config_file = tmp_path / ".agenttree.yaml"
+        config_content = """
+commands:
+  test: pytest
+  lint:
+    - ruff check .
+    - mypy src/
+"""
+        config_file.write_text(config_content)
+
+        config = load_config(tmp_path)
+        assert config.commands["test"] == "pytest"
+        assert config.commands["lint"] == ["ruff check .", "mypy src/"]
+
+    def test_commands_mixed_string_and_list(self) -> None:
+        """Commands field should support mixed string and list values."""
+        config = Config(
+            commands={
+                "test": "pytest",
+                "lint": ["ruff check .", "mypy src/"],
+                "git_branch": "git branch --show-current",
+            }
+        )
+        assert isinstance(config.commands["test"], str)
+        assert isinstance(config.commands["lint"], list)

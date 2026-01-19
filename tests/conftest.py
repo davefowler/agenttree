@@ -27,5 +27,11 @@ def host_environment(monkeypatch):
         def test_pr_creation(host_environment):
             # This test will run as if on host
             ...
+
+    This fixture both removes the env var AND patches is_running_in_container
+    to return False. The patch is needed because tests may run in actual Docker
+    containers (like CI or cursor's cloud agent) where /.dockerenv exists.
     """
     monkeypatch.delenv("AGENTTREE_CONTAINER", raising=False)
+    # Also patch the function directly for environments where /.dockerenv exists
+    monkeypatch.setattr("agenttree.hooks.is_running_in_container", lambda: False)

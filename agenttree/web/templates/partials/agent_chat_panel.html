@@ -10,22 +10,27 @@
             Agent {{ issue.assigned_agent }} assigned
         </div>
         <div class="tmux-output" id="tmux-output-{{ issue.number }}"
-             hx-get="/agent/{{ issue.assigned_agent }}/tmux"
-             hx-trigger="load, every 2s"
-             hx-swap="innerHTML">
+             hx-get="/agent/{{ issue.number }}/tmux"
+             hx-trigger="load, every 2s [document.visibilityState=='visible']"
+             hx-swap="innerHTML"
+             hx-preserve="true">
             Loading...
         </div>
         <div class="tmux-input-container">
-            <form hx-post="/agent/{{ issue.assigned_agent }}/send"
+            <form hx-post="/agent/{{ issue.number }}/send"
                   hx-trigger="submit"
-                  hx-target="#send-status-{{ issue.number }}"
-                  hx-swap="innerHTML"
-                  onsubmit="this.reset(); return true;">
+                  hx-swap="none"
+                  hx-on::after-request="this.reset()"
+                  class="send-form">
                 <input type="text" name="message" class="tmux-input"
                        placeholder="Send message to agent..."
-                       autocomplete="off">
+                       autocomplete="off"
+                       required>
+                <button type="submit" class="send-button">
+                    <span class="btn-text">Send</span>
+                    <span class="btn-loading htmx-indicator">...</span>
+                </button>
             </form>
-            <div id="send-status-{{ issue.number }}"></div>
         </div>
         {% else %}
         <div class="no-agent-message">
@@ -46,11 +51,34 @@ function toggleChatPanel(issueNumber) {
     }
 }
 
-// Initialize chat panel state from localStorage on page load
+// Smart auto-scroll: only scroll to bottom if user was already at bottom
 (function() {
-    const chatOpen = localStorage.getItem('chatPanelOpen') !== '0'; // Default to open
+    // Track which tmux outputs were at bottom before HTMX swap
+    const wasAtBottom = new Map();
+
+    // Before swap: check if scrolled to bottom (within 50px tolerance)
+    document.body.addEventListener('htmx:beforeSwap', function(e) {
+        const target = e.detail.target;
+        if (target && target.classList.contains('tmux-output')) {
+            const isAtBottom = target.scrollHeight - target.scrollTop - target.clientHeight < 50;
+            wasAtBottom.set(target.id, isAtBottom);
+        }
+    });
+
+    // After swap: scroll to bottom if user was at bottom
+    document.body.addEventListener('htmx:afterSwap', function(e) {
+        const target = e.detail.target;
+        if (target && target.classList.contains('tmux-output')) {
+            if (wasAtBottom.get(target.id)) {
+                target.scrollTop = target.scrollHeight;
+            }
+            wasAtBottom.delete(target.id);
+        }
+    });
+
+    // Initialize chat panel state from localStorage
+    const chatOpen = localStorage.getItem('chatPanelOpen') !== '0';
     if (!chatOpen) {
-        // Find all chat panels and collapse them
         document.querySelectorAll('.agent-chat-panel').forEach(function(panel) {
             panel.classList.add('collapsed');
         });

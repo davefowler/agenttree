@@ -9,7 +9,6 @@ import pytest
 import yaml
 
 from agenttree.config import (
-    AgentHostConfig,
     HostConfig,
     ContainerConfig,
     Config,
@@ -62,35 +61,6 @@ class TestHostConfig:
             container=ContainerConfig(enabled=False)
         )
         assert config.is_containerized() is False
-
-
-class TestAgentHostConfig:
-    """Tests for AgentHostConfig dataclass (legacy alias)."""
-
-    def test_agent_host_config_basic(self):
-        """Test basic AgentHostConfig creation."""
-        config = AgentHostConfig(
-            name="review",
-            tool="codex",
-            model="gpt-5.2",
-            skill="agents/review.md",
-            description="Code reviewer"
-        )
-        assert config.name == "review"
-        assert config.tool == "codex"
-        assert config.model == "gpt-5.2"
-        assert config.skill == "agents/review.md"
-        assert config.description == "Code reviewer"
-
-    def test_agent_host_config_default_description(self):
-        """Test AgentHostConfig with default empty description."""
-        config = AgentHostConfig(
-            name="security",
-            tool="claude",
-            model="opus",
-            skill="agents/security.md"
-        )
-        assert config.description == ""
 
 
 class TestConfigWithHosts:
@@ -158,37 +128,40 @@ class TestConfigWithHosts:
         assert config.host_is_containerized("review") is True
 
 
-class TestConfigWithAgents:
-    """Tests for Config with agents section (legacy)."""
+class TestConfigWithCustomHosts:
+    """Tests for Config with custom hosts section."""
 
-    def test_config_with_agents(self):
-        """Test Config creation with agents."""
+    def test_config_with_hosts(self):
+        """Test Config creation with custom hosts."""
         config = Config(
-            agents={
-                "review": AgentHostConfig(
+            hosts={
+                "review": HostConfig(
                     name="review",
+                    container=ContainerConfig(enabled=True),
                     tool="codex",
                     model="gpt-5.2",
                     skill="agents/review.md"
                 ),
-                "security": AgentHostConfig(
+                "security": HostConfig(
                     name="security",
+                    container=ContainerConfig(enabled=True),
                     tool="claude",
                     model="opus",
                     skill="agents/security.md"
                 )
             }
         )
-        assert len(config.agents) == 2
-        assert "review" in config.agents
-        assert "security" in config.agents
+        assert len(config.hosts) == 2
+        assert "review" in config.hosts
+        assert "security" in config.hosts
 
     def test_get_agent_host(self):
         """Test get_agent_host method."""
         config = Config(
-            agents={
-                "review": AgentHostConfig(
+            hosts={
+                "review": HostConfig(
                     name="review",
+                    container=ContainerConfig(enabled=True),
                     tool="codex",
                     model="gpt-5.2",
                     skill="agents/review.md"
@@ -206,9 +179,10 @@ class TestConfigWithAgents:
     def test_is_custom_agent_host(self):
         """Test is_custom_agent_host method."""
         config = Config(
-            agents={
-                "review": AgentHostConfig(
+            hosts={
+                "review": HostConfig(
                     name="review",
+                    container=ContainerConfig(enabled=True),
                     tool="codex",
                     model="gpt-5.2",
                     skill="agents/review.md"
@@ -223,9 +197,10 @@ class TestConfigWithAgents:
     def test_get_custom_agent_stages(self):
         """Test get_custom_agent_stages method."""
         config = Config(
-            agents={
-                "review": AgentHostConfig(
+            hosts={
+                "review": HostConfig(
                     name="review",
+                    container=ContainerConfig(enabled=True),
                     tool="codex",
                     model="gpt-5.2",
                     skill="agents/review.md"
@@ -246,9 +221,10 @@ class TestConfigWithAgents:
     def test_get_non_agent_stages(self):
         """Test get_non_agent_stages method."""
         config = Config(
-            agents={
-                "review": AgentHostConfig(
+            hosts={
+                "review": HostConfig(
                     name="review",
+                    container=ContainerConfig(enabled=True),
                     tool="codex",
                     model="gpt-5.2",
                     skill="agents/review.md"
@@ -266,19 +242,21 @@ class TestConfigWithAgents:
         assert "implement" not in non_agent
 
 
-class TestLoadConfigWithAgents:
-    """Tests for loading config with agents section from YAML."""
+class TestLoadConfigWithHosts:
+    """Tests for loading config with hosts section from YAML."""
 
-    def test_load_config_with_agents_yaml(self, tmp_path):
-        """Test loading config with agents from YAML file."""
+    def test_load_config_with_hosts_yaml(self, tmp_path):
+        """Test loading config with hosts from YAML file."""
         config_content = """
-agents:
+hosts:
   review:
+    container: true
     tool: codex
     model: gpt-5.2
     skill: agents/review.md
     description: Code reviewer
   security:
+    container: true
     tool: claude
     model: opus
     skill: agents/security.md
@@ -297,11 +275,11 @@ stages:
         with patch("agenttree.config.find_config_file", return_value=config_file):
             config = load_config()
 
-        assert len(config.agents) == 2
-        assert "review" in config.agents
-        assert config.agents["review"].name == "review"
-        assert config.agents["review"].tool == "codex"
-        assert config.agents["review"].model == "gpt-5.2"
+        assert len(config.hosts) == 2
+        assert "review" in config.hosts
+        assert config.hosts["review"].name == "review"
+        assert config.hosts["review"].tool == "codex"
+        assert config.hosts["review"].model == "gpt-5.2"
 
 
 class TestGetCurrentAgentHost:

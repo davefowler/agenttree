@@ -2,7 +2,6 @@
     <div class="header-row">
         <h1>🤖🌳 AgentTree</h1>
         <nav class="tabs">
-            <a href="/" class="tab {{ 'active' if active_page == 'dashboard' else '' }}">Dashboard</a>
             <a href="/kanban" class="tab {{ 'active' if active_page == 'kanban' else '' }}">Kanban</a>
             <a href="/flow" class="tab {{ 'active' if active_page == 'flow' else '' }}">Flow</a>
         </nav>
@@ -47,4 +46,7 @@
             updateThemeIcon(savedTheme);
         }
     })();
+
+    // Auto-refresh disabled - was causing loops with HTMX morph
+    // TODO: implement smarter partial refresh for issue status
 </script>
