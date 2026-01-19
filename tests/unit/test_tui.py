@@ -373,13 +373,14 @@ class TestRejectionMappings:
     """Tests for rejection stage mappings."""
 
     def test_rejection_mappings_exist(self) -> None:
-        """Verify rejection mappings are defined."""
-        assert "problem_review" in REJECTION_MAPPINGS
+        """Verify rejection mappings are defined for valid human review stages."""
+        # Only plan_review and implementation_review are valid human review stages
         assert "plan_review" in REJECTION_MAPPINGS
         assert "implementation_review" in REJECTION_MAPPINGS
+        # problem_review is NOT a valid human review stage
+        assert "problem_review" not in REJECTION_MAPPINGS
 
     def test_rejection_mappings_correct(self) -> None:
         """Verify rejection mappings map to correct stages."""
-        assert REJECTION_MAPPINGS["problem_review"] == "define"
         assert REJECTION_MAPPINGS["plan_review"] == "plan"
         assert REJECTION_MAPPINGS["implementation_review"] == "implement"

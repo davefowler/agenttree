@@ -24,8 +24,8 @@ from agenttree.issues import (
 
 
 # Rejection stage mappings: where to send issues back when rejected
+# Only valid human review stages (plan_review, implementation_review) are included
 REJECTION_MAPPINGS = {
-    "problem_review": "define",
     "plan_review": "plan",
     "implementation_review": "implement",
 }
