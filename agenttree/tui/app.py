@@ -1,6 +1,5 @@
 """Main TUI application for AgentTree issue management."""
 
-from pathlib import Path
 from typing import Optional
 
 from textual.app import App, ComposeResult
@@ -11,8 +10,6 @@ from textual.worker import Worker, get_current_worker
 
 from agenttree.issues import (
     Issue,
-    Priority,
-    HUMAN_REVIEW_STAGES,
     get_issue_dir,
     get_next_stage,
     list_issues,
