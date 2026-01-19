@@ -8,8 +8,14 @@ from textual.containers import Horizontal, Vertical
 from textual.widgets import DataTable, Footer, Header, Input, Static
 from textual.worker import Worker, get_current_worker
 
+from agenttree.hooks import (
+    ValidationError,
+    execute_exit_hooks,
+    execute_enter_hooks,
+)
 from agenttree.issues import (
     Issue,
+    get_issue,
     get_issue_dir,
     get_next_stage,
     list_issues,
@@ -301,29 +307,57 @@ class TUIApp(App):  # type: ignore[type-arg]
     def action_advance_stage(self) -> None:
         """Advance the selected issue to the next stage."""
         table = self.query_one(IssueTable)
-        issue = table.get_selected_issue()
+        selected_issue = table.get_selected_issue()
         status = self.query_one(StatusBar)
 
-        if not issue:
+        if not selected_issue:
             status.notify("No issue selected")
+            return
+
+        # Get fresh issue object for hooks
+        issue = get_issue(selected_issue.id)
+        if not issue:
+            status.notify(f"Issue #{selected_issue.id} not found")
             return
 
         try:
             next_stage, next_substage, _ = get_next_stage(issue.stage, issue.substage)
-            update_issue_stage(issue.id, next_stage, next_substage)
+
+            # Execute pre-completion hooks (can block with ValidationError)
+            from_stage = issue.stage
+            from_substage = issue.substage
+            execute_exit_hooks(issue, from_stage, from_substage)
+
+            # Update issue stage
+            updated = update_issue_stage(issue.id, next_stage, next_substage)
+            if not updated:
+                status.notify(f"Failed to update issue #{issue.id}")
+                return
+
+            # Execute post-start hooks
+            execute_enter_hooks(updated, next_stage, next_substage)
+
             status.notify(f"Advanced #{issue.id} to {next_stage}")
             self._load_issues()
+        except ValidationError as e:
+            status.notify(f"Cannot advance: {e}")
         except Exception as e:
             status.notify(f"Failed to advance: {e}")
 
     def action_reject(self) -> None:
         """Reject the selected issue (send back to previous stage)."""
         table = self.query_one(IssueTable)
-        issue = table.get_selected_issue()
+        selected_issue = table.get_selected_issue()
         status = self.query_one(StatusBar)
 
-        if not issue:
+        if not selected_issue:
             status.notify("No issue selected")
+            return
+
+        # Get fresh issue object for hooks
+        issue = get_issue(selected_issue.id)
+        if not issue:
+            status.notify(f"Issue #{selected_issue.id} not found")
             return
 
         # Check if issue is in a human review stage
@@ -333,9 +367,24 @@ class TUIApp(App):  # type: ignore[type-arg]
 
         try:
             reject_to = REJECTION_MAPPINGS[issue.stage]
-            update_issue_stage(issue.id, reject_to)
+
+            # Note: We skip execute_exit_hooks for rejection since we're not
+            # "completing" the review stage - we're rejecting it.
+            # We DO run execute_enter_hooks to set up the target stage properly.
+
+            # Update issue stage
+            updated = update_issue_stage(issue.id, reject_to)
+            if not updated:
+                status.notify(f"Failed to update issue #{issue.id}")
+                return
+
+            # Execute post-start hooks for the target stage
+            execute_enter_hooks(updated, reject_to, None)
+
             status.notify(f"Rejected #{issue.id} back to {reject_to}")
             self._load_issues()
+        except ValidationError as e:
+            status.notify(f"Cannot reject: {e}")
         except Exception as e:
             status.notify(f"Failed to reject: {e}")
 

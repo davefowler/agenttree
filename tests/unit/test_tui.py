@@ -247,11 +247,16 @@ class TestActions:
     async def test_advance_stage_action(self, sample_issues: list[Issue]) -> None:
         """Verify 'a' key triggers stage advance for selected issue."""
         with patch("agenttree.tui.app.list_issues") as mock_list, \
+             patch("agenttree.tui.app.get_issue") as mock_get_issue, \
              patch("agenttree.tui.app.get_next_stage") as mock_next, \
-             patch("agenttree.tui.app.update_issue_stage") as mock_update:
+             patch("agenttree.tui.app.update_issue_stage") as mock_update, \
+             patch("agenttree.tui.app.execute_exit_hooks") as mock_exit_hooks, \
+             patch("agenttree.tui.app.execute_enter_hooks") as mock_enter_hooks:
 
             mock_list.return_value = sample_issues
+            mock_get_issue.return_value = sample_issues[0]  # Return issue 001
             mock_next.return_value = ("define", "refine", False)
+            mock_update.return_value = sample_issues[0]  # Return updated issue
 
             app = TUIApp()
             async with app.run_test() as pilot:
@@ -265,16 +270,25 @@ class TestActions:
                 # Press 'a' to advance
                 await pilot.press("a")
 
+                # Hooks should have been called
+                mock_exit_hooks.assert_called()
                 # update_issue_stage should have been called
                 mock_update.assert_called()
+                # Enter hooks should have been called
+                mock_enter_hooks.assert_called()
 
     @pytest.mark.asyncio
     async def test_reject_action(self, sample_issues: list[Issue]) -> None:
         """Verify 'r' key triggers reject/sendback for human review stages."""
         with patch("agenttree.tui.app.list_issues") as mock_list, \
-             patch("agenttree.tui.app.update_issue_stage") as mock_update:
+             patch("agenttree.tui.app.get_issue") as mock_get_issue, \
+             patch("agenttree.tui.app.update_issue_stage") as mock_update, \
+             patch("agenttree.tui.app.execute_enter_hooks") as mock_enter_hooks:
 
             mock_list.return_value = sample_issues
+            # Return issue 003 (plan_review) when get_issue is called
+            mock_get_issue.return_value = sample_issues[2]
+            mock_update.return_value = sample_issues[2]  # Return updated issue
 
             app = TUIApp()
             async with app.run_test() as pilot:
@@ -293,14 +307,19 @@ class TestActions:
 
                 # update_issue_stage should be called with "plan" (rejection mapping)
                 mock_update.assert_called_with("003", "plan")
+                # Enter hooks should be called for the target stage
+                mock_enter_hooks.assert_called()
 
     @pytest.mark.asyncio
     async def test_reject_non_review_stage(self, sample_issues: list[Issue]) -> None:
         """Verify reject fails for non-review stages."""
         with patch("agenttree.tui.app.list_issues") as mock_list, \
+             patch("agenttree.tui.app.get_issue") as mock_get_issue, \
              patch("agenttree.tui.app.update_issue_stage") as mock_update:
 
             mock_list.return_value = sample_issues
+            # Return issue 001 (backlog) when get_issue is called
+            mock_get_issue.return_value = sample_issues[0]
 
             app = TUIApp()
             async with app.run_test() as pilot:
