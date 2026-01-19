@@ -1251,7 +1251,8 @@ def issue() -> None:
 )
 @click.option(
     "--problem",
-    help="Problem statement (fills problem.md)"
+    required=True,
+    help="Problem statement (fills problem.md) - required, min 50 chars"
 )
 @click.option(
     "--context",
@@ -1273,7 +1274,7 @@ def issue_create(
     priority: str,
     label: tuple,
     stage: str,
-    problem: Optional[str],
+    problem: str,
     context: Optional[str],
     solutions: Optional[str],
     depends_on: tuple,
@@ -1282,21 +1283,31 @@ def issue_create(
 
     Creates an issue directory in _agenttree/issues/ with:
     - issue.yaml (metadata)
-    - problem.md (from template or provided content)
+    - problem.md (from --problem content)
 
-    After creating, fill in problem.md then run 'agenttree start <id>' to
-    start an agent.
+    The --problem flag is required and must be at least 50 characters.
+    Title must be at least 10 characters.
 
     Issues with unmet dependencies are placed in backlog and auto-started when
     all dependencies are completed.
 
     Example:
-        agenttree issue create "Fix login validation"
-        agenttree issue create "Add dark mode" -p high -l ui -l feature
-        agenttree issue create "Quick fix" --stage implement
-        agenttree issue create "Bug" --problem "The login fails" --context "On Chrome only"
-        agenttree issue create "Feature B" --depends-on 053 --depends-on 060
+        agenttree issue create "Fix login validation bug" --problem "Login fails silently when password contains special chars. Should show error message."
+        agenttree issue create "Add dark mode toggle" -p high -l ui --problem "Users need dark mode. Add toggle in settings that persists preference."
+        agenttree issue create "Feature B depends on A" --depends-on 053 --problem "This feature requires issue 053 to be completed first. It builds on that work."
     """
+    # Validate title and problem length
+    MIN_TITLE_LENGTH = 10
+    MIN_PROBLEM_LENGTH = 50
+
+    if len(title.strip()) < MIN_TITLE_LENGTH:
+        console.print(f"[red]Error: Title must be at least {MIN_TITLE_LENGTH} characters (got {len(title.strip())})[/red]")
+        sys.exit(1)
+
+    if len(problem.strip()) < MIN_PROBLEM_LENGTH:
+        console.print(f"[red]Error: Problem statement must be at least {MIN_PROBLEM_LENGTH} characters (got {len(problem.strip())})[/red]")
+        console.print("[dim]Provide enough context for an agent to understand the issue.[/dim]")
+        sys.exit(1)
 
     dependencies = list(depends_on) if depends_on else None
 
