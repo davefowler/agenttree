@@ -5,25 +5,29 @@ on:
     types: [opened, synchronize]
 
 jobs:
-  review:
+  claude-review:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: write
-      issues: write
+      pull-requests: read
+      issues: read
       id-token: write
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
-      - name: Claude Code Review
+      - name: Run Claude Code Review
+        id: claude-review
         uses: anthropics/claude-code-action@v1
-        id: claude_review
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
             Review this pull request for the agenttree project.
 
             Focus on:
@@ -44,16 +48,17 @@ jobs:
             - List any CRITICAL issues first (these should block merge)
             - Then list other suggestions
 
+            Use `gh pr comment` with your Bash tool to leave your review as a comment on the PR.
+
             If you find CRITICAL issues, include the text "CRITICAL_ISSUES_FOUND: YES" at the end.
             If no critical issues, include "CRITICAL_ISSUES_FOUND: NO" at the end.
+
+          claude_args: '--allowed-tools "Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*)"'
 
       - name: Check for Critical Issues
         if: always()
         run: |
           # Check if Claude found critical issues
-          REVIEW_OUTPUT="${{ steps.claude_review.outputs.conclusion }}"
-
-          # Also check the PR comments for critical issues marker
           COMMENTS=$(gh pr view ${{ github.event.pull_request.number }} \
             --json comments --jq '.comments[].body' 2>/dev/null || echo "")
 
