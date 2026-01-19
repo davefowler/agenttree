@@ -266,7 +266,7 @@ class TUIApp(App):  # type: ignore[type-arg]
                 table = self.query_one(IssueTable)
                 table.populate(issues)
                 status = self.query_one(StatusBar)
-                status.notify(f"Loaded {len(issues)} issues")
+                status.show_message(f"Loaded {len(issues)} issues")
             else:
                 self.query_one(StatusBar).show_message("No issues found")
 
@@ -311,13 +311,13 @@ class TUIApp(App):  # type: ignore[type-arg]
         status = self.query_one(StatusBar)
 
         if not selected_issue:
-            status.notify("No issue selected")
+            status.show_message("No issue selected")
             return
 
         # Get fresh issue object for hooks
         issue = get_issue(selected_issue.id)
         if not issue:
-            status.notify(f"Issue #{selected_issue.id} not found")
+            status.show_message(f"Issue #{selected_issue.id} not found")
             return
 
         try:
@@ -331,18 +331,18 @@ class TUIApp(App):  # type: ignore[type-arg]
             # Update issue stage
             updated = update_issue_stage(issue.id, next_stage, next_substage)
             if not updated:
-                status.notify(f"Failed to update issue #{issue.id}")
+                status.show_message(f"Failed to update issue #{issue.id}")
                 return
 
             # Execute post-start hooks
             execute_enter_hooks(updated, next_stage, next_substage)
 
-            status.notify(f"Advanced #{issue.id} to {next_stage}")
+            status.show_message(f"Advanced #{issue.id} to {next_stage}")
             self._load_issues()
         except ValidationError as e:
-            status.notify(f"Cannot advance: {e}")
+            status.show_message(f"Cannot advance: {e}")
         except Exception as e:
-            status.notify(f"Failed to advance: {e}")
+            status.show_message(f"Failed to advance: {e}")
 
     def action_reject(self) -> None:
         """Reject the selected issue (send back to previous stage)."""
@@ -351,18 +351,18 @@ class TUIApp(App):  # type: ignore[type-arg]
         status = self.query_one(StatusBar)
 
         if not selected_issue:
-            status.notify("No issue selected")
+            status.show_message("No issue selected")
             return
 
         # Get fresh issue object for hooks
         issue = get_issue(selected_issue.id)
         if not issue:
-            status.notify(f"Issue #{selected_issue.id} not found")
+            status.show_message(f"Issue #{selected_issue.id} not found")
             return
 
         # Check if issue is in a human review stage
         if issue.stage not in REJECTION_MAPPINGS:
-            status.notify(f"Cannot reject: {issue.stage} is not a review stage")
+            status.show_message(f"Cannot reject: {issue.stage} is not a review stage")
             return
 
         try:
@@ -375,18 +375,18 @@ class TUIApp(App):  # type: ignore[type-arg]
             # Update issue stage
             updated = update_issue_stage(issue.id, reject_to)
             if not updated:
-                status.notify(f"Failed to update issue #{issue.id}")
+                status.show_message(f"Failed to update issue #{issue.id}")
                 return
 
             # Execute post-start hooks for the target stage
             execute_enter_hooks(updated, reject_to, None)
 
-            status.notify(f"Rejected #{issue.id} back to {reject_to}")
+            status.show_message(f"Rejected #{issue.id} back to {reject_to}")
             self._load_issues()
         except ValidationError as e:
-            status.notify(f"Cannot reject: {e}")
+            status.show_message(f"Cannot reject: {e}")
         except Exception as e:
-            status.notify(f"Failed to reject: {e}")
+            status.show_message(f"Failed to reject: {e}")
 
     def action_start_agent(self) -> None:
         """Start an agent on the selected issue."""
@@ -395,13 +395,13 @@ class TUIApp(App):  # type: ignore[type-arg]
         status = self.query_one(StatusBar)
 
         if not issue:
-            status.notify("No issue selected")
+            status.show_message("No issue selected")
             return
 
         if issue.assigned_agent:
-            status.notify(f"Issue #{issue.id} already has agent {issue.assigned_agent}")
+            status.show_message(f"Issue #{issue.id} already has agent {issue.assigned_agent}")
             return
 
         # Note: Starting an agent requires more complex logic (worktree, tmux, etc.)
         # For now, just show a message - full implementation would call cli start logic
-        status.notify(f"Use 'agenttree start {issue.id}' to dispatch an agent")
+        status.show_message(f"Use 'agenttree start {issue.id}' to dispatch an agent")
