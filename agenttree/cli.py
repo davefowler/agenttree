@@ -27,6 +27,7 @@ from agenttree.issues import (
     update_issue_stage,
     update_issue_metadata,
     load_skill,
+    load_overview,
     # Session management
     create_session,
     get_session,
@@ -1769,6 +1770,32 @@ def stage_next(issue_id: Optional[str], reassess: bool) -> None:
                 console.print(result.stdout[:500])
         except Exception:
             pass
+
+        # Determine if this is a takeover (not starting from beginning)
+        is_takeover = issue.stage not in (BACKLOG, DEFINE)
+
+        # Load and display overview for context
+        overview = load_overview(
+            issue=issue,
+            is_takeover=is_takeover,
+            current_stage=issue.stage,
+            current_substage=issue.substage,
+        )
+        if overview:
+            console.print(f"\n{'='*60}")
+            console.print(f"[bold cyan]AGENTTREE OVERVIEW[/bold cyan]")
+            console.print(f"{'='*60}\n")
+            console.print(overview)
+
+            # Add takeover context message
+            if is_takeover:
+                console.print(f"\n[yellow]{'='*60}[/yellow]")
+                console.print(f"[bold yellow]TAKEOVER NOTICE[/bold yellow]")
+                console.print(f"[yellow]{'='*60}[/yellow]\n")
+                console.print(
+                    f"You are taking over for another agent who completed stages before [bold]{issue.stage}[/bold].\n"
+                    f"Please review their work in the existing files and continue from here."
+                )
 
         # Load and display current stage instructions
         skill = load_skill(issue.stage, issue.substage, issue=issue)

@@ -943,3 +943,143 @@ class TestSessionManagement:
         # Session is gone
         assert get_session(issue.id) is None
 
+
+class TestLoadOverview:
+    """Tests for load_overview function (shows overview on restart/takeover)."""
+
+    @pytest.fixture
+    def temp_agenttrees_with_overview(self, monkeypatch, tmp_path):
+        """Create a temporary _agenttree directory with an overview.md."""
+        agenttrees_path = tmp_path / "_agenttree"
+        agenttrees_path.mkdir()
+        (agenttrees_path / "issues").mkdir()
+        (agenttrees_path / "templates").mkdir()
+        (agenttrees_path / "skills").mkdir()
+
+        # Create problem template
+        template = agenttrees_path / "templates" / "problem.md"
+        template.write_text("# Problem Statement\n\n")
+
+        # Create overview.md with Jinja variables
+        overview = agenttrees_path / "skills" / "overview.md"
+        overview.write_text(
+            "# AgentTree Overview\n\n"
+            "Stage: {{ current_stage }}\n"
+            "Is takeover: {{ is_takeover }}\n"
+            "Completed stages: {{ completed_stages|join(', ') }}\n"
+        )
+
+        # Monkeypatch get_agenttree_path to return our temp dir
+        monkeypatch.setattr(
+            "agenttree.issues.get_agenttree_path",
+            lambda: agenttrees_path
+        )
+        # Also monkeypatch sync to do nothing
+        monkeypatch.setattr(
+            "agenttree.issues.sync_agents_repo",
+            lambda *args, **kwargs: True
+        )
+
+        return agenttrees_path
+
+    def test_load_overview_returns_content(self, temp_agenttrees_with_overview):
+        """load_overview returns overview content."""
+        from agenttree.issues import load_overview
+
+        overview = load_overview()
+        assert overview is not None
+        assert "AgentTree Overview" in overview
+
+    def test_load_overview_with_stage_context(self, temp_agenttrees_with_overview):
+        """load_overview renders stage context variables."""
+        from agenttree.issues import load_overview
+
+        overview = load_overview(
+            current_stage="implement",
+            current_substage="code",
+            is_takeover=False,
+        )
+        assert overview is not None
+        assert "Stage: implement" in overview
+        assert "Is takeover: False" in overview
+
+    def test_load_overview_calculates_completed_stages(self, temp_agenttrees_with_overview):
+        """load_overview calculates completed stages before current stage."""
+        from agenttree.issues import load_overview
+
+        overview = load_overview(
+            current_stage="implement",
+            is_takeover=True,
+        )
+        assert overview is not None
+        # Should include stages before implement (define, research, plan, plan_assess, plan_revise, plan_review)
+        assert "define" in overview
+        assert "research" in overview
+        assert "plan" in overview
+        assert "plan_review" in overview
+        # Should not include backlog or accepted
+        assert "backlog" not in overview.lower().replace("agenttree overview", "")
+
+    def test_load_overview_takeover_true_mid_workflow(self, temp_agenttrees_with_overview):
+        """is_takeover should be True when starting mid-workflow."""
+        from agenttree.issues import load_overview
+
+        overview = load_overview(
+            current_stage="implement",
+            is_takeover=True,
+        )
+        assert overview is not None
+        assert "Is takeover: True" in overview
+
+    def test_load_overview_takeover_false_for_early_stages(self, temp_agenttrees_with_overview):
+        """is_takeover should be False when starting from beginning stages."""
+        from agenttree.issues import load_overview
+
+        overview = load_overview(
+            current_stage="define",
+            is_takeover=False,
+        )
+        assert overview is not None
+        assert "Is takeover: False" in overview
+
+    def test_load_overview_returns_none_if_missing(self, monkeypatch, tmp_path):
+        """load_overview returns None if overview.md doesn't exist."""
+        from agenttree.issues import load_overview
+
+        agenttrees_path = tmp_path / "_agenttree"
+        agenttrees_path.mkdir()
+        (agenttrees_path / "skills").mkdir()
+        # Don't create overview.md
+
+        monkeypatch.setattr(
+            "agenttree.issues.get_agenttree_path",
+            lambda: agenttrees_path
+        )
+        monkeypatch.setattr(
+            "agenttree.issues.sync_agents_repo",
+            lambda *args, **kwargs: True
+        )
+
+        overview = load_overview()
+        assert overview is None
+
+    def test_load_overview_with_issue_context(self, temp_agenttrees_with_overview):
+        """load_overview includes issue context when issue is provided."""
+        from agenttree.issues import load_overview, create_issue
+
+        # Update overview template to include issue vars
+        overview_path = temp_agenttrees_with_overview / "skills" / "overview.md"
+        overview_path.write_text(
+            "Issue: {{ issue_id }} - {{ issue_title }}\n"
+            "Stage: {{ current_stage }}\n"
+        )
+
+        issue = create_issue("Test Feature")
+        overview = load_overview(
+            issue=issue,
+            current_stage="plan",
+        )
+        assert overview is not None
+        assert issue.id in overview
+        assert "Test Feature" in overview
+
