@@ -200,6 +200,7 @@ def convert_issue_to_web(issue: issue_crud.Issue) -> WebIssue:
         labels=issue.labels,
         assignees=[],
         stage=stage,
+        substage=issue.substage,
         assigned_agent=issue.assigned_agent,
         tmux_active=tmux_active,
         pr_url=issue.pr_url,
