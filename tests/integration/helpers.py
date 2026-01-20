@@ -186,6 +186,9 @@ def create_valid_review_md(issue_dir: Path, average: float = 8.0) -> None:
     - Self-Review Checklist all checked (matches the items from implement-code_review.md)
     - average field >= 7
     - Critical Issues section empty
+
+    NOTE: The checklist items below MUST match the items in _agenttree/templates/review.md.
+    If the template changes, update these items to match.
     """
     content = f"""# Code Review
 

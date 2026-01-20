@@ -3,8 +3,15 @@
 This test actually runs an issue through the complete workflow from creation
 to acceptance, executing real hooks and verifying transitions work correctly.
 
-Unlike other integration tests that test individual stages in isolation,
-this tests the full flow to catch integration issues between stages.
+KEY DIFFERENCE FROM test_full_workflow.py:
+- test_full_workflow.py: Tests individual stage transitions and hook validation
+  in isolation using execute_hooks() directly
+- test_end_to_end_workflow.py (this file): Tests actual workflow progression
+  using update_issue_stage() + execute_exit_hooks() + execute_enter_hooks(),
+  simulating how the real system advances issues through stages
+
+The tests here catch integration issues between stages that wouldn't be found
+by testing stages in isolation.
 """
 
 from pathlib import Path
@@ -216,31 +223,24 @@ class TestEndToEndWorkflow:
                     if current_stage == ACCEPTED:
                         break
 
-                    # Create content based on stage
+                    # Create/overwrite content based on stage
+                    # Always overwrite because enter hooks may create templates with empty sections
                     if current_stage == "define":
                         create_valid_problem_md(issue_dir)
                     elif current_stage == "research":
-                        if not (issue_dir / "research.md").exists():
-                            create_valid_research_md(issue_dir)
+                        create_valid_research_md(issue_dir)
                     elif current_stage in ["plan", "plan_assess", "plan_revise", "plan_review"]:
-                        if not (issue_dir / "spec.md").exists():
-                            create_valid_spec_md(issue_dir)
-                        if not (issue_dir / "spec_review.md").exists():
-                            create_valid_spec_review_md(issue_dir)
+                        create_valid_spec_md(issue_dir)
+                        create_valid_spec_review_md(issue_dir)
                     elif current_stage in ["implement", "implementation_review"]:
-                        if not (issue_dir / "review.md").exists():
-                            create_valid_review_md(issue_dir)
+                        create_valid_review_md(issue_dir)
 
-                    # Execute exit hooks
+                    # Execute exit hooks with proper mocking for hooks that need external setup
                     with patch("agenttree.hooks.has_commits_to_push", return_value=True):
-                        # Skip rebase hook (requires actual git setup)
+                        # Mock rebase hook (requires actual git remote)
                         with patch("agenttree.hooks.run_command_hook", return_value=[]):
-                            try:
-                                execute_exit_hooks(issue, current_stage, current_substage)
-                            except ValidationError as e:
-                                # Some stages may have hooks that require more setup
-                                # Log and continue for now
-                                print(f"Warning: Exit hooks at {current_stage}.{current_substage}: {e}")
+                            # Skip PR approval check (no actual PR in tests)
+                            execute_exit_hooks(issue, current_stage, current_substage, skip_pr_approval=True)
 
                     next_stage, next_substage, _ = get_next_stage(current_stage, current_substage)
 
@@ -389,34 +389,5 @@ class TestWorkflowEdgeCases:
                 with pytest.raises(ValidationError):
                     execute_exit_hooks(issue, "plan", "refine")
 
-    def test_human_review_stages_identified(self, workflow_repo: Path, mock_sync: MagicMock):
-        """Test that human review stages are correctly identified."""
-        from agenttree.issues import HUMAN_REVIEW_STAGES, get_next_stage
-        from agenttree.config import load_config
-
-        with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
-            config = load_config()
-
-            # Verify human review stages
-            assert "plan_review" in HUMAN_REVIEW_STAGES
-            assert "implementation_review" in HUMAN_REVIEW_STAGES
-
-            # Verify these stages have human_review=True in config
-            plan_review = config.get_stage("plan_review")
-            impl_review = config.get_stage("implementation_review")
-
-            assert plan_review.human_review is True
-            assert impl_review.human_review is True
-
-    def test_terminal_stages_have_no_next(self, workflow_repo: Path, mock_sync: MagicMock):
-        """Test that terminal stages don't have a next stage."""
-        from agenttree.config import load_config
-
-        with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
-            config = load_config()
-
-            accepted = config.get_stage("accepted")
-            not_doing = config.get_stage("not_doing")
-
-            assert accepted.terminal is True
-            assert not_doing.terminal is True
+    # Note: Tests for human_review stages and terminal stages are in test_full_workflow.py
+    # (TestHumanReviewGates and TestTerminalStates classes)
