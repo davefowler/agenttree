@@ -43,8 +43,8 @@ from agenttree.issues import (
     NOT_DOING,
 )
 from agenttree.hooks import (
-    execute_pre_hooks,
-    execute_post_hooks,
+    execute_exit_hooks,
+    execute_enter_hooks,
     ValidationError,
     is_running_in_container,
 )
@@ -1803,11 +1803,11 @@ def stage_next(issue_id: Optional[str], reassess: bool) -> None:
         console.print(f"[yellow]Already at final stage[/yellow]")
         return
 
-    # Execute pre-hooks (can block with ValidationError)
+    # Execute exit hooks (can block with ValidationError)
     from_stage = issue.stage
     from_substage = issue.substage
     try:
-        execute_pre_hooks(issue, from_stage, from_substage)
+        execute_exit_hooks(issue, from_stage, from_substage)
     except ValidationError as e:
         console.print(f"[red]Cannot proceed: {e}[/red]")
         sys.exit(1)
@@ -1821,8 +1821,8 @@ def stage_next(issue_id: Optional[str], reassess: bool) -> None:
     # Update session to track stage advancement
     update_session_stage(issue_id, next_stage, next_substage)
 
-    # Execute post-hooks (after stage updated)
-    execute_post_hooks(updated, next_stage, next_substage)
+    # Execute enter hooks (after stage updated)
+    execute_enter_hooks(updated, next_stage, next_substage)
 
     stage_str = next_stage
     if next_substage:
@@ -1888,11 +1888,11 @@ def approve_issue(issue_id: str, skip_approval: bool) -> None:
     # Calculate next stage
     next_stage, next_substage, _ = get_next_stage(issue.stage, issue.substage)
 
-    # Execute pre-hooks
+    # Execute exit hooks
     from_stage = issue.stage
     from_substage = issue.substage
     try:
-        execute_pre_hooks(issue, from_stage, from_substage, skip_pr_approval=skip_approval)
+        execute_exit_hooks(issue, from_stage, from_substage, skip_pr_approval=skip_approval)
     except ValidationError as e:
         console.print(f"[red]Cannot approve: {e}[/red]")
         sys.exit(1)
@@ -1907,8 +1907,8 @@ def approve_issue(issue_id: str, skip_approval: bool) -> None:
     # Note: We intentionally DON'T call update_session_stage here because that would
     # sync last_stage, defeating the stage mismatch detection in is_restart()
 
-    # Execute post-hooks (after stage updated)
-    execute_post_hooks(updated, next_stage, next_substage)
+    # Execute enter hooks (after stage updated)
+    execute_enter_hooks(updated, next_stage, next_substage)
 
     stage_str = next_stage
     if next_substage:
