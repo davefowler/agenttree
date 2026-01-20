@@ -8,10 +8,10 @@ Optional:
 #}
 <a class="issue-item {% if selected_issue and issue.number == selected_issue.number %}active{% endif %}"
    href="{{ base_url }}?issue={{ issue.number }}"
-   {% if draggable %}
    data-issue="{{ issue.number }}"
    data-stage="{{ issue.stage.value }}"
    data-has-agent="{{ 'true' if issue.assigned_agent else 'false' }}"
+   {% if draggable %}
    draggable="{{ 'true' if issue.stage.value in ['plan_review', 'implementation_review'] else 'false' }}"
    {% endif %}>
     <div class="issue-header">

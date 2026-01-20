@@ -1073,7 +1073,69 @@ button[disabled] {
     border-style: dashed;
 }
 
-/* card-* classes removed - now using unified issue-* classes */
+/* Stage-specific background colors for kanban cards */
+.kanban-column .issue-item {
+    background: var(--bg-card);
+    border-radius: 3px;
+    padding: 12px;
+    margin-bottom: 10px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+    border-left: 3px solid transparent;
+}
+
+.kanban-column .issue-item:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1), 0 3px 6px rgba(0, 0, 0, 0.06);
+}
+
+/* Stage-based left border colors */
+.kanban-column .issue-item[data-stage="backlog"] {
+    border-left-color: #9ca3af;
+}
+
+.kanban-column .issue-item[data-stage="plan"],
+.kanban-column .issue-item[data-stage="planning"] {
+    border-left-color: #60a5fa;
+}
+
+.kanban-column .issue-item[data-stage="plan_review"] {
+    border-left-color: #f59e0b;
+    background: #fffbeb;
+}
+
+.kanban-column .issue-item[data-stage="implement"],
+.kanban-column .issue-item[data-stage="implementing"] {
+    border-left-color: #8b5cf6;
+}
+
+.kanban-column .issue-item[data-stage="implementation_review"] {
+    border-left-color: #f59e0b;
+    background: #fffbeb;
+}
+
+.kanban-column .issue-item[data-stage="accepted"] {
+    border-left-color: #22c55e;
+    background: #f0fdf4;
+}
+
+.kanban-column .issue-item[data-stage="not_doing"] {
+    border-left-color: #ef4444;
+    background: #fef2f2;
+}
+
+/* Dark theme overrides for stage backgrounds */
+[data-theme="dark"] .kanban-column .issue-item[data-stage="plan_review"],
+[data-theme="dark"] .kanban-column .issue-item[data-stage="implementation_review"] {
+    background: #451a03;
+}
+
+[data-theme="dark"] .kanban-column .issue-item[data-stage="accepted"] {
+    background: #052e16;
+}
+
+[data-theme="dark"] .kanban-column .issue-item[data-stage="not_doing"] {
+    background: #450a0a;
+}
 
 /* Kanban Modal */
 .modal {
@@ -1307,4 +1369,39 @@ button[disabled] {
 
 .flow-main::-webkit-scrollbar-thumb {
     background: var(--border-color);
+}
+
+/* Flow sidebar stage-based left border colors */
+.flow-sidebar .issue-item {
+    border-left: 3px solid transparent;
+}
+
+.flow-sidebar .issue-item[data-stage="backlog"] {
+    border-left-color: #9ca3af;
+}
+
+.flow-sidebar .issue-item[data-stage="plan"],
+.flow-sidebar .issue-item[data-stage="planning"] {
+    border-left-color: #60a5fa;
+}
+
+.flow-sidebar .issue-item[data-stage="plan_review"] {
+    border-left-color: #f59e0b;
+}
+
+.flow-sidebar .issue-item[data-stage="implement"],
+.flow-sidebar .issue-item[data-stage="implementing"] {
+    border-left-color: #8b5cf6;
+}
+
+.flow-sidebar .issue-item[data-stage="implementation_review"] {
+    border-left-color: #f59e0b;
+}
+
+.flow-sidebar .issue-item[data-stage="accepted"] {
+    border-left-color: #22c55e;
+}
+
+.flow-sidebar .issue-item[data-stage="not_doing"] {
+    border-left-color: #ef4444;
 }
