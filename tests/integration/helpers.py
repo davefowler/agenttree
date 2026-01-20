@@ -183,7 +183,7 @@ def create_valid_review_md(issue_dir: Path, average: float = 8.0) -> None:
     """Create a review.md that passes all IMPLEMENT hooks.
 
     Requires:
-    - Self-Review Checklist all checked
+    - Self-Review Checklist all checked (matches the items from implement-code_review.md)
     - average field >= 7
     - Critical Issues section empty
     """
@@ -214,11 +214,22 @@ Implementation of the login flow fixes as specified. All three issues have been 
 
 ## Self-Review Checklist
 
-- [x] Code compiles without errors
-- [x] All tests pass
-- [x] No obvious bugs or edge cases missed
-- [x] Code follows project conventions
-- [x] Changes are focused and minimal
+- [x] All tests pass locally
+- [x] Code follows project coding standards and conventions
+- [x] No security vulnerabilities (input validation, authentication, authorization)
+- [x] Performance is acceptable (no obvious bottlenecks)
+- [x] Documentation updated (README, API docs, comments where needed)
+- [x] No TODO/FIXME comments left unresolved in production code
+- [x] Reviewed the full diff line-by-line
+- [x] PR description clearly explains the changes and why
+- [x] Commit messages are clear and follow project conventions
+- [x] No debug code, console.logs, or commented-out code left behind
+- [x] All Critical Issues section above is empty
+- [x] **Issue fully implemented** - All requirements from problem.md are addressed
+- [x] **Code is wired up** - Not just staged; routes registered, handlers connected, feature accessible
+- [x] **No cowardly code** - No silent exception swallowing, no graceful fallbacks that hide real errors, no tests that catch exceptions to pass silently, no empty except blocks
+- [x] **No backward compatibility shims** - This is pre-launch. Remove old code, don't keep it "for compatibility"
+- [x] **No deferred work** - Don't push cleanup to "follow-up issues". If you can do it now, do it now
 
 ## Critical Issues
 
