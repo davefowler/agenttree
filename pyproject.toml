@@ -54,8 +54,11 @@ ml = [
     "sentence-transformers>=2.3.0",
     "torch>=2.1.0",
 ]
+tui = [
+    "textual>=0.70.0",
+]
 all = [
-    "agenttree[dev,web,ml]",
+    "agenttree[dev,web,ml,tui]",
 ]
 
 [project.scripts]
@@ -97,4 +100,5 @@ dev = [
     "mypy>=1.19.1",
     "pytest>=9.0.2",
     "pytest-cov>=7.0.0",
+    "pytest-asyncio>=0.23.0",
 ]
