@@ -869,7 +869,7 @@ def run_builtin_validator(
         if pr_number is None:
             errors.append("No PR number available to check CI status")
         else:
-            from agenttree.github import wait_for_ci, get_pr_checks
+            from agenttree.github import wait_for_ci, get_pr_checks, get_pr_comments, get_check_failed_logs
 
             timeout = params.get("timeout", 600)
             poll_interval = params.get("poll_interval", 30)
@@ -884,34 +884,36 @@ def run_builtin_validator(
                 checks = get_pr_checks(pr_number)
 
                 # Filter to failed/incomplete checks
-                # A check is considered failed if:
-                # - It's still pending (not completed)
-                # - Its conclusion is "failure"
-                # - It's not successful and not skipped
+                # state is FAILURE for failed checks, PENDING for still running
                 failed_checks = [
                     check for check in checks
-                    if (check.state == "PENDING")
-                    or (check.conclusion == "failure")
-                    or (check.state != "SUCCESS" and check.conclusion not in ("success", "skipped", None))
+                    if check.state in ("FAILURE", "PENDING")
                 ]
 
-                # If no specific failed checks but wait_for_ci returned False, it's a timeout
-                if not failed_checks and checks:
-                    failed_checks = [
-                        check for check in checks
-                        if check.state == "PENDING" or check.conclusion not in ("success", "skipped")
-                    ]
-
                 if failed_checks:
-                    # Create ci_feedback.md file in issue directory
+                    # Create ci_feedback.md file in issue directory with logs and comments
                     if issue_dir:
                         feedback_path = issue_dir / "ci_feedback.md"
                         feedback_content = "# CI Failure Report\n\nThe following CI checks failed:\n\n"
                         for check in failed_checks:
-                            feedback_content += f"## {check.name}\n"
-                            feedback_content += f"- **State:** {check.state}\n"
-                            feedback_content += f"- **Conclusion:** {check.conclusion}\n\n"
-                        feedback_content += "Please fix these issues and run `agenttree next` to re-submit for CI.\n"
+                            feedback_content += f"- **{check.name}**: {check.state}\n"
+
+                        # Fetch and include failed logs for each failed check
+                        for check in failed_checks:
+                            if check.state == "FAILURE":
+                                logs = get_check_failed_logs(check)
+                                if logs:
+                                    feedback_content += f"\n---\n\n## Failed Logs: {check.name}\n\n```\n{logs}\n```\n"
+
+                        # Fetch and include PR review comments
+                        comments = get_pr_comments(pr_number)
+                        if comments:
+                            feedback_content += "\n---\n\n## Review Comments\n\n"
+                            for comment in comments:
+                                feedback_content += f"### From @{comment.author}\n\n"
+                                feedback_content += f"{comment.body}\n\n"
+
+                        feedback_content += "\n---\n\nPlease fix these issues and run `agenttree next` to re-submit for CI.\n"
                         feedback_path.write_text(feedback_content)
                         console.print(f"[dim]Created {feedback_path}[/dim]")
 

@@ -26,6 +26,7 @@ all = [
     { name = "black" },
     { name = "chromadb" },
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "jinja2" },
     { name = "mypy" },
     { name = "pytest" },
@@ -41,6 +42,7 @@ all = [
 ]
 dev = [
     { name = "black" },
+    { name = "httpx" },
     { name = "mypy" },
     { name = "pytest" },
     { name = "pytest-cov" },
@@ -79,6 +81,7 @@ requires-dist = [
     { name = "click", specifier = ">=8.1.0" },
     { name = "fastapi", marker = "extra == 'web'", specifier = ">=0.109.0" },
     { name = "filelock", specifier = ">=3.0.0" },
+    { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.26.0" },
     { name = "jinja2", specifier = ">=3.1.0" },
     { name = "jinja2", marker = "extra == 'web'", specifier = ">=3.1.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.0.0" },

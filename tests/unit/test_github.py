@@ -198,16 +198,17 @@ class TestGetPrChecks:
     @patch("agenttree.github.gh_command")
     def test_get_pr_checks_success(self, mock_gh: Mock) -> None:
         """Test getting PR check statuses."""
+        # gh pr checks --json name,state,link returns state directly (SUCCESS/FAILURE/PENDING)
         mock_gh.return_value = """[
             {
                 "name": "CI",
-                "state": "COMPLETED",
-                "conclusion": "SUCCESS"
+                "state": "SUCCESS",
+                "link": "https://github.com/org/repo/actions/runs/123/job/456"
             },
             {
                 "name": "Tests",
-                "state": "COMPLETED",
-                "conclusion": "FAILURE"
+                "state": "FAILURE",
+                "link": "https://github.com/org/repo/actions/runs/123/job/789"
             }
         ]"""
 
@@ -215,10 +216,10 @@ class TestGetPrChecks:
 
         assert len(checks) == 2
         assert checks[0].name == "CI"
-        assert checks[0].state == "COMPLETED"
-        assert checks[0].conclusion == "SUCCESS"
+        assert checks[0].state == "SUCCESS"
+        assert checks[0].link == "https://github.com/org/repo/actions/runs/123/job/456"
         assert checks[1].name == "Tests"
-        assert checks[1].conclusion == "FAILURE"
+        assert checks[1].state == "FAILURE"
 
     @patch("agenttree.github.gh_command")
     def test_get_pr_checks_empty(self, mock_gh: Mock) -> None:
