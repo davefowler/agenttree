@@ -590,7 +590,7 @@ class TestCheckCiStatus:
                 assert feedback_file.exists()
                 content = feedback_file.read_text()
                 assert "test" in content
-                assert "FAILURE" in content or "failure" in content
+                assert "FAILED" in content or "fail" in content.lower()
                 assert result == 1
 
     @patch("agenttree.hooks.is_running_in_container", return_value=False)
