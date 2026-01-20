@@ -1,4 +1,36 @@
-{# Issue item for flow sidebar - expects 'issue', 'selected_issue', 'chat_open', and optional 'show_stage' #}
+{#
+Issue item partial - works for both flow sidebar and kanban cards.
+Required: 'issue'
+Optional:
+  - 'mode': 'flow' (default) or 'kanban'
+  - 'selected_issue': for flow active state
+  - 'chat_open': for flow link
+  - 'show_stage': show stage label (flow only)
+#}
+{% set mode = mode|default('flow') %}
+
+{% if mode == 'kanban' %}
+<div class="kanban-card"
+     data-issue="{{ issue.number }}"
+     data-stage="{{ issue.stage.value }}"
+     data-has-agent="{{ 'true' if issue.assigned_agent else 'false' }}"
+     draggable="{{ 'true' if issue.stage.value in ['plan_review', 'implementation_review'] else 'false' }}"
+     onclick="openIssueModal('{{ issue.number }}')"
+     style="cursor: pointer;">
+    <div class="agent-light {% if issue.tmux_active %}on{% elif issue.assigned_agent %}stalled{% else %}off{% endif %}"
+         onclick="event.stopPropagation(); toggleAgent('{{ issue.number }}', this)"
+         title="{% if issue.tmux_active %}Agent running - click to view{% elif issue.assigned_agent %}Agent assigned but inactive{% else %}Click to start agent{% endif %}"></div>
+    <div class="card-number">#{{ issue.number }}</div>
+    <div class="card-title">{{ issue.title }}</div>
+    <div class="card-badges">
+        {% for label in issue.labels[:2] %}
+        {% if not label.startswith('stage-') %}
+        <span class="badge">{{ label }}</span>
+        {% endif %}
+        {% endfor %}
+    </div>
+</div>
+{% else %}
 <a class="issue-item {% if selected_issue and issue.number == selected_issue.number %}active{% endif %}"
    href="/flow?issue={{ issue.number }}{% if chat_open %}&chat=1{% endif %}">
     <div class="issue-header">
@@ -21,3 +53,4 @@
         {% endfor %}
     </div>
 </a>
+{% endif %}
