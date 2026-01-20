@@ -133,7 +133,7 @@ class StatusBar(Static):
         self.update(message)
 
 
-# type: ignore[type-arg] - Textual library has incomplete type stubs for generic DataTable
+# Textual library has incomplete type stubs for generic DataTable
 class IssueTable(DataTable):  # type: ignore[type-arg]
     """DataTable widget for displaying issues."""
 
@@ -209,7 +209,7 @@ class IssueTable(DataTable):  # type: ignore[type-arg]
         return self._issues
 
 
-# type: ignore[type-arg] - Textual library has incomplete type stubs for generic App
+# Textual library has incomplete type stubs for generic App
 class TUIApp(App):  # type: ignore[type-arg]
     """Terminal User Interface for AgentTree issue management."""
 
