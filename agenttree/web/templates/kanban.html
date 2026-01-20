@@ -20,14 +20,9 @@
             </div>
             <div class="column-cards">
                 {% for issue in board.stages[stage] %}
-                <a class="issue-item kanban-card"
-                   href="/kanban?issue={{ issue.number }}"
-                   data-issue="{{ issue.number }}"
-                   data-stage="{{ issue.stage.value }}"
-                   data-has-agent="{{ 'true' if issue.assigned_agent else 'false' }}"
-                   draggable="{{ 'true' if issue.stage.value in ['plan_review', 'implementation_review'] else 'false' }}">
-                    {% include 'partials/issue_item.html' %}
-                </a>
+                {% set base_url = '/kanban' %}
+                {% set draggable = true %}
+                {% include 'partials/issue_item.html' %}
                 {% endfor %}
             </div>
         </div>

@@ -16,11 +16,9 @@
         <div class="flow-sidebar">
             {% if issues %}
                 {% for issue in issues %}
-                <a class="issue-item {% if selected_issue and issue.number == selected_issue.number %}active{% endif %}"
-                   href="/flow?issue={{ issue.number }}{% if chat_open %}&chat=1{% endif %}">
-                    {% set show_stage = true %}
-                    {% include 'partials/issue_item.html' %}
-                </a>
+                {% set base_url = '/flow' %}
+                {% set show_stage = true %}
+                {% include 'partials/issue_item.html' %}
                 {% endfor %}
             {% else %}
                 <div class="empty-state">
