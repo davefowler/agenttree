@@ -243,10 +243,10 @@ class TestWaitForCi:
         # First call: pending, second call: success
         mock_get_checks.side_effect = [
             [
-                CheckStatus(name="CI", state="PENDING", conclusion=None),
+                CheckStatus(name="CI", state="PENDING"),
             ],
             [
-                CheckStatus(name="CI", state="SUCCESS", conclusion="success"),
+                CheckStatus(name="CI", state="SUCCESS"),
             ],
         ]
 
@@ -262,7 +262,7 @@ class TestWaitForCi:
     ) -> None:
         """Test waiting for CI when checks fail."""
         mock_get_checks.return_value = [
-            CheckStatus(name="Tests", state="FAILURE", conclusion="failure"),
+            CheckStatus(name="Tests", state="FAILURE"),
         ]
 
         result = wait_for_ci(123, timeout=60, poll_interval=1)
@@ -277,7 +277,7 @@ class TestWaitForCi:
         """Test waiting for CI times out."""
         # Always return in-progress
         mock_get_checks.return_value = [
-            CheckStatus(name="CI", state="PENDING", conclusion=None),
+            CheckStatus(name="CI", state="PENDING"),
         ]
 
         result = wait_for_ci(123, timeout=2, poll_interval=1)
@@ -339,12 +339,10 @@ class TestModels:
         check = CheckStatus(
             name="CI",
             state="COMPLETED",
-            conclusion="SUCCESS"
         )
 
         assert check.name == "CI"
         assert check.state == "COMPLETED"
-        assert check.conclusion == "SUCCESS"
 
 
 class TestIsPrApproved:

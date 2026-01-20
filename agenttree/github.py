@@ -35,7 +35,6 @@ class CheckStatus:
 
     name: str
     state: str  # SUCCESS, FAILURE, PENDING
-    conclusion: Optional[str] = None
     link: Optional[str] = None  # URL to the check run details
 
 

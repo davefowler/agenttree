@@ -542,8 +542,8 @@ class TestCheckCiStatus:
 
         with patch("agenttree.github.get_pr_checks") as mock_get_checks:
             mock_get_checks.return_value = [
-                CheckStatus(name="build", state="SUCCESS", conclusion="success"),
-                CheckStatus(name="test", state="SUCCESS", conclusion="success"),
+                CheckStatus(name="build", state="SUCCESS"),
+                CheckStatus(name="test", state="SUCCESS"),
             ]
             result = check_ci_status(agents_dir)
 
@@ -561,7 +561,7 @@ class TestCheckCiStatus:
 
         with patch("agenttree.github.get_pr_checks") as mock_get_checks:
             mock_get_checks.return_value = [
-                CheckStatus(name="build", state="PENDING", conclusion=None),
+                CheckStatus(name="build", state="PENDING"),
             ]
             result = check_ci_status(agents_dir)
 
@@ -580,8 +580,8 @@ class TestCheckCiStatus:
         with patch("agenttree.github.get_pr_checks") as mock_get_checks:
             with patch("agenttree.state.get_active_agent", return_value=None):
                 mock_get_checks.return_value = [
-                    CheckStatus(name="build", state="SUCCESS", conclusion="success"),
-                    CheckStatus(name="test", state="FAILURE", conclusion="failure"),
+                    CheckStatus(name="build", state="SUCCESS"),
+                    CheckStatus(name="test", state="FAILURE"),
                 ]
                 result = check_ci_status(agents_dir)
 
@@ -605,7 +605,7 @@ class TestCheckCiStatus:
         with patch("agenttree.github.get_pr_checks") as mock_get_checks:
             with patch("agenttree.state.get_active_agent", return_value=None):
                 mock_get_checks.return_value = [
-                    CheckStatus(name="test", state="FAILURE", conclusion="failure"),
+                    CheckStatus(name="test", state="FAILURE"),
                 ]
                 check_ci_status(agents_dir)
 
@@ -633,7 +633,7 @@ class TestCheckCiStatus:
                     mock_tmux_class.return_value = mock_tmux
 
                     mock_get_checks.return_value = [
-                        CheckStatus(name="test", state="FAILURE", conclusion="failure"),
+                        CheckStatus(name="test", state="FAILURE"),
                     ]
                     check_ci_status(agents_dir)
 
@@ -666,7 +666,7 @@ class TestCheckCiStatus:
 
         with patch("agenttree.github.get_pr_checks") as mock_get_checks:
             mock_get_checks.return_value = [
-                CheckStatus(name="test", state="FAILURE", conclusion="failure"),
+                CheckStatus(name="test", state="FAILURE"),
             ]
             result = check_ci_status(agents_dir)
 
@@ -689,7 +689,7 @@ class TestCheckCiStatus:
         with patch("agenttree.github.get_pr_checks") as mock_get_checks:
             with patch("agenttree.state.get_active_agent", return_value=None):
                 mock_get_checks.return_value = [
-                    CheckStatus(name="test", state="FAILURE", conclusion="failure"),
+                    CheckStatus(name="test", state="FAILURE"),
                 ]
                 check_ci_status(agents_dir)
 
@@ -708,7 +708,7 @@ class TestCheckCiStatus:
         with patch("agenttree.github.get_pr_checks") as mock_get_checks:
             with patch("agenttree.state.get_active_agent", return_value=None):
                 mock_get_checks.return_value = [
-                    CheckStatus(name="test", state="FAILURE", conclusion="failure"),
+                    CheckStatus(name="test", state="FAILURE"),
                 ]
                 # Should not raise even without active agent
                 result = check_ci_status(agents_dir)
