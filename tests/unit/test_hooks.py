@@ -455,6 +455,256 @@ This is the approach section with content.
         errors = run_builtin_validator(tmp_path, hook)
         assert errors == []
 
+    # min_words tests
+    def test_min_words_file_success(self, tmp_path):
+        """Should pass when file has enough words."""
+        from agenttree.hooks import run_builtin_validator
+
+        content = "This is a test file with more than ten words in it."
+        (tmp_path / "spec.md").write_text(content)
+
+        hook = {"type": "min_words", "file": "spec.md", "min": 10}
+        errors = run_builtin_validator(tmp_path, hook)
+        assert errors == []
+
+    def test_min_words_file_failure(self, tmp_path):
+        """Should fail when file has fewer words than required."""
+        from agenttree.hooks import run_builtin_validator
+
+        content = "Too short"
+        (tmp_path / "spec.md").write_text(content)
+
+        hook = {"type": "min_words", "file": "spec.md", "min": 10}
+        errors = run_builtin_validator(tmp_path, hook)
+        assert len(errors) == 1
+        assert "2 words" in errors[0]
+        assert "minimum is 10" in errors[0]
+
+    def test_min_words_section_success(self, tmp_path):
+        """Should pass when section has enough words."""
+        from agenttree.hooks import run_builtin_validator
+
+        content = """# Document
+
+## Approach
+This section has more than five words which is enough to pass the test validation.
+
+## Notes
+Brief.
+"""
+        (tmp_path / "spec.md").write_text(content)
+
+        hook = {"type": "min_words", "file": "spec.md", "section": "Approach", "min": 5}
+        errors = run_builtin_validator(tmp_path, hook)
+        assert errors == []
+
+    def test_min_words_section_failure(self, tmp_path):
+        """Should fail when section has fewer words than required."""
+        from agenttree.hooks import run_builtin_validator
+
+        content = """# Document
+
+## Approach
+Too short.
+
+## Notes
+More content here.
+"""
+        (tmp_path / "spec.md").write_text(content)
+
+        hook = {"type": "min_words", "file": "spec.md", "section": "Approach", "min": 10}
+        errors = run_builtin_validator(tmp_path, hook)
+        assert len(errors) == 1
+        assert "approach" in errors[0].lower()
+        assert "minimum is 10" in errors[0]
+
+    def test_min_words_file_not_found(self, tmp_path):
+        """Should fail when file doesn't exist."""
+        from agenttree.hooks import run_builtin_validator
+
+        hook = {"type": "min_words", "file": "missing.md", "min": 10}
+        errors = run_builtin_validator(tmp_path, hook)
+        assert len(errors) == 1
+        assert "not found" in errors[0]
+
+    def test_min_words_section_not_found(self, tmp_path):
+        """Should fail when section doesn't exist."""
+        from agenttree.hooks import run_builtin_validator
+
+        content = """# Document
+
+## Other Section
+Some content here.
+"""
+        (tmp_path / "spec.md").write_text(content)
+
+        hook = {"type": "min_words", "file": "spec.md", "section": "Missing", "min": 5}
+        errors = run_builtin_validator(tmp_path, hook)
+        assert len(errors) == 1
+        assert "Section 'Missing' not found" in errors[0]
+
+    # has_list_items tests
+    def test_has_list_items_success(self, tmp_path):
+        """Should pass when section has enough list items."""
+        from agenttree.hooks import run_builtin_validator
+
+        content = """# Document
+
+## Tasks
+- First task
+- Second task
+- Third task
+
+## Notes
+Some notes here.
+"""
+        (tmp_path / "plan.md").write_text(content)
+
+        hook = {"type": "has_list_items", "file": "plan.md", "section": "Tasks", "min": 2}
+        errors = run_builtin_validator(tmp_path, hook)
+        assert errors == []
+
+    def test_has_list_items_failure(self, tmp_path):
+        """Should fail when section has fewer list items than required."""
+        from agenttree.hooks import run_builtin_validator
+
+        content = """# Document
+
+## Tasks
+- Only one task
+
+## Notes
+Some notes here.
+"""
+        (tmp_path / "plan.md").write_text(content)
+
+        hook = {"type": "has_list_items", "file": "plan.md", "section": "Tasks", "min": 3}
+        errors = run_builtin_validator(tmp_path, hook)
+        assert len(errors) == 1
+        assert "1 list items" in errors[0]
+        assert "minimum is 3" in errors[0]
+
+    def test_has_list_items_asterisk_syntax(self, tmp_path):
+        """Should recognize asterisk list items."""
+        from agenttree.hooks import run_builtin_validator
+
+        content = """# Document
+
+## Tasks
+* First task
+* Second task
+
+## Notes
+"""
+        (tmp_path / "plan.md").write_text(content)
+
+        hook = {"type": "has_list_items", "file": "plan.md", "section": "Tasks", "min": 2}
+        errors = run_builtin_validator(tmp_path, hook)
+        assert errors == []
+
+    def test_has_list_items_file_not_found(self, tmp_path):
+        """Should fail when file doesn't exist."""
+        from agenttree.hooks import run_builtin_validator
+
+        hook = {"type": "has_list_items", "file": "missing.md", "section": "Tasks"}
+        errors = run_builtin_validator(tmp_path, hook)
+        assert len(errors) == 1
+        assert "not found" in errors[0]
+
+    def test_has_list_items_section_not_found(self, tmp_path):
+        """Should fail when section doesn't exist."""
+        from agenttree.hooks import run_builtin_validator
+
+        content = """# Document
+
+## Other Section
+- Item
+"""
+        (tmp_path / "plan.md").write_text(content)
+
+        hook = {"type": "has_list_items", "file": "plan.md", "section": "Missing"}
+        errors = run_builtin_validator(tmp_path, hook)
+        assert len(errors) == 1
+        assert "Section 'Missing' not found" in errors[0]
+
+    # contains tests
+    def test_contains_success(self, tmp_path):
+        """Should pass when section contains one of the values."""
+        from agenttree.hooks import run_builtin_validator
+
+        content = """# Document
+
+## Complexity
+Medium
+
+## Notes
+"""
+        (tmp_path / "spec.md").write_text(content)
+
+        hook = {"type": "contains", "file": "spec.md", "section": "Complexity", "values": ["Low", "Medium", "High"]}
+        errors = run_builtin_validator(tmp_path, hook)
+        assert errors == []
+
+    def test_contains_failure(self, tmp_path):
+        """Should fail when section doesn't contain any of the values."""
+        from agenttree.hooks import run_builtin_validator
+
+        content = """# Document
+
+## Complexity
+Unknown
+
+## Notes
+"""
+        (tmp_path / "spec.md").write_text(content)
+
+        hook = {"type": "contains", "file": "spec.md", "section": "Complexity", "values": ["Low", "Medium", "High"]}
+        errors = run_builtin_validator(tmp_path, hook)
+        assert len(errors) == 1
+        assert "must contain one of" in errors[0]
+
+    def test_contains_case_insensitive(self, tmp_path):
+        """Should match values case-insensitively."""
+        from agenttree.hooks import run_builtin_validator
+
+        content = """# Document
+
+## Complexity
+MEDIUM
+
+## Notes
+"""
+        (tmp_path / "spec.md").write_text(content)
+
+        hook = {"type": "contains", "file": "spec.md", "section": "Complexity", "values": ["low", "medium", "high"]}
+        errors = run_builtin_validator(tmp_path, hook)
+        assert errors == []
+
+    def test_contains_file_not_found(self, tmp_path):
+        """Should fail when file doesn't exist."""
+        from agenttree.hooks import run_builtin_validator
+
+        hook = {"type": "contains", "file": "missing.md", "section": "Complexity", "values": ["Low"]}
+        errors = run_builtin_validator(tmp_path, hook)
+        assert len(errors) == 1
+        assert "not found" in errors[0]
+
+    def test_contains_section_not_found(self, tmp_path):
+        """Should fail when section doesn't exist."""
+        from agenttree.hooks import run_builtin_validator
+
+        content = """# Document
+
+## Other Section
+Content
+"""
+        (tmp_path / "spec.md").write_text(content)
+
+        hook = {"type": "contains", "file": "spec.md", "section": "Missing", "values": ["Value"]}
+        errors = run_builtin_validator(tmp_path, hook)
+        assert len(errors) == 1
+        assert "Section 'Missing' not found" in errors[0]
+
 
 class TestCommandHooks:
     """Tests for run_command_hook function."""

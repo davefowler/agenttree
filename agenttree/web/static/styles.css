@@ -1073,25 +1073,7 @@ button[disabled] {
     border-style: dashed;
 }
 
-.card-number {
-    color: var(--text-muted);
-    font-size: 12px;
-    font-weight: 600;
-    margin-bottom: 5px;
-}
-
-.card-title {
-    color: var(--text-card);
-    font-size: 14px;
-    font-weight: 500;
-    margin-bottom: 8px;
-}
-
-.card-badges {
-    display: flex;
-    gap: 5px;
-    flex-wrap: wrap;
-}
+/* card-* classes removed - now using unified issue-* classes */
 
 /* Kanban Modal */
 .modal {
