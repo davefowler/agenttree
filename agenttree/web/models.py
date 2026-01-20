@@ -43,6 +43,7 @@ class Issue(IssueBase):
     """Full issue model."""
 
     stage: StageEnum = StageEnum.BACKLOG
+    substage: Optional[str] = None
     status: IssueStatus = IssueStatus.OPEN
     url: Optional[str] = None
     pr_url: Optional[str] = None
