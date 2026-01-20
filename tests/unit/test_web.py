@@ -10,8 +10,8 @@ pytest.importorskip("httpx")
 
 from starlette.testclient import TestClient
 
-from agenttree.web.app import app, AgentManager, convert_issue_to_web
-from agenttree.web.models import StageEnum
+from agenttree.web.app import app, AgentManager, convert_issue_to_web, filter_issues
+from agenttree.web.models import StageEnum, Issue as WebIssue
 
 
 @pytest.fixture
@@ -573,3 +573,161 @@ class TestConvertIssueToWeb:
         web_issue = convert_issue_to_web(mock_issue)
 
         assert web_issue.stage == StageEnum.BACKLOG
+
+
+class TestFilterIssues:
+    """Tests for filter_issues function."""
+
+    @pytest.fixture
+    def sample_web_issues(self):
+        """Create sample web issues for testing."""
+        return [
+            WebIssue(
+                number=42,
+                title="Add login feature",
+                body="",
+                labels=["enhancement", "auth"],
+                assignees=[],
+                stage=StageEnum.IMPLEMENT,
+                assigned_agent=None,
+                tmux_active=False,
+                pr_url=None,
+                pr_number=None,
+                created_at=datetime(2024, 1, 1),
+                updated_at=datetime(2024, 1, 1),
+            ),
+            WebIssue(
+                number=85,
+                title="Fix bug in checkout",
+                body="",
+                labels=["bug", "urgent"],
+                assignees=[],
+                stage=StageEnum.PLAN_REVIEW,
+                assigned_agent=None,
+                tmux_active=False,
+                pr_url=None,
+                pr_number=None,
+                created_at=datetime(2024, 1, 2),
+                updated_at=datetime(2024, 1, 2),
+            ),
+            WebIssue(
+                number=123,
+                title="Update documentation",
+                body="",
+                labels=["docs"],
+                assignees=[],
+                stage=StageEnum.ACCEPTED,
+                assigned_agent=None,
+                tmux_active=False,
+                pr_url=None,
+                pr_number=None,
+                created_at=datetime(2024, 1, 3),
+                updated_at=datetime(2024, 1, 3),
+            ),
+        ]
+
+    def test_filter_issues_by_number(self, sample_web_issues):
+        """Test filtering issues by issue number."""
+        result = filter_issues(sample_web_issues, "42")
+
+        assert len(result) == 1
+        assert result[0].number == 42
+
+    def test_filter_issues_by_title(self, sample_web_issues):
+        """Test filtering issues by title."""
+        result = filter_issues(sample_web_issues, "login")
+
+        assert len(result) == 1
+        assert result[0].title == "Add login feature"
+
+    def test_filter_issues_by_label(self, sample_web_issues):
+        """Test filtering issues by label."""
+        result = filter_issues(sample_web_issues, "bug")
+
+        assert len(result) == 1
+        assert result[0].number == 85
+
+    def test_filter_issues_case_insensitive(self, sample_web_issues):
+        """Test that search is case-insensitive."""
+        result = filter_issues(sample_web_issues, "LOGIN")
+
+        assert len(result) == 1
+        assert result[0].title == "Add login feature"
+
+    def test_empty_search_returns_all(self, sample_web_issues):
+        """Test that empty search returns all issues."""
+        result = filter_issues(sample_web_issues, "")
+
+        assert len(result) == 3
+
+    def test_none_search_returns_all(self, sample_web_issues):
+        """Test that None search returns all issues."""
+        result = filter_issues(sample_web_issues, None)
+
+        assert len(result) == 3
+
+    def test_no_matches_returns_empty(self, sample_web_issues):
+        """Test that search with no matches returns empty list."""
+        result = filter_issues(sample_web_issues, "nonexistent")
+
+        assert len(result) == 0
+
+    def test_filter_issues_includes_old_issues(self, sample_web_issues):
+        """Test that search finds accepted/old issues."""
+        result = filter_issues(sample_web_issues, "documentation")
+
+        assert len(result) == 1
+        assert result[0].stage == StageEnum.ACCEPTED
+
+    def test_filter_issues_whitespace_only_returns_all(self, sample_web_issues):
+        """Test that whitespace-only search returns all issues."""
+        result = filter_issues(sample_web_issues, "   ")
+
+        assert len(result) == 3
+
+
+class TestKanbanSearchEndpoint:
+    """Tests for kanban board search functionality."""
+
+    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.app.agent_manager")
+    def test_kanban_with_search_param(self, mock_agent_mgr, mock_crud, client, mock_issue):
+        """Test kanban with search parameter filters issues."""
+        mock_crud.list_issues.return_value = [mock_issue]
+        mock_agent_mgr.clear_session_cache = Mock()
+        mock_agent_mgr._check_issue_tmux_session = Mock(return_value=False)
+
+        response = client.get("/kanban?search=test")
+
+        assert response.status_code == 200
+        assert "text/html" in response.headers["content-type"]
+
+    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.app.agent_manager")
+    def test_kanban_search_preserves_other_params(self, mock_agent_mgr, mock_crud, client, mock_issue):
+        """Test kanban search works with other URL params."""
+        mock_crud.list_issues.return_value = [mock_issue]
+        mock_crud.get_issue.return_value = mock_issue
+        mock_crud.get_issue_dir.return_value = None
+        mock_agent_mgr.clear_session_cache = Mock()
+        mock_agent_mgr._check_issue_tmux_session = Mock(return_value=False)
+
+        response = client.get("/kanban?search=test&issue=001")
+
+        assert response.status_code == 200
+
+
+class TestFlowSearchEndpoint:
+    """Tests for flow view search functionality."""
+
+    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.app.agent_manager")
+    def test_flow_with_search_param(self, mock_agent_mgr, mock_crud, client):
+        """Test flow with search parameter filters issues."""
+        mock_crud.list_issues.return_value = []
+        mock_agent_mgr.clear_session_cache = Mock()
+
+        response = client.get("/flow?search=test")
+
+        assert response.status_code == 200
+        assert "text/html" in response.headers["content-type"]
