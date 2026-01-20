@@ -1047,33 +1047,7 @@ button[disabled] {
     min-height: 100px;
 }
 
-.kanban-card {
-    background: var(--bg-card);
-    border-radius: 3px;
-    padding: 12px;
-    margin-bottom: 10px;
-    cursor: pointer;
-    transition: all 0.2s;
-    position: relative;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
-}
-
-.kanban-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1), 0 3px 6px rgba(0, 0, 0, 0.06);
-}
-
-.kanban-card.dragging {
-    opacity: 0.5;
-    cursor: grabbing;
-}
-
-.kanban-card.drag-over {
-    border-color: var(--text-accent);
-    border-style: dashed;
-}
-
-/* Stage-specific background colors for kanban cards */
+/* Kanban card styles */
 .kanban-column .issue-item {
     background: var(--bg-card);
     border-radius: 3px;
@@ -1086,6 +1060,16 @@ button[disabled] {
 .kanban-column .issue-item:hover {
     transform: translateY(-2px);
     box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1), 0 3px 6px rgba(0, 0, 0, 0.06);
+}
+
+.kanban-column .issue-item.dragging {
+    opacity: 0.5;
+    cursor: grabbing;
+}
+
+.kanban-column .issue-item.drag-over {
+    border-color: var(--text-accent);
+    border-style: dashed;
 }
 
 /* Stage-based left border colors */
