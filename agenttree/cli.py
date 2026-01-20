@@ -1812,6 +1812,22 @@ def stage_next(issue_id: Optional[str], reassess: bool) -> None:
         console.print(f"[red]Cannot proceed: {e}[/red]")
         sys.exit(1)
 
+    # Save tmux history before stage transition if enabled
+    config = load_config()
+    if config.save_tmux_history:
+        from agenttree.tmux import save_tmux_history
+        from agenttree.state import get_active_agent
+        agent = get_active_agent(issue_id)
+        if agent and agent.tmux_session:
+            issue_dir = get_issue_dir(issue_id)
+            if issue_dir:
+                history_file = issue_dir / "tmux_history.log"
+                stage_str = from_stage
+                if from_substage:
+                    stage_str += f".{from_substage}"
+                if save_tmux_history(agent.tmux_session, history_file, stage_str):
+                    console.print(f"[dim]Saved tmux history to {history_file.name}[/dim]")
+
     # Update issue stage in database
     updated = update_issue_stage(issue_id, next_stage, next_substage)
     if not updated:

@@ -7,6 +7,7 @@ default_model: opus
 port_range: 9001-9099
 project: "agenttree"
 worktrees_dir: .worktrees
+save_tmux_history: true  # Save tmux scrollback to issue folder on stage transitions
 
 commands:
   test: uv run pytest

@@ -451,7 +451,7 @@ def check_ci_status(agents_dir: Path) -> int:
             # Check if any check failed
             failed_checks = [
                 check for check in checks
-                if check.state == "FAILURE" or check.conclusion == "failure"
+                if check.state == "FAILURE"
             ]
 
             if not failed_checks:
@@ -462,12 +462,8 @@ def check_ci_status(agents_dir: Path) -> int:
             feedback_content = "# CI Failure Report\n\n"
             feedback_content += f"PR #{pr_number} has failing CI checks:\n\n"
             for check in checks:
-                status = "PASSED" if check.state == "SUCCESS" or check.conclusion == "success" else "FAILED"
+                status = "PASSED" if check.state == "SUCCESS" else "FAILED"
                 feedback_content += f"- **{check.name}**: {status}\n"
-                if check.state == "FAILURE" or check.conclusion == "failure":
-                    feedback_content += f"  - State: {check.state}\n"
-                    if check.conclusion:
-                        feedback_content += f"  - Conclusion: {check.conclusion}\n"
             feedback_content += "\nPlease fix these issues and run `agenttree next` to re-submit.\n"
 
             feedback_file = issue_dir / "ci_feedback.md"

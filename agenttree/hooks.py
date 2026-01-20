@@ -885,22 +885,11 @@ def run_builtin_validator(
 
                 # Filter to failed/incomplete checks
                 # A check is considered failed if:
-                # - It's still pending (not completed)
-                # - Its conclusion is "failure"
-                # - It's not successful and not skipped
+                # Check failed if state is FAILURE or still PENDING (timeout)
                 failed_checks = [
                     check for check in checks
-                    if (check.state == "PENDING")
-                    or (check.conclusion == "failure")
-                    or (check.state != "SUCCESS" and check.conclusion not in ("success", "skipped", None))
+                    if check.state in ("FAILURE", "PENDING")
                 ]
-
-                # If no specific failed checks but wait_for_ci returned False, it's a timeout
-                if not failed_checks and checks:
-                    failed_checks = [
-                        check for check in checks
-                        if check.state == "PENDING" or check.conclusion not in ("success", "skipped")
-                    ]
 
                 if failed_checks:
                     # Create ci_feedback.md file in issue directory
@@ -909,8 +898,7 @@ def run_builtin_validator(
                         feedback_content = "# CI Failure Report\n\nThe following CI checks failed:\n\n"
                         for check in failed_checks:
                             feedback_content += f"## {check.name}\n"
-                            feedback_content += f"- **State:** {check.state}\n"
-                            feedback_content += f"- **Conclusion:** {check.conclusion}\n\n"
+                            feedback_content += f"- **State:** {check.state}\n\n"
                         feedback_content += "Please fix these issues and run `agenttree next` to re-submit for CI.\n"
                         feedback_path.write_text(feedback_content)
                         console.print(f"[dim]Created {feedback_path}[/dim]")

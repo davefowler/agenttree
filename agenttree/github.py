@@ -206,7 +206,7 @@ def get_pr_checks(pr_number: int) -> List[CheckStatus]:
     """
     try:
         output = gh_command(
-            ["pr", "checks", str(pr_number), "--json", "name,state,conclusion"]
+            ["pr", "checks", str(pr_number), "--json", "name,state"]
         )
         data = json.loads(output)
 
@@ -214,7 +214,6 @@ def get_pr_checks(pr_number: int) -> List[CheckStatus]:
             CheckStatus(
                 name=check["name"],
                 state=check["state"],
-                conclusion=check.get("conclusion"),
             )
             for check in data
         ]
@@ -253,7 +252,6 @@ def wait_for_ci(
             # Check if all passed
             all_passed = all(
                 check.state == "SUCCESS"
-                or check.conclusion == "success"
                 for check in checks
             )
             return all_passed
