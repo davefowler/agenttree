@@ -2069,9 +2069,10 @@ def shutdown_issue(
         console.print(f"[red]Issue {issue_id} not found[/red]")
         sys.exit(1)
 
-    # Check if already in target stage
+    # Check if already in target stage - return early
     if issue.stage == stage:
-        console.print(f"[yellow]Issue is already in {stage}[/yellow]")
+        console.print(f"[yellow]Issue #{issue.id} is already in {stage}[/yellow]")
+        return
 
     # Set defaults based on stage
     if changes is None:
@@ -2090,6 +2091,14 @@ def shutdown_issue(
 
     config = load_config()
     repo_path = Path.cwd()
+
+    # Stop agent FIRST to avoid race conditions with worktree operations
+    agent = get_active_agent(issue_id_normalized)
+    if agent:
+        tmux_manager = TmuxManager(config)
+        tmux_manager.stop_issue_agent(agent.tmux_session)
+        unregister_agent(agent.issue_id)
+        console.print(f"[dim]Stopped agent for issue #{issue.id}[/dim]")
 
     # Get worktree path
     worktree_path = None
@@ -2111,7 +2120,7 @@ def shutdown_issue(
         if has_changes:
             if changes == "error":
                 console.print("[red]Error: Uncommitted changes in worktree[/red]")
-                console.print(f"[dim]Use --changes stash|commit|discard to handle them[/dim]")
+                console.print("[dim]Use --changes stash|commit|discard to handle them[/dim]")
                 sys.exit(1)
             elif changes == "discard":
                 if not force:
@@ -2120,40 +2129,66 @@ def shutdown_issue(
                     if not click.confirm("Discard changes?"):
                         console.print("[dim]Aborted[/dim]")
                         sys.exit(0)
-                subprocess.run(["git", "checkout", "."], cwd=worktree_path, check=True)
-                subprocess.run(["git", "clean", "-fd"], cwd=worktree_path, check=True)
-                console.print("[dim]Discarded uncommitted changes[/dim]")
+                try:
+                    subprocess.run(["git", "checkout", "."], cwd=worktree_path, check=True, capture_output=True)
+                    subprocess.run(["git", "clean", "-fd"], cwd=worktree_path, check=True, capture_output=True)
+                    console.print("[dim]Discarded uncommitted changes[/dim]")
+                except subprocess.CalledProcessError as e:
+                    console.print(f"[red]Error discarding changes: {e}[/red]")
+                    sys.exit(1)
             elif changes == "stash":
-                subprocess.run(["git", "stash", "push", "-m", f"shutdown: {issue.id}"], cwd=worktree_path, check=True)
-                console.print("[dim]Stashed uncommitted changes[/dim]")
+                try:
+                    subprocess.run(["git", "stash", "push", "-m", f"shutdown: {issue.id}"], cwd=worktree_path, check=True, capture_output=True)
+                    console.print("[dim]Stashed uncommitted changes[/dim]")
+                except subprocess.CalledProcessError as e:
+                    console.print(f"[red]Error stashing changes: {e}[/red]")
+                    sys.exit(1)
             elif changes == "commit":
-                subprocess.run(["git", "add", "-A"], cwd=worktree_path, check=True)
-                subprocess.run(["git", "commit", "-m", message], cwd=worktree_path, check=True)
-                console.print(f"[dim]Committed changes: {message}[/dim]")
+                try:
+                    subprocess.run(["git", "add", "-A"], cwd=worktree_path, check=True, capture_output=True)
+                    subprocess.run(["git", "commit", "-m", message], cwd=worktree_path, check=True, capture_output=True)
+                    console.print(f"[dim]Committed changes: {message}[/dim]")
+                except subprocess.CalledProcessError as e:
+                    console.print(f"[red]Error committing changes: {e}[/red]")
+                    sys.exit(1)
 
-        # Check for unpushed commits
+        # Check for unpushed commits - handle case where branch has no upstream
+        has_unpushed = False
+        unpushed_output = ""
+
+        # First try checking against upstream
         unpushed_result = subprocess.run(
             ["git", "log", "--oneline", "@{u}..HEAD"],
             cwd=worktree_path,
             capture_output=True,
             text=True,
         )
-        has_unpushed = bool(unpushed_result.stdout.strip())
+
+        if unpushed_result.returncode == 0:
+            # Upstream exists, check if there are unpushed commits
+            has_unpushed = bool(unpushed_result.stdout.strip())
+            unpushed_output = unpushed_result.stdout
+        else:
+            # No upstream - check against origin/main as fallback
+            # This catches local-only branches that were never pushed
+            fallback_result = subprocess.run(
+                ["git", "log", "--oneline", "origin/main..HEAD"],
+                cwd=worktree_path,
+                capture_output=True,
+                text=True,
+            )
+            if fallback_result.returncode == 0 and fallback_result.stdout.strip():
+                has_unpushed = True
+                unpushed_output = fallback_result.stdout
+                console.print("[yellow]Warning: Branch has no upstream tracking branch[/yellow]")
+
         if has_unpushed and not keep_branch:
             if not force:
                 console.print("[yellow]Warning: Unpushed commits will be lost:[/yellow]")
-                console.print(unpushed_result.stdout)
+                console.print(unpushed_output)
                 if not click.confirm("Continue anyway?"):
                     console.print("[dim]Aborted[/dim]")
                     sys.exit(0)
-
-    # Stop agent if running
-    agent = get_active_agent(issue_id_normalized)
-    if agent:
-        tmux_manager = TmuxManager(config)
-        tmux_manager.stop_issue_agent(agent.tmux_session)
-        unregister_agent(agent.issue_id)
-        console.print(f"[dim]Stopped agent for issue #{issue.id}[/dim]")
 
     # Remove worktree if requested
     if not keep_worktree and worktree_path and worktree_path.exists():
