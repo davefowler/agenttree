@@ -58,11 +58,11 @@ jobs:
       - name: Check for Critical Issues
         if: always()
         run: |
-          # Check if Claude found critical issues
-          COMMENTS=$(gh pr view ${{ github.event.pull_request.number }} \
-            --json comments --jq '.comments[].body' 2>/dev/null || echo "")
+          # Check the LATEST comment for critical issues (not all comments)
+          LATEST_COMMENT=$(gh pr view ${{ github.event.pull_request.number }} \
+            --json comments --jq '.comments[-1].body' 2>/dev/null || echo "")
 
-          if echo "$COMMENTS" | grep -q "CRITICAL_ISSUES_FOUND: YES"; then
+          if echo "$LATEST_COMMENT" | grep -q "CRITICAL_ISSUES_FOUND: YES"; then
             echo "::error::Claude found critical issues in this PR"
             echo "Please address the critical issues before merging."
             exit 1
