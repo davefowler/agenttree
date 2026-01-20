@@ -10,7 +10,7 @@ from rich.table import Table
 
 from agenttree.config import load_config, Config
 from agenttree.worktree import WorktreeManager
-from agenttree.tmux import TmuxManager
+from agenttree.tmux import TmuxManager, save_tmux_history_to_file
 from agenttree.github import ensure_gh_cli
 from agenttree.container import get_container_runtime
 from agenttree.dependencies import check_all_dependencies, print_dependency_report
@@ -2158,6 +2158,19 @@ def stage_next(issue_id: Optional[str], reassess: bool) -> None:
     except ValidationError as e:
         console.print(f"[red]Cannot proceed: {e}[/red]")
         sys.exit(1)
+
+    # Save tmux history if enabled in config
+    config = load_config()
+    if config.save_tmux_history:
+        issue_dir = get_issue_dir(issue_id)
+        if issue_dir:
+            session_name = config.get_issue_tmux_session(issue_id)
+            stage_str = from_stage
+            if from_substage:
+                stage_str += f".{from_substage}"
+            history_file = issue_dir / "tmux_history.log"
+            if save_tmux_history_to_file(session_name, history_file, stage_str):
+                console.print(f"[dim]Saved tmux history to {history_file.name}[/dim]")
 
     # Update issue stage in database
     updated = update_issue_stage(issue_id, next_stage, next_substage)

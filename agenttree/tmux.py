@@ -208,6 +208,58 @@ def capture_pane(session_name: str, lines: int = 50) -> str:
         return ""
 
 
+def save_tmux_history_to_file(session_name: str, output_path: Path, stage: str) -> bool:
+    """Save tmux session history to a file with timestamp header.
+
+    Captures the full scrollback buffer and appends it to the output file.
+
+    Args:
+        session_name: Name of the tmux session
+        output_path: Path to the output file (e.g., issue_dir/tmux_history.log)
+        stage: Current stage name for the header
+
+    Returns:
+        True if history was saved, False if session doesn't exist or capture failed
+    """
+    from datetime import datetime
+
+    if not session_exists(session_name):
+        return False
+
+    # Capture full scrollback buffer (use - for all history)
+    try:
+        result = subprocess.run(
+            ["tmux", "capture-pane", "-t", session_name, "-p", "-S", "-"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        history = result.stdout
+    except subprocess.CalledProcessError:
+        return False
+
+    if not history.strip():
+        return False
+
+    # Create timestamp header
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    header = f"\n{'='*60}\n"
+    header += f"Stage: {stage}\n"
+    header += f"Captured: {timestamp}\n"
+    header += f"{'='*60}\n\n"
+
+    # Ensure parent directory exists
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Append to file
+    with open(output_path, "a") as f:
+        f.write(header)
+        f.write(history)
+        f.write("\n")
+
+    return True
+
+
 def wait_for_prompt(
     session_name: str,
     prompt_char: str = "❯",
