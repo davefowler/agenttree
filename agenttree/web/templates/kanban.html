@@ -71,7 +71,7 @@
         let draggedCard = null;
 
         document.addEventListener('dragstart', (e) => {
-            if (e.target.classList.contains('kanban-card')) {
+            if (e.target.classList.contains('issue-item')) {
                 const cardStage = e.target.dataset.stage;
                 // Only allow dragging from human review stages
                 if (!HUMAN_REVIEW_STAGES.includes(cardStage)) {
@@ -84,7 +84,7 @@
         });
 
         document.addEventListener('dragend', (e) => {
-            if (e.target.classList.contains('kanban-card')) {
+            if (e.target.classList.contains('issue-item')) {
                 e.target.classList.remove('dragging');
                 draggedCard = null;
             }
@@ -239,13 +239,13 @@
 
             // Update counts
             if (backlogCol) {
-                document.getElementById('backlog-count').textContent = backlogCol.querySelectorAll('.kanban-card').length;
+                document.getElementById('backlog-count').textContent = backlogCol.querySelectorAll('.issue-item').length;
             }
             if (acceptedCol) {
-                document.getElementById('accepted-count').textContent = acceptedCol.querySelectorAll('.kanban-card').length;
+                document.getElementById('accepted-count').textContent = acceptedCol.querySelectorAll('.issue-item').length;
             }
             if (notDoingCol) {
-                document.getElementById('not-doing-count').textContent = notDoingCol.querySelectorAll('.kanban-card').length;
+                document.getElementById('not-doing-count').textContent = notDoingCol.querySelectorAll('.issue-item').length;
             }
         }
 
@@ -274,7 +274,7 @@
             } else if (view === 'nonempty') {
                 toggleNonempty.classList.add('active');
                 columns.forEach(col => {
-                    const cardCount = col.querySelectorAll('.kanban-card').length;
+                    const cardCount = col.querySelectorAll('.issue-item').length;
                     if (cardCount > 0) {
                         col.classList.remove('hidden');
                     } else {

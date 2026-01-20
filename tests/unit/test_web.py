@@ -1,0 +1,575 @@
+"""Tests for web API endpoints."""
+
+import pytest
+from unittest.mock import Mock, patch, MagicMock
+from datetime import datetime
+
+# Skip all tests if web dependencies aren't installed
+pytest.importorskip("fastapi")
+pytest.importorskip("httpx")
+
+from starlette.testclient import TestClient
+
+from agenttree.web.app import app, AgentManager, convert_issue_to_web
+from agenttree.web.models import StageEnum
+
+
+@pytest.fixture
+def client():
+    """Create a test client for the FastAPI app."""
+    return TestClient(app)
+
+
+@pytest.fixture
+def mock_issue():
+    """Create a mock issue object."""
+    mock = Mock()
+    mock.id = "001"
+    mock.title = "Test Issue"
+    mock.stage = "backlog"
+    mock.substage = None
+    mock.labels = ["bug"]
+    mock.assigned_agent = None
+    mock.pr_url = None
+    mock.pr_number = None
+    mock.worktree_dir = None
+    mock.created = "2024-01-01T00:00:00Z"
+    mock.updated = "2024-01-01T00:00:00Z"
+    return mock
+
+
+@pytest.fixture
+def mock_review_issue():
+    """Create a mock issue at implementation_review stage."""
+    mock = Mock()
+    mock.id = "002"
+    mock.title = "Review Issue"
+    mock.stage = "implementation_review"
+    mock.substage = None
+    mock.labels = []
+    mock.assigned_agent = "1"
+    mock.pr_url = "https://github.com/test/repo/pull/123"
+    mock.pr_number = 123
+    mock.worktree_dir = "/tmp/worktree"
+    mock.created = "2024-01-01T00:00:00Z"
+    mock.updated = "2024-01-01T00:00:00Z"
+    return mock
+
+
+class TestHealthCheck:
+    """Tests for health check endpoint."""
+
+    def test_health_check_returns_healthy(self, client):
+        """Test health check returns healthy status."""
+        response = client.get("/health")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "healthy"
+        assert data["service"] == "agenttree-web"
+
+
+class TestRootRedirect:
+    """Tests for root redirect."""
+
+    def test_root_redirects_to_kanban(self, client):
+        """Test root path redirects to kanban."""
+        response = client.get("/", follow_redirects=False)
+
+        assert response.status_code == 302
+        assert response.headers["location"] == "/kanban"
+
+
+class TestKanbanEndpoint:
+    """Tests for kanban board endpoint."""
+
+    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.app.agent_manager")
+    def test_kanban_returns_html(self, mock_agent_mgr, mock_crud, client):
+        """Test kanban endpoint returns HTML."""
+        mock_crud.list_issues.return_value = []
+        mock_agent_mgr.clear_session_cache = Mock()
+
+        response = client.get("/kanban")
+
+        assert response.status_code == 200
+        assert "text/html" in response.headers["content-type"]
+
+    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.app.agent_manager")
+    def test_kanban_with_issue_param(self, mock_agent_mgr, mock_crud, client, mock_issue):
+        """Test kanban with issue parameter loads issue detail."""
+        mock_crud.list_issues.return_value = [mock_issue]
+        mock_crud.get_issue.return_value = mock_issue
+        mock_crud.get_issue_dir.return_value = None
+        mock_agent_mgr.clear_session_cache = Mock()
+        mock_agent_mgr._check_issue_tmux_session = Mock(return_value=False)
+
+        response = client.get("/kanban?issue=001")
+
+        assert response.status_code == 200
+        mock_crud.get_issue.assert_called()
+
+
+class TestFlowEndpoint:
+    """Tests for flow view endpoint."""
+
+    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.app.agent_manager")
+    def test_flow_returns_html(self, mock_agent_mgr, mock_crud, client):
+        """Test flow endpoint returns HTML."""
+        mock_crud.list_issues.return_value = []
+        mock_agent_mgr.clear_session_cache = Mock()
+
+        response = client.get("/flow")
+
+        assert response.status_code == 200
+        assert "text/html" in response.headers["content-type"]
+
+
+class TestAgentStatusEndpoint:
+    """Tests for agent status endpoint."""
+
+    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.app.agent_manager")
+    def test_agent_status_running(self, mock_agent_mgr, mock_crud, client, mock_issue):
+        """Test agent status when tmux session is active."""
+        mock_issue.assigned_agent = "1"
+        mock_crud.get_issue.return_value = mock_issue
+        mock_agent_mgr._check_issue_tmux_session.return_value = True
+
+        response = client.get("/api/issues/001/agent-status")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["tmux_active"] is True
+        assert data["assigned_agent"] == "1"
+        assert data["status"] == "running"
+
+    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.app.agent_manager")
+    def test_agent_status_stalled(self, mock_agent_mgr, mock_crud, client, mock_issue):
+        """Test agent status when agent assigned but tmux not active."""
+        mock_issue.assigned_agent = "1"
+        mock_crud.get_issue.return_value = mock_issue
+        mock_agent_mgr._check_issue_tmux_session.return_value = False
+
+        response = client.get("/api/issues/001/agent-status")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["tmux_active"] is False
+        assert data["assigned_agent"] == "1"
+        assert data["status"] == "stalled"
+
+    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.app.agent_manager")
+    def test_agent_status_off(self, mock_agent_mgr, mock_crud, client, mock_issue):
+        """Test agent status when no agent assigned."""
+        mock_issue.assigned_agent = None
+        mock_crud.get_issue.return_value = mock_issue
+        mock_agent_mgr._check_issue_tmux_session.return_value = False
+
+        response = client.get("/api/issues/001/agent-status")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["tmux_active"] is False
+        assert data["assigned_agent"] is None
+        assert data["status"] == "off"
+
+
+class TestStartIssueEndpoint:
+    """Tests for start issue endpoint."""
+
+    @patch("subprocess.Popen")
+    def test_start_issue_success(self, mock_popen, client):
+        """Test starting an agent for an issue."""
+        mock_popen.return_value = Mock()
+
+        response = client.post("/api/issues/001/start")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["ok"] is True
+        assert "Starting agent" in data["status"]
+
+    @patch("subprocess.Popen")
+    def test_start_issue_error(self, mock_popen, client):
+        """Test start issue when Popen fails."""
+        mock_popen.side_effect = Exception("Process failed")
+
+        response = client.post("/api/issues/001/start")
+
+        assert response.status_code == 500
+
+
+class TestMoveIssueEndpoint:
+    """Tests for move issue endpoint."""
+
+    @patch("agenttree.hooks.cleanup_issue_agent")
+    @patch("agenttree.web.app.issue_crud")
+    def test_move_issue_to_backlog(self, mock_crud, mock_cleanup, client, mock_issue):
+        """Test moving issue to backlog succeeds."""
+        mock_crud.get_issue.return_value = mock_issue
+        mock_crud.update_issue_stage.return_value = mock_issue
+
+        response = client.post(
+            "/api/issues/001/move",
+            json={"stage": "backlog"}
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["stage"] == "backlog"
+
+    @patch("agenttree.hooks.cleanup_issue_agent")
+    @patch("agenttree.web.app.issue_crud")
+    def test_move_issue_to_not_doing(self, mock_crud, mock_cleanup, client, mock_issue):
+        """Test moving issue to not_doing succeeds."""
+        mock_crud.get_issue.return_value = mock_issue
+        mock_crud.update_issue_stage.return_value = mock_issue
+
+        response = client.post(
+            "/api/issues/001/move",
+            json={"stage": "not_doing"}
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["stage"] == "not_doing"
+
+    @patch("agenttree.web.app.issue_crud")
+    def test_move_issue_to_implement_rejected(self, mock_crud, client, mock_issue):
+        """Test moving issue directly to implement is rejected."""
+        mock_crud.get_issue.return_value = mock_issue
+
+        response = client.post(
+            "/api/issues/001/move",
+            json={"stage": "implement"}
+        )
+
+        assert response.status_code == 400
+        data = response.json()
+        assert "only allowed to" in data["detail"].lower()
+
+    @patch("agenttree.web.app.issue_crud")
+    def test_move_issue_not_found(self, mock_crud, client):
+        """Test moving non-existent issue."""
+        mock_crud.get_issue.return_value = None
+
+        response = client.post(
+            "/api/issues/999/move",
+            json={"stage": "backlog"}
+        )
+
+        assert response.status_code == 404
+
+
+class TestApproveIssueEndpoint:
+    """Tests for approve issue endpoint."""
+
+    @patch("agenttree.state.get_active_agent")
+    @patch("agenttree.hooks.execute_enter_hooks")
+    @patch("agenttree.hooks.execute_exit_hooks")
+    @patch("agenttree.config.load_config")
+    @patch("agenttree.web.app.issue_crud")
+    def test_approve_issue_at_implementation_review(
+        self, mock_crud, mock_config, mock_exit, mock_enter, mock_get_agent,
+        client, mock_review_issue
+    ):
+        """Test approving issue at implementation_review stage."""
+        mock_crud.get_issue.return_value = mock_review_issue
+        mock_crud.update_issue_stage.return_value = mock_review_issue
+        mock_get_agent.return_value = None
+
+        # Mock config.get_next_stage
+        mock_config.return_value.get_next_stage.return_value = ("accepted", None, True)
+
+        response = client.post("/api/issues/002/approve")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["ok"] is True
+
+        # Verify hooks were called
+        mock_exit.assert_called_once()
+        mock_enter.assert_called_once()
+
+    @patch("agenttree.state.get_active_agent")
+    @patch("agenttree.hooks.execute_enter_hooks")
+    @patch("agenttree.hooks.execute_exit_hooks")
+    @patch("agenttree.config.load_config")
+    @patch("agenttree.web.app.issue_crud")
+    def test_approve_issue_at_plan_review(
+        self, mock_crud, mock_config, mock_exit, mock_enter, mock_get_agent,
+        client, mock_issue
+    ):
+        """Test approving issue at plan_review stage."""
+        mock_issue.stage = "plan_review"
+        mock_crud.get_issue.return_value = mock_issue
+        mock_crud.update_issue_stage.return_value = mock_issue
+        mock_get_agent.return_value = None
+
+        mock_config.return_value.get_next_stage.return_value = ("implement", None, True)
+
+        response = client.post("/api/issues/001/approve")
+
+        assert response.status_code == 200
+        assert response.json()["ok"] is True
+
+    @patch("agenttree.web.app.issue_crud")
+    def test_approve_issue_not_at_review_stage(self, mock_crud, client, mock_issue):
+        """Test approving issue that's not at review stage."""
+        mock_issue.stage = "implement"  # Not a review stage
+        mock_crud.get_issue.return_value = mock_issue
+
+        response = client.post("/api/issues/001/approve")
+
+        assert response.status_code == 400
+        assert "Not at review stage" in response.json()["detail"]
+
+    @patch("agenttree.web.app.issue_crud")
+    def test_approve_issue_not_found(self, mock_crud, client):
+        """Test approving non-existent issue."""
+        mock_crud.get_issue.return_value = None
+
+        response = client.post("/api/issues/999/approve")
+
+        assert response.status_code == 404
+
+    @patch("agenttree.hooks.execute_exit_hooks")
+    @patch("agenttree.config.load_config")
+    @patch("agenttree.web.app.issue_crud")
+    def test_approve_issue_exit_hook_validation_fails(
+        self, mock_crud, mock_config, mock_exit, client, mock_review_issue
+    ):
+        """Test approve fails when exit hook validation fails."""
+        from agenttree.hooks import ValidationError
+
+        mock_crud.get_issue.return_value = mock_review_issue
+        mock_config.return_value.get_next_stage.return_value = ("accepted", None, True)
+        mock_exit.side_effect = ValidationError("PR not ready")
+
+        response = client.post("/api/issues/002/approve")
+
+        assert response.status_code == 400
+        assert "PR not ready" in response.json()["detail"]
+
+    @patch("agenttree.hooks.execute_exit_hooks")
+    @patch("agenttree.config.load_config")
+    @patch("agenttree.web.app.issue_crud")
+    def test_approve_issue_update_fails(
+        self, mock_crud, mock_config, mock_exit, client, mock_review_issue
+    ):
+        """Test approve returns 500 when stage update fails."""
+        mock_crud.get_issue.return_value = mock_review_issue
+        mock_crud.update_issue_stage.return_value = None  # Update failed
+        mock_config.return_value.get_next_stage.return_value = ("accepted", None, True)
+
+        response = client.post("/api/issues/002/approve")
+
+        assert response.status_code == 500
+        assert "Failed to update" in response.json()["detail"]
+
+    @patch("agenttree.tmux.send_message")
+    @patch("agenttree.tmux.session_exists")
+    @patch("agenttree.state.get_active_agent")
+    @patch("agenttree.hooks.execute_enter_hooks")
+    @patch("agenttree.hooks.execute_exit_hooks")
+    @patch("agenttree.config.load_config")
+    @patch("agenttree.web.app.issue_crud")
+    def test_approve_issue_notifies_agent(
+        self, mock_crud, mock_config, mock_exit, mock_enter, mock_get_agent,
+        mock_session_exists, mock_send, client, mock_review_issue
+    ):
+        """Test approve notifies active agent."""
+        mock_crud.get_issue.return_value = mock_review_issue
+        mock_crud.update_issue_stage.return_value = mock_review_issue
+        mock_config.return_value.get_next_stage.return_value = ("accepted", None, True)
+
+        # Mock active agent with tmux session
+        mock_agent = Mock()
+        mock_agent.tmux_session = "test-session"
+        mock_get_agent.return_value = mock_agent
+        mock_session_exists.return_value = True
+
+        response = client.post("/api/issues/002/approve")
+
+        assert response.status_code == 200
+        mock_send.assert_called_once()
+        assert "approved" in mock_send.call_args[0][1].lower()
+
+
+class TestRebaseIssueEndpoint:
+    """Tests for rebase issue endpoint."""
+
+    @patch("agenttree.tmux.send_message")
+    @patch("agenttree.hooks.rebase_issue_branch")
+    @patch("agenttree.web.app.issue_crud")
+    def test_rebase_issue_success(self, mock_crud, mock_rebase, mock_send, client, mock_review_issue):
+        """Test rebase issue succeeds."""
+        mock_crud.get_issue.return_value = mock_review_issue
+        mock_rebase.return_value = (True, "Rebased successfully")
+
+        response = client.post("/api/issues/002/rebase")
+
+        assert response.status_code == 200
+        assert response.json()["ok"] is True
+
+    @patch("agenttree.hooks.rebase_issue_branch")
+    @patch("agenttree.web.app.issue_crud")
+    def test_rebase_issue_fails(self, mock_crud, mock_rebase, client, mock_review_issue):
+        """Test rebase issue when rebase fails."""
+        mock_crud.get_issue.return_value = mock_review_issue
+        mock_rebase.return_value = (False, "Merge conflicts")
+
+        response = client.post("/api/issues/002/rebase")
+
+        assert response.status_code == 400
+        assert "Merge conflicts" in response.json()["detail"]
+
+    @patch("agenttree.web.app.issue_crud")
+    def test_rebase_issue_not_found(self, mock_crud, client):
+        """Test rebase non-existent issue."""
+        mock_crud.get_issue.return_value = None
+
+        response = client.post("/api/issues/999/rebase")
+
+        assert response.status_code == 404
+
+
+class TestAgentTmuxEndpoint:
+    """Tests for agent tmux output endpoint."""
+
+    @patch("subprocess.run")
+    @patch("agenttree.web.app.load_config")
+    def test_agent_tmux_returns_output(self, mock_config, mock_run, client):
+        """Test getting tmux output for agent."""
+        mock_config.return_value.project = "test"
+        mock_run.return_value = Mock(returncode=0, stdout="Agent output here")
+
+        response = client.get("/agent/001/tmux")
+
+        assert response.status_code == 200
+        assert "text/html" in response.headers["content-type"]
+
+    @patch("subprocess.run")
+    @patch("agenttree.web.app.load_config")
+    def test_agent_tmux_session_not_active(self, mock_config, mock_run, client):
+        """Test getting tmux output when session not active."""
+        mock_config.return_value.project = "test"
+        mock_run.return_value = Mock(returncode=1, stdout="", stderr="session not found")
+
+        response = client.get("/agent/001/tmux")
+
+        assert response.status_code == 200
+        assert "not active" in response.text.lower()
+
+
+class TestSendToAgentEndpoint:
+    """Tests for send message to agent endpoint."""
+
+    @patch("agenttree.tmux.send_message")
+    @patch("agenttree.web.app.load_config")
+    def test_send_to_agent(self, mock_config, mock_send, client):
+        """Test sending message to agent."""
+        mock_config.return_value.project = "test"
+
+        response = client.post(
+            "/agent/001/send",
+            data={"message": "Hello agent"}
+        )
+
+        assert response.status_code == 200
+        mock_send.assert_called_once()
+
+
+class TestAgentManager:
+    """Tests for AgentManager class."""
+
+    @patch("subprocess.run")
+    def test_get_active_sessions(self, mock_run):
+        """Test getting active tmux sessions."""
+        mock_run.return_value = Mock(
+            returncode=0,
+            stdout="test-issue-001\ntest-issue-002\n"
+        )
+
+        manager = AgentManager()
+        sessions = manager._get_active_sessions()
+
+        assert "test-issue-001" in sessions
+        assert "test-issue-002" in sessions
+
+    @patch("subprocess.run")
+    def test_get_active_sessions_no_sessions(self, mock_run):
+        """Test getting sessions when tmux has none."""
+        mock_run.return_value = Mock(returncode=1, stdout="")
+
+        manager = AgentManager()
+        sessions = manager._get_active_sessions()
+
+        assert sessions == set()
+
+    @patch("subprocess.run")
+    def test_check_issue_tmux_session(self, mock_run):
+        """Test checking if tmux session exists for issue."""
+        mock_run.return_value = Mock(
+            returncode=0,
+            stdout="myproject-issue-001\n"
+        )
+
+        with patch("agenttree.web.app._config") as mock_config:
+            mock_config.project = "myproject"
+            manager = AgentManager()
+            manager._active_sessions = None  # Reset cache
+
+            exists = manager._check_issue_tmux_session("001")
+
+        assert exists is True
+
+    def test_clear_session_cache(self):
+        """Test clearing session cache."""
+        manager = AgentManager()
+        manager._active_sessions = {"some-session"}
+
+        manager.clear_session_cache()
+
+        assert manager._active_sessions is None
+
+
+class TestConvertIssueToWeb:
+    """Tests for convert_issue_to_web function."""
+
+    @patch("agenttree.web.app.agent_manager")
+    def test_convert_basic_issue(self, mock_agent_mgr, mock_issue):
+        """Test converting basic issue to web model."""
+        mock_agent_mgr._check_issue_tmux_session.return_value = False
+
+        web_issue = convert_issue_to_web(mock_issue)
+
+        assert web_issue.number == 1
+        assert web_issue.title == "Test Issue"
+        assert web_issue.stage == StageEnum.BACKLOG
+        assert web_issue.tmux_active is False
+
+    @patch("agenttree.web.app.agent_manager")
+    def test_convert_issue_with_active_tmux(self, mock_agent_mgr, mock_review_issue):
+        """Test converting issue with active tmux session."""
+        mock_agent_mgr._check_issue_tmux_session.return_value = True
+
+        web_issue = convert_issue_to_web(mock_review_issue)
+
+        assert web_issue.tmux_active is True
+
+    @patch("agenttree.web.app.agent_manager")
+    def test_convert_issue_unknown_stage(self, mock_agent_mgr, mock_issue):
+        """Test converting issue with unknown stage falls back to backlog."""
+        mock_agent_mgr._check_issue_tmux_session.return_value = False
+        mock_issue.stage = "unknown_stage"
+
+        web_issue = convert_issue_to_web(mock_issue)
+
+        assert web_issue.stage == StageEnum.BACKLOG

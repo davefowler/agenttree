@@ -4,6 +4,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+# Skip all tests if TUI dependencies aren't installed
+pytest.importorskip("textual")
+
 from agenttree.issues import Issue, Priority
 from agenttree.tui.app import (
     DetailPanel,

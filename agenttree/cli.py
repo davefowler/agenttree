@@ -2000,6 +2000,229 @@ def defer_issue(issue_id: str) -> None:
     console.print(f"  agenttree kill {issue.id}")
 
 
+@main.command("shutdown")
+@click.argument("issue_id")
+@click.argument("stage", type=click.Choice(["backlog", "not_doing", "accepted"]))
+@click.option(
+    "--changes", "-c",
+    type=click.Choice(["stash", "commit", "discard", "error"]),
+    default=None,
+    help="How to handle uncommitted changes (default: stage-specific)"
+)
+@click.option(
+    "--keep-worktree/--remove-worktree",
+    default=None,
+    help="Override worktree handling (default: keep for backlog, remove for others)"
+)
+@click.option(
+    "--keep-branch/--delete-branch",
+    default=None,
+    help="Override branch handling (default: keep for backlog/accepted, delete for not_doing)"
+)
+@click.option(
+    "--force", "-f",
+    is_flag=True,
+    help="Skip confirmation prompts"
+)
+@click.option(
+    "--message", "-m",
+    default="WIP: shutdown",
+    help="Commit message when using --changes commit"
+)
+def shutdown_issue(
+    issue_id: str,
+    stage: str,
+    changes: Optional[str],
+    keep_worktree: Optional[bool],
+    keep_branch: Optional[bool],
+    force: bool,
+    message: str,
+) -> None:
+    """Shutdown an issue's agent and clean up resources.
+
+    Stops the agent, handles uncommitted changes, and optionally removes
+    the worktree and branch. The STAGE determines the default behavior:
+
+    \b
+    backlog:   Pause work. Keep worktree/branch, stash changes.
+    not_doing: Abandon work. Remove worktree, delete branch, discard changes.
+    accepted:  Work complete. Remove worktree, keep branch, error on uncommitted.
+
+    Examples:
+        agenttree shutdown 042 backlog           # Pause for later
+        agenttree shutdown 042 not_doing         # Abandon issue
+        agenttree shutdown 042 not_doing -f      # Abandon without prompts
+        agenttree shutdown 042 backlog -c commit # Commit changes instead of stash
+    """
+    from agenttree.state import get_active_agent, unregister_agent
+    from agenttree.worktree import remove_worktree
+
+    # Block if in container
+    if is_running_in_container():
+        console.print("[red]Error: 'shutdown' cannot be run from inside a container[/red]")
+        sys.exit(1)
+
+    # Normalize issue ID
+    issue_id_normalized = issue_id.lstrip("0") or "0"
+    issue = get_issue_func(issue_id_normalized)
+    if not issue:
+        console.print(f"[red]Issue {issue_id} not found[/red]")
+        sys.exit(1)
+
+    # Check if already in target stage - return early
+    if issue.stage == stage:
+        console.print(f"[yellow]Issue #{issue.id} is already in {stage}[/yellow]")
+        return
+
+    # Set defaults based on stage
+    if changes is None:
+        if stage == "backlog":
+            changes = "stash"
+        elif stage == "not_doing":
+            changes = "discard"
+        else:  # accepted
+            changes = "error"
+
+    if keep_worktree is None:
+        keep_worktree = stage == "backlog"
+
+    if keep_branch is None:
+        keep_branch = stage != "not_doing"
+
+    config = load_config()
+    repo_path = Path.cwd()
+
+    # Stop agent FIRST to avoid race conditions with worktree operations
+    agent = get_active_agent(issue_id_normalized)
+    if agent:
+        tmux_manager = TmuxManager(config)
+        tmux_manager.stop_issue_agent(agent.tmux_session)
+        unregister_agent(agent.issue_id)
+        console.print(f"[dim]Stopped agent for issue #{issue.id}[/dim]")
+
+    # Get worktree path
+    worktree_path = None
+    if issue.worktree_dir:
+        worktree_path = repo_path / issue.worktree_dir
+        if not worktree_path.exists():
+            worktree_path = None
+
+    # Handle uncommitted changes in worktree
+    if worktree_path and worktree_path.exists():
+        status_result = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=worktree_path,
+            capture_output=True,
+            text=True,
+        )
+        has_changes = bool(status_result.stdout.strip())
+
+        if has_changes:
+            if changes == "error":
+                console.print("[red]Error: Uncommitted changes in worktree[/red]")
+                console.print("[dim]Use --changes stash|commit|discard to handle them[/dim]")
+                sys.exit(1)
+            elif changes == "discard":
+                if not force:
+                    console.print("[yellow]Warning: Uncommitted changes will be discarded:[/yellow]")
+                    console.print(status_result.stdout)
+                    if not click.confirm("Discard changes?"):
+                        console.print("[dim]Aborted[/dim]")
+                        sys.exit(0)
+                try:
+                    subprocess.run(["git", "checkout", "."], cwd=worktree_path, check=True, capture_output=True)
+                    subprocess.run(["git", "clean", "-fd"], cwd=worktree_path, check=True, capture_output=True)
+                    console.print("[dim]Discarded uncommitted changes[/dim]")
+                except subprocess.CalledProcessError as e:
+                    console.print(f"[red]Error discarding changes: {e}[/red]")
+                    sys.exit(1)
+            elif changes == "stash":
+                try:
+                    subprocess.run(["git", "stash", "push", "-m", f"shutdown: {issue.id}"], cwd=worktree_path, check=True, capture_output=True)
+                    console.print("[dim]Stashed uncommitted changes[/dim]")
+                except subprocess.CalledProcessError as e:
+                    console.print(f"[red]Error stashing changes: {e}[/red]")
+                    sys.exit(1)
+            elif changes == "commit":
+                try:
+                    subprocess.run(["git", "add", "-A"], cwd=worktree_path, check=True, capture_output=True)
+                    subprocess.run(["git", "commit", "-m", message], cwd=worktree_path, check=True, capture_output=True)
+                    console.print(f"[dim]Committed changes: {message}[/dim]")
+                except subprocess.CalledProcessError as e:
+                    console.print(f"[red]Error committing changes: {e}[/red]")
+                    sys.exit(1)
+
+        # Check for unpushed commits - handle case where branch has no upstream
+        has_unpushed = False
+        unpushed_output = ""
+
+        # First try checking against upstream
+        unpushed_result = subprocess.run(
+            ["git", "log", "--oneline", "@{u}..HEAD"],
+            cwd=worktree_path,
+            capture_output=True,
+            text=True,
+        )
+
+        if unpushed_result.returncode == 0:
+            # Upstream exists, check if there are unpushed commits
+            has_unpushed = bool(unpushed_result.stdout.strip())
+            unpushed_output = unpushed_result.stdout
+        else:
+            # No upstream - check against origin/main as fallback
+            # This catches local-only branches that were never pushed
+            fallback_result = subprocess.run(
+                ["git", "log", "--oneline", "origin/main..HEAD"],
+                cwd=worktree_path,
+                capture_output=True,
+                text=True,
+            )
+            if fallback_result.returncode == 0 and fallback_result.stdout.strip():
+                has_unpushed = True
+                unpushed_output = fallback_result.stdout
+                console.print("[yellow]Warning: Branch has no upstream tracking branch[/yellow]")
+
+        if has_unpushed and not keep_branch:
+            if not force:
+                console.print("[yellow]Warning: Unpushed commits will be lost:[/yellow]")
+                console.print(unpushed_output)
+                if not click.confirm("Continue anyway?"):
+                    console.print("[dim]Aborted[/dim]")
+                    sys.exit(0)
+
+    # Remove worktree if requested
+    if not keep_worktree and worktree_path and worktree_path.exists():
+        remove_worktree(repo_path, worktree_path)
+        console.print(f"[dim]Removed worktree: {worktree_path}[/dim]")
+        # Clear worktree_dir in issue metadata
+        update_issue_metadata(issue_id_normalized, worktree_dir="")
+
+    # Delete branch if requested
+    if not keep_branch and issue.branch:
+        # Delete local branch (may fail if checked out elsewhere, that's ok)
+        subprocess.run(
+            ["git", "branch", "-D", issue.branch],
+            cwd=repo_path,
+            capture_output=True,
+        )
+        console.print(f"[dim]Deleted local branch: {issue.branch}[/dim]")
+
+    # Update issue stage
+    if issue.stage != stage:
+        updated = update_issue_stage(issue_id_normalized, stage, None)
+        if not updated:
+            console.print(f"[red]Failed to update issue stage[/red]")
+            sys.exit(1)
+
+    # Delete session file
+    delete_session(issue_id_normalized)
+
+    # Clear assigned_agent
+    update_issue_metadata(issue_id_normalized, clear_assigned_agent=True)
+
+    console.print(f"[green]✓ Issue #{issue.id} shutdown to {stage}[/green]")
+
+
 # =============================================================================
 # Agent Context Commands
 # =============================================================================

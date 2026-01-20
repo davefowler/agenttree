@@ -35,7 +35,7 @@ class CheckStatus:
 
     name: str
     state: str  # SUCCESS, FAILURE, PENDING
-    conclusion: Optional[str] = None
+    link: Optional[str] = None  # URL to the check run details
 
 
 @dataclass
@@ -206,7 +206,7 @@ def get_pr_checks(pr_number: int) -> List[CheckStatus]:
     """
     try:
         output = gh_command(
-            ["pr", "checks", str(pr_number), "--json", "name,state,conclusion"]
+            ["pr", "checks", str(pr_number), "--json", "name,state,link"]
         )
         data = json.loads(output)
 
@@ -214,12 +214,93 @@ def get_pr_checks(pr_number: int) -> List[CheckStatus]:
             CheckStatus(
                 name=check["name"],
                 state=check["state"],
-                conclusion=check.get("conclusion"),
+                link=check.get("link"),
             )
             for check in data
         ]
     except RuntimeError:
         return []
+
+
+@dataclass
+class PRComment:
+    """PR comment information."""
+
+    author: str
+    body: str
+    created_at: str
+
+
+def get_pr_comments(pr_number: int) -> List[PRComment]:
+    """Get comments on a PR.
+
+    Args:
+        pr_number: PR number
+
+    Returns:
+        List of comments
+    """
+    try:
+        output = gh_command(
+            ["pr", "view", str(pr_number), "--json", "comments", "--jq", ".comments"]
+        )
+        if not output or output == "null":
+            return []
+
+        data = json.loads(output)
+        return [
+            PRComment(
+                author=comment.get("author", {}).get("login", "unknown"),
+                body=comment.get("body", ""),
+                created_at=comment.get("createdAt", ""),
+            )
+            for comment in data
+        ]
+    except RuntimeError:
+        return []
+
+
+def get_check_failed_logs(check: CheckStatus, max_lines: int = 200) -> Optional[str]:
+    """Get the failed logs for a CI check.
+
+    Extracts run_id and job_id from the check link and fetches logs.
+
+    Args:
+        check: CheckStatus with link field populated
+        max_lines: Maximum number of log lines to return
+
+    Returns:
+        Failed log output as string, or None if unable to fetch
+    """
+    import re
+
+    if not check.link:
+        return None
+
+    # Extract run_id and job_id from link like:
+    # https://github.com/owner/repo/actions/runs/12345/job/67890
+    match = re.search(r'/actions/runs/(\d+)/job/(\d+)', check.link)
+    if not match:
+        return None
+
+    run_id, job_id = match.groups()
+
+    try:
+        result = subprocess.run(
+            ["gh", "run", "view", run_id, "--job", job_id, "--log-failed"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            lines = result.stdout.strip().split('\n')
+            if len(lines) > max_lines:
+                lines = lines[-max_lines:]  # Keep last N lines
+                return f"... (truncated, showing last {max_lines} lines) ...\n" + '\n'.join(lines)
+            return result.stdout.strip()
+        return None
+    except (subprocess.TimeoutExpired, subprocess.CalledProcessError):
+        return None
 
 
 def wait_for_ci(
@@ -250,12 +331,8 @@ def wait_for_ci(
         all_complete = all(check.state != "PENDING" for check in checks)
 
         if all_complete:
-            # Check if all passed
-            all_passed = all(
-                check.state == "SUCCESS"
-                or check.conclusion == "success"
-                for check in checks
-            )
+            # Check if all passed (state is SUCCESS when check passes)
+            all_passed = all(check.state == "SUCCESS" for check in checks)
             return all_passed
 
         # Still pending, keep waiting

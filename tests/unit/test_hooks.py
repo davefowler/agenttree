@@ -2207,8 +2207,8 @@ class TestCICheckHook:
 
         # Mock checks are all successful
         mock_get_pr_checks.return_value = [
-            CheckStatus(name="build", state="SUCCESS", conclusion="success"),
-            CheckStatus(name="tests", state="SUCCESS", conclusion="success"),
+            CheckStatus(name="build", state="SUCCESS"),
+            CheckStatus(name="tests", state="SUCCESS"),
         ]
 
         hook = {"ci_check": {"timeout": 60, "poll_interval": 10}}
@@ -2229,8 +2229,8 @@ class TestCICheckHook:
 
         # Mock one check failed
         mock_get_pr_checks.return_value = [
-            CheckStatus(name="build", state="SUCCESS", conclusion="success"),
-            CheckStatus(name="tests", state="FAILURE", conclusion="failure"),
+            CheckStatus(name="build", state="SUCCESS"),
+            CheckStatus(name="tests", state="FAILURE"),
         ]
 
         hook = {"ci_check": {"timeout": 60}}
@@ -2266,7 +2266,7 @@ class TestCICheckHook:
 
         # Mock checks still pending
         mock_get_pr_checks.return_value = [
-            CheckStatus(name="build", state="PENDING", conclusion=None),
+            CheckStatus(name="build", state="PENDING"),
         ]
 
         hook = {"ci_check": {"timeout": 60}}
@@ -2313,8 +2313,8 @@ class TestCICheckHook:
         # Mock CI failure
         mock_wait_for_ci.return_value = False
         mock_get_pr_checks.return_value = [
-            CheckStatus(name="lint", state="FAILURE", conclusion="failure"),
-            CheckStatus(name="tests", state="FAILURE", conclusion="failure"),
+            CheckStatus(name="lint", state="FAILURE"),
+            CheckStatus(name="tests", state="FAILURE"),
         ]
 
         hook = {"ci_check": {"timeout": 60}}

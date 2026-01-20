@@ -401,7 +401,7 @@ def check_ci_status(agents_dir: Path) -> int:
 
     import yaml
     from rich.console import Console
-    from agenttree.github import get_pr_checks
+    from agenttree.github import get_pr_checks, get_pr_comments, get_check_failed_logs
     from agenttree.state import get_active_agent
     from agenttree.config import load_config
     from agenttree.tmux import TmuxManager
@@ -451,24 +451,35 @@ def check_ci_status(agents_dir: Path) -> int:
             # Check if any check failed
             failed_checks = [
                 check for check in checks
-                if check.state == "FAILURE" or check.conclusion == "failure"
+                if check.state == "FAILURE"
             ]
 
             if not failed_checks:
                 # All checks passed, nothing to do
                 continue
 
-            # CI failed - create feedback file
+            # CI failed - create feedback file with logs and review comments
             feedback_content = "# CI Failure Report\n\n"
             feedback_content += f"PR #{pr_number} has failing CI checks:\n\n"
             for check in checks:
-                status = "PASSED" if check.state == "SUCCESS" or check.conclusion == "success" else "FAILED"
+                status = "PASSED" if check.state == "SUCCESS" else "FAILED"
                 feedback_content += f"- **{check.name}**: {status}\n"
-                if check.state == "FAILURE" or check.conclusion == "failure":
-                    feedback_content += f"  - State: {check.state}\n"
-                    if check.conclusion:
-                        feedback_content += f"  - Conclusion: {check.conclusion}\n"
-            feedback_content += "\nPlease fix these issues and run `agenttree next` to re-submit.\n"
+
+            # Fetch and include failed logs for each failed check
+            for check in failed_checks:
+                logs = get_check_failed_logs(check)
+                if logs:
+                    feedback_content += f"\n---\n\n## Failed Logs: {check.name}\n\n```\n{logs}\n```\n"
+
+            # Fetch and include PR review comments
+            comments = get_pr_comments(pr_number)
+            if comments:
+                feedback_content += "\n---\n\n## Review Comments\n\n"
+                for comment in comments:
+                    feedback_content += f"### From @{comment.author}\n\n"
+                    feedback_content += f"{comment.body}\n\n"
+
+            feedback_content += "\n---\n\nPlease fix these issues and run `agenttree next` to re-submit.\n"
 
             feedback_file = issue_dir / "ci_feedback.md"
             feedback_file.write_text(feedback_content)
