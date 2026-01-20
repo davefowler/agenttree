@@ -578,22 +578,20 @@ class TestCheckCiStatus:
         issue_dir, _ = issue_at_implementation_review
 
         with patch("agenttree.github.get_pr_checks") as mock_get_checks:
-            with patch("agenttree.github.get_pr_comments", return_value=[]):
-                with patch("agenttree.github.get_check_failed_logs", return_value=None):
-                    with patch("agenttree.state.get_active_agent", return_value=None):
-                        mock_get_checks.return_value = [
-                            CheckStatus(name="build", state="SUCCESS"),
-                            CheckStatus(name="test", state="FAILURE"),
-                        ]
-                        result = check_ci_status(agents_dir)
+            with patch("agenttree.state.get_active_agent", return_value=None):
+                mock_get_checks.return_value = [
+                    CheckStatus(name="build", state="SUCCESS", conclusion="success"),
+                    CheckStatus(name="test", state="FAILURE", conclusion="failure"),
+                ]
+                result = check_ci_status(agents_dir)
 
-                        # Should create ci_feedback.md
-                        feedback_file = issue_dir / "ci_feedback.md"
-                        assert feedback_file.exists()
-                        content = feedback_file.read_text()
-                        assert "test" in content
-                        assert "FAILED" in content  # Check shows "FAILED" status
-                        assert result == 1
+                # Should create ci_feedback.md
+                feedback_file = issue_dir / "ci_feedback.md"
+                assert feedback_file.exists()
+                content = feedback_file.read_text()
+                assert "test" in content
+                assert "FAILURE" in content or "failure" in content
+                assert result == 1
 
     @patch("agenttree.hooks.is_running_in_container", return_value=False)
     def test_check_ci_status_on_ci_failure_transitions_to_implement(self, mock_container, agents_dir, issue_at_implementation_review):
@@ -605,18 +603,16 @@ class TestCheckCiStatus:
         issue_dir, _ = issue_at_implementation_review
 
         with patch("agenttree.github.get_pr_checks") as mock_get_checks:
-            with patch("agenttree.github.get_pr_comments", return_value=[]):
-                with patch("agenttree.github.get_check_failed_logs", return_value=None):
-                    with patch("agenttree.state.get_active_agent", return_value=None):
-                        mock_get_checks.return_value = [
-                            CheckStatus(name="test", state="FAILURE"),
-                        ]
-                        check_ci_status(agents_dir)
+            with patch("agenttree.state.get_active_agent", return_value=None):
+                mock_get_checks.return_value = [
+                    CheckStatus(name="test", state="FAILURE", conclusion="failure"),
+                ]
+                check_ci_status(agents_dir)
 
-                        # Verify stage was changed to implement
-                        with open(issue_dir / "issue.yaml") as f:
-                            data = yaml.safe_load(f)
-                        assert data["stage"] == "implement"
+                # Verify stage was changed to implement
+                with open(issue_dir / "issue.yaml") as f:
+                    data = yaml.safe_load(f)
+                assert data["stage"] == "implement"
 
     @patch("agenttree.hooks.is_running_in_container", return_value=False)
     def test_check_ci_status_on_ci_failure_sends_tmux_message(self, mock_container, agents_dir, issue_at_implementation_review):
@@ -625,29 +621,27 @@ class TestCheckCiStatus:
         from agenttree.github import CheckStatus
 
         with patch("agenttree.github.get_pr_checks") as mock_get_checks:
-            with patch("agenttree.github.get_pr_comments", return_value=[]):
-                with patch("agenttree.github.get_check_failed_logs", return_value=None):
-                    with patch("agenttree.state.get_active_agent") as mock_get_agent:
-                        with patch("agenttree.tmux.TmuxManager") as mock_tmux_class:
-                            mock_agent = Mock()
-                            mock_agent.tmux_session = "agent-42"
-                            mock_agent.issue_id = "42"
-                            mock_get_agent.return_value = mock_agent
+            with patch("agenttree.state.get_active_agent") as mock_get_agent:
+                with patch("agenttree.tmux.TmuxManager") as mock_tmux_class:
+                    mock_agent = Mock()
+                    mock_agent.tmux_session = "agent-42"
+                    mock_agent.issue_id = "42"
+                    mock_get_agent.return_value = mock_agent
 
-                            mock_tmux = Mock()
-                            mock_tmux.is_issue_running.return_value = True
-                            mock_tmux_class.return_value = mock_tmux
+                    mock_tmux = Mock()
+                    mock_tmux.is_issue_running.return_value = True
+                    mock_tmux_class.return_value = mock_tmux
 
-                            mock_get_checks.return_value = [
-                                CheckStatus(name="test", state="FAILURE"),
-                            ]
-                            check_ci_status(agents_dir)
+                    mock_get_checks.return_value = [
+                        CheckStatus(name="test", state="FAILURE", conclusion="failure"),
+                    ]
+                    check_ci_status(agents_dir)
 
-                            # Verify tmux message was sent
-                            mock_tmux.send_message_to_issue.assert_called_once()
-                            call_args = mock_tmux.send_message_to_issue.call_args[0]
-                            assert "agent-42" in call_args[0]
-                            assert "CI" in call_args[1] or "failed" in call_args[1].lower()
+                    # Verify tmux message was sent
+                    mock_tmux.send_message_to_issue.assert_called_once()
+                    call_args = mock_tmux.send_message_to_issue.call_args[0]
+                    assert "agent-42" in call_args[0]
+                    assert "CI" in call_args[1] or "failed" in call_args[1].lower()
 
     @patch("agenttree.hooks.is_running_in_container", return_value=False)
     def test_check_ci_status_skips_already_notified(self, mock_container, agents_dir):
@@ -672,7 +666,7 @@ class TestCheckCiStatus:
 
         with patch("agenttree.github.get_pr_checks") as mock_get_checks:
             mock_get_checks.return_value = [
-                CheckStatus(name="test", state="FAILURE"),
+                CheckStatus(name="test", state="FAILURE", conclusion="failure"),
             ]
             result = check_ci_status(agents_dir)
 
@@ -693,17 +687,15 @@ class TestCheckCiStatus:
         issue_dir, _ = issue_at_implementation_review
 
         with patch("agenttree.github.get_pr_checks") as mock_get_checks:
-            with patch("agenttree.github.get_pr_comments", return_value=[]):
-                with patch("agenttree.github.get_check_failed_logs", return_value=None):
-                    with patch("agenttree.state.get_active_agent", return_value=None):
-                        mock_get_checks.return_value = [
-                            CheckStatus(name="test", state="FAILURE"),
-                        ]
-                        check_ci_status(agents_dir)
+            with patch("agenttree.state.get_active_agent", return_value=None):
+                mock_get_checks.return_value = [
+                    CheckStatus(name="test", state="FAILURE", conclusion="failure"),
+                ]
+                check_ci_status(agents_dir)
 
-                        # The issue transitions to implement, so ci_notified doesn't matter
-                        # But let's verify the feedback file was created
-                        assert (issue_dir / "ci_feedback.md").exists()
+                # The issue transitions to implement, so ci_notified doesn't matter
+                # But let's verify the feedback file was created
+                assert (issue_dir / "ci_feedback.md").exists()
 
     @patch("agenttree.hooks.is_running_in_container", return_value=False)
     def test_check_ci_status_handles_no_active_agent_gracefully(self, mock_container, agents_dir, issue_at_implementation_review):
@@ -714,15 +706,403 @@ class TestCheckCiStatus:
         issue_dir, _ = issue_at_implementation_review
 
         with patch("agenttree.github.get_pr_checks") as mock_get_checks:
-            with patch("agenttree.github.get_pr_comments", return_value=[]):
-                with patch("agenttree.github.get_check_failed_logs", return_value=None):
-                    with patch("agenttree.state.get_active_agent", return_value=None):
-                        mock_get_checks.return_value = [
-                            CheckStatus(name="test", state="FAILURE"),
-                        ]
-                        # Should not raise even without active agent
-                        result = check_ci_status(agents_dir)
+            with patch("agenttree.state.get_active_agent", return_value=None):
+                mock_get_checks.return_value = [
+                    CheckStatus(name="test", state="FAILURE", conclusion="failure"),
+                ]
+                # Should not raise even without active agent
+                result = check_ci_status(agents_dir)
 
-                        # Feedback file should still be created
-                        assert (issue_dir / "ci_feedback.md").exists()
-                        assert result == 1
+                # Feedback file should still be created
+                assert (issue_dir / "ci_feedback.md").exists()
+                assert result == 1
+
+
+@pytest.mark.usefixtures("host_environment")
+class TestCheckMergedPrs:
+    """Tests for check_merged_prs function."""
+
+    @pytest.fixture
+    def agents_dir(self, tmp_path):
+        """Create a temporary _agenttree directory with issues subfolder."""
+        agents_dir = tmp_path / "_agenttree"
+        agents_dir.mkdir()
+        (agents_dir / "issues").mkdir()
+        return agents_dir
+
+    @pytest.fixture
+    def issue_at_implementation_review_with_pr(self, agents_dir):
+        """Create an issue at implementation_review with a PR number."""
+        import yaml
+        issue_dir = agents_dir / "issues" / "042"
+        issue_dir.mkdir(parents=True)
+
+        issue_data = {
+            "id": "042",
+            "slug": "042-test-issue",
+            "title": "Test Issue",
+            "stage": "implementation_review",
+            "pr_number": 123,
+            "branch": "issue-042",
+            "worktree_dir": "/tmp/worktree-042",
+            "created": "2024-01-01T00:00:00Z",
+        }
+
+        with open(issue_dir / "issue.yaml", "w") as f:
+            yaml.safe_dump(issue_data, f)
+
+        return issue_dir, issue_data
+
+    @patch("agenttree.hooks.is_running_in_container", return_value=True)
+    def test_check_merged_prs_skips_in_container(self, mock_container, agents_dir):
+        """Verify check_merged_prs skips when running in container."""
+        from agenttree.agents_repo import check_merged_prs
+
+        result = check_merged_prs(agents_dir)
+        assert result == 0
+
+    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    def test_check_merged_prs_skips_non_implementation_review(self, mock_container, agents_dir):
+        """Verify issues not at implementation_review are skipped."""
+        import yaml
+        from agenttree.agents_repo import check_merged_prs
+
+        issue_dir = agents_dir / "issues" / "001"
+        issue_dir.mkdir(parents=True)
+
+        # Issue at backlog stage
+        with open(issue_dir / "issue.yaml", "w") as f:
+            yaml.safe_dump({
+                "id": "001",
+                "stage": "backlog",
+                "pr_number": 123,
+            }, f)
+
+        result = check_merged_prs(agents_dir)
+        assert result == 0
+
+    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    def test_check_merged_prs_skips_issues_without_pr(self, mock_container, agents_dir):
+        """Verify issues without PR number are skipped."""
+        import yaml
+        from agenttree.agents_repo import check_merged_prs
+
+        issue_dir = agents_dir / "issues" / "001"
+        issue_dir.mkdir(parents=True)
+
+        with open(issue_dir / "issue.yaml", "w") as f:
+            yaml.safe_dump({
+                "id": "001",
+                "stage": "implementation_review",
+                # No pr_number
+            }, f)
+
+        result = check_merged_prs(agents_dir)
+        assert result == 0
+
+    @patch("subprocess.run")
+    @patch("agenttree.hooks.cleanup_issue_agent")
+    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    def test_check_merged_prs_advances_merged_pr_to_accepted(
+        self, mock_container, mock_cleanup, mock_run, agents_dir, issue_at_implementation_review_with_pr
+    ):
+        """Verify merged PR advances issue to accepted."""
+        import yaml
+        import json
+        from agenttree.agents_repo import check_merged_prs
+
+        issue_dir, _ = issue_at_implementation_review_with_pr
+
+        # Mock gh pr view returning MERGED state
+        mock_run.return_value = Mock(
+            returncode=0,
+            stdout=json.dumps({"state": "MERGED", "mergedAt": "2024-01-01T00:00:00Z"})
+        )
+
+        result = check_merged_prs(agents_dir)
+
+        assert result == 1
+
+        # Verify issue was updated
+        with open(issue_dir / "issue.yaml") as f:
+            data = yaml.safe_load(f)
+        assert data["stage"] == "accepted"
+
+        # Verify cleanup was called
+        mock_cleanup.assert_called_once()
+
+    @patch("subprocess.run")
+    @patch("agenttree.hooks.cleanup_issue_agent")
+    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    def test_check_merged_prs_advances_closed_pr_to_not_doing(
+        self, mock_container, mock_cleanup, mock_run, agents_dir, issue_at_implementation_review_with_pr
+    ):
+        """Verify closed (not merged) PR advances issue to not_doing."""
+        import yaml
+        import json
+        from agenttree.agents_repo import check_merged_prs
+
+        issue_dir, _ = issue_at_implementation_review_with_pr
+
+        # Mock gh pr view returning CLOSED state (not merged)
+        mock_run.return_value = Mock(
+            returncode=0,
+            stdout=json.dumps({"state": "CLOSED", "mergedAt": None})
+        )
+
+        result = check_merged_prs(agents_dir)
+
+        assert result == 1
+
+        # Verify issue was updated
+        with open(issue_dir / "issue.yaml") as f:
+            data = yaml.safe_load(f)
+        assert data["stage"] == "not_doing"
+
+        # Verify cleanup was called
+        mock_cleanup.assert_called_once()
+
+    @patch("subprocess.run")
+    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    def test_check_merged_prs_ignores_open_pr(
+        self, mock_container, mock_run, agents_dir, issue_at_implementation_review_with_pr
+    ):
+        """Verify open PR does not advance issue."""
+        import yaml
+        import json
+        from agenttree.agents_repo import check_merged_prs
+
+        issue_dir, _ = issue_at_implementation_review_with_pr
+
+        # Mock gh pr view returning OPEN state
+        mock_run.return_value = Mock(
+            returncode=0,
+            stdout=json.dumps({"state": "OPEN", "mergedAt": None})
+        )
+
+        result = check_merged_prs(agents_dir)
+
+        assert result == 0
+
+        # Verify issue was NOT updated
+        with open(issue_dir / "issue.yaml") as f:
+            data = yaml.safe_load(f)
+        assert data["stage"] == "implementation_review"
+
+    @patch("subprocess.run")
+    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    def test_check_merged_prs_handles_gh_failure(
+        self, mock_container, mock_run, agents_dir, issue_at_implementation_review_with_pr
+    ):
+        """Verify gh CLI failure is handled gracefully."""
+        import yaml
+        from agenttree.agents_repo import check_merged_prs
+
+        issue_dir, _ = issue_at_implementation_review_with_pr
+
+        # Mock gh pr view failing
+        mock_run.return_value = Mock(returncode=1, stdout="", stderr="not found")
+
+        result = check_merged_prs(agents_dir)
+
+        assert result == 0
+
+        # Verify issue was NOT updated
+        with open(issue_dir / "issue.yaml") as f:
+            data = yaml.safe_load(f)
+        assert data["stage"] == "implementation_review"
+
+    @patch("subprocess.run")
+    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    def test_check_merged_prs_handles_timeout(
+        self, mock_container, mock_run, agents_dir, issue_at_implementation_review_with_pr
+    ):
+        """Verify timeout is handled gracefully."""
+        import yaml
+        from agenttree.agents_repo import check_merged_prs
+
+        issue_dir, _ = issue_at_implementation_review_with_pr
+
+        # Mock timeout
+        mock_run.side_effect = subprocess.TimeoutExpired(cmd="gh", timeout=30)
+
+        result = check_merged_prs(agents_dir)
+
+        assert result == 0
+
+
+@pytest.mark.usefixtures("host_environment")
+class TestPushPendingBranches:
+    """Tests for push_pending_branches function."""
+
+    @pytest.fixture
+    def agents_dir(self, tmp_path):
+        """Create a temporary _agenttree directory with issues subfolder."""
+        agents_dir = tmp_path / "_agenttree"
+        agents_dir.mkdir()
+        (agents_dir / "issues").mkdir()
+        return agents_dir
+
+    @pytest.fixture
+    def issue_with_worktree(self, agents_dir, tmp_path):
+        """Create an issue with a worktree that has unpushed commits."""
+        import yaml
+
+        issue_dir = agents_dir / "issues" / "043"
+        issue_dir.mkdir(parents=True)
+
+        worktree_dir = tmp_path / "worktree-043"
+        worktree_dir.mkdir()
+
+        issue_data = {
+            "id": "043",
+            "title": "Test Issue",
+            "stage": "implementation",
+            "branch": "issue-043",
+            "worktree_dir": str(worktree_dir),
+        }
+
+        with open(issue_dir / "issue.yaml", "w") as f:
+            yaml.safe_dump(issue_data, f)
+
+        return issue_dir, issue_data, worktree_dir
+
+    @patch("agenttree.hooks.is_running_in_container", return_value=True)
+    def test_push_pending_branches_skips_in_container(self, mock_container, agents_dir):
+        """Verify push_pending_branches skips when running in container."""
+        from agenttree.agents_repo import push_pending_branches
+
+        result = push_pending_branches(agents_dir)
+        assert result == 0
+
+    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    def test_push_pending_branches_skips_issues_without_branch(self, mock_container, agents_dir):
+        """Verify issues without branch are skipped."""
+        import yaml
+        from agenttree.agents_repo import push_pending_branches
+
+        issue_dir = agents_dir / "issues" / "001"
+        issue_dir.mkdir(parents=True)
+
+        with open(issue_dir / "issue.yaml", "w") as f:
+            yaml.safe_dump({
+                "id": "001",
+                "stage": "implementation",
+                # No branch or worktree_dir
+            }, f)
+
+        result = push_pending_branches(agents_dir)
+        assert result == 0
+
+    @patch("subprocess.run")
+    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    def test_push_pending_branches_skips_no_unpushed_commits(
+        self, mock_container, mock_run, agents_dir, issue_with_worktree
+    ):
+        """Verify no push when there are no unpushed commits."""
+        from agenttree.agents_repo import push_pending_branches
+
+        # Mock git log showing no unpushed commits
+        mock_run.return_value = Mock(returncode=0, stdout="")
+
+        result = push_pending_branches(agents_dir)
+
+        assert result == 0
+        # Only the check command should be called, not push
+        assert mock_run.call_count == 1
+
+    @patch("subprocess.run")
+    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    def test_push_pending_branches_pushes_with_commits(
+        self, mock_container, mock_run, agents_dir, issue_with_worktree
+    ):
+        """Verify push when there are unpushed commits."""
+        from agenttree.agents_repo import push_pending_branches
+
+        def run_side_effect(cmd, **kwargs):
+            if "log" in cmd:
+                # Has unpushed commits
+                return Mock(returncode=0, stdout="abc123 Commit message\n")
+            elif "push" in cmd:
+                # Push succeeds
+                return Mock(returncode=0, stdout="", stderr="")
+            return Mock(returncode=0)
+
+        mock_run.side_effect = run_side_effect
+
+        result = push_pending_branches(agents_dir)
+
+        assert result == 1
+
+    @patch("subprocess.run")
+    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    def test_push_pending_branches_force_push_on_diverged(
+        self, mock_container, mock_run, agents_dir, issue_with_worktree
+    ):
+        """Verify force push when histories diverged."""
+        from agenttree.agents_repo import push_pending_branches
+
+        call_count = [0]
+
+        def run_side_effect(cmd, **kwargs):
+            call_count[0] += 1
+            if "log" in cmd:
+                return Mock(returncode=0, stdout="abc123 Commit message\n")
+            elif "push" in cmd:
+                if "--force-with-lease" in cmd:
+                    # Force push succeeds
+                    return Mock(returncode=0, stdout="", stderr="")
+                else:
+                    # Regular push fails with divergent
+                    return Mock(returncode=1, stdout="", stderr="rejected (non-fast-forward)")
+            return Mock(returncode=0)
+
+        mock_run.side_effect = run_side_effect
+
+        result = push_pending_branches(agents_dir)
+
+        assert result == 1
+        # Should have called: git log, git push (failed), git push --force-with-lease
+        assert call_count[0] == 3
+
+    @patch("subprocess.run")
+    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    def test_push_pending_branches_handles_push_failure(
+        self, mock_container, mock_run, agents_dir, issue_with_worktree
+    ):
+        """Verify push failure is handled gracefully."""
+        from agenttree.agents_repo import push_pending_branches
+
+        def run_side_effect(cmd, **kwargs):
+            if "log" in cmd:
+                return Mock(returncode=0, stdout="abc123 Commit message\n")
+            elif "push" in cmd:
+                return Mock(returncode=1, stdout="", stderr="permission denied")
+            return Mock(returncode=0)
+
+        mock_run.side_effect = run_side_effect
+
+        result = push_pending_branches(agents_dir)
+
+        assert result == 0
+
+    @patch("subprocess.run")
+    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    def test_push_pending_branches_handles_timeout(
+        self, mock_container, mock_run, agents_dir, issue_with_worktree
+    ):
+        """Verify timeout is handled gracefully."""
+        from agenttree.agents_repo import push_pending_branches
+
+        def run_side_effect(cmd, **kwargs):
+            if "log" in cmd:
+                return Mock(returncode=0, stdout="abc123 Commit message\n")
+            elif "push" in cmd:
+                raise subprocess.TimeoutExpired(cmd="git push", timeout=60)
+            return Mock(returncode=0)
+
+        mock_run.side_effect = run_side_effect
+
+        result = push_pending_branches(agents_dir)
+
+        assert result == 0

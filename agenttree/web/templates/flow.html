@@ -15,9 +15,12 @@
         <!-- Left sidebar: Issue list (no polling - refresh page for updates) -->
         <div class="flow-sidebar">
             {% if issues %}
-                {% set show_stage = true %}
                 {% for issue in issues %}
-                {% include 'partials/issue_item.html' %}
+                <a class="issue-item {% if selected_issue and issue.number == selected_issue.number %}active{% endif %}"
+                   href="/flow?issue={{ issue.number }}{% if chat_open %}&chat=1{% endif %}">
+                    {% set show_stage = true %}
+                    {% include 'partials/issue_item.html' %}
+                </a>
                 {% endfor %}
             {% else %}
                 <div class="empty-state">
