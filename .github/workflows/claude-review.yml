@@ -47,6 +47,12 @@ jobs:
             - Start with a brief summary
             - List any CRITICAL issues first (these should block merge)
             - Then list other suggestions
+            - End with a clear **Recommendation** section
+
+            For the Recommendation section, use one of these verdicts:
+            - **✅ APPROVE** - No critical issues, code is ready to merge
+            - **🔄 REQUEST CHANGES** - Critical issues must be fixed before merge
+            - **💬 COMMENT** - Minor suggestions only, author can merge at their discretion
 
             Use `gh pr comment` with your Bash tool to leave your review as a comment on the PR.
 
