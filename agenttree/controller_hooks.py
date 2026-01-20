@@ -12,6 +12,7 @@ Quick example:
       post_sync:
         - push_pending_branches: {}
         - check_controller_stages: {}
+        - check_custom_agent_stages: {}
         - check_merged_prs: {}
         - check_ci_status:
             min_interval_s: 60
@@ -40,6 +41,7 @@ console = Console()
 DEFAULT_POST_SYNC_HOOKS: list[dict[str, Any]] = [
     {"push_pending_branches": {}},
     {"check_controller_stages": {}},
+    {"check_custom_agent_stages": {}},
     {"check_ci_status": {}},
     {"check_merged_prs": {}},
 ]

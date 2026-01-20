@@ -180,6 +180,7 @@ class ContainerRuntime:
         additional_args: Optional[List[str]] = None,
         agent_num: Optional[int] = None,
         model: Optional[str] = None,
+        agent_host: str = "agent",
     ) -> List[str]:
         """Build the container run command.
 
@@ -191,6 +192,7 @@ class ContainerRuntime:
             additional_args: Additional arguments for the container
             agent_num: Agent number for container naming
             model: Model to use (e.g., "opus", "sonnet"). Defaults to CLI default.
+            agent_host: Agent host type (e.g., "agent", "review"). Defaults to "agent".
 
         Returns:
             Command list
@@ -266,6 +268,9 @@ class ContainerRuntime:
 
         # Set container indicator env var for reliable container detection
         cmd.extend(["-e", "AGENTTREE_CONTAINER=1"])
+
+        # Set agent host type for permission checking
+        cmd.extend(["-e", f"AGENTTREE_AGENT_HOST={agent_host}"])
 
         if additional_args:
             cmd.extend(additional_args)

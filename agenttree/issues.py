@@ -33,6 +33,7 @@ PLAN_ASSESS = "plan_assess"
 PLAN_REVISE = "plan_revise"
 PLAN_REVIEW = "plan_review"
 IMPLEMENT = "implement"
+INDEPENDENT_CODE_REVIEW = "independent_code_review"
 IMPLEMENTATION_REVIEW = "implementation_review"
 ACCEPTED = "accepted"
 NOT_DOING = "not_doing"
@@ -73,6 +74,8 @@ class Issue(BaseModel):
     relevant_url: Optional[str] = None
 
     history: list[HistoryEntry] = Field(default_factory=list)
+
+    custom_agent_spawned: Optional[str] = None  # Stage name where custom agent was spawned
 
 
 def slugify(text: str) -> str:

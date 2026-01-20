@@ -14,6 +14,7 @@ import os
 import re
 from typing import List, Dict, Optional
 from datetime import datetime
+from contextlib import asynccontextmanager
 
 from agenttree import __version__
 from agenttree.config import load_config, Config
@@ -22,6 +23,7 @@ from agenttree.worktree import WorktreeManager
 # Load config once at module level - server reload on .agenttree.yaml changes
 _config: Config = load_config()
 from agenttree import issues as issue_crud
+from agenttree.agents_repo import sync_agents_repo
 from agenttree.web.models import StageEnum, KanbanBoard, Issue as WebIssue, IssueMoveRequest
 
 # Pattern to match Claude Code's input prompt separator line
@@ -49,7 +51,59 @@ def _strip_claude_input_prompt(output: str) -> str:
 # Get the directory where this file is located
 BASE_DIR = Path(__file__).resolve().parent
 
-app = FastAPI(title="AgentTree Dashboard")
+# Background sync task handle
+_sync_task: Optional[asyncio.Task] = None
+
+
+async def background_sync_loop(interval: int = 10) -> None:
+    """Background task that syncs _agenttree repo periodically.
+
+    This runs syncs which:
+    - Pull/push changes from remote
+    - Spawn agents for issues in agent stages
+    - Run hooks for controller stages
+    - Check for merged PRs
+
+    Args:
+        interval: Seconds between syncs (default: 10)
+    """
+    agents_dir = Path.cwd() / "_agenttree"
+    while True:
+        try:
+            # Run sync in executor to avoid blocking event loop
+            await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: sync_agents_repo(agents_dir, pull_only=True)
+            )
+        except Exception as e:
+            print(f"Background sync error: {e}")
+        await asyncio.sleep(interval)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """FastAPI lifespan context - starts/stops background sync."""
+    global _sync_task
+
+    # Start background sync task
+    config = load_config()
+    interval = config.refresh_interval if hasattr(config, 'refresh_interval') else 10
+    _sync_task = asyncio.create_task(background_sync_loop(interval))
+    print(f"✓ Started background sync (every {interval}s)")
+
+    yield  # Server runs here
+
+    # Cleanup on shutdown
+    if _sync_task:
+        _sync_task.cancel()
+        try:
+            await _sync_task
+        except asyncio.CancelledError:
+            pass
+    print("✓ Stopped background sync")
+
+
+app = FastAPI(title="AgentTree Dashboard", lifespan=lifespan)
 
 
 class NoCacheMiddleware(BaseHTTPMiddleware):

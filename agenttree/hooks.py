@@ -233,6 +233,7 @@ Configure in .agenttree.yaml under controller_hooks:
 Built-in controller hooks:
     push_pending_branches - Push any local branches with unpushed commits
     check_controller_stages - Process issues in controller-owned stages
+    check_custom_agent_stages - Spawn custom agents for issues in custom agent stages
     check_merged_prs - Detect externally merged PRs and update issue status
 
 Custom commands work here too:
@@ -318,7 +319,7 @@ HOOK_TYPES = {
     "cleanup_agent", "start_blocked_issues",
     # Controller hooks (run on post-sync)
     "push_pending_branches", "check_controller_stages", "check_merged_prs",
-    "check_ci_status",
+    "check_ci_status", "check_custom_agent_stages",
 }
 
 # =============================================================================
@@ -1047,6 +1048,12 @@ def run_builtin_validator(
         if agents_dir:
             check_ci_status(agents_dir)
 
+    elif hook_type == "check_custom_agent_stages":
+        from agenttree.agents_repo import check_custom_agent_stages
+        agents_dir = kwargs.get("agents_dir")
+        if agents_dir:
+            check_custom_agent_stages(agents_dir)
+
     else:
         # Unknown type - ignore silently (allows for future extensions)
         pass
@@ -1181,7 +1188,7 @@ def run_hook(
         if hook_type == "run":
             # Shell command hook
             errors = run_command_hook(context_dir, params, **kwargs)
-        elif hook_type in ("push_pending_branches", "check_controller_stages", "check_merged_prs"):
+        elif hook_type in ("push_pending_branches", "check_controller_stages", "check_merged_prs", "check_custom_agent_stages"):
             # Controller hooks need agents_dir - use from kwargs if provided, otherwise context_dir
             if "agents_dir" not in kwargs:
                 kwargs["agents_dir"] = context_dir
@@ -1963,6 +1970,52 @@ def is_running_in_container() -> bool:
         os.path.exists("/run/.containerenv") or
         os.environ.get("CONTAINER_RUNTIME") is not None
     )
+
+
+def get_current_agent_host() -> str:
+    """Get the current agent host type.
+
+    The agent host is determined by the AGENTTREE_AGENT_HOST env var.
+    If not set, defaults to "agent" for containers or "controller" for host.
+
+    Returns:
+        Agent host name (e.g., "agent", "controller", "review")
+    """
+    import os
+
+    # Check for explicit agent host
+    agent_host = os.environ.get("AGENTTREE_AGENT_HOST")
+    if agent_host:
+        return agent_host
+
+    # Default: "agent" if in container, "controller" if on host
+    if is_running_in_container():
+        return "agent"
+    return "controller"
+
+
+def can_agent_operate_in_stage(stage_host: str) -> bool:
+    """Check if the current agent can operate in a stage with the given host.
+
+    Agents can only operate in stages where the stage's host matches their identity.
+    - Default agents (host="agent") can only operate in host="agent" stages
+    - Custom agents (host="review") can only operate in host="review" stages
+    - Controller can operate in any stage (it's human-driven)
+
+    Args:
+        stage_host: The host value from the stage config (e.g., "agent", "controller", "review")
+
+    Returns:
+        True if the current agent can operate in this stage, False otherwise
+    """
+    current_host = get_current_agent_host()
+
+    # Controller (human) can operate anywhere
+    if current_host == "controller":
+        return True
+
+    # Agents can only operate in their own host stages
+    return current_host == stage_host
 
 
 def ensure_pr_for_issue(issue_id: str) -> bool:

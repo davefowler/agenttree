@@ -48,6 +48,8 @@ from agenttree.hooks import (
     execute_enter_hooks,
     ValidationError,
     is_running_in_container,
+    get_current_agent_host,
+    can_agent_operate_in_stage,
 )
 from agenttree.preflight import run_preflight
 
@@ -1098,6 +1100,120 @@ def web(host: str, port: int, config: Optional[str]) -> None:
 
 
 @main.command()
+@click.option("--host", default="127.0.0.1", help="Host to bind to")
+@click.option("--port", default=8080, type=int, help="Port to bind to")
+def serve(host: str, port: int) -> None:
+    """Start the AgentTree server (runs syncs, spawns agents).
+
+    This is the main controller process that:
+    - Syncs the _agenttree repo periodically
+    - Spawns agents for issues in agent stages
+    - Runs hooks for controller stages
+    - Provides the web dashboard
+
+    Use 'agenttree start' to run this in a tmux session.
+    """
+    from agenttree.web.app import run_server
+
+    console.print(f"[cyan]Starting AgentTree server at http://{host}:{port}[/cyan]")
+    console.print("[dim]Press Ctrl+C to stop[/dim]\n")
+
+    run_server(host=host, port=port)
+
+
+@main.command(name="controller-start")
+def controller_start() -> None:
+    """Start the controller in a tmux session.
+
+    Reads the controller host's 'process' config and runs it in a
+    background tmux session. This keeps the sync server running
+    even after you close your terminal.
+
+    Example:
+        agenttree controller-start     # Starts controller in tmux
+        tmux attach -t agenttree-controller  # Attach to see output
+    """
+    import subprocess
+
+    config = load_config()
+
+    # Get controller host config
+    controller = config.get_host("controller")
+    if not controller:
+        console.print("[red]Error: No controller host defined[/red]")
+        sys.exit(1)
+
+    # Get the process to run
+    process_cmd = controller.process
+    if not process_cmd:
+        # Default to serve if no process specified
+        process_cmd = "agenttree serve"
+
+    # Build tmux session name
+    tmux_session = f"{config.project}-controller"
+
+    # Check if already running
+    check_result = subprocess.run(
+        ["tmux", "has-session", "-t", tmux_session],
+        capture_output=True,
+    )
+    if check_result.returncode == 0:
+        console.print(f"[yellow]Controller already running in tmux session '{tmux_session}'[/yellow]")
+        console.print(f"[dim]Attach with: tmux attach -t {tmux_session}[/dim]")
+        return
+
+    # Start the tmux session
+    try:
+        subprocess.run(
+            ["tmux", "new-session", "-d", "-s", tmux_session, process_cmd],
+            check=True,
+            capture_output=True,
+        )
+        console.print(f"[green]✓ Started controller in tmux session '{tmux_session}'[/green]")
+        console.print(f"[dim]Attach with: tmux attach -t {tmux_session}[/dim]")
+        console.print(f"[dim]Running: {process_cmd}[/dim]")
+    except subprocess.CalledProcessError as e:
+        console.print(f"[red]Failed to start tmux session: {e}[/red]")
+        sys.exit(1)
+    except FileNotFoundError:
+        console.print("[red]Error: tmux not found. Please install tmux.[/red]")
+        sys.exit(1)
+
+
+@main.command(name="controller-stop")
+def controller_stop() -> None:
+    """Stop the controller tmux session.
+
+    Stops the background controller process started with 'agenttree controller-start'.
+    """
+    import subprocess
+
+    config = load_config()
+    tmux_session = f"{config.project}-controller"
+
+    # Check if running
+    check_result = subprocess.run(
+        ["tmux", "has-session", "-t", tmux_session],
+        capture_output=True,
+    )
+    if check_result.returncode != 0:
+        console.print(f"[yellow]Controller is not running (no tmux session '{tmux_session}')[/yellow]")
+        return
+
+    # Kill the session
+    try:
+        subprocess.run(
+            ["tmux", "kill-session", "-t", tmux_session],
+            check=True,
+            capture_output=True,
+        )
+        console.print(f"[green]✓ Stopped controller (killed tmux session '{tmux_session}')[/green]")
+    except subprocess.CalledProcessError as e:
+        console.print(f"[red]Failed to stop controller: {e}[/red]")
+        sys.exit(1)
+
+
+@main.command()
 @click.argument("pr_number", type=int)
 @click.option("--no-approval", is_flag=True, help="Skip approval requirement")
 @click.option("--monitor", is_flag=True, help="Monitor PR until ready to merge")
@@ -1687,8 +1803,15 @@ def stage_status(issue_id: Optional[str]) -> None:
     if issue.assigned_agent:
         console.print(f"[bold]Agent:[/bold] {issue.assigned_agent}")
 
-    if issue.stage in HUMAN_REVIEW_STAGES:
-        console.print(f"\n[yellow]⏳ Waiting for human review[/yellow]")
+    # Check if waiting for non-agent host
+    from agenttree.config import load_config
+    config_for_status = load_config()
+    status_stage_config = config_for_status.get_stage(issue.stage)
+    if status_stage_config and status_stage_config.host != "agent":
+        if status_stage_config.host == "controller":
+            console.print(f"\n[yellow]⏳ Waiting for human review[/yellow]")
+        else:
+            console.print(f"\n[yellow]⏳ Waiting for '{status_stage_config.host}' agent[/yellow]")
     elif issue.stage == ACCEPTED:
         console.print(f"\n[green]✓ Issue completed[/green]")
 
@@ -1728,12 +1851,23 @@ def stage_next(issue_id: Optional[str], reassess: bool) -> None:
         console.print(f"[yellow]Issue is marked as not doing[/yellow]")
         return
 
-    # Block agents from advancing past human review gates
-    if issue.stage in HUMAN_REVIEW_STAGES and is_running_in_container():
-        console.print(f"\n[yellow]⏳ Waiting for human approval[/yellow]")
-        console.print(f"[dim]Stage '{issue.stage}' requires human review.[/dim]")
-        console.print(f"[dim]A human will run 'agenttree approve {issue.id}' when ready.[/dim]")
-        return
+    # Block agents from operating in stages not meant for them
+    # Agents can only operate in stages where host matches their identity
+    from agenttree.config import load_config
+    config = load_config()
+    stage_config = config.get_stage(issue.stage)
+    if stage_config:
+        stage_host = stage_config.host
+        if not can_agent_operate_in_stage(stage_host):
+            current_host = get_current_agent_host()
+            console.print(f"\n[yellow]⏳ Waiting for '{stage_host}' to handle this stage[/yellow]")
+            if stage_host == "controller":
+                console.print(f"[dim]Stage '{issue.stage}' requires human review.[/dim]")
+                console.print(f"[dim]A human will run 'agenttree approve {issue.id}' when ready.[/dim]")
+            else:
+                console.print(f"[dim]Stage '{issue.stage}' is handled by the '{stage_host}' agent.[/dim]")
+                console.print(f"[dim]You ({current_host}) should wait for that agent to complete.[/dim]")
+            return
 
     # Check for restart and re-orient if needed
     session = get_session(issue_id)
@@ -1856,10 +1990,17 @@ def stage_next(issue_id: Optional[str], reassess: bool) -> None:
         stage_str += f".{next_substage}"
     console.print(f"[green]✓ Moved to {stage_str}[/green]")
 
-    if is_human_review:
-        console.print(f"\n[yellow]⏳ Waiting for human review[/yellow]")
-        console.print(f"[dim]Your work has been submitted for review.[/dim]")
-        console.print(f"[dim]You will receive instructions when the review is complete.[/dim]")
+    # Check if next stage requires a different host
+    next_stage_config = config.get_stage(next_stage)
+    if next_stage_config and next_stage_config.host != "agent" and is_running_in_container():
+        if next_stage_config.host == "controller" or is_human_review:
+            console.print(f"\n[yellow]⏳ Waiting for human review[/yellow]")
+            console.print(f"[dim]Your work has been submitted for review.[/dim]")
+            console.print(f"[dim]You will receive instructions when the review is complete.[/dim]")
+        else:
+            console.print(f"\n[yellow]⏳ Waiting for '{next_stage_config.host}' agent[/yellow]")
+            console.print(f"[dim]The '{next_stage_config.host}' agent will handle the next stage.[/dim]")
+            console.print(f"[dim]You will receive instructions when that stage is complete.[/dim]")
         return
 
     # Determine if this is first agent entry (should include AGENTS.md system prompt)
@@ -1906,10 +2047,14 @@ def approve_issue(issue_id: str, skip_approval: bool) -> None:
         console.print(f"[red]Issue {issue_id} not found[/red]")
         sys.exit(1)
 
-    # Check if at human review stage
-    if issue.stage not in HUMAN_REVIEW_STAGES:
+    # Check if at a stage that requires human approval (human_review=true or host=controller)
+    from agenttree.config import load_config
+    approve_config = load_config()
+    approve_stage_config = approve_config.get_stage(issue.stage)
+    if not approve_stage_config or not (approve_stage_config.human_review or approve_stage_config.host == "controller"):
+        human_review_stages = approve_config.get_human_review_stages()
         console.print(f"[red]Issue is at '{issue.stage}', not a human review stage[/red]")
-        console.print(f"[dim]Human review stages: {', '.join(HUMAN_REVIEW_STAGES)}[/dim]")
+        console.print(f"[dim]Human review stages: {', '.join(human_review_stages)}[/dim]")
         sys.exit(1)
 
     # Calculate next stage
