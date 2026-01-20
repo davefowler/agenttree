@@ -35,6 +35,7 @@ def mock_issue():
     mock.worktree_dir = None
     mock.created = "2024-01-01T00:00:00Z"
     mock.updated = "2024-01-01T00:00:00Z"
+    mock.dependencies = []
     return mock
 
 
@@ -53,6 +54,7 @@ def mock_review_issue():
     mock.worktree_dir = "/tmp/worktree"
     mock.created = "2024-01-01T00:00:00Z"
     mock.updated = "2024-01-01T00:00:00Z"
+    mock.dependencies = []
     return mock
 
 

@@ -52,6 +52,8 @@ class Issue(IssueBase):
     tmux_active: bool = False
     created_at: datetime
     updated_at: datetime
+    dependencies: List[int] = Field(default_factory=list)
+    dependents: List[int] = Field(default_factory=list)
 
     @property
     def is_review(self) -> bool:

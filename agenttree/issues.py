@@ -515,6 +515,33 @@ def get_blocked_issues(completed_issue_id: str) -> list[Issue]:
     return blocked
 
 
+def get_dependent_issues(issue_id: str) -> list[Issue]:
+    """Get all issues that depend on this issue (any stage).
+
+    Unlike get_blocked_issues which only returns backlog issues,
+    this returns ALL issues that have this issue in their dependencies.
+
+    Args:
+        issue_id: ID of the issue to find dependents for
+
+    Returns:
+        List of issues that depend on this issue
+    """
+    # Normalize the ID for comparison
+    normalized_id = issue_id.lstrip("0") or "0"
+
+    dependents = []
+    for issue in list_issues(sync=False):
+        # Check if this issue depends on our target
+        for dep_id in issue.dependencies:
+            dep_normalized = dep_id.lstrip("0") or "0"
+            if dep_normalized == normalized_id:
+                dependents.append(issue)
+                break
+
+    return dependents
+
+
 def get_ready_issues() -> list[Issue]:
     """Get all issues in backlog that have all dependencies met and can be started.
 

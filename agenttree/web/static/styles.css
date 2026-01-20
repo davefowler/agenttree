@@ -503,6 +503,34 @@ button[disabled] {
     flex-wrap: wrap;
 }
 
+.detail-meta .dependency-info,
+.detail-meta .dependent-info {
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+.detail-meta .dependency-info {
+    background: rgba(255, 193, 7, 0.15);
+    color: #b8860b;
+}
+
+.detail-meta .dependent-info {
+    background: rgba(0, 128, 0, 0.1);
+    color: var(--accent-green);
+}
+
+.detail-meta .dependency-info a,
+.detail-meta .dependent-info a {
+    color: inherit;
+    font-weight: 600;
+}
+
+.detail-meta .dependency-info a:hover,
+.detail-meta .dependent-info a:hover {
+    text-decoration: underline;
+}
+
 .detail-actions {
     display: flex;
     align-items: center;
@@ -1308,7 +1336,7 @@ button[disabled] {
 }
 
 .issue-stage-label.needs-approval {
-    background: var(--accent-green);
+    background: #3d6b5a;
     color: white;
     padding: 2px 6px;
     border-radius: 3px;

@@ -236,8 +236,13 @@ class AgentManager:
 agent_manager = AgentManager()
 
 
-def convert_issue_to_web(issue: issue_crud.Issue) -> WebIssue:
-    """Convert an issue_crud.Issue to a web Issue model."""
+def convert_issue_to_web(issue: issue_crud.Issue, load_dependents: bool = False) -> WebIssue:
+    """Convert an issue_crud.Issue to a web Issue model.
+
+    Args:
+        issue: The issue to convert
+        load_dependents: If True, also load dependent issues (issues blocked by this one)
+    """
     # Map stage string to StageEnum
     try:
         stage = StageEnum(issue.stage)
@@ -246,6 +251,15 @@ def convert_issue_to_web(issue: issue_crud.Issue) -> WebIssue:
 
     # Check if tmux session is active for this issue
     tmux_active = agent_manager._check_issue_tmux_session(issue.id)
+
+    # Convert dependencies to ints
+    dependencies = [int(d.lstrip("0") or "0") for d in issue.dependencies]
+
+    # Load dependents if requested (issues blocked by this one)
+    dependents: List[int] = []
+    if load_dependents:
+        dependent_issues = issue_crud.get_dependent_issues(issue.id)
+        dependents = [int(d.id) for d in dependent_issues]
 
     return WebIssue(
         number=int(issue.id),
@@ -261,6 +275,8 @@ def convert_issue_to_web(issue: issue_crud.Issue) -> WebIssue:
         pr_number=issue.pr_number,
         created_at=datetime.fromisoformat(issue.created.replace("Z", "+00:00")),
         updated_at=datetime.fromisoformat(issue.updated.replace("Z", "+00:00")),
+        dependencies=dependencies,
+        dependents=dependents,
     )
 
 
@@ -303,7 +319,7 @@ async def kanban(
     if issue:
         issue_obj = issue_crud.get_issue(issue, sync=False)
         if issue_obj:
-            selected_issue = convert_issue_to_web(issue_obj)
+            selected_issue = convert_issue_to_web(issue_obj, load_dependents=True)
             # Load all file contents upfront for CSS toggle tabs
             files = get_issue_files(issue, include_content=True)
             # Get commits behind for rebase button
@@ -376,24 +392,30 @@ async def flow(
 
     # Select issue from URL param or default to first
     selected_issue = None
+    selected_issue_id = None
     if issue:
         for wi in web_issues:
             if str(wi.number) == issue or str(wi.number).zfill(3) == issue:
-                selected_issue = wi
+                selected_issue_id = str(wi.number).zfill(3)
                 break
-    if not selected_issue and web_issues:
-        selected_issue = web_issues[0]
+    if not selected_issue_id and web_issues:
+        selected_issue_id = str(web_issues[0].number).zfill(3)
+
+    # Reload selected issue with dependents for detail view
+    if selected_issue_id:
+        issue_obj = issue_crud.get_issue(selected_issue_id, sync=False)
+        if issue_obj:
+            selected_issue = convert_issue_to_web(issue_obj, load_dependents=True)
 
     # Load all file contents upfront for selected issue
     files: list[dict[str, str]] = []
     commits_behind = 0
-    if selected_issue:
-        issue_id = str(selected_issue.number).zfill(3)
+    if selected_issue and selected_issue_id:
         # Load all file contents upfront for CSS toggle tabs
-        files = get_issue_files(issue_id, include_content=True)
+        files = get_issue_files(selected_issue_id, include_content=True)
         # Get commits behind for rebase button
         if selected_issue.assigned_agent:
-            issue_obj = issue_crud.get_issue(issue_id, sync=False)
+            issue_obj = issue_crud.get_issue(selected_issue_id, sync=False)
             if issue_obj and issue_obj.worktree_dir:
                 from agenttree.hooks import get_commits_behind_main
                 commits_behind = get_commits_behind_main(issue_obj.worktree_dir)

@@ -442,6 +442,47 @@ class TestDependencies:
 
         assert blocked_issues == []
 
+    def test_get_dependent_issues(self, temp_agenttrees_deps):
+        """get_dependent_issues should return all issues depending on a given issue."""
+        from agenttree.issues import get_dependent_issues, update_issue_stage
+
+        # Create a base issue
+        base = create_issue("Base Issue")
+
+        # Create issues that depend on it (in various stages)
+        dep1 = create_issue("Dependent 1 Backlog", stage=BACKLOG, dependencies=[base.id])
+        dep2 = create_issue("Dependent 2 Define", dependencies=[base.id])  # default: define
+        dep3 = create_issue("Dependent 3 Implement")
+        update_issue_stage(dep3.id, IMPLEMENT, None)
+        # Add dependency after stage change
+        from agenttree.issues import get_issue_dir
+        import yaml
+        issue_dir = get_issue_dir(dep3.id)
+        yaml_path = issue_dir / "issue.yaml"
+        with open(yaml_path) as f:
+            data = yaml.safe_load(f)
+        data["dependencies"] = [base.id]
+        with open(yaml_path, "w") as f:
+            yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
+
+        # Get dependents - should include all stages
+        dependents = get_dependent_issues(base.id)
+
+        assert len(dependents) == 3
+        dependent_ids = {d.id for d in dependents}
+        assert dep1.id in dependent_ids
+        assert dep2.id in dependent_ids
+        assert dep3.id in dependent_ids
+
+    def test_get_dependent_issues_empty(self, temp_agenttrees_deps):
+        """get_dependent_issues should return empty list if no dependents."""
+        from agenttree.issues import get_dependent_issues
+
+        issue = create_issue("No dependents")
+        dependents = get_dependent_issues(issue.id)
+
+        assert dependents == []
+
     def test_get_ready_issues(self, temp_agenttrees_deps):
         """get_ready_issues should return backlog issues with all deps met."""
         from agenttree.issues import get_ready_issues, update_issue_stage
