@@ -928,7 +928,7 @@ def sandbox(name: str, list_sandboxes: bool, kill: bool, tool: Optional[str], sh
     if list_sandboxes:
         sessions = list_sessions()
         sandbox_prefix = f"{project}-sandbox-"
-        sandbox_sessions = [s for s in sessions if s.startswith(sandbox_prefix)]
+        sandbox_sessions = [s for s in sessions if s.name.startswith(sandbox_prefix)]
 
         if not sandbox_sessions:
             console.print("[dim]No active sandboxes[/dim]")
@@ -941,8 +941,8 @@ def sandbox(name: str, list_sandboxes: bool, kill: bool, tool: Optional[str], sh
         table.add_column("Session", style="dim")
 
         for session in sandbox_sessions:
-            sandbox_name = session[len(sandbox_prefix):]
-            table.add_row(sandbox_name, session)
+            sandbox_name = session.name[len(sandbox_prefix):]
+            table.add_row(sandbox_name, session.name)
 
         console.print(table)
         console.print(f"\n[dim]Commands:[/dim]")
