@@ -216,6 +216,72 @@ class TestAgentsRepository:
         assert "_agenttree/" in gitignore.read_text()
         assert gitignore.read_text().count("_agenttree/") == 1
 
+    def test_clone_existing_success(self, agents_repo, tmp_path):
+        """Test clone_existing successfully clones an existing repo."""
+        remote_url = "git@github.com:user/test-repo_agenttree.git"
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = Mock(returncode=0)
+            result = agents_repo.clone_existing(remote_url)
+
+        assert result is True
+        mock_run.assert_called_once()
+        call_args = mock_run.call_args[0][0]
+        assert "git" in call_args
+        assert "clone" in call_args
+        assert remote_url in call_args
+
+    def test_clone_existing_already_exists(self, agents_repo):
+        """Test clone_existing returns True when repo already exists."""
+        agents_repo.agents_path.mkdir()
+        (agents_repo.agents_path / ".git").mkdir()
+
+        result = agents_repo.clone_existing("git@github.com:user/repo.git")
+
+        assert result is True
+
+    def test_clone_existing_failure(self, agents_repo, capsys):
+        """Test clone_existing returns False on clone failure."""
+        remote_url = "git@github.com:user/nonexistent.git"
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = subprocess.CalledProcessError(1, "git clone")
+            result = agents_repo.clone_existing(remote_url)
+
+        assert result is False
+        captured = capsys.readouterr()
+        assert "Error cloning" in captured.out
+
+    def test_get_remote_url_success(self, agents_repo):
+        """Test get_remote_url returns the remote URL."""
+        agents_repo.agents_path.mkdir()
+        (agents_repo.agents_path / ".git").mkdir()
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.return_value = Mock(
+                returncode=0,
+                stdout="git@github.com:user/test_agenttree.git\n"
+            )
+            result = agents_repo.get_remote_url()
+
+        assert result == "git@github.com:user/test_agenttree.git"
+
+    def test_get_remote_url_no_git_dir(self, agents_repo):
+        """Test get_remote_url returns None when no .git directory."""
+        result = agents_repo.get_remote_url()
+        assert result is None
+
+    def test_get_remote_url_no_remote(self, agents_repo):
+        """Test get_remote_url returns None when no remote configured."""
+        agents_repo.agents_path.mkdir()
+        (agents_repo.agents_path / ".git").mkdir()
+
+        with patch("subprocess.run") as mock_run:
+            mock_run.side_effect = subprocess.CalledProcessError(1, "git remote")
+            result = agents_repo.get_remote_url()
+
+        assert result is None
+
     @patch("agenttree.agents_repo.subprocess.run")
     def test_commit(self, mock_run, agents_repo):
         """Test _commit executes git commands."""

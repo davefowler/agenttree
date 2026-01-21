@@ -135,6 +135,7 @@ class Config(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     project: str = "myapp"
+    agents_repo: Optional[str] = None  # URL of the _agenttree git repo (for re-setup)
     worktrees_dir: Path = Field(default_factory=lambda: Path(".worktrees"))
     scripts_dir: Path = Field(default_factory=lambda: Path("scripts"))
     port_range: str = "9001-9099"

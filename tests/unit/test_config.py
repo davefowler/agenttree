@@ -15,9 +15,18 @@ class TestConfig:
         """Test default configuration values."""
         config = Config()
         assert config.project == "myapp"
+        assert config.agents_repo is None  # No agents repo by default
         assert config.worktrees_dir == Path(".worktrees")
         assert config.port_range == "9001-9099"
         assert config.default_tool == "claude"
+
+    def test_config_with_agents_repo(self) -> None:
+        """Test config with agents_repo URL (for re-setup)."""
+        config = Config(
+            project="myproject",
+            agents_repo="git@github.com:user/myproject_agenttree.git"
+        )
+        assert config.agents_repo == "git@github.com:user/myproject_agenttree.git"
 
     def test_config_from_dict(self) -> None:
         """Test creating config from dictionary."""

@@ -56,6 +56,28 @@ from agenttree.preflight import run_preflight
 console = Console()
 
 
+def _save_agents_repo_url(config_file: Path, remote_url: str) -> None:
+    """Save the agents repo URL to the config file.
+
+    Updates .agenttree.yaml with the agents_repo field so that
+    re-setup (cloning to a new machine) can find the existing repo.
+
+    Args:
+        config_file: Path to .agenttree.yaml
+        remote_url: Git remote URL of the agents repo
+    """
+    import yaml
+
+    with open(config_file) as f:
+        config_data = yaml.safe_load(f) or {}
+
+    # Add agents_repo field after project field for readability
+    config_data["agents_repo"] = remote_url
+
+    with open(config_file, "w") as f:
+        yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
+
+
 @click.group()
 @click.version_option(version="0.1.0")
 def main() -> None:
@@ -86,17 +108,41 @@ def init(worktrees_dir: Optional[str], project: Optional[str]) -> None:
         sys.exit(1)
 
     config_file = repo_path / ".agenttree.yaml"
+    agenttree_dir = repo_path / "_agenttree"
 
     if config_file.exists():
-        console.print("[yellow]Warning: .agenttree.yaml already exists[/yellow]")
-        if not click.confirm("Overwrite?"):
-            return
+        # Check if this is a re-setup case (config exists but _agenttree/ doesn't)
+        existing_config = load_config(repo_path)
+        if existing_config.agents_repo and not (agenttree_dir / ".git").exists():
+            # Re-setup case: clone existing agents repo and return early
+            console.print("[cyan]Detected existing AgentTree configuration.[/cyan]")
+            console.print(f"[dim]Agents repo: {existing_config.agents_repo}[/dim]")
+            if click.confirm("Clone the existing agents repo?", default=True):
+                agents_repo = AgentsRepository(repo_path)
+                if agents_repo.clone_existing(existing_config.agents_repo):
+                    console.print("[green]✓ Cloned existing _agenttree/ repository[/green]")
+                    console.print("\n[bold cyan]Re-setup complete![/bold cyan]")
+                    console.print("You can now use AgentTree commands like:")
+                    console.print("  agenttree issue list")
+                    console.print("  agenttree start <issue-id>")
+                    return
+                else:
+                    console.print("[red]Failed to clone agents repo[/red]")
+                    sys.exit(1)
+            else:
+                console.print("[yellow]Skipped cloning. Run 'agenttree init' again to set up fresh.[/yellow]")
+                return
+        else:
+            console.print("[yellow]Warning: .agenttree.yaml already exists[/yellow]")
+            if not click.confirm("Overwrite?"):
+                return
 
+    # Fresh setup from here on
     # Determine project name
     if not project:
         project = repo_path.name
 
-    # Copy default config template and substitute project name
+    # Create config from template
     template_path = importlib.resources.files("agenttree.templates").joinpath("default.agenttree.yaml")
     config_content = template_path.read_text()
     config_content = config_content.replace("{{PROJECT_NAME}}", project)
@@ -533,6 +579,12 @@ Good luck, Agent-${AGENT_NUM}! 🚀
         agents_repo = AgentsRepository(repo_path)
         agents_repo.ensure_repo()
         console.print("[green]✓ _agenttree/ repository created[/green]")
+
+        # Save the remote URL to config so re-setup works
+        remote_url = agents_repo.get_remote_url()
+        if remote_url:
+            _save_agents_repo_url(config_file, remote_url)
+            console.print(f"[dim]Saved agents repo URL to config[/dim]")
     except RuntimeError as e:
         console.print(f"[yellow]Warning: Could not create agents repository:[/yellow]")
         console.print(f"  {e}")

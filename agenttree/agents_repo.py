@@ -859,6 +859,57 @@ class AgentsRepository:
         # Add to parent .gitignore
         self._add_to_gitignore()
 
+    def clone_existing(self, remote_url: str) -> bool:
+        """Clone an existing _agenttree repo from a remote URL.
+
+        Used for re-setup when someone clones a repo that already uses AgentTree.
+
+        Args:
+            remote_url: Git remote URL of the existing agents repo
+
+        Returns:
+            True if cloned successfully, False otherwise
+        """
+        if (self.agents_path / ".git").exists():
+            print(f"_agenttree/ already exists")
+            return True
+
+        print(f"Cloning _agenttree from {remote_url}...")
+        try:
+            subprocess.run(
+                ["git", "clone", remote_url, str(self.agents_path)],
+                check=True,
+            )
+            print("✓ Cloned _agenttree/")
+
+            # Add to parent .gitignore
+            self._add_to_gitignore()
+
+            return True
+        except subprocess.CalledProcessError as e:
+            print(f"Error cloning: {e}")
+            return False
+
+    def get_remote_url(self) -> Optional[str]:
+        """Get the remote URL of the _agenttree repo.
+
+        Returns:
+            Remote URL or None if not available
+        """
+        if not (self.agents_path / ".git").exists():
+            return None
+
+        try:
+            result = subprocess.run(
+                ["git", "-C", str(self.agents_path), "remote", "get-url", "origin"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            return result.stdout.strip()
+        except subprocess.CalledProcessError:
+            return None
+
     def _ensure_gh_cli(self) -> None:
         """Check gh CLI is installed and authenticated."""
         if not shutil.which("gh"):
