@@ -1266,6 +1266,11 @@ def issue() -> None:
     multiple=True,
     help="Issue ID that must be completed first (can be used multiple times)"
 )
+@click.option(
+    "--no-start",
+    is_flag=True,
+    help="Skip auto-starting an agent for this issue"
+)
 @click.pass_context
 def issue_create(
     ctx: click.Context,
@@ -1277,15 +1282,16 @@ def issue_create(
     context: Optional[str],
     solutions: Optional[str],
     depends_on: tuple,
+    no_start: bool,
 ) -> None:
-    """Create a new issue.
+    """Create a new issue and auto-start an agent.
 
     Creates an issue directory in _agenttree/issues/ with:
     - issue.yaml (metadata)
     - problem.md (from template or provided content)
 
-    After creating, fill in problem.md then run 'agenttree start <id>' to
-    start an agent.
+    After creation, an agent is automatically started for the issue. Use
+    --no-start to skip auto-starting the agent.
 
     Issues with unmet dependencies are placed in backlog and auto-started when
     all dependencies are completed.
@@ -1296,6 +1302,7 @@ def issue_create(
         agenttree issue create "Quick fix" --stage implement
         agenttree issue create "Bug" --problem "The login fails" --context "On Chrome only"
         agenttree issue create "Feature B" --depends-on 053 --depends-on 060
+        agenttree issue create "My feature" --no-start
     """
 
     dependencies = list(depends_on) if depends_on else None
@@ -1343,13 +1350,16 @@ def issue_create(
         if issue.dependencies:
             console.print(f"[dim]  Dependencies: {', '.join(issue.dependencies)}[/dim]")
 
-        # Show next steps
+        # Auto-start agent unless blocked or --no-start specified
         if has_unmet_deps:
             console.print(f"\n[yellow]Issue blocked by dependencies - will auto-start when deps complete[/yellow]")
-        else:
+        elif no_start:
             console.print(f"\n[bold]Next steps:[/bold]")
             console.print(f"  1. Fill in problem.md: [cyan]_agenttree/issues/{issue.id}-{issue.slug}/problem.md[/cyan]")
             console.print(f"  2. Start agent: [cyan]agenttree start {issue.id}[/cyan]")
+        else:
+            console.print(f"\n[cyan]Auto-starting agent...[/cyan]")
+            ctx.invoke(start_agent, issue_id=issue.id)
 
     except Exception as e:
         console.print(f"[red]Error creating issue: {e}[/red]")
