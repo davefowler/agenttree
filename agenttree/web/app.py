@@ -14,6 +14,7 @@ import os
 import re
 from typing import List, Dict, Optional
 from datetime import datetime
+from contextlib import asynccontextmanager
 
 from agenttree import __version__
 from agenttree.config import load_config, Config
@@ -22,6 +23,7 @@ from agenttree.worktree import WorktreeManager
 # Load config once at module level - server reload on .agenttree.yaml changes
 _config: Config = load_config()
 from agenttree import issues as issue_crud
+from agenttree.agents_repo import sync_agents_repo
 from agenttree.web.models import StageEnum, KanbanBoard, Issue as WebIssue, IssueMoveRequest
 
 # Pattern to match Claude Code's input prompt separator line
@@ -49,7 +51,59 @@ def _strip_claude_input_prompt(output: str) -> str:
 # Get the directory where this file is located
 BASE_DIR = Path(__file__).resolve().parent
 
-app = FastAPI(title="AgentTree Dashboard")
+# Background sync task handle
+_sync_task: Optional[asyncio.Task] = None
+
+
+async def background_sync_loop(interval: int = 10) -> None:
+    """Background task that syncs _agenttree repo periodically.
+
+    This runs syncs which:
+    - Pull/push changes from remote
+    - Spawn agents for issues in agent stages
+    - Run hooks for controller stages
+    - Check for merged PRs
+
+    Args:
+        interval: Seconds between syncs (default: 10)
+    """
+    agents_dir = Path.cwd() / "_agenttree"
+    while True:
+        try:
+            # Run sync in executor to avoid blocking event loop
+            await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: sync_agents_repo(agents_dir, pull_only=True)
+            )
+        except Exception as e:
+            print(f"Background sync error: {e}")
+        await asyncio.sleep(interval)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """FastAPI lifespan context - starts/stops background sync."""
+    global _sync_task
+
+    # Start background sync task
+    config = load_config()
+    interval = config.refresh_interval if hasattr(config, 'refresh_interval') else 10
+    _sync_task = asyncio.create_task(background_sync_loop(interval))
+    print(f"✓ Started background sync (every {interval}s)")
+
+    yield  # Server runs here
+
+    # Cleanup on shutdown
+    if _sync_task:
+        _sync_task.cancel()
+        try:
+            await _sync_task
+        except asyncio.CancelledError:
+            pass
+    print("✓ Stopped background sync")
+
+
+app = FastAPI(title="AgentTree Dashboard", lifespan=lifespan)
 
 
 class NoCacheMiddleware(BaseHTTPMiddleware):
@@ -182,8 +236,13 @@ class AgentManager:
 agent_manager = AgentManager()
 
 
-def convert_issue_to_web(issue: issue_crud.Issue) -> WebIssue:
-    """Convert an issue_crud.Issue to a web Issue model."""
+def convert_issue_to_web(issue: issue_crud.Issue, load_dependents: bool = False) -> WebIssue:
+    """Convert an issue_crud.Issue to a web Issue model.
+
+    Args:
+        issue: The issue to convert
+        load_dependents: If True, also load dependent issues (issues blocked by this one)
+    """
     # Map stage string to StageEnum
     try:
         stage = StageEnum(issue.stage)
@@ -193,6 +252,15 @@ def convert_issue_to_web(issue: issue_crud.Issue) -> WebIssue:
     # Check if tmux session is active for this issue
     tmux_active = agent_manager._check_issue_tmux_session(issue.id)
 
+    # Convert dependencies to ints
+    dependencies = [int(d.lstrip("0") or "0") for d in issue.dependencies]
+
+    # Load dependents if requested (issues blocked by this one)
+    dependents: List[int] = []
+    if load_dependents:
+        dependent_issues = issue_crud.get_dependent_issues(issue.id)
+        dependents = [int(d.id) for d in dependent_issues]
+
     return WebIssue(
         number=int(issue.id),
         title=issue.title,
@@ -200,12 +268,15 @@ def convert_issue_to_web(issue: issue_crud.Issue) -> WebIssue:
         labels=issue.labels,
         assignees=[],
         stage=stage,
+        substage=issue.substage,
         assigned_agent=issue.assigned_agent,
         tmux_active=tmux_active,
         pr_url=issue.pr_url,
         pr_number=issue.pr_number,
         created_at=datetime.fromisoformat(issue.created.replace("Z", "+00:00")),
         updated_at=datetime.fromisoformat(issue.updated.replace("Z", "+00:00")),
+        dependencies=dependencies,
+        dependents=dependents,
     )
 
 
@@ -248,7 +319,7 @@ async def kanban(
     if issue:
         issue_obj = issue_crud.get_issue(issue, sync=False)
         if issue_obj:
-            selected_issue = convert_issue_to_web(issue_obj)
+            selected_issue = convert_issue_to_web(issue_obj, load_dependents=True)
             # Load all file contents upfront for CSS toggle tabs
             files = get_issue_files(issue, include_content=True)
             # Get commits behind for rebase button
@@ -321,24 +392,30 @@ async def flow(
 
     # Select issue from URL param or default to first
     selected_issue = None
+    selected_issue_id = None
     if issue:
         for wi in web_issues:
             if str(wi.number) == issue or str(wi.number).zfill(3) == issue:
-                selected_issue = wi
+                selected_issue_id = str(wi.number).zfill(3)
                 break
-    if not selected_issue and web_issues:
-        selected_issue = web_issues[0]
+    if not selected_issue_id and web_issues:
+        selected_issue_id = str(web_issues[0].number).zfill(3)
+
+    # Reload selected issue with dependents for detail view
+    if selected_issue_id:
+        issue_obj = issue_crud.get_issue(selected_issue_id, sync=False)
+        if issue_obj:
+            selected_issue = convert_issue_to_web(issue_obj, load_dependents=True)
 
     # Load all file contents upfront for selected issue
     files: list[dict[str, str]] = []
     commits_behind = 0
-    if selected_issue:
-        issue_id = str(selected_issue.number).zfill(3)
+    if selected_issue and selected_issue_id:
         # Load all file contents upfront for CSS toggle tabs
-        files = get_issue_files(issue_id, include_content=True)
+        files = get_issue_files(selected_issue_id, include_content=True)
         # Get commits behind for rebase button
         if selected_issue.assigned_agent:
-            issue_obj = issue_crud.get_issue(issue_id, sync=False)
+            issue_obj = issue_crud.get_issue(selected_issue_id, sync=False)
             if issue_obj and issue_obj.worktree_dir:
                 from agenttree.hooks import get_commits_behind_main
                 commits_behind = get_commits_behind_main(issue_obj.worktree_dir)

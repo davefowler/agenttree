@@ -455,6 +455,256 @@ This is the approach section with content.
         errors = run_builtin_validator(tmp_path, hook)
         assert errors == []
 
+    # min_words tests
+    def test_min_words_file_success(self, tmp_path):
+        """Should pass when file has enough words."""
+        from agenttree.hooks import run_builtin_validator
+
+        content = "This is a test file with more than ten words in it."
+        (tmp_path / "spec.md").write_text(content)
+
+        hook = {"type": "min_words", "file": "spec.md", "min": 10}
+        errors = run_builtin_validator(tmp_path, hook)
+        assert errors == []
+
+    def test_min_words_file_failure(self, tmp_path):
+        """Should fail when file has fewer words than required."""
+        from agenttree.hooks import run_builtin_validator
+
+        content = "Too short"
+        (tmp_path / "spec.md").write_text(content)
+
+        hook = {"type": "min_words", "file": "spec.md", "min": 10}
+        errors = run_builtin_validator(tmp_path, hook)
+        assert len(errors) == 1
+        assert "2 words" in errors[0]
+        assert "minimum is 10" in errors[0]
+
+    def test_min_words_section_success(self, tmp_path):
+        """Should pass when section has enough words."""
+        from agenttree.hooks import run_builtin_validator
+
+        content = """# Document
+
+## Approach
+This section has more than five words which is enough to pass the test validation.
+
+## Notes
+Brief.
+"""
+        (tmp_path / "spec.md").write_text(content)
+
+        hook = {"type": "min_words", "file": "spec.md", "section": "Approach", "min": 5}
+        errors = run_builtin_validator(tmp_path, hook)
+        assert errors == []
+
+    def test_min_words_section_failure(self, tmp_path):
+        """Should fail when section has fewer words than required."""
+        from agenttree.hooks import run_builtin_validator
+
+        content = """# Document
+
+## Approach
+Too short.
+
+## Notes
+More content here.
+"""
+        (tmp_path / "spec.md").write_text(content)
+
+        hook = {"type": "min_words", "file": "spec.md", "section": "Approach", "min": 10}
+        errors = run_builtin_validator(tmp_path, hook)
+        assert len(errors) == 1
+        assert "approach" in errors[0].lower()
+        assert "minimum is 10" in errors[0]
+
+    def test_min_words_file_not_found(self, tmp_path):
+        """Should fail when file doesn't exist."""
+        from agenttree.hooks import run_builtin_validator
+
+        hook = {"type": "min_words", "file": "missing.md", "min": 10}
+        errors = run_builtin_validator(tmp_path, hook)
+        assert len(errors) == 1
+        assert "not found" in errors[0]
+
+    def test_min_words_section_not_found(self, tmp_path):
+        """Should fail when section doesn't exist."""
+        from agenttree.hooks import run_builtin_validator
+
+        content = """# Document
+
+## Other Section
+Some content here.
+"""
+        (tmp_path / "spec.md").write_text(content)
+
+        hook = {"type": "min_words", "file": "spec.md", "section": "Missing", "min": 5}
+        errors = run_builtin_validator(tmp_path, hook)
+        assert len(errors) == 1
+        assert "Section 'Missing' not found" in errors[0]
+
+    # has_list_items tests
+    def test_has_list_items_success(self, tmp_path):
+        """Should pass when section has enough list items."""
+        from agenttree.hooks import run_builtin_validator
+
+        content = """# Document
+
+## Tasks
+- First task
+- Second task
+- Third task
+
+## Notes
+Some notes here.
+"""
+        (tmp_path / "plan.md").write_text(content)
+
+        hook = {"type": "has_list_items", "file": "plan.md", "section": "Tasks", "min": 2}
+        errors = run_builtin_validator(tmp_path, hook)
+        assert errors == []
+
+    def test_has_list_items_failure(self, tmp_path):
+        """Should fail when section has fewer list items than required."""
+        from agenttree.hooks import run_builtin_validator
+
+        content = """# Document
+
+## Tasks
+- Only one task
+
+## Notes
+Some notes here.
+"""
+        (tmp_path / "plan.md").write_text(content)
+
+        hook = {"type": "has_list_items", "file": "plan.md", "section": "Tasks", "min": 3}
+        errors = run_builtin_validator(tmp_path, hook)
+        assert len(errors) == 1
+        assert "1 list items" in errors[0]
+        assert "minimum is 3" in errors[0]
+
+    def test_has_list_items_asterisk_syntax(self, tmp_path):
+        """Should recognize asterisk list items."""
+        from agenttree.hooks import run_builtin_validator
+
+        content = """# Document
+
+## Tasks
+* First task
+* Second task
+
+## Notes
+"""
+        (tmp_path / "plan.md").write_text(content)
+
+        hook = {"type": "has_list_items", "file": "plan.md", "section": "Tasks", "min": 2}
+        errors = run_builtin_validator(tmp_path, hook)
+        assert errors == []
+
+    def test_has_list_items_file_not_found(self, tmp_path):
+        """Should fail when file doesn't exist."""
+        from agenttree.hooks import run_builtin_validator
+
+        hook = {"type": "has_list_items", "file": "missing.md", "section": "Tasks"}
+        errors = run_builtin_validator(tmp_path, hook)
+        assert len(errors) == 1
+        assert "not found" in errors[0]
+
+    def test_has_list_items_section_not_found(self, tmp_path):
+        """Should fail when section doesn't exist."""
+        from agenttree.hooks import run_builtin_validator
+
+        content = """# Document
+
+## Other Section
+- Item
+"""
+        (tmp_path / "plan.md").write_text(content)
+
+        hook = {"type": "has_list_items", "file": "plan.md", "section": "Missing"}
+        errors = run_builtin_validator(tmp_path, hook)
+        assert len(errors) == 1
+        assert "Section 'Missing' not found" in errors[0]
+
+    # contains tests
+    def test_contains_success(self, tmp_path):
+        """Should pass when section contains one of the values."""
+        from agenttree.hooks import run_builtin_validator
+
+        content = """# Document
+
+## Complexity
+Medium
+
+## Notes
+"""
+        (tmp_path / "spec.md").write_text(content)
+
+        hook = {"type": "contains", "file": "spec.md", "section": "Complexity", "values": ["Low", "Medium", "High"]}
+        errors = run_builtin_validator(tmp_path, hook)
+        assert errors == []
+
+    def test_contains_failure(self, tmp_path):
+        """Should fail when section doesn't contain any of the values."""
+        from agenttree.hooks import run_builtin_validator
+
+        content = """# Document
+
+## Complexity
+Unknown
+
+## Notes
+"""
+        (tmp_path / "spec.md").write_text(content)
+
+        hook = {"type": "contains", "file": "spec.md", "section": "Complexity", "values": ["Low", "Medium", "High"]}
+        errors = run_builtin_validator(tmp_path, hook)
+        assert len(errors) == 1
+        assert "must contain one of" in errors[0]
+
+    def test_contains_case_insensitive(self, tmp_path):
+        """Should match values case-insensitively."""
+        from agenttree.hooks import run_builtin_validator
+
+        content = """# Document
+
+## Complexity
+MEDIUM
+
+## Notes
+"""
+        (tmp_path / "spec.md").write_text(content)
+
+        hook = {"type": "contains", "file": "spec.md", "section": "Complexity", "values": ["low", "medium", "high"]}
+        errors = run_builtin_validator(tmp_path, hook)
+        assert errors == []
+
+    def test_contains_file_not_found(self, tmp_path):
+        """Should fail when file doesn't exist."""
+        from agenttree.hooks import run_builtin_validator
+
+        hook = {"type": "contains", "file": "missing.md", "section": "Complexity", "values": ["Low"]}
+        errors = run_builtin_validator(tmp_path, hook)
+        assert len(errors) == 1
+        assert "not found" in errors[0]
+
+    def test_contains_section_not_found(self, tmp_path):
+        """Should fail when section doesn't exist."""
+        from agenttree.hooks import run_builtin_validator
+
+        content = """# Document
+
+## Other Section
+Content
+"""
+        (tmp_path / "spec.md").write_text(content)
+
+        hook = {"type": "contains", "file": "spec.md", "section": "Missing", "values": ["Value"]}
+        errors = run_builtin_validator(tmp_path, hook)
+        assert len(errors) == 1
+        assert "Section 'Missing' not found" in errors[0]
+
 
 class TestCommandHooks:
     """Tests for run_command_hook function."""
@@ -1957,8 +2207,8 @@ class TestCICheckHook:
 
         # Mock checks are all successful
         mock_get_pr_checks.return_value = [
-            CheckStatus(name="build", state="SUCCESS", conclusion="success"),
-            CheckStatus(name="tests", state="SUCCESS", conclusion="success"),
+            CheckStatus(name="build", state="SUCCESS"),
+            CheckStatus(name="tests", state="SUCCESS"),
         ]
 
         hook = {"ci_check": {"timeout": 60, "poll_interval": 10}}
@@ -1979,8 +2229,8 @@ class TestCICheckHook:
 
         # Mock one check failed
         mock_get_pr_checks.return_value = [
-            CheckStatus(name="build", state="SUCCESS", conclusion="success"),
-            CheckStatus(name="tests", state="FAILURE", conclusion="failure"),
+            CheckStatus(name="build", state="SUCCESS"),
+            CheckStatus(name="tests", state="FAILURE"),
         ]
 
         hook = {"ci_check": {"timeout": 60}}
@@ -2016,7 +2266,7 @@ class TestCICheckHook:
 
         # Mock checks still pending
         mock_get_pr_checks.return_value = [
-            CheckStatus(name="build", state="PENDING", conclusion=None),
+            CheckStatus(name="build", state="PENDING"),
         ]
 
         hook = {"ci_check": {"timeout": 60}}
@@ -2063,8 +2313,8 @@ class TestCICheckHook:
         # Mock CI failure
         mock_wait_for_ci.return_value = False
         mock_get_pr_checks.return_value = [
-            CheckStatus(name="lint", state="FAILURE", conclusion="failure"),
-            CheckStatus(name="tests", state="FAILURE", conclusion="failure"),
+            CheckStatus(name="lint", state="FAILURE"),
+            CheckStatus(name="tests", state="FAILURE"),
         ]
 
         hook = {"ci_check": {"timeout": 60}}
@@ -2165,9 +2415,10 @@ class TestPreCompletionPostStartHooks:
         execute_enter_hooks(issue, "implement", "code")
 
         # Verify execute_hooks was called with "post_start" event
-        mock_execute_hooks.assert_called_once()
-        call_args = mock_execute_hooks.call_args
-        assert call_args[0][3] == "post_start"
+        # May be called multiple times (substage + stage level on first substage)
+        mock_execute_hooks.assert_called()
+        for call in mock_execute_hooks.call_args_list:
+            assert call[0][3] == "post_start"
 
 
 class TestAsyncHookExecution:
@@ -2303,3 +2554,269 @@ class TestAsyncHookExecution:
 
         # File should exist after hook completes (sync behavior)
         assert marker.exists(), "async: false did not behave synchronously"
+
+
+class TestHookExecutionOrder:
+    """Tests for hook execution order in stage/substage transitions."""
+
+    @patch('agenttree.hooks.execute_hooks')
+    @patch('agenttree.config.load_config')
+    @patch('agenttree.issues.get_issue_dir')
+    def test_exit_hooks_stage_before_substage(
+        self, mock_get_dir, mock_load_config, mock_execute_hooks
+    ):
+        """execute_exit_hooks should run stage hooks before substage hooks (on last substage)."""
+        from agenttree.hooks import execute_exit_hooks
+        from agenttree.config import Config, StageConfig, SubstageConfig
+
+        # Create config with stage and substage, both with pre_completion hooks
+        config = Config(stages=[
+            StageConfig(
+                name="implement",
+                pre_completion=[{"file_exists": "stage.md"}],
+                substages={
+                    "code": SubstageConfig(name="code", pre_completion=[{"file_exists": "substage.md"}]),
+                    "review": SubstageConfig(name="review", pre_completion=[{"file_exists": "review.md"}]),
+                }
+            )
+        ])
+        mock_load_config.return_value = config
+        mock_get_dir.return_value = Path("/tmp/issue")
+        mock_execute_hooks.return_value = []
+
+        issue = Mock()
+        issue.id = "001"
+        issue.title = "Test"
+        issue.branch = "test-branch"
+        issue.pr_number = None
+
+        # Exit from last substage (review) - should run both stage and substage hooks
+        execute_exit_hooks(issue, "implement", "review")
+
+        # Should be called twice: once for stage, once for substage
+        assert mock_execute_hooks.call_count == 2
+
+        # Verify order: stage hooks first (position 0), substage hooks second (position 1)
+        calls = mock_execute_hooks.call_args_list
+        # First call should be with stage_config (stage hooks)
+        first_call_config = calls[0][0][2]  # Third positional arg is the config
+        assert hasattr(first_call_config, 'substages'), "First call should be stage config (has substages)"
+        # Second call should be with substage_config
+        second_call_config = calls[1][0][2]
+        assert not hasattr(second_call_config, 'substages') or second_call_config.substages is None, \
+            "Second call should be substage config (no substages)"
+
+    @patch('agenttree.hooks.execute_hooks')
+    @patch('agenttree.config.load_config')
+    @patch('agenttree.issues.get_issue_dir')
+    def test_exit_hooks_only_stage_on_non_last_substage(
+        self, mock_get_dir, mock_load_config, mock_execute_hooks
+    ):
+        """execute_exit_hooks should only run substage hooks on non-last substage."""
+        from agenttree.hooks import execute_exit_hooks
+        from agenttree.config import Config, StageConfig, SubstageConfig
+
+        config = Config(stages=[
+            StageConfig(
+                name="implement",
+                pre_completion=[{"file_exists": "stage.md"}],
+                substages={
+                    "code": SubstageConfig(name="code", pre_completion=[{"file_exists": "code.md"}]),
+                    "review": SubstageConfig(name="review", pre_completion=[{"file_exists": "review.md"}]),
+                }
+            )
+        ])
+        mock_load_config.return_value = config
+        mock_get_dir.return_value = Path("/tmp/issue")
+        mock_execute_hooks.return_value = []
+
+        issue = Mock()
+        issue.id = "001"
+        issue.title = "Test"
+        issue.branch = "test-branch"
+        issue.pr_number = None
+
+        # Exit from first substage (code) - should only run substage hooks, not stage
+        execute_exit_hooks(issue, "implement", "code")
+
+        # Should only be called once (substage hooks only, since not last substage)
+        assert mock_execute_hooks.call_count == 1
+
+        # Verify it was the substage config
+        call_config = mock_execute_hooks.call_args[0][2]
+        assert not hasattr(call_config, 'substages') or call_config.substages is None
+
+    @patch('agenttree.hooks.execute_hooks')
+    @patch('agenttree.config.load_config')
+    @patch('agenttree.issues.get_issue_dir')
+    def test_enter_hooks_substage_before_stage(
+        self, mock_get_dir, mock_load_config, mock_execute_hooks
+    ):
+        """execute_enter_hooks should run substage hooks before stage hooks (on first substage)."""
+        from agenttree.hooks import execute_enter_hooks
+        from agenttree.config import Config, StageConfig, SubstageConfig
+
+        config = Config(stages=[
+            StageConfig(
+                name="implementation_review",
+                post_start=[{"create_pr": {}}],
+                substages={
+                    "ci_wait": SubstageConfig(name="ci_wait", post_start=[{"file_exists": "ci.md"}]),
+                    "review": SubstageConfig(name="review", post_start=[{"file_exists": "review.md"}]),
+                }
+            )
+        ])
+        mock_load_config.return_value = config
+        mock_get_dir.return_value = Path("/tmp/issue")
+        mock_execute_hooks.return_value = []
+
+        issue = Mock()
+        issue.id = "001"
+        issue.title = "Test"
+        issue.branch = "test-branch"
+        issue.pr_number = None
+
+        # Enter first substage (ci_wait) - should run both substage and stage hooks
+        execute_enter_hooks(issue, "implementation_review", "ci_wait")
+
+        # Should be called twice: once for substage, once for stage
+        assert mock_execute_hooks.call_count == 2
+
+        # Verify order: substage hooks first (position 0), stage hooks second (position 1)
+        calls = mock_execute_hooks.call_args_list
+        # First call should be with substage_config (no substages attribute)
+        first_call_config = calls[0][0][2]
+        assert not hasattr(first_call_config, 'substages') or first_call_config.substages is None, \
+            "First call should be substage config"
+        # Second call should be with stage_config (has substages)
+        second_call_config = calls[1][0][2]
+        assert hasattr(second_call_config, 'substages'), "Second call should be stage config"
+
+    @patch('agenttree.hooks.execute_hooks')
+    @patch('agenttree.config.load_config')
+    @patch('agenttree.issues.get_issue_dir')
+    def test_enter_hooks_only_substage_on_non_first(
+        self, mock_get_dir, mock_load_config, mock_execute_hooks
+    ):
+        """execute_enter_hooks should only run substage hooks on non-first substage."""
+        from agenttree.hooks import execute_enter_hooks
+        from agenttree.config import Config, StageConfig, SubstageConfig
+
+        config = Config(stages=[
+            StageConfig(
+                name="implementation_review",
+                post_start=[{"create_pr": {}}],
+                substages={
+                    "ci_wait": SubstageConfig(name="ci_wait", post_start=[{"file_exists": "ci.md"}]),
+                    "review": SubstageConfig(name="review", post_start=[{"file_exists": "review.md"}]),
+                }
+            )
+        ])
+        mock_load_config.return_value = config
+        mock_get_dir.return_value = Path("/tmp/issue")
+        mock_execute_hooks.return_value = []
+
+        issue = Mock()
+        issue.id = "001"
+        issue.title = "Test"
+        issue.branch = "test-branch"
+        issue.pr_number = None
+
+        # Enter second substage (review) - should only run substage hooks, not stage
+        execute_enter_hooks(issue, "implementation_review", "review")
+
+        # Should only be called once (substage hooks only, since not first substage)
+        assert mock_execute_hooks.call_count == 1
+
+        # Verify it was the substage config
+        call_config = mock_execute_hooks.call_args[0][2]
+        assert not hasattr(call_config, 'substages') or call_config.substages is None
+
+    @patch('agenttree.hooks.execute_hooks')
+    @patch('agenttree.config.load_config')
+    @patch('agenttree.issues.get_issue_dir')
+    def test_enter_hooks_stage_only_when_no_substages(
+        self, mock_get_dir, mock_load_config, mock_execute_hooks
+    ):
+        """execute_enter_hooks should run stage hooks when entering without substage."""
+        from agenttree.hooks import execute_enter_hooks
+        from agenttree.config import Config, StageConfig
+
+        config = Config(stages=[
+            StageConfig(
+                name="backlog",
+                post_start=[{"file_exists": "issue.yaml"}],
+            )
+        ])
+        mock_load_config.return_value = config
+        mock_get_dir.return_value = Path("/tmp/issue")
+        mock_execute_hooks.return_value = []
+
+        issue = Mock()
+        issue.id = "001"
+        issue.title = "Test"
+        issue.branch = "test-branch"
+        issue.pr_number = None
+
+        # Enter stage without substage
+        execute_enter_hooks(issue, "backlog", None)
+
+        # Should be called once (stage hooks)
+        assert mock_execute_hooks.call_count == 1
+
+        # Verify it was the stage config
+        call_config = mock_execute_hooks.call_args[0][2]
+        assert hasattr(call_config, 'name') and call_config.name == "backlog"
+
+    @patch('agenttree.hooks.is_running_in_container', return_value=False)
+    @patch('agenttree.hooks.execute_hooks')
+    @patch('agenttree.config.load_config')
+    @patch('agenttree.issues.get_issue_dir')
+    def test_enter_hooks_fixes_pr_creation_bug(
+        self, mock_get_dir, mock_load_config, mock_execute_hooks, mock_container
+    ):
+        """Stage-level post_start hooks should run when entering first substage (PR creation bug fix)."""
+        from agenttree.hooks import execute_enter_hooks
+        from agenttree.config import Config, StageConfig, SubstageConfig
+
+        # This mimics the real implementation_review config that caused the bug
+        config = Config(stages=[
+            StageConfig(
+                name="implementation_review",
+                host="controller",
+                post_start=[{"create_pr": {}}],  # Stage-level hook
+                substages={
+                    "ci_wait": SubstageConfig(name="ci_wait"),  # No post_start hooks
+                    "review": SubstageConfig(name="review"),
+                }
+            )
+        ])
+        mock_load_config.return_value = config
+        mock_get_dir.return_value = Path("/tmp/issue")
+        mock_execute_hooks.return_value = []
+
+        issue = Mock()
+        issue.id = "048"
+        issue.title = "TUI for issue management"
+        issue.branch = "issue-048-tui"
+        issue.pr_number = None
+
+        # Enter implementation_review.ci_wait (first substage)
+        # This is where the bug was - create_pr never ran because only substage hooks were executed
+        execute_enter_hooks(issue, "implementation_review", "ci_wait")
+
+        # Should be called at least once for stage-level hooks
+        assert mock_execute_hooks.call_count >= 1
+
+        # Verify stage-level hooks were called (the one with create_pr)
+        stage_hooks_called = False
+        for call in mock_execute_hooks.call_args_list:
+            config_arg = call[0][2]
+            if hasattr(config_arg, 'post_start') and config_arg.post_start:
+                for hook in config_arg.post_start:
+                    if 'create_pr' in hook:
+                        stage_hooks_called = True
+                        break
+
+        assert stage_hooks_called, "Stage-level post_start hooks (with create_pr) should have been called"
+

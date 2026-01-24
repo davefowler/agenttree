@@ -198,16 +198,17 @@ class TestGetPrChecks:
     @patch("agenttree.github.gh_command")
     def test_get_pr_checks_success(self, mock_gh: Mock) -> None:
         """Test getting PR check statuses."""
+        # gh pr checks --json name,state,link returns state directly (SUCCESS/FAILURE/PENDING)
         mock_gh.return_value = """[
             {
                 "name": "CI",
-                "state": "COMPLETED",
-                "conclusion": "SUCCESS"
+                "state": "SUCCESS",
+                "link": "https://github.com/org/repo/actions/runs/123/job/456"
             },
             {
                 "name": "Tests",
-                "state": "COMPLETED",
-                "conclusion": "FAILURE"
+                "state": "FAILURE",
+                "link": "https://github.com/org/repo/actions/runs/123/job/789"
             }
         ]"""
 
@@ -215,10 +216,10 @@ class TestGetPrChecks:
 
         assert len(checks) == 2
         assert checks[0].name == "CI"
-        assert checks[0].state == "COMPLETED"
-        assert checks[0].conclusion == "SUCCESS"
+        assert checks[0].state == "SUCCESS"
+        assert checks[0].link == "https://github.com/org/repo/actions/runs/123/job/456"
         assert checks[1].name == "Tests"
-        assert checks[1].conclusion == "FAILURE"
+        assert checks[1].state == "FAILURE"
 
     @patch("agenttree.github.gh_command")
     def test_get_pr_checks_empty(self, mock_gh: Mock) -> None:
@@ -242,10 +243,10 @@ class TestWaitForCi:
         # First call: pending, second call: success
         mock_get_checks.side_effect = [
             [
-                CheckStatus(name="CI", state="PENDING", conclusion=None),
+                CheckStatus(name="CI", state="PENDING"),
             ],
             [
-                CheckStatus(name="CI", state="SUCCESS", conclusion="success"),
+                CheckStatus(name="CI", state="SUCCESS"),
             ],
         ]
 
@@ -261,7 +262,7 @@ class TestWaitForCi:
     ) -> None:
         """Test waiting for CI when checks fail."""
         mock_get_checks.return_value = [
-            CheckStatus(name="Tests", state="FAILURE", conclusion="failure"),
+            CheckStatus(name="Tests", state="FAILURE"),
         ]
 
         result = wait_for_ci(123, timeout=60, poll_interval=1)
@@ -276,7 +277,7 @@ class TestWaitForCi:
         """Test waiting for CI times out."""
         # Always return in-progress
         mock_get_checks.return_value = [
-            CheckStatus(name="CI", state="PENDING", conclusion=None),
+            CheckStatus(name="CI", state="PENDING"),
         ]
 
         result = wait_for_ci(123, timeout=2, poll_interval=1)
@@ -338,12 +339,10 @@ class TestModels:
         check = CheckStatus(
             name="CI",
             state="COMPLETED",
-            conclusion="SUCCESS"
         )
 
         assert check.name == "CI"
         assert check.state == "COMPLETED"
-        assert check.conclusion == "SUCCESS"
 
 
 class TestIsPrApproved:

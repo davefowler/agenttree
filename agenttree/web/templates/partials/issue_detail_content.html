@@ -30,6 +30,12 @@
                     {% if issue.pr_url %}
                     <span><a href="{{ issue.pr_url }}" target="_blank">PR #{{ issue.pr_number }}</a></span>
                     {% endif %}
+                    {% if issue.dependencies %}
+                    <span class="dependency-info">Blocked by: {% for dep in issue.dependencies %}<a href="?issue={{ dep }}">#{{ dep }}</a>{% if not loop.last %}, {% endif %}{% endfor %}</span>
+                    {% endif %}
+                    {% if issue.dependents %}
+                    <span class="dependent-info">Blocks: {% for dep in issue.dependents %}<a href="?issue={{ dep }}">#{{ dep }}</a>{% if not loop.last %}, {% endif %}{% endfor %}</span>
+                    {% endif %}
                 </div>
                 <div class="detail-actions" id="detail-actions-{{ issue.number }}">
                     {% set stage_value = issue.stage if issue.stage is string else issue.stage.value %}
@@ -126,20 +132,10 @@
 </div>
 
 <script>
-// Helper to move to next issue or close modal after action
+// Helper to refresh the page after a state-changing action
+// Always reload to get fresh data after approve, rebase, move, etc.
 function afterAction() {
-    const isKanban = window.location.pathname.includes('/kanban');
-
-    if (isKanban && typeof window.closeIssueModal === 'function') {
-        // Kanban view: close modal
-        window.closeIssueModal();
-    } else if (typeof window.goToNextIssue === 'function') {
-        // Flow view: go to next issue
-        window.goToNextIssue();
-    } else {
-        // Fallback: reload
-        location.reload();
-    }
+    location.reload();
 }
 
 // Action handlers for this issue detail

@@ -33,6 +33,7 @@ PLAN_ASSESS = "plan_assess"
 PLAN_REVISE = "plan_revise"
 PLAN_REVIEW = "plan_review"
 IMPLEMENT = "implement"
+INDEPENDENT_CODE_REVIEW = "independent_code_review"
 IMPLEMENTATION_REVIEW = "implementation_review"
 ACCEPTED = "accepted"
 NOT_DOING = "not_doing"
@@ -73,6 +74,8 @@ class Issue(BaseModel):
     relevant_url: Optional[str] = None
 
     history: list[HistoryEntry] = Field(default_factory=list)
+
+    custom_agent_spawned: Optional[str] = None  # Stage name where custom agent was spawned
 
 
 def slugify(text: str) -> str:
@@ -512,6 +515,33 @@ def get_blocked_issues(completed_issue_id: str) -> list[Issue]:
     return blocked
 
 
+def get_dependent_issues(issue_id: str) -> list[Issue]:
+    """Get all issues that depend on this issue (any stage).
+
+    Unlike get_blocked_issues which only returns backlog issues,
+    this returns ALL issues that have this issue in their dependencies.
+
+    Args:
+        issue_id: ID of the issue to find dependents for
+
+    Returns:
+        List of issues that depend on this issue
+    """
+    # Normalize the ID for comparison
+    normalized_id = issue_id.lstrip("0") or "0"
+
+    dependents = []
+    for issue in list_issues(sync=False):
+        # Check if this issue depends on our target
+        for dep_id in issue.dependencies:
+            dep_normalized = dep_id.lstrip("0") or "0"
+            if dep_normalized == normalized_id:
+                dependents.append(issue)
+                break
+
+    return dependents
+
+
 def get_ready_issues() -> list[Issue]:
     """Get all issues in backlog that have all dependencies met and can be started.
 
@@ -932,6 +962,74 @@ def load_skill(
         return skill_content
 
 
+def load_overview(
+    issue: Optional["Issue"] = None,
+    is_takeover: bool = False,
+    current_stage: Optional[str] = None,
+    current_substage: Optional[str] = None,
+) -> Optional[str]:
+    """Load the overview document with takeover context for agents.
+
+    Used when an agent restarts to provide context about the AgentTree workflow.
+
+    Args:
+        issue: Optional Issue object for Jinja context
+        is_takeover: True if agent is taking over mid-workflow (not from backlog/define)
+        current_stage: Current stage name for template context
+        current_substage: Current substage name for template context
+
+    Returns:
+        Overview content as string (rendered with Jinja if issue provided), or None if not found
+    """
+    from jinja2 import Template
+
+    # Sync before reading
+    agents_path = get_agenttree_path()
+    sync_agents_repo(agents_path, pull_only=True)
+
+    overview_path = agents_path / "skills" / "overview.md"
+    if not overview_path.exists():
+        return None
+
+    overview_content = overview_path.read_text()
+
+    # Calculate completed stages (stages before current_stage)
+    completed_stages: list[str] = []
+    if current_stage:
+        for stage in STAGE_ORDER:
+            if stage == current_stage:
+                break
+            # Skip backlog and terminal stages
+            if stage not in (BACKLOG, ACCEPTED, NOT_DOING):
+                completed_stages.append(stage)
+
+    # Build Jinja context
+    context = {
+        "is_takeover": is_takeover,
+        "current_stage": current_stage or "",
+        "current_substage": current_substage or "",
+        "completed_stages": completed_stages,
+    }
+
+    # Add issue context if available
+    if issue:
+        issue_dir = get_issue_dir(issue.id)
+        context.update({
+            "issue_id": issue.id,
+            "issue_title": issue.title,
+            "issue_dir": str(issue_dir) if issue_dir else "",
+            "issue_dir_rel": f"_agenttree/issues/{issue.id}-{issue.slug}" if issue_dir else "",
+        })
+
+    # Render with Jinja
+    try:
+        template = Template(overview_content)
+        return template.render(**context)
+    except Exception:
+        # If rendering fails, return raw content
+        return overview_content
+
+
 # =============================================================================
 # Session Management (for restart detection)
 # =============================================================================
@@ -1020,7 +1118,7 @@ def update_session_stage(issue_id: str, stage: str, substage: Optional[str] = No
     save_session(session)
 
 
-def mark_session_oriented(issue_id: str, stage: str = None, substage: str = None) -> None:
+def mark_session_oriented(issue_id: str, stage: Optional[str] = None, substage: Optional[str] = None) -> None:
     """Mark that agent has been oriented in this session.
 
     Also syncs last_stage/last_substage if provided, so is_restart()
@@ -1038,7 +1136,7 @@ def mark_session_oriented(issue_id: str, stage: str = None, substage: str = None
     save_session(session)
 
 
-def is_restart(issue_id: str, current_stage: str = None, current_substage: str = None) -> bool:
+def is_restart(issue_id: str, current_stage: Optional[str] = None, current_substage: Optional[str] = None) -> bool:
     """Check if agent should re-orient (show instructions without advancing).
 
     Returns True if:

@@ -1,0 +1,69 @@
+/* AgentTree TUI Stylesheet */
+
+Screen {
+    background: $surface;
+}
+
+Header {
+    background: $primary;
+    color: $text;
+}
+
+Footer {
+    background: $primary;
+}
+
+/* Main container layout */
+#main-container {
+    height: 1fr;
+}
+
+#table-container {
+    width: 60%;
+    height: 100%;
+}
+
+#detail-panel {
+    width: 40%;
+    height: 100%;
+    padding: 1 2;
+    background: $surface;
+    border-left: solid $primary;
+}
+
+/* Filter input */
+#filter-input {
+    dock: top;
+    margin: 0 0 1 0;
+    background: $surface;
+    border: solid $primary-darken-2;
+}
+
+#filter-input:focus {
+    border: solid $primary;
+}
+
+/* Issue table */
+#issue-table {
+    height: 100%;
+    background: $surface;
+}
+
+#issue-table > .datatable--header {
+    background: $primary;
+    color: $text;
+}
+
+#issue-table > .datatable--cursor {
+    background: $primary-lighten-2;
+}
+
+/* Status bar */
+#status-bar {
+    dock: bottom;
+    height: 1;
+    background: $primary-darken-1;
+    color: $text;
+    text-align: center;
+    padding: 0 1;
+}

@@ -16,18 +16,9 @@
         <div class="flow-sidebar">
             {% if issues %}
                 {% for issue in issues %}
-                <a class="issue-item {% if selected_issue and issue.number == selected_issue.number %}active{% endif %}"
-                   href="/flow?issue={{ issue.number }}{% if chat_open %}&chat=1{% endif %}">
-                    <div class="issue-number">#{{ issue.number }}</div>
-                    <div class="issue-title">{{ issue.title }}</div>
-                    <div class="issue-badges">
-                        {% for label in issue.labels[:2] %}
-                        {% if not label.startswith('stage-') %}
-                        <span class="badge">{{ label }}</span>
-                        {% endif %}
-                        {% endfor %}
-                    </div>
-                </a>
+                {% set base_url = '/flow' %}
+                {% set show_stage = true %}
+                {% include 'partials/issue_item.html' %}
                 {% endfor %}
             {% else %}
                 <div class="empty-state">
@@ -73,6 +64,41 @@
                 panel.classList.toggle('collapsed');
             }
         }
+
+        // Agent light toggle (for sidebar)
+        window.toggleAgent = async function(issueNumber, lightElement) {
+            const isOn = lightElement.classList.contains('on');
+
+            if (isOn) {
+                // Agent is running - navigate to issue
+                window.location.href = `/flow?issue=${issueNumber}`;
+                return;
+            }
+
+            // Start/restart the agent
+            lightElement.classList.remove('off', 'stalled');
+            lightElement.classList.add('starting');
+            lightElement.title = 'Starting agent...';
+
+            try {
+                const response = await fetch(`/api/issues/${issueNumber}/start`, {
+                    method: 'POST'
+                });
+
+                if (response.ok) {
+                    setTimeout(() => location.reload(), 2000);
+                } else {
+                    lightElement.classList.remove('starting');
+                    lightElement.classList.add('stalled');
+                    lightElement.title = 'Failed to start - click to retry';
+                }
+            } catch (error) {
+                console.error('Error starting agent:', error);
+                lightElement.classList.remove('starting');
+                lightElement.classList.add('stalled');
+                lightElement.title = 'Error - click to retry';
+            }
+        };
 
         // Go to next issue in the flow sidebar
         window.goToNextIssue = function() {

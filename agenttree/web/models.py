@@ -43,6 +43,7 @@ class Issue(IssueBase):
     """Full issue model."""
 
     stage: StageEnum = StageEnum.BACKLOG
+    substage: Optional[str] = None
     status: IssueStatus = IssueStatus.OPEN
     url: Optional[str] = None
     pr_url: Optional[str] = None
@@ -51,6 +52,8 @@ class Issue(IssueBase):
     tmux_active: bool = False
     created_at: datetime
     updated_at: datetime
+    dependencies: List[int] = Field(default_factory=list)
+    dependents: List[int] = Field(default_factory=list)
 
     @property
     def is_review(self) -> bool:

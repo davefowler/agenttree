@@ -1,0 +1,36 @@
+{#
+Issue item - used by both kanban and flow.
+Required: 'issue', 'base_url' (e.g. '/kanban' or '/flow')
+Optional:
+  - 'show_stage' - show stage label
+  - 'selected_issue' - for active state
+  - 'draggable' - enable drag (kanban only)
+#}
+<a class="issue-item {% if selected_issue and issue.number == selected_issue.number %}active{% endif %}"
+   href="{{ base_url }}?issue={{ issue.number }}"
+   data-issue="{{ issue.number }}"
+   data-stage="{{ issue.stage.value }}"
+   data-has-agent="{{ 'true' if issue.assigned_agent else 'false' }}"
+   {% if draggable %}
+   draggable="{{ 'true' if issue.stage.value in ['plan_review', 'implementation_review'] else 'false' }}"
+   {% endif %}>
+    <div class="issue-header">
+        <div class="issue-header-left">
+            <div class="agent-light {% if issue.tmux_active %}on{% elif issue.assigned_agent %}stalled{% else %}off{% endif %}"
+                 onclick="event.preventDefault(); event.stopPropagation(); toggleAgent('{{ issue.number }}', this)"
+                 title="{% if issue.tmux_active %}Agent running{% elif issue.assigned_agent %}Agent stalled{% else %}No agent{% endif %}"></div>
+            <span class="issue-number">#{{ issue.number }}</span>
+        </div>
+        {% if show_stage %}
+        <span class="issue-stage-label {% if issue.is_review %}needs-approval{% endif %}">{% if issue.substage %}{{ issue.substage | replace('_', ' ') | title }}{% else %}{{ issue.stage.value | replace('_', ' ') | title }}{% endif %}</span>
+        {% endif %}
+    </div>
+    <div class="issue-title">{{ issue.title }}</div>
+    <div class="issue-badges">
+        {% for label in issue.labels[:2] %}
+        {% if not label.startswith('stage-') %}
+        <span class="badge">{{ label }}</span>
+        {% endif %}
+        {% endfor %}
+    </div>
+</a>

@@ -248,8 +248,7 @@ button[disabled] {
    ============================================== */
 
 .file-tabs-container {
-    background: var(--bg-card-alt);
-    border-bottom: 1px solid var(--border-light);
+    background: transparent;
     padding: 0;
 }
 
@@ -257,7 +256,7 @@ button[disabled] {
     display: flex;
     gap: 0;
     overflow-x: auto;
-    padding: 0 20px;
+    padding: 0;
 }
 
 .file-tab {
@@ -266,13 +265,15 @@ button[disabled] {
     font-size: 13px;
     font-weight: 500;
     cursor: pointer;
-    border-bottom: 2px solid transparent;
-    transition: all 0.2s;
-    white-space: nowrap;
-    background: none;
-    border-top: none;
+    border-top: 3px solid transparent;
+    border-bottom: none;
     border-left: none;
     border-right: none;
+    transition: all 0.2s;
+    white-space: nowrap;
+    background: var(--bg-card-alt);
+    margin-right: 2px;
+    border-radius: 3px 3px 0 0;
 }
 
 .file-tab:hover {
@@ -282,7 +283,7 @@ button[disabled] {
 
 .file-tab.active {
     color: var(--text-accent);
-    border-bottom-color: var(--text-accent);
+    border-top-color: var(--text-accent);
     background: var(--bg-card);
 }
 
@@ -414,7 +415,6 @@ button[disabled] {
 
 .issue-detail-wrapper {
     display: flex;
-    gap: 20px;
     flex: 1;
     min-height: 0;
     overflow: hidden;
@@ -433,7 +433,10 @@ button[disabled] {
     flex: 1;
     overflow-y: auto;
     min-height: 0;
-    border-radius: 6px;
+    border-radius: 0 6px 6px 6px;
+    background: var(--bg-card);
+    padding: 20px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
 }
 
 .detail-header {
@@ -498,6 +501,34 @@ button[disabled] {
     font-size: 14px;
     color: var(--text-muted);
     flex-wrap: wrap;
+}
+
+.detail-meta .dependency-info,
+.detail-meta .dependent-info {
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+.detail-meta .dependency-info {
+    background: rgba(255, 193, 7, 0.15);
+    color: #b8860b;
+}
+
+.detail-meta .dependent-info {
+    background: rgba(0, 128, 0, 0.1);
+    color: var(--accent-green);
+}
+
+.detail-meta .dependency-info a,
+.detail-meta .dependent-info a {
+    color: inherit;
+    font-weight: 600;
+}
+
+.detail-meta .dependency-info a:hover,
+.detail-meta .dependent-info a:hover {
+    text-decoration: underline;
 }
 
 .detail-actions {
@@ -814,31 +845,32 @@ button[disabled] {
 .agent-chat-panel {
     width: 350px;
     flex-shrink: 0;
-    background: #1e3a2f;
+    background: var(--bg-secondary);
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    transition: width 0.3s ease, opacity 0.3s ease;
+    transition: width 0.3s ease, opacity 0.3s ease, margin 0.3s ease;
     height: 100%;
+    margin-left: 20px;
 }
 
 .agent-chat-panel.collapsed {
     width: 0;
     opacity: 0;
     overflow: hidden;
+    margin-left: 0;
 }
 
 .agent-chat-header {
-    background: #2d4a3e;
+    background: var(--bg-primary);
     padding: 12px 15px;
-    border-bottom: 1px solid #4a7c6f;
     display: flex;
     align-items: center;
     justify-content: space-between;
 }
 
 .agent-chat-header h4 {
-    color: #a8d5ba;
+    color: var(--text-accent);
     font-size: 14px;
     font-weight: 600;
     margin: 0;
@@ -847,14 +879,14 @@ button[disabled] {
 .agent-chat-toggle {
     background: none;
     border: none;
-    color: #8eb89c;
+    color: var(--text-muted);
     cursor: pointer;
     font-size: 16px;
     padding: 4px;
 }
 
 .agent-chat-toggle:hover {
-    color: #a8d5ba;
+    color: var(--text-accent);
 }
 
 .agent-chat-content {
@@ -865,11 +897,7 @@ button[disabled] {
 }
 
 .agent-chat-panel .agent-status {
-    padding: 10px 15px;
-    background: #2d4a3e;
-    border-bottom: 1px solid #4a7c6f;
-    font-size: 12px;
-    color: #a8d5ba;
+    display: none;
 }
 
 .agent-chat-panel .status-indicator {
@@ -881,12 +909,12 @@ button[disabled] {
 }
 
 .agent-chat-panel .status-indicator.active {
-    background: #6b9a7a;
+    background: var(--text-accent);
 }
 
 .agent-chat-panel .tmux-output {
     flex: 1;
-    background: #0d1f18;
+    background: var(--bg-card);
     padding: 10px;
     overflow-y: auto;
     font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
@@ -894,30 +922,29 @@ button[disabled] {
     line-height: 1.4;
     white-space: pre-wrap;
     word-break: break-all;
-    color: #e8e4d9;
+    color: var(--text-primary);
     min-height: 0;
 }
 
 .agent-chat-panel .tmux-input-container {
     padding: 10px;
-    background: #2d4a3e;
-    border-top: 1px solid #4a7c6f;
+    background: var(--bg-card);
 }
 
 .agent-chat-panel .tmux-input {
     width: 100%;
     padding: 8px 12px;
-    background: #1e3a2f;
-    border: 1px solid #4a7c6f;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
     border-radius: 4px;
-    color: #e8e4d9;
+    color: var(--text-primary);
     font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
     font-size: 12px;
 }
 
 .agent-chat-panel .tmux-input:focus {
     outline: none;
-    border-color: #a8d5ba;
+    border-color: var(--text-accent);
 }
 
 .agent-chat-panel .send-form {
@@ -931,21 +958,22 @@ button[disabled] {
 
 .agent-chat-panel .send-button {
     padding: 8px 16px;
-    background: #4a7c6f;
-    border: 1px solid #5a9a88;
+    background: var(--btn-bg-active);
+    border: 1px solid var(--text-accent);
     border-radius: 4px;
-    color: #e8e4d9;
+    color: var(--text-primary);
     font-size: 12px;
     cursor: pointer;
     transition: background-color 0.2s;
 }
 
 .agent-chat-panel .send-button:hover {
-    background: #5a9a88;
+    background: var(--text-accent);
+    color: white;
 }
 
 .agent-chat-panel .send-button:active {
-    background: #3d6a5f;
+    background: var(--btn-bg-active);
 }
 
 .agent-chat-panel .send-button .btn-loading {
@@ -968,7 +996,7 @@ button[disabled] {
     height: 100%;
     min-height: 200px;
     text-align: center;
-    color: #8eb89c;
+    color: var(--text-muted);
     padding: 20px;
 }
 
@@ -1047,50 +1075,78 @@ button[disabled] {
     min-height: 100px;
 }
 
-.kanban-card {
+/* Kanban card styles */
+.kanban-column .issue-item {
     background: var(--bg-card);
     border-radius: 3px;
     padding: 12px;
     margin-bottom: 10px;
-    cursor: pointer;
-    transition: all 0.2s;
-    position: relative;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+    border-left: 3px solid transparent;
 }
 
-.kanban-card:hover {
+.kanban-column .issue-item:hover {
     transform: translateY(-2px);
     box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1), 0 3px 6px rgba(0, 0, 0, 0.06);
 }
 
-.kanban-card.dragging {
+.kanban-column .issue-item.dragging {
     opacity: 0.5;
     cursor: grabbing;
 }
 
-.kanban-card.drag-over {
+.kanban-column .issue-item.drag-over {
     border-color: var(--text-accent);
     border-style: dashed;
 }
 
-.card-number {
-    color: var(--text-muted);
-    font-size: 12px;
-    font-weight: 600;
-    margin-bottom: 5px;
+/* Stage-based left border colors */
+.kanban-column .issue-item[data-stage="backlog"] {
+    border-left-color: #9ca3af;
 }
 
-.card-title {
-    color: var(--text-card);
-    font-size: 14px;
-    font-weight: 500;
-    margin-bottom: 8px;
+.kanban-column .issue-item[data-stage="plan"],
+.kanban-column .issue-item[data-stage="planning"] {
+    border-left-color: #60a5fa;
 }
 
-.card-badges {
-    display: flex;
-    gap: 5px;
-    flex-wrap: wrap;
+.kanban-column .issue-item[data-stage="plan_review"] {
+    border-left-color: #f59e0b;
+    background: #fffbeb;
+}
+
+.kanban-column .issue-item[data-stage="implement"],
+.kanban-column .issue-item[data-stage="implementing"] {
+    border-left-color: #8b5cf6;
+}
+
+.kanban-column .issue-item[data-stage="implementation_review"] {
+    border-left-color: #f59e0b;
+    background: #fffbeb;
+}
+
+.kanban-column .issue-item[data-stage="accepted"] {
+    border-left-color: #22c55e;
+    background: #f0fdf4;
+}
+
+.kanban-column .issue-item[data-stage="not_doing"] {
+    border-left-color: #ef4444;
+    background: #fef2f2;
+}
+
+/* Dark theme overrides for stage backgrounds */
+[data-theme="dark"] .kanban-column .issue-item[data-stage="plan_review"],
+[data-theme="dark"] .kanban-column .issue-item[data-stage="implementation_review"] {
+    background: #451a03;
+}
+
+[data-theme="dark"] .kanban-column .issue-item[data-stage="accepted"] {
+    background: #052e16;
+}
+
+[data-theme="dark"] .kanban-column .issue-item[data-stage="not_doing"] {
+    background: #450a0a;
 }
 
 /* Kanban Modal */
@@ -1126,7 +1182,7 @@ button[disabled] {
 
 .modal-close {
     position: absolute;
-    top: 8px;
+    top: -3px;
     right: 8px;
     background: none;
     border: none;
@@ -1134,6 +1190,7 @@ button[disabled] {
     font-size: 24px;
     cursor: pointer;
     padding: 5px 10px;
+    text-decoration: none;
 }
 
 .modal-close:hover {
@@ -1213,48 +1270,77 @@ button[disabled] {
 
 .flow-sidebar {
     width: 320px;
-    background: #2d4a3e;
-    border-right: 1px solid #4a7c6f;
+    background: #f5f5f5;
+    border-right: 1px solid var(--border-color);
     overflow-y: auto;
     flex-shrink: 0;
-    padding: 15px;
+    padding: 0;
 }
 
 .flow-main {
     flex: 1;
     overflow-y: auto;
-    background: #f8f6f0;
+    background: var(--bg-card);
     display: flex;
     flex-direction: column;
-    padding: 20px;
+    padding: 0;
 }
 
-/* Issue list items in sidebar */
+/* Issue list items in sidebar - simple list with hr separators */
 .issue-item {
-    background: var(--bg-card);
-    padding: 12px;
-    margin-bottom: 8px;
+    display: block;
+    text-decoration: none;
+    background: transparent;
+    padding: 15px;
     cursor: pointer;
     transition: all 0.2s;
     position: relative;
-    border-radius: 3px;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+    border-bottom: 1px solid var(--border-light);
+}
+
+.issue-item:last-child {
+    border-bottom: none;
 }
 
 .issue-item:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
+    background: #eee;
 }
 
 .issue-item.active {
-    box-shadow: 0 0 0 2px var(--text-accent), 0 2px 8px rgba(0, 0, 0, 0.12);
+    background: var(--bg-card);
+}
+
+.issue-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 5px;
+}
+
+.issue-header-left {
+    display: flex;
+    align-items: center;
+    gap: 6px;
 }
 
 .issue-number {
     color: var(--text-muted);
     font-size: 12px;
     font-weight: 600;
-    margin-bottom: 5px;
+}
+
+.issue-stage-label {
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 500;
+}
+
+.issue-stage-label.needs-approval {
+    background: #3d6b5a;
+    color: white;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-weight: 600;
 }
 
 .issue-title {
@@ -1270,21 +1356,64 @@ button[disabled] {
     flex-wrap: wrap;
 }
 
-/* Flow-specific wrapper height */
+/* Flow-specific wrapper - white background like modal content */
 .flow-container .issue-detail-wrapper {
     min-height: calc(100vh - 120px);
+    width: 100%;
+    background: var(--bg-card);
 }
 
-/* Flow-specific chat panel width */
+/* Flow-specific issue detail main */
+.flow-main .issue-detail-main {
+    padding: 20px;
+}
+
+/* Flow-specific chat panel - no margin, different width */
 .flow-container .agent-chat-panel {
     width: 400px;
+    margin-left: 0;
 }
 
 /* Flow-specific scrollbars */
 .flow-main::-webkit-scrollbar-track {
-    background: #eae8e0;
+    background: var(--bg-secondary);
 }
 
 .flow-main::-webkit-scrollbar-thumb {
-    background: #c4c0b4;
+    background: var(--border-color);
+}
+
+/* Flow sidebar stage-based left border colors */
+.flow-sidebar .issue-item {
+    border-left: 3px solid transparent;
+}
+
+.flow-sidebar .issue-item[data-stage="backlog"] {
+    border-left-color: #9ca3af;
+}
+
+.flow-sidebar .issue-item[data-stage="plan"],
+.flow-sidebar .issue-item[data-stage="planning"] {
+    border-left-color: #60a5fa;
+}
+
+.flow-sidebar .issue-item[data-stage="plan_review"] {
+    border-left-color: #f59e0b;
+}
+
+.flow-sidebar .issue-item[data-stage="implement"],
+.flow-sidebar .issue-item[data-stage="implementing"] {
+    border-left-color: #8b5cf6;
+}
+
+.flow-sidebar .issue-item[data-stage="implementation_review"] {
+    border-left-color: #f59e0b;
+}
+
+.flow-sidebar .issue-item[data-stage="accepted"] {
+    border-left-color: #22c55e;
+}
+
+.flow-sidebar .issue-item[data-stage="not_doing"] {
+    border-left-color: #ef4444;
 }

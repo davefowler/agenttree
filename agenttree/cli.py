@@ -27,6 +27,7 @@ from agenttree.issues import (
     update_issue_stage,
     update_issue_metadata,
     load_skill,
+    load_overview,
     # Session management
     create_session,
     get_session,
@@ -43,10 +44,12 @@ from agenttree.issues import (
     NOT_DOING,
 )
 from agenttree.hooks import (
-    execute_pre_hooks,
-    execute_post_hooks,
+    execute_exit_hooks,
+    execute_enter_hooks,
     ValidationError,
     is_running_in_container,
+    get_current_agent_host,
+    can_agent_operate_in_stage,
 )
 from agenttree.preflight import run_preflight
 
@@ -1097,6 +1100,120 @@ def web(host: str, port: int, config: Optional[str]) -> None:
 
 
 @main.command()
+@click.option("--host", default="127.0.0.1", help="Host to bind to")
+@click.option("--port", default=8080, type=int, help="Port to bind to")
+def serve(host: str, port: int) -> None:
+    """Start the AgentTree server (runs syncs, spawns agents).
+
+    This is the main controller process that:
+    - Syncs the _agenttree repo periodically
+    - Spawns agents for issues in agent stages
+    - Runs hooks for controller stages
+    - Provides the web dashboard
+
+    Use 'agenttree start' to run this in a tmux session.
+    """
+    from agenttree.web.app import run_server
+
+    console.print(f"[cyan]Starting AgentTree server at http://{host}:{port}[/cyan]")
+    console.print("[dim]Press Ctrl+C to stop[/dim]\n")
+
+    run_server(host=host, port=port)
+
+
+@main.command(name="controller-start")
+def controller_start() -> None:
+    """Start the controller in a tmux session.
+
+    Reads the controller host's 'process' config and runs it in a
+    background tmux session. This keeps the sync server running
+    even after you close your terminal.
+
+    Example:
+        agenttree controller-start     # Starts controller in tmux
+        tmux attach -t agenttree-controller  # Attach to see output
+    """
+    import subprocess
+
+    config = load_config()
+
+    # Get controller host config
+    controller = config.get_host("controller")
+    if not controller:
+        console.print("[red]Error: No controller host defined[/red]")
+        sys.exit(1)
+
+    # Get the process to run
+    process_cmd = controller.process
+    if not process_cmd:
+        # Default to serve if no process specified
+        process_cmd = "agenttree serve"
+
+    # Build tmux session name
+    tmux_session = f"{config.project}-controller"
+
+    # Check if already running
+    check_result = subprocess.run(
+        ["tmux", "has-session", "-t", tmux_session],
+        capture_output=True,
+    )
+    if check_result.returncode == 0:
+        console.print(f"[yellow]Controller already running in tmux session '{tmux_session}'[/yellow]")
+        console.print(f"[dim]Attach with: tmux attach -t {tmux_session}[/dim]")
+        return
+
+    # Start the tmux session
+    try:
+        subprocess.run(
+            ["tmux", "new-session", "-d", "-s", tmux_session, process_cmd],
+            check=True,
+            capture_output=True,
+        )
+        console.print(f"[green]✓ Started controller in tmux session '{tmux_session}'[/green]")
+        console.print(f"[dim]Attach with: tmux attach -t {tmux_session}[/dim]")
+        console.print(f"[dim]Running: {process_cmd}[/dim]")
+    except subprocess.CalledProcessError as e:
+        console.print(f"[red]Failed to start tmux session: {e}[/red]")
+        sys.exit(1)
+    except FileNotFoundError:
+        console.print("[red]Error: tmux not found. Please install tmux.[/red]")
+        sys.exit(1)
+
+
+@main.command(name="controller-stop")
+def controller_stop() -> None:
+    """Stop the controller tmux session.
+
+    Stops the background controller process started with 'agenttree controller-start'.
+    """
+    import subprocess
+
+    config = load_config()
+    tmux_session = f"{config.project}-controller"
+
+    # Check if running
+    check_result = subprocess.run(
+        ["tmux", "has-session", "-t", tmux_session],
+        capture_output=True,
+    )
+    if check_result.returncode != 0:
+        console.print(f"[yellow]Controller is not running (no tmux session '{tmux_session}')[/yellow]")
+        return
+
+    # Kill the session
+    try:
+        subprocess.run(
+            ["tmux", "kill-session", "-t", tmux_session],
+            check=True,
+            capture_output=True,
+        )
+        console.print(f"[green]✓ Stopped controller (killed tmux session '{tmux_session}')[/green]")
+    except subprocess.CalledProcessError as e:
+        console.print(f"[red]Failed to stop controller: {e}[/red]")
+        sys.exit(1)
+
+
+@main.command()
 @click.argument("pr_number", type=int)
 @click.option("--no-approval", is_flag=True, help="Skip approval requirement")
 @click.option("--monitor", is_flag=True, help="Monitor PR until ready to merge")
@@ -1251,7 +1368,8 @@ def issue() -> None:
 )
 @click.option(
     "--problem",
-    help="Problem statement (fills problem.md)"
+    required=True,
+    help="Problem statement (fills problem.md) - required, min 50 chars"
 )
 @click.option(
     "--context",
@@ -1278,7 +1396,7 @@ def issue_create(
     priority: str,
     label: tuple,
     stage: str,
-    problem: Optional[str],
+    problem: str,
     context: Optional[str],
     solutions: Optional[str],
     depends_on: tuple,
@@ -1288,7 +1406,10 @@ def issue_create(
 
     Creates an issue directory in _agenttree/issues/ with:
     - issue.yaml (metadata)
-    - problem.md (from template or provided content)
+    - problem.md (from --problem content)
+
+    The --problem flag is required and must be at least 50 characters.
+    Title must be at least 10 characters.
 
     After creation, an agent is automatically started for the issue. Use
     --no-start to skip auto-starting the agent.
@@ -1297,13 +1418,23 @@ def issue_create(
     all dependencies are completed.
 
     Example:
-        agenttree issue create "Fix login validation"
-        agenttree issue create "Add dark mode" -p high -l ui -l feature
-        agenttree issue create "Quick fix" --stage implement
-        agenttree issue create "Bug" --problem "The login fails" --context "On Chrome only"
-        agenttree issue create "Feature B" --depends-on 053 --depends-on 060
-        agenttree issue create "My feature" --no-start
+        agenttree issue create "Fix login validation bug" --problem "Login fails silently when password contains special chars. Should show error message."
+        agenttree issue create "Add dark mode toggle" -p high -l ui --problem "Users need dark mode. Add toggle in settings that persists preference."
+        agenttree issue create "Feature B depends on A" --depends-on 053 --problem "This feature requires issue 053 to be completed first. It builds on that work."
+        agenttree issue create "My feature title here" --problem "Description of the feature..." --no-start
     """
+    # Validate title and problem length
+    MIN_TITLE_LENGTH = 10
+    MIN_PROBLEM_LENGTH = 50
+
+    if len(title.strip()) < MIN_TITLE_LENGTH:
+        console.print(f"[red]Error: Title must be at least {MIN_TITLE_LENGTH} characters (got {len(title.strip())})[/red]")
+        sys.exit(1)
+
+    if len(problem.strip()) < MIN_PROBLEM_LENGTH:
+        console.print(f"[red]Error: Problem statement must be at least {MIN_PROBLEM_LENGTH} characters (got {len(problem.strip())})[/red]")
+        console.print("[dim]Provide enough context for an agent to understand the issue.[/dim]")
+        sys.exit(1)
 
     dependencies = list(depends_on) if depends_on else None
 
@@ -1685,8 +1816,15 @@ def stage_status(issue_id: Optional[str]) -> None:
     if issue.assigned_agent:
         console.print(f"[bold]Agent:[/bold] {issue.assigned_agent}")
 
-    if issue.stage in HUMAN_REVIEW_STAGES:
-        console.print(f"\n[yellow]⏳ Waiting for human review[/yellow]")
+    # Check if waiting for non-agent host
+    from agenttree.config import load_config
+    config_for_status = load_config()
+    status_stage_config = config_for_status.get_stage(issue.stage)
+    if status_stage_config and status_stage_config.host != "agent":
+        if status_stage_config.host == "controller":
+            console.print(f"\n[yellow]⏳ Waiting for human review[/yellow]")
+        else:
+            console.print(f"\n[yellow]⏳ Waiting for '{status_stage_config.host}' agent[/yellow]")
     elif issue.stage == ACCEPTED:
         console.print(f"\n[green]✓ Issue completed[/green]")
 
@@ -1726,12 +1864,23 @@ def stage_next(issue_id: Optional[str], reassess: bool) -> None:
         console.print(f"[yellow]Issue is marked as not doing[/yellow]")
         return
 
-    # Block agents from advancing past human review gates
-    if issue.stage in HUMAN_REVIEW_STAGES and is_running_in_container():
-        console.print(f"\n[yellow]⏳ Waiting for human approval[/yellow]")
-        console.print(f"[dim]Stage '{issue.stage}' requires human review.[/dim]")
-        console.print(f"[dim]A human will run 'agenttree approve {issue.id}' when ready.[/dim]")
-        return
+    # Block agents from operating in stages not meant for them
+    # Agents can only operate in stages where host matches their identity
+    from agenttree.config import load_config
+    config = load_config()
+    stage_config = config.get_stage(issue.stage)
+    if stage_config:
+        stage_host = stage_config.host
+        if not can_agent_operate_in_stage(stage_host):
+            current_host = get_current_agent_host()
+            console.print(f"\n[yellow]⏳ Waiting for '{stage_host}' to handle this stage[/yellow]")
+            if stage_host == "controller":
+                console.print(f"[dim]Stage '{issue.stage}' requires human review.[/dim]")
+                console.print(f"[dim]A human will run 'agenttree approve {issue.id}' when ready.[/dim]")
+            else:
+                console.print(f"[dim]Stage '{issue.stage}' is handled by the '{stage_host}' agent.[/dim]")
+                console.print(f"[dim]You ({current_host}) should wait for that agent to complete.[/dim]")
+            return
 
     # Check for restart and re-orient if needed
     session = get_session(issue_id)
@@ -1769,6 +1918,32 @@ def stage_next(issue_id: Optional[str], reassess: bool) -> None:
         except Exception:
             pass
 
+        # Determine if this is a takeover (not starting from beginning)
+        is_takeover = issue.stage not in (BACKLOG, DEFINE)
+
+        # Load and display overview for context
+        overview = load_overview(
+            issue=issue,
+            is_takeover=is_takeover,
+            current_stage=issue.stage,
+            current_substage=issue.substage,
+        )
+        if overview:
+            console.print(f"\n{'='*60}")
+            console.print(f"[bold cyan]AGENTTREE OVERVIEW[/bold cyan]")
+            console.print(f"{'='*60}\n")
+            console.print(overview)
+
+            # Add takeover context message
+            if is_takeover:
+                console.print(f"\n[yellow]{'='*60}[/yellow]")
+                console.print(f"[bold yellow]TAKEOVER NOTICE[/bold yellow]")
+                console.print(f"[yellow]{'='*60}[/yellow]\n")
+                console.print(
+                    f"You are taking over for another agent who completed stages before [bold]{issue.stage}[/bold].\n"
+                    f"Please review their work in the existing files and continue from here."
+                )
+
         # Load and display current stage instructions
         skill = load_skill(issue.stage, issue.substage, issue=issue)
         if skill:
@@ -1802,11 +1977,11 @@ def stage_next(issue_id: Optional[str], reassess: bool) -> None:
         console.print(f"[yellow]Already at final stage[/yellow]")
         return
 
-    # Execute pre-hooks (can block with ValidationError)
+    # Execute exit hooks (can block with ValidationError)
     from_stage = issue.stage
     from_substage = issue.substage
     try:
-        execute_pre_hooks(issue, from_stage, from_substage)
+        execute_exit_hooks(issue, from_stage, from_substage)
     except ValidationError as e:
         console.print(f"[red]Cannot proceed: {e}[/red]")
         sys.exit(1)
@@ -1820,18 +1995,25 @@ def stage_next(issue_id: Optional[str], reassess: bool) -> None:
     # Update session to track stage advancement
     update_session_stage(issue_id, next_stage, next_substage)
 
-    # Execute post-hooks (after stage updated)
-    execute_post_hooks(updated, next_stage, next_substage)
+    # Execute enter hooks (after stage updated)
+    execute_enter_hooks(updated, next_stage, next_substage)
 
     stage_str = next_stage
     if next_substage:
         stage_str += f".{next_substage}"
     console.print(f"[green]✓ Moved to {stage_str}[/green]")
 
-    if is_human_review:
-        console.print(f"\n[yellow]⏳ Waiting for human review[/yellow]")
-        console.print(f"[dim]Your work has been submitted for review.[/dim]")
-        console.print(f"[dim]You will receive instructions when the review is complete.[/dim]")
+    # Check if next stage requires a different host
+    next_stage_config = config.get_stage(next_stage)
+    if next_stage_config and next_stage_config.host != "agent" and is_running_in_container():
+        if next_stage_config.host == "controller" or is_human_review:
+            console.print(f"\n[yellow]⏳ Waiting for human review[/yellow]")
+            console.print(f"[dim]Your work has been submitted for review.[/dim]")
+            console.print(f"[dim]You will receive instructions when the review is complete.[/dim]")
+        else:
+            console.print(f"\n[yellow]⏳ Waiting for '{next_stage_config.host}' agent[/yellow]")
+            console.print(f"[dim]The '{next_stage_config.host}' agent will handle the next stage.[/dim]")
+            console.print(f"[dim]You will receive instructions when that stage is complete.[/dim]")
         return
 
     # Determine if this is first agent entry (should include AGENTS.md system prompt)
@@ -1878,20 +2060,24 @@ def approve_issue(issue_id: str, skip_approval: bool) -> None:
         console.print(f"[red]Issue {issue_id} not found[/red]")
         sys.exit(1)
 
-    # Check if at human review stage
-    if issue.stage not in HUMAN_REVIEW_STAGES:
+    # Check if at a stage that requires human approval (human_review=true or host=controller)
+    from agenttree.config import load_config
+    approve_config = load_config()
+    approve_stage_config = approve_config.get_stage(issue.stage)
+    if not approve_stage_config or not (approve_stage_config.human_review or approve_stage_config.host == "controller"):
+        human_review_stages = approve_config.get_human_review_stages()
         console.print(f"[red]Issue is at '{issue.stage}', not a human review stage[/red]")
-        console.print(f"[dim]Human review stages: {', '.join(HUMAN_REVIEW_STAGES)}[/dim]")
+        console.print(f"[dim]Human review stages: {', '.join(human_review_stages)}[/dim]")
         sys.exit(1)
 
     # Calculate next stage
     next_stage, next_substage, _ = get_next_stage(issue.stage, issue.substage)
 
-    # Execute pre-hooks
+    # Execute exit hooks
     from_stage = issue.stage
     from_substage = issue.substage
     try:
-        execute_pre_hooks(issue, from_stage, from_substage, skip_pr_approval=skip_approval)
+        execute_exit_hooks(issue, from_stage, from_substage, skip_pr_approval=skip_approval)
     except ValidationError as e:
         console.print(f"[red]Cannot approve: {e}[/red]")
         sys.exit(1)
@@ -1906,8 +2092,8 @@ def approve_issue(issue_id: str, skip_approval: bool) -> None:
     # Note: We intentionally DON'T call update_session_stage here because that would
     # sync last_stage, defeating the stage mismatch detection in is_restart()
 
-    # Execute post-hooks (after stage updated)
-    execute_post_hooks(updated, next_stage, next_substage)
+    # Execute enter hooks (after stage updated)
+    execute_enter_hooks(updated, next_stage, next_substage)
 
     stage_str = next_stage
     if next_substage:
@@ -1970,6 +2156,229 @@ def defer_issue(issue_id: str) -> None:
     console.print(f"[green]✓ Issue #{issue.id} moved to backlog[/green]")
     console.print(f"\n[dim]Stop the agent if running:[/dim]")
     console.print(f"  agenttree kill {issue.id}")
+
+
+@main.command("shutdown")
+@click.argument("issue_id")
+@click.argument("stage", type=click.Choice(["backlog", "not_doing", "accepted"]))
+@click.option(
+    "--changes", "-c",
+    type=click.Choice(["stash", "commit", "discard", "error"]),
+    default=None,
+    help="How to handle uncommitted changes (default: stage-specific)"
+)
+@click.option(
+    "--keep-worktree/--remove-worktree",
+    default=None,
+    help="Override worktree handling (default: keep for backlog, remove for others)"
+)
+@click.option(
+    "--keep-branch/--delete-branch",
+    default=None,
+    help="Override branch handling (default: keep for backlog/accepted, delete for not_doing)"
+)
+@click.option(
+    "--force", "-f",
+    is_flag=True,
+    help="Skip confirmation prompts"
+)
+@click.option(
+    "--message", "-m",
+    default="WIP: shutdown",
+    help="Commit message when using --changes commit"
+)
+def shutdown_issue(
+    issue_id: str,
+    stage: str,
+    changes: Optional[str],
+    keep_worktree: Optional[bool],
+    keep_branch: Optional[bool],
+    force: bool,
+    message: str,
+) -> None:
+    """Shutdown an issue's agent and clean up resources.
+
+    Stops the agent, handles uncommitted changes, and optionally removes
+    the worktree and branch. The STAGE determines the default behavior:
+
+    \b
+    backlog:   Pause work. Keep worktree/branch, stash changes.
+    not_doing: Abandon work. Remove worktree, delete branch, discard changes.
+    accepted:  Work complete. Remove worktree, keep branch, error on uncommitted.
+
+    Examples:
+        agenttree shutdown 042 backlog           # Pause for later
+        agenttree shutdown 042 not_doing         # Abandon issue
+        agenttree shutdown 042 not_doing -f      # Abandon without prompts
+        agenttree shutdown 042 backlog -c commit # Commit changes instead of stash
+    """
+    from agenttree.state import get_active_agent, unregister_agent
+    from agenttree.worktree import remove_worktree
+
+    # Block if in container
+    if is_running_in_container():
+        console.print("[red]Error: 'shutdown' cannot be run from inside a container[/red]")
+        sys.exit(1)
+
+    # Normalize issue ID
+    issue_id_normalized = issue_id.lstrip("0") or "0"
+    issue = get_issue_func(issue_id_normalized)
+    if not issue:
+        console.print(f"[red]Issue {issue_id} not found[/red]")
+        sys.exit(1)
+
+    # Check if already in target stage - return early
+    if issue.stage == stage:
+        console.print(f"[yellow]Issue #{issue.id} is already in {stage}[/yellow]")
+        return
+
+    # Set defaults based on stage
+    if changes is None:
+        if stage == "backlog":
+            changes = "stash"
+        elif stage == "not_doing":
+            changes = "discard"
+        else:  # accepted
+            changes = "error"
+
+    if keep_worktree is None:
+        keep_worktree = stage == "backlog"
+
+    if keep_branch is None:
+        keep_branch = stage != "not_doing"
+
+    config = load_config()
+    repo_path = Path.cwd()
+
+    # Stop agent FIRST to avoid race conditions with worktree operations
+    agent = get_active_agent(issue_id_normalized)
+    if agent:
+        tmux_manager = TmuxManager(config)
+        tmux_manager.stop_issue_agent(agent.tmux_session)
+        unregister_agent(agent.issue_id)
+        console.print(f"[dim]Stopped agent for issue #{issue.id}[/dim]")
+
+    # Get worktree path
+    worktree_path = None
+    if issue.worktree_dir:
+        worktree_path = repo_path / issue.worktree_dir
+        if not worktree_path.exists():
+            worktree_path = None
+
+    # Handle uncommitted changes in worktree
+    if worktree_path and worktree_path.exists():
+        status_result = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=worktree_path,
+            capture_output=True,
+            text=True,
+        )
+        has_changes = bool(status_result.stdout.strip())
+
+        if has_changes:
+            if changes == "error":
+                console.print("[red]Error: Uncommitted changes in worktree[/red]")
+                console.print("[dim]Use --changes stash|commit|discard to handle them[/dim]")
+                sys.exit(1)
+            elif changes == "discard":
+                if not force:
+                    console.print("[yellow]Warning: Uncommitted changes will be discarded:[/yellow]")
+                    console.print(status_result.stdout)
+                    if not click.confirm("Discard changes?"):
+                        console.print("[dim]Aborted[/dim]")
+                        sys.exit(0)
+                try:
+                    subprocess.run(["git", "checkout", "."], cwd=worktree_path, check=True, capture_output=True)
+                    subprocess.run(["git", "clean", "-fd"], cwd=worktree_path, check=True, capture_output=True)
+                    console.print("[dim]Discarded uncommitted changes[/dim]")
+                except subprocess.CalledProcessError as e:
+                    console.print(f"[red]Error discarding changes: {e}[/red]")
+                    sys.exit(1)
+            elif changes == "stash":
+                try:
+                    subprocess.run(["git", "stash", "push", "-m", f"shutdown: {issue.id}"], cwd=worktree_path, check=True, capture_output=True)
+                    console.print("[dim]Stashed uncommitted changes[/dim]")
+                except subprocess.CalledProcessError as e:
+                    console.print(f"[red]Error stashing changes: {e}[/red]")
+                    sys.exit(1)
+            elif changes == "commit":
+                try:
+                    subprocess.run(["git", "add", "-A"], cwd=worktree_path, check=True, capture_output=True)
+                    subprocess.run(["git", "commit", "-m", message], cwd=worktree_path, check=True, capture_output=True)
+                    console.print(f"[dim]Committed changes: {message}[/dim]")
+                except subprocess.CalledProcessError as e:
+                    console.print(f"[red]Error committing changes: {e}[/red]")
+                    sys.exit(1)
+
+        # Check for unpushed commits - handle case where branch has no upstream
+        has_unpushed = False
+        unpushed_output = ""
+
+        # First try checking against upstream
+        unpushed_result = subprocess.run(
+            ["git", "log", "--oneline", "@{u}..HEAD"],
+            cwd=worktree_path,
+            capture_output=True,
+            text=True,
+        )
+
+        if unpushed_result.returncode == 0:
+            # Upstream exists, check if there are unpushed commits
+            has_unpushed = bool(unpushed_result.stdout.strip())
+            unpushed_output = unpushed_result.stdout
+        else:
+            # No upstream - check against origin/main as fallback
+            # This catches local-only branches that were never pushed
+            fallback_result = subprocess.run(
+                ["git", "log", "--oneline", "origin/main..HEAD"],
+                cwd=worktree_path,
+                capture_output=True,
+                text=True,
+            )
+            if fallback_result.returncode == 0 and fallback_result.stdout.strip():
+                has_unpushed = True
+                unpushed_output = fallback_result.stdout
+                console.print("[yellow]Warning: Branch has no upstream tracking branch[/yellow]")
+
+        if has_unpushed and not keep_branch:
+            if not force:
+                console.print("[yellow]Warning: Unpushed commits will be lost:[/yellow]")
+                console.print(unpushed_output)
+                if not click.confirm("Continue anyway?"):
+                    console.print("[dim]Aborted[/dim]")
+                    sys.exit(0)
+
+    # Remove worktree if requested
+    if not keep_worktree and worktree_path and worktree_path.exists():
+        remove_worktree(repo_path, worktree_path)
+        console.print(f"[dim]Removed worktree: {worktree_path}[/dim]")
+        # Clear worktree_dir in issue metadata
+        update_issue_metadata(issue_id_normalized, worktree_dir="")
+
+    # Delete branch if requested
+    if not keep_branch and issue.branch:
+        # Delete local branch (may fail if checked out elsewhere, that's ok)
+        subprocess.run(
+            ["git", "branch", "-D", issue.branch],
+            cwd=repo_path,
+            capture_output=True,
+        )
+        console.print(f"[dim]Deleted local branch: {issue.branch}[/dim]")
+
+    # Update issue stage
+    if issue.stage != stage:
+        updated = update_issue_stage(issue_id_normalized, stage, None)
+        if not updated:
+            console.print(f"[red]Failed to update issue stage[/red]")
+            sys.exit(1)
+
+    # Delete session file
+    delete_session(issue_id_normalized)
+
+    # Clear assigned_agent
+    update_issue_metadata(issue_id_normalized, clear_assigned_agent=True)
+
+    console.print(f"[green]✓ Issue #{issue.id} shutdown to {stage}[/green]")
 
 
 # =============================================================================
@@ -2328,6 +2737,31 @@ def hooks_check(issue_id: str, event: str) -> None:
                     show_hooks(next_stage_config.post_start, "post_start", f"{next_stage} (next)")
 
     console.print()
+
+
+@main.command("tui")
+def tui_command() -> None:
+    """Launch the Terminal User Interface for issue management.
+
+    A keyboard-driven interface for managing issues:
+    - Arrow keys to navigate
+    - Enter to select
+    - a = Advance stage
+    - r = Reject (send back)
+    - s = Start agent
+    - / = Filter
+    - R = Refresh
+    - q = Quit
+    """
+    try:
+        from agenttree.tui import TUIApp
+    except ImportError:
+        console.print("[red]Error: TUI dependencies not installed[/red]")
+        console.print("Install with: pip install agenttree[tui]")
+        sys.exit(1)
+
+    app = TUIApp()
+    app.run()
 
 
 if __name__ == "__main__":

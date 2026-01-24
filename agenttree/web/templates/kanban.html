@@ -20,26 +20,9 @@
             </div>
             <div class="column-cards">
                 {% for issue in board.stages[stage] %}
-                <div class="kanban-card"
-                     data-issue="{{ issue.number }}"
-                     data-stage="{{ issue.stage.value }}"
-                     data-has-agent="{{ 'true' if issue.assigned_agent else 'false' }}"
-                     draggable="{{ 'true' if issue.stage.value in ['plan_review', 'implementation_review'] else 'false' }}"
-                     onclick="openIssueModal('{{ issue.number }}')"
-                     style="cursor: pointer;">
-                    <div class="agent-light {% if issue.tmux_active %}on{% elif issue.assigned_agent %}stalled{% else %}off{% endif %}"
-                         onclick="event.stopPropagation(); toggleAgent('{{ issue.number }}', this)"
-                         title="{% if issue.tmux_active %}Agent running - click to view{% elif issue.assigned_agent %}Agent assigned but inactive{% else %}Click to start agent{% endif %}"></div>
-                    <div class="card-number">#{{ issue.number }}</div>
-                    <div class="card-title">{{ issue.title }}</div>
-                    <div class="card-badges">
-                        {% for label in issue.labels[:2] %}
-                        {% if not label.startswith('stage-') %}
-                        <span class="badge">{{ label }}</span>
-                        {% endif %}
-                        {% endfor %}
-                    </div>
-                </div>
+                {% set base_url = '/kanban' %}
+                {% set draggable = true %}
+                {% include 'partials/issue_item.html' %}
                 {% endfor %}
             </div>
         </div>
@@ -88,7 +71,7 @@
         let draggedCard = null;
 
         document.addEventListener('dragstart', (e) => {
-            if (e.target.classList.contains('kanban-card')) {
+            if (e.target.classList.contains('issue-item')) {
                 const cardStage = e.target.dataset.stage;
                 // Only allow dragging from human review stages
                 if (!HUMAN_REVIEW_STAGES.includes(cardStage)) {
@@ -101,7 +84,7 @@
         });
 
         document.addEventListener('dragend', (e) => {
-            if (e.target.classList.contains('kanban-card')) {
+            if (e.target.classList.contains('issue-item')) {
                 e.target.classList.remove('dragging');
                 draggedCard = null;
             }
@@ -230,7 +213,7 @@
         }
 
         // Stage toggle functionality
-        const reviewStages = ['backlog', 'define', 'plan_review', 'implementation_review'];
+        const reviewStages = ['backlog', 'plan_review', 'implementation_review'];
 
         function updateMiniDropzones() {
             const miniDropzones = document.getElementById('mini-dropzones');
@@ -256,13 +239,13 @@
 
             // Update counts
             if (backlogCol) {
-                document.getElementById('backlog-count').textContent = backlogCol.querySelectorAll('.kanban-card').length;
+                document.getElementById('backlog-count').textContent = backlogCol.querySelectorAll('.issue-item').length;
             }
             if (acceptedCol) {
-                document.getElementById('accepted-count').textContent = acceptedCol.querySelectorAll('.kanban-card').length;
+                document.getElementById('accepted-count').textContent = acceptedCol.querySelectorAll('.issue-item').length;
             }
             if (notDoingCol) {
-                document.getElementById('not-doing-count').textContent = notDoingCol.querySelectorAll('.kanban-card').length;
+                document.getElementById('not-doing-count').textContent = notDoingCol.querySelectorAll('.issue-item').length;
             }
         }
 
@@ -291,7 +274,7 @@
             } else if (view === 'nonempty') {
                 toggleNonempty.classList.add('active');
                 columns.forEach(col => {
-                    const cardCount = col.querySelectorAll('.kanban-card').length;
+                    const cardCount = col.querySelectorAll('.issue-item').length;
                     if (cardCount > 0) {
                         col.classList.remove('hidden');
                     } else {

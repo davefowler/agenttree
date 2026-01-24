@@ -233,6 +233,7 @@ Configure in .agenttree.yaml under controller_hooks:
 Built-in controller hooks:
     push_pending_branches - Push any local branches with unpushed commits
     check_controller_stages - Process issues in controller-owned stages
+    check_custom_agent_stages - Spawn custom agents for issues in custom agent stages
     check_merged_prs - Detect externally merged PRs and update issue status
 
 Custom commands work here too:
@@ -318,7 +319,7 @@ HOOK_TYPES = {
     "cleanup_agent", "start_blocked_issues",
     # Controller hooks (run on post-sync)
     "push_pending_branches", "check_controller_stages", "check_merged_prs",
-    "check_ci_status",
+    "check_ci_status", "check_custom_agent_stages",
 }
 
 # =============================================================================
@@ -869,7 +870,7 @@ def run_builtin_validator(
         if pr_number is None:
             errors.append("No PR number available to check CI status")
         else:
-            from agenttree.github import wait_for_ci, get_pr_checks
+            from agenttree.github import wait_for_ci, get_pr_checks, get_pr_comments, get_check_failed_logs
 
             timeout = params.get("timeout", 600)
             poll_interval = params.get("poll_interval", 30)
@@ -884,34 +885,36 @@ def run_builtin_validator(
                 checks = get_pr_checks(pr_number)
 
                 # Filter to failed/incomplete checks
-                # A check is considered failed if:
-                # - It's still pending (not completed)
-                # - Its conclusion is "failure"
-                # - It's not successful and not skipped
+                # state is FAILURE for failed checks, PENDING for still running
                 failed_checks = [
                     check for check in checks
-                    if (check.state == "PENDING")
-                    or (check.conclusion == "failure")
-                    or (check.state != "SUCCESS" and check.conclusion not in ("success", "skipped", None))
+                    if check.state in ("FAILURE", "PENDING")
                 ]
 
-                # If no specific failed checks but wait_for_ci returned False, it's a timeout
-                if not failed_checks and checks:
-                    failed_checks = [
-                        check for check in checks
-                        if check.state == "PENDING" or check.conclusion not in ("success", "skipped")
-                    ]
-
                 if failed_checks:
-                    # Create ci_feedback.md file in issue directory
+                    # Create ci_feedback.md file in issue directory with logs and comments
                     if issue_dir:
                         feedback_path = issue_dir / "ci_feedback.md"
                         feedback_content = "# CI Failure Report\n\nThe following CI checks failed:\n\n"
                         for check in failed_checks:
-                            feedback_content += f"## {check.name}\n"
-                            feedback_content += f"- **State:** {check.state}\n"
-                            feedback_content += f"- **Conclusion:** {check.conclusion}\n\n"
-                        feedback_content += "Please fix these issues and run `agenttree next` to re-submit for CI.\n"
+                            feedback_content += f"- **{check.name}**: {check.state}\n"
+
+                        # Fetch and include failed logs for each failed check
+                        for check in failed_checks:
+                            if check.state == "FAILURE":
+                                logs = get_check_failed_logs(check)
+                                if logs:
+                                    feedback_content += f"\n---\n\n## Failed Logs: {check.name}\n\n```\n{logs}\n```\n"
+
+                        # Fetch and include PR review comments
+                        comments = get_pr_comments(pr_number)
+                        if comments:
+                            feedback_content += "\n---\n\n## Review Comments\n\n"
+                            for comment in comments:
+                                feedback_content += f"### From @{comment.author}\n\n"
+                                feedback_content += f"{comment.body}\n\n"
+
+                        feedback_content += "\n---\n\nPlease fix these issues and run `agenttree next` to re-submit for CI.\n"
                         feedback_path.write_text(feedback_content)
                         console.print(f"[dim]Created {feedback_path}[/dim]")
 
@@ -1044,6 +1047,12 @@ def run_builtin_validator(
         agents_dir = kwargs.get("agents_dir")
         if agents_dir:
             check_ci_status(agents_dir)
+
+    elif hook_type == "check_custom_agent_stages":
+        from agenttree.agents_repo import check_custom_agent_stages
+        agents_dir = kwargs.get("agents_dir")
+        if agents_dir:
+            check_custom_agent_stages(agents_dir)
 
     else:
         # Unknown type - ignore silently (allows for future extensions)
@@ -1179,7 +1188,7 @@ def run_hook(
         if hook_type == "run":
             # Shell command hook
             errors = run_command_hook(context_dir, params, **kwargs)
-        elif hook_type in ("push_pending_branches", "check_controller_stages", "check_merged_prs"):
+        elif hook_type in ("push_pending_branches", "check_controller_stages", "check_merged_prs", "check_custom_agent_stages"):
             # Controller hooks need agents_dir - use from kwargs if provided, otherwise context_dir
             if "agents_dir" not in kwargs:
                 kwargs["agents_dir"] = context_dir
@@ -1292,8 +1301,9 @@ def execute_exit_hooks(issue: "Issue", stage: str, substage: Optional[str] = Non
 
     This is the config-driven replacement for execute_pre_hooks.
 
-    When exiting the LAST substage of a stage, this also runs stage-level pre_completion hooks.
-    This ensures hooks like lint/test/create_pr run when leaving implement stage.
+    Hook execution order: stage → substage (outer to inner).
+    When exiting the LAST substage, runs stage-level hooks first, then substage hooks.
+    This ensures stage-level requirements are checked before substage-specific ones.
 
     Args:
         issue: Issue being transitioned
@@ -1327,7 +1337,22 @@ def execute_exit_hooks(issue: "Issue", stage: str, substage: Optional[str] = Non
         **extra_kwargs,  # Pass through extra kwargs like skip_pr_approval
     }
 
-    # Execute substage hooks first (if applicable)
+    # Check if we're exiting the stage (last substage or no substages)
+    substages = stage_config.substage_order()
+    is_exiting_stage = not substages or (substage and substages[-1] == substage)
+
+    # Execute stage-level hooks FIRST when exiting the stage (stage → substage order)
+    if is_exiting_stage:
+        errors.extend(execute_hooks(
+            issue_dir,
+            stage,
+            stage_config,
+            "pre_completion",
+            pr_number=issue.pr_number,
+            **hook_kwargs,
+        ))
+
+    # Execute substage hooks SECOND (if applicable)
     if substage:
         substage_config = stage_config.get_substage(substage)
         if substage_config:
@@ -1339,21 +1364,6 @@ def execute_exit_hooks(issue: "Issue", stage: str, substage: Optional[str] = Non
                 pr_number=issue.pr_number,
                 **hook_kwargs,
             ))
-
-    # Check if we're exiting the stage (last substage or no substages)
-    substages = stage_config.substage_order()
-    is_exiting_stage = not substages or (substage and substages[-1] == substage)
-
-    # Execute stage-level hooks when exiting the stage
-    if is_exiting_stage:
-        errors.extend(execute_hooks(
-            issue_dir,
-            stage,
-            stage_config,
-            "pre_completion",
-            pr_number=issue.pr_number,
-            **hook_kwargs,
-        ))
 
     if errors:
         if len(errors) == 1:
@@ -1369,6 +1379,10 @@ def execute_enter_hooks(issue: "Issue", stage: str, substage: Optional[str] = No
     """Execute post_start hooks for a stage/substage. Logs warnings but doesn't block.
 
     This is the config-driven replacement for execute_post_hooks.
+
+    Hook execution order: substage → stage (inner to outer).
+    When entering the FIRST substage, runs substage hooks first, then stage-level hooks.
+    This ensures stage-level setup (like create_pr) runs when entering a stage with substages.
 
     For controller stages (host: controller), hooks are skipped when running in a container.
     The host will execute them via check_controller_stages() during sync.
@@ -1392,30 +1406,47 @@ def execute_enter_hooks(issue: "Issue", stage: str, substage: Optional[str] = No
         console.print(f"[dim]Controller stage - hooks will run on host sync[/dim]")
         return
 
-    # Get the appropriate config (substage or stage)
-    if substage:
-        hook_config = stage_config.get_substage(substage) or stage_config
-    else:
-        hook_config = stage_config
-
     # Get issue directory
     issue_dir = get_issue_dir(issue.id)
     if not issue_dir:
         return  # No issue directory, skip hooks
 
-    # Execute hooks
-    errors = execute_hooks(
-        issue_dir,
-        stage,
-        hook_config,
-        "post_start",
-        pr_number=issue.pr_number,
-        issue_id=issue.id,
-        issue_title=issue.title,
-        branch=issue.branch or "",
-        substage=substage or "",
-        issue=issue,  # Pass issue object for cleanup_agent and start_blocked_issues hooks
-    )
+    errors: List[str] = []
+    hook_kwargs = {
+        "issue_id": issue.id,
+        "issue_title": issue.title,
+        "branch": issue.branch or "",
+        "substage": substage or "",
+        "issue": issue,  # Pass issue object for cleanup_agent and start_blocked_issues hooks
+    }
+
+    # Execute substage hooks FIRST (if applicable)
+    if substage:
+        substage_config = stage_config.get_substage(substage)
+        if substage_config:
+            errors.extend(execute_hooks(
+                issue_dir,
+                stage,
+                substage_config,
+                "post_start",
+                pr_number=issue.pr_number,
+                **hook_kwargs,
+            ))
+
+    # Check if we're entering the stage (first substage or no substages)
+    substages = stage_config.substage_order()
+    is_entering_stage = not substages or (substage and substages[0] == substage)
+
+    # Execute stage-level hooks SECOND when entering the stage (substage → stage order)
+    if is_entering_stage:
+        errors.extend(execute_hooks(
+            issue_dir,
+            stage,
+            stage_config,
+            "post_start",
+            pr_number=issue.pr_number,
+            **hook_kwargs,
+        ))
 
     # Log warnings but don't block
     if errors:
@@ -1939,6 +1970,52 @@ def is_running_in_container() -> bool:
         os.path.exists("/run/.containerenv") or
         os.environ.get("CONTAINER_RUNTIME") is not None
     )
+
+
+def get_current_agent_host() -> str:
+    """Get the current agent host type.
+
+    The agent host is determined by the AGENTTREE_AGENT_HOST env var.
+    If not set, defaults to "agent" for containers or "controller" for host.
+
+    Returns:
+        Agent host name (e.g., "agent", "controller", "review")
+    """
+    import os
+
+    # Check for explicit agent host
+    agent_host = os.environ.get("AGENTTREE_AGENT_HOST")
+    if agent_host:
+        return agent_host
+
+    # Default: "agent" if in container, "controller" if on host
+    if is_running_in_container():
+        return "agent"
+    return "controller"
+
+
+def can_agent_operate_in_stage(stage_host: str) -> bool:
+    """Check if the current agent can operate in a stage with the given host.
+
+    Agents can only operate in stages where the stage's host matches their identity.
+    - Default agents (host="agent") can only operate in host="agent" stages
+    - Custom agents (host="review") can only operate in host="review" stages
+    - Controller can operate in any stage (it's human-driven)
+
+    Args:
+        stage_host: The host value from the stage config (e.g., "agent", "controller", "review")
+
+    Returns:
+        True if the current agent can operate in this stage, False otherwise
+    """
+    current_host = get_current_agent_host()
+
+    # Controller (human) can operate anywhere
+    if current_host == "controller":
+        return True
+
+    # Agents can only operate in their own host stages
+    return current_host == stage_host
 
 
 def ensure_pr_for_issue(issue_id: str) -> bool:
