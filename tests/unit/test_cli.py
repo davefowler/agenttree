@@ -744,3 +744,325 @@ class TestSandboxCommand:
 
         assert result.exit_code == 1
         assert "No container runtime" in result.output
+
+
+class TestRollbackCommand:
+    """Tests for the rollback command."""
+
+    def test_rollback_issue_not_found(self, cli_runner, mock_config):
+        """Should error when issue not found."""
+        from agenttree.cli import main
+
+        with patch("agenttree.cli.load_config", return_value=mock_config):
+            with patch("agenttree.cli.get_issue_func", return_value=None):
+                with patch("agenttree.cli.is_running_in_container", return_value=False):
+                    result = cli_runner.invoke(main, ["rollback", "999", "research"])
+
+        assert result.exit_code == 1
+        assert "not found" in result.output.lower()
+
+    def test_rollback_invalid_stage(self, cli_runner, mock_config):
+        """Should error when target stage is invalid."""
+        from agenttree.cli import main
+
+        mock_issue = MagicMock()
+        mock_issue.id = "42"
+        mock_issue.stage = "implement"
+
+        mock_config.get_stage_names.return_value = [
+            "backlog", "define", "research", "plan", "implement", "accepted"
+        ]
+
+        with patch("agenttree.cli.load_config", return_value=mock_config):
+            with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
+                with patch("agenttree.cli.is_running_in_container", return_value=False):
+                    result = cli_runner.invoke(main, ["rollback", "42", "invalid_stage"])
+
+        assert result.exit_code == 1
+        assert "Invalid stage" in result.output
+
+    def test_rollback_target_not_before_current(self, cli_runner, mock_config):
+        """Should error when target stage is not before current stage."""
+        from agenttree.cli import main
+
+        mock_issue = MagicMock()
+        mock_issue.id = "42"
+        mock_issue.stage = "research"
+
+        mock_config.get_stage_names.return_value = [
+            "backlog", "define", "research", "plan", "implement", "accepted"
+        ]
+
+        with patch("agenttree.cli.load_config", return_value=mock_config):
+            with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
+                with patch("agenttree.cli.is_running_in_container", return_value=False):
+                    result = cli_runner.invoke(main, ["rollback", "42", "implement"])
+
+        assert result.exit_code == 1
+        assert "not before" in result.output.lower()
+
+    def test_rollback_to_terminal_stage(self, cli_runner, mock_config):
+        """Should error when trying to rollback to a terminal stage."""
+        from agenttree.cli import main
+
+        mock_issue = MagicMock()
+        mock_issue.id = "42"
+        mock_issue.stage = "implement"
+
+        mock_config.get_stage_names.return_value = [
+            "backlog", "define", "research", "plan", "implement", "accepted"
+        ]
+        mock_stage_config = MagicMock()
+        mock_stage_config.terminal = True
+        mock_config.get_stage.return_value = mock_stage_config
+
+        with patch("agenttree.cli.load_config", return_value=mock_config):
+            with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
+                with patch("agenttree.cli.is_running_in_container", return_value=False):
+                    # Note: "accepted" is normally at the end, this tests terminal check
+                    result = cli_runner.invoke(main, ["rollback", "42", "backlog"])
+
+        assert result.exit_code == 1
+        assert "terminal stage" in result.output.lower()
+
+    def test_rollback_blocked_in_container(self, cli_runner, mock_config):
+        """Should error when run inside a container."""
+        from agenttree.cli import main
+
+        with patch("agenttree.cli.load_config", return_value=mock_config):
+            with patch("agenttree.cli.is_running_in_container", return_value=True):
+                result = cli_runner.invoke(main, ["rollback", "42", "research"])
+
+        assert result.exit_code == 1
+        assert "container" in result.output.lower()
+
+    def test_rollback_cancelled(self, cli_runner, mock_config, tmp_path):
+        """Should abort when user cancels confirmation."""
+        from agenttree.cli import main
+
+        mock_issue = MagicMock()
+        mock_issue.id = "42"
+        mock_issue.title = "Test Issue"
+        mock_issue.stage = "implement"
+        mock_issue.substage = None
+
+        mock_config.get_stage_names.return_value = [
+            "backlog", "define", "research", "plan", "implement", "accepted"
+        ]
+        mock_stage_config = MagicMock()
+        mock_stage_config.terminal = False
+        mock_stage_config.substage_order.return_value = []
+        mock_stage_config.output = None
+        mock_stage_config.substages = {}
+        mock_config.get_stage.return_value = mock_stage_config
+
+        issue_dir = tmp_path / "_agenttree" / "issues" / "042-test-issue"
+        issue_dir.mkdir(parents=True)
+
+        with patch("agenttree.cli.load_config", return_value=mock_config):
+            with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
+                with patch("agenttree.cli.get_issue_dir", return_value=issue_dir):
+                    with patch("agenttree.cli.is_running_in_container", return_value=False):
+                        with patch("agenttree.state.get_active_agent", return_value=None):
+                            # User answers 'n' to confirmation
+                            result = cli_runner.invoke(main, ["rollback", "42", "research"], input="n\n")
+
+        assert "Cancelled" in result.output
+
+    def test_rollback_success_with_yes_flag(self, cli_runner, mock_config, tmp_path):
+        """Should succeed with --yes flag and update state."""
+        from agenttree.cli import main
+
+        mock_issue = MagicMock()
+        mock_issue.id = "42"
+        mock_issue.title = "Test Issue"
+        mock_issue.stage = "implement"
+        mock_issue.substage = "code"
+
+        mock_config.get_stage_names.return_value = [
+            "backlog", "define", "research", "plan", "implement", "accepted"
+        ]
+        mock_stage_config = MagicMock()
+        mock_stage_config.terminal = False
+        mock_stage_config.substage_order.return_value = ["explore", "document"]
+        mock_stage_config.output = "research.md"
+        mock_stage_config.substages = {}
+        mock_config.get_stage.return_value = mock_stage_config
+
+        issue_dir = tmp_path / "_agenttree" / "issues" / "042-test-issue"
+        issue_dir.mkdir(parents=True)
+
+        # Create issue.yaml
+        import yaml
+        issue_yaml = {
+            "id": "42",
+            "slug": "test-issue",
+            "title": "Test Issue",
+            "created": "2024-01-01T00:00:00Z",
+            "updated": "2024-01-01T00:00:00Z",
+            "stage": "implement",
+            "substage": "code",
+            "history": [],
+        }
+        with open(issue_dir / "issue.yaml", "w") as f:
+            yaml.dump(issue_yaml, f)
+
+        # Create a file that should be archived
+        (issue_dir / "spec.md").write_text("# Spec")
+
+        with patch("agenttree.cli.load_config", return_value=mock_config):
+            with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
+                with patch("agenttree.cli.get_issue_dir", return_value=issue_dir):
+                    with patch("agenttree.cli.is_running_in_container", return_value=False):
+                        with patch("agenttree.state.get_active_agent", return_value=None):
+                            with patch("agenttree.cli.delete_session"):
+                                with patch("agenttree.agents_repo.sync_agents_repo"):
+                                    with patch("agenttree.issues.get_agenttree_path", return_value=tmp_path):
+                                        result = cli_runner.invoke(main, ["rollback", "42", "research", "--yes"])
+
+        assert result.exit_code == 0
+        assert "rolled back" in result.output.lower()
+
+        # Verify issue.yaml was updated
+        with open(issue_dir / "issue.yaml") as f:
+            updated_data = yaml.safe_load(f)
+        assert updated_data["stage"] == "research"
+        assert updated_data["substage"] == "explore"
+        assert len(updated_data["history"]) == 1
+        assert updated_data["history"][0]["type"] == "rollback"
+
+    def test_rollback_archives_files(self, cli_runner, mock_config, tmp_path):
+        """Should archive output files from rolled back stages."""
+        from agenttree.cli import main
+
+        mock_issue = MagicMock()
+        mock_issue.id = "42"
+        mock_issue.title = "Test Issue"
+        mock_issue.stage = "implement"
+        mock_issue.substage = "code"
+
+        mock_config.get_stage_names.return_value = [
+            "backlog", "define", "research", "plan", "implement", "accepted"
+        ]
+
+        # Set up stage configs with output files
+        def get_stage_side_effect(name):
+            stage_config = MagicMock()
+            stage_config.terminal = False
+            stage_config.substage_order.return_value = []
+            stage_config.substages = {}
+            if name == "plan":
+                stage_config.output = "spec.md"
+            elif name == "implement":
+                stage_config.output = None
+                review_substage = MagicMock()
+                review_substage.output = "review.md"
+                stage_config.substages = {"code_review": review_substage}
+            else:
+                stage_config.output = None
+            return stage_config
+
+        mock_config.get_stage.side_effect = get_stage_side_effect
+
+        issue_dir = tmp_path / "_agenttree" / "issues" / "042-test-issue"
+        issue_dir.mkdir(parents=True)
+
+        # Create issue.yaml
+        import yaml
+        issue_yaml = {
+            "id": "42",
+            "slug": "test-issue",
+            "title": "Test Issue",
+            "created": "2024-01-01T00:00:00Z",
+            "updated": "2024-01-01T00:00:00Z",
+            "stage": "implement",
+            "substage": "code",
+            "history": [],
+        }
+        with open(issue_dir / "issue.yaml", "w") as f:
+            yaml.dump(issue_yaml, f)
+
+        # Create files that should be archived
+        (issue_dir / "spec.md").write_text("# Spec")
+        (issue_dir / "review.md").write_text("# Review")
+
+        with patch("agenttree.cli.load_config", return_value=mock_config):
+            with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
+                with patch("agenttree.cli.get_issue_dir", return_value=issue_dir):
+                    with patch("agenttree.cli.is_running_in_container", return_value=False):
+                        with patch("agenttree.state.get_active_agent", return_value=None):
+                            with patch("agenttree.cli.delete_session"):
+                                with patch("agenttree.agents_repo.sync_agents_repo"):
+                                    with patch("agenttree.issues.get_agenttree_path", return_value=tmp_path):
+                                        result = cli_runner.invoke(main, ["rollback", "42", "research", "--yes"])
+
+        assert result.exit_code == 0
+
+        # Verify files were moved to archive
+        archive_dirs = list((issue_dir / "archive").iterdir())
+        assert len(archive_dirs) == 1
+        rollback_dir = archive_dirs[0]
+        assert rollback_dir.name.startswith("rollback_")
+        assert (rollback_dir / "spec.md").exists()
+        assert (rollback_dir / "review.md").exists()
+
+        # Verify original files are gone
+        assert not (issue_dir / "spec.md").exists()
+        assert not (issue_dir / "review.md").exists()
+
+    def test_rollback_with_active_agent(self, cli_runner, mock_config, tmp_path):
+        """Should unregister active agent during rollback."""
+        from agenttree.cli import main
+
+        mock_issue = MagicMock()
+        mock_issue.id = "42"
+        mock_issue.title = "Test Issue"
+        mock_issue.stage = "implement"
+        mock_issue.substage = "code"
+
+        mock_agent = MagicMock()
+        mock_agent.issue_id = "42"
+        mock_agent.worktree = tmp_path / "worktree"
+        mock_agent.worktree.mkdir(parents=True)
+
+        mock_config.get_stage_names.return_value = [
+            "backlog", "define", "research", "plan", "implement", "accepted"
+        ]
+        mock_stage_config = MagicMock()
+        mock_stage_config.terminal = False
+        mock_stage_config.substage_order.return_value = []
+        mock_stage_config.output = None
+        mock_stage_config.substages = {}
+        mock_config.get_stage.return_value = mock_stage_config
+
+        issue_dir = tmp_path / "_agenttree" / "issues" / "042-test-issue"
+        issue_dir.mkdir(parents=True)
+
+        # Create issue.yaml
+        import yaml
+        issue_yaml = {
+            "id": "42",
+            "slug": "test-issue",
+            "title": "Test Issue",
+            "created": "2024-01-01T00:00:00Z",
+            "updated": "2024-01-01T00:00:00Z",
+            "stage": "implement",
+            "substage": "code",
+            "history": [],
+        }
+        with open(issue_dir / "issue.yaml", "w") as f:
+            yaml.dump(issue_yaml, f)
+
+        with patch("agenttree.cli.load_config", return_value=mock_config):
+            with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
+                with patch("agenttree.cli.get_issue_dir", return_value=issue_dir):
+                    with patch("agenttree.cli.is_running_in_container", return_value=False):
+                        with patch("agenttree.state.get_active_agent", return_value=mock_agent):
+                            with patch("agenttree.state.unregister_agent") as mock_unregister:
+                                with patch("agenttree.cli.delete_session"):
+                                    with patch("agenttree.agents_repo.sync_agents_repo"):
+                                        with patch("agenttree.issues.get_agenttree_path", return_value=tmp_path):
+                                            result = cli_runner.invoke(main, ["rollback", "42", "research", "--yes"])
+
+        assert result.exit_code == 0
+        mock_unregister.assert_called_once_with("42")

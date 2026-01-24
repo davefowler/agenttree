@@ -45,6 +45,7 @@ class HistoryEntry(BaseModel):
     substage: Optional[str] = None
     timestamp: str
     agent: Optional[int] = None
+    type: str = "transition"  # "transition" (normal), "rollback", etc.
 
 
 class Issue(BaseModel):
