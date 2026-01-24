@@ -50,6 +50,7 @@ class Issue(IssueBase):
     pr_number: Optional[int] = None
     assigned_agent: Optional[str] = None
     tmux_active: bool = False
+    has_worktree: bool = False
     created_at: datetime
     updated_at: datetime
     dependencies: List[int] = Field(default_factory=list)

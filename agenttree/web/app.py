@@ -271,6 +271,7 @@ def convert_issue_to_web(issue: issue_crud.Issue, load_dependents: bool = False)
         substage=issue.substage,
         assigned_agent=issue.assigned_agent,
         tmux_active=tmux_active,
+        has_worktree=bool(issue.worktree_dir),
         pr_url=issue.pr_url,
         pr_number=issue.pr_number,
         created_at=datetime.fromisoformat(issue.created.replace("Z", "+00:00")),
@@ -367,6 +368,68 @@ def get_issue_files(issue_id: str, include_content: bool = False) -> list[dict[s
                 file_info["content"] = ""
         files.append(file_info)
     return files
+
+
+# Maximum diff size in bytes (100KB)
+MAX_DIFF_SIZE = 100 * 1024
+
+
+def get_issue_diff(issue_id: str) -> dict:
+    """Get git diff for an issue's worktree.
+
+    Returns dict with keys: diff, stat, has_changes, error, truncated
+    """
+    issue = issue_crud.get_issue(issue_id)
+    if not issue:
+        return {"diff": "", "stat": "", "has_changes": False, "error": "Issue not found", "truncated": False}
+
+    if not issue.worktree_dir:
+        return {"diff": "", "stat": "", "has_changes": False, "error": "No worktree for this issue", "truncated": False}
+
+    worktree_path = Path(issue.worktree_dir)
+    if not worktree_path.exists():
+        return {"diff": "", "stat": "", "has_changes": False, "error": "Worktree not found", "truncated": False}
+
+    try:
+        # Get the diff
+        diff_result = subprocess.run(
+            ["git", "diff", "main...HEAD"],
+            cwd=worktree_path,
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        diff_output = diff_result.stdout
+
+        # Get the stat summary
+        stat_result = subprocess.run(
+            ["git", "diff", "main...HEAD", "--stat"],
+            cwd=worktree_path,
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        stat_output = stat_result.stdout
+
+        # Check for truncation
+        truncated = False
+        if len(diff_output) > MAX_DIFF_SIZE:
+            diff_output = diff_output[:MAX_DIFF_SIZE]
+            truncated = True
+
+        has_changes = bool(diff_output.strip())
+
+        return {
+            "diff": diff_output,
+            "stat": stat_output,
+            "has_changes": has_changes,
+            "error": None,
+            "truncated": truncated
+        }
+    except subprocess.TimeoutExpired:
+        return {"diff": "", "stat": "", "has_changes": False, "error": "Diff generation timed out", "truncated": False}
+    except Exception as e:
+        return {"diff": "", "stat": "", "has_changes": False, "error": str(e), "truncated": False}
 
 
 # Cache stage list for sorting efficiency
@@ -535,6 +598,25 @@ async def get_agent_status(
         "assigned_agent": assigned_agent,
         "status": "running" if tmux_active else ("stalled" if assigned_agent else "off")
     }
+
+
+@app.get("/api/issues/{issue_id}/diff")
+async def get_diff(
+    issue_id: str,
+    user: Optional[str] = Depends(get_current_user)
+) -> dict:
+    """Get git diff for an issue's worktree.
+
+    Returns the raw diff output for rendering with diff2html on the client.
+    """
+    issue_id = issue_id.zfill(3)
+
+    # Check issue exists
+    issue = issue_crud.get_issue(issue_id)
+    if not issue:
+        raise HTTPException(status_code=404, detail="Issue not found")
+
+    return get_issue_diff(issue_id)
 
 
 @app.post("/api/issues/{issue_id}/move")
