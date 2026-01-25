@@ -132,6 +132,22 @@ class TestGetGitWorktreeInfo:
         assert worktree_dir == worktrees_dir
 
 
+class TestPortExposure:
+    """Tests for port exposure in container commands."""
+
+    @pytest.fixture
+    def runtime(self):
+        """Create a ContainerRuntime with mocked docker detection."""
+        with patch.object(ContainerRuntime, 'detect_runtime', return_value='docker'):
+            return ContainerRuntime()
+
+    @pytest.fixture
+    def tmp_worktree(self, tmp_path: Path) -> Path:
+        """Create a temporary worktree directory."""
+        worktree = tmp_path / "test-worktree"
+        worktree.mkdir()
+        return worktree
+
     def test_port_exposure_adds_p_flag(
         self, runtime: ContainerRuntime, tmp_worktree: Path
     ) -> None:
