@@ -41,6 +41,37 @@
     </div>
 </div>
 <script>
+// Restart agent when Claude has exited
+window.restartAgent = async function(issueNumber) {
+    const warning = document.querySelector('.claude-exited-warning');
+    if (warning) {
+        warning.innerHTML = 'Restarting agent...';
+    }
+
+    try {
+        const response = await fetch(`/api/issues/${issueNumber}/start`, {
+            method: 'POST'
+        });
+
+        if (response.ok) {
+            // Refresh the tmux output area to pick up the new session
+            if (warning) {
+                warning.innerHTML = 'Agent restarted! Waiting for Claude...';
+            }
+            // The HTMX polling will automatically update the output
+        } else {
+            const data = await response.json();
+            if (warning) {
+                warning.innerHTML = `Restart failed: ${data.error || 'Unknown error'}`;
+            }
+        }
+    } catch (error) {
+        if (warning) {
+            warning.innerHTML = `Restart failed: ${error.message}`;
+        }
+    }
+};
+
 // Chat panel toggle with localStorage persistence
 function toggleChatPanel(issueNumber) {
     const panel = document.getElementById('agent-chat-panel-' + issueNumber);

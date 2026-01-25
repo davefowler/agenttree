@@ -129,35 +129,59 @@ class TestSendMessage:
     """Tests for send_message function."""
 
     def test_send_message_success(self):
-        """Should return True when message sent successfully."""
+        """Should return 'sent' when message sent successfully."""
         from agenttree.tmux import send_message
 
         with patch("agenttree.tmux.session_exists", return_value=True):
-            with patch("agenttree.tmux.send_keys") as mock_send:
-                result = send_message("test-session", "hello")
+            with patch("agenttree.tmux.is_claude_running", return_value=True):
+                with patch("agenttree.tmux.send_keys") as mock_send:
+                    result = send_message("test-session", "hello")
 
-        assert result is True
+        assert result == "sent"
         mock_send.assert_called_once_with("test-session", "hello", submit=True)
 
     def test_send_message_session_not_exists(self):
-        """Should return False when session doesn't exist."""
+        """Should return 'no_session' when session doesn't exist."""
         from agenttree.tmux import send_message
 
         with patch("agenttree.tmux.session_exists", return_value=False):
             result = send_message("missing-session", "hello")
 
-        assert result is False
+        assert result == "no_session"
 
-    def test_send_message_send_fails(self):
-        """Should return False when send_keys fails."""
+    def test_send_message_claude_exited(self):
+        """Should return 'claude_exited' when Claude CLI isn't running."""
         from agenttree.tmux import send_message
 
         with patch("agenttree.tmux.session_exists", return_value=True):
-            with patch("agenttree.tmux.send_keys") as mock_send:
-                mock_send.side_effect = subprocess.CalledProcessError(1, "tmux")
+            with patch("agenttree.tmux.is_claude_running", return_value=False):
                 result = send_message("test-session", "hello")
 
-        assert result is False
+        assert result == "claude_exited"
+
+    def test_send_message_send_fails(self):
+        """Should return 'error' when send_keys fails."""
+        from agenttree.tmux import send_message
+
+        with patch("agenttree.tmux.session_exists", return_value=True):
+            with patch("agenttree.tmux.is_claude_running", return_value=True):
+                with patch("agenttree.tmux.send_keys") as mock_send:
+                    mock_send.side_effect = subprocess.CalledProcessError(1, "tmux")
+                    result = send_message("test-session", "hello")
+
+        assert result == "error"
+
+    def test_send_message_skip_claude_check(self):
+        """Should skip Claude check when check_claude=False."""
+        from agenttree.tmux import send_message
+
+        with patch("agenttree.tmux.session_exists", return_value=True):
+            with patch("agenttree.tmux.is_claude_running") as mock_claude:
+                with patch("agenttree.tmux.send_keys"):
+                    result = send_message("test-session", "hello", check_claude=False)
+
+        assert result == "sent"
+        mock_claude.assert_not_called()
 
 
 class TestCapturePane:
@@ -382,15 +406,16 @@ class TestTmuxManager:
         mock_kill.assert_called_once_with("issue-42")
 
     def test_send_message_to_issue(self, mock_config):
-        """Should send message to issue session."""
+        """Should send message to issue session and return status."""
         from agenttree.tmux import TmuxManager
 
         manager = TmuxManager(mock_config)
 
-        with patch("agenttree.tmux.send_keys") as mock_send:
-            manager.send_message_to_issue("issue-42", "hello")
+        with patch("agenttree.tmux.send_message", return_value="sent") as mock_send:
+            result = manager.send_message_to_issue("issue-42", "hello")
 
-        mock_send.assert_called_once_with("issue-42", "hello")
+        assert result == "sent"
+        mock_send.assert_called_once_with("issue-42", "hello", check_claude=True)
 
     def test_is_issue_running(self, mock_config):
         """Should check issue session existence."""

@@ -1,1 +1,6 @@
+{% if claude_status == "exited" %}
+<div class="claude-exited-warning">
+    Claude has exited. <a href="#" onclick="restartAgent('{{ agent_num }}'); return false;">Restart agent</a>
+</div>
+{% endif %}
 <div class="tmux-output" id="tmux-output-{{ agent_num }}">{{ output }}</div>

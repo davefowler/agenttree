@@ -1102,10 +1102,25 @@ def send(issue_id: str, message: str) -> None:
 
     if not tmux_manager.is_issue_running(agent.tmux_session):
         console.print(f"[red]Error: Agent for issue #{issue_id} is not running[/red]")
+        console.print(f"[yellow]Restart with: agenttree start {issue_id}[/yellow]")
         sys.exit(1)
 
-    tmux_manager.send_message_to_issue(agent.tmux_session, message)
-    console.print(f"[green]✓ Sent message to issue #{agent.issue_id}[/green]")
+    result = tmux_manager.send_message_to_issue(agent.tmux_session, message)
+
+    if result == "sent":
+        console.print(f"[green]✓ Sent message to issue #{agent.issue_id}[/green]")
+    elif result == "claude_exited":
+        console.print(f"[red]Error: Claude CLI has exited in issue #{agent.issue_id}'s session[/red]")
+        console.print(f"[dim]The tmux session is running but Claude is not responding.[/dim]")
+        console.print(f"[yellow]Restart with: agenttree start {issue_id}[/yellow]")
+        sys.exit(1)
+    elif result == "no_session":
+        console.print(f"[red]Error: Tmux session not found for issue #{agent.issue_id}[/red]")
+        console.print(f"[yellow]Restart with: agenttree start {issue_id}[/yellow]")
+        sys.exit(1)
+    else:
+        console.print(f"[red]Error: Failed to send message to issue #{agent.issue_id}[/red]")
+        sys.exit(1)
 
 
 @main.command()

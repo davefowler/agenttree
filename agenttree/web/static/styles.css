@@ -1041,6 +1041,25 @@ button[disabled] {
     min-height: 0;
 }
 
+.claude-exited-warning {
+    background: #8b0000;
+    color: #fff;
+    padding: 8px 12px;
+    font-size: 12px;
+    text-align: center;
+    border-bottom: 1px solid #a00;
+}
+
+.claude-exited-warning a {
+    color: #fff;
+    text-decoration: underline;
+    font-weight: bold;
+}
+
+.claude-exited-warning a:hover {
+    color: #ffd700;
+}
+
 .agent-chat-panel .tmux-input-container {
     padding: 10px;
     background: var(--bg-card);

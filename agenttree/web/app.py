@@ -551,12 +551,15 @@ async def agent_tmux(
 
     Note: agent_num parameter is actually the issue number - sessions are named by issue.
     """
+    from agenttree.tmux import is_claude_running
+
     config = load_config()
     # Pad issue number to 3 digits to match tmux session naming
     padded_num = agent_num.zfill(3)
     session_name = f"{config.project}-issue-{padded_num}"
 
     # Capture tmux output
+    claude_status = "unknown"
     try:
         result = subprocess.run(
             ["tmux", "capture-pane", "-t", session_name, "-p"],
@@ -568,14 +571,23 @@ async def agent_tmux(
         if result.returncode == 0:
             # Strip Claude Code's input prompt separator from the output
             output = _strip_claude_input_prompt(result.stdout)
+            # Check if Claude is actually running (not just tmux session)
+            claude_status = "running" if is_claude_running(session_name) else "exited"
         else:
             output = "Tmux session not active"
+            claude_status = "no_session"
     except (subprocess.TimeoutExpired, FileNotFoundError):
         output = "Could not capture tmux output"
+        claude_status = "error"
 
     return templates.TemplateResponse(
         "partials/tmux_output.html",
-        {"request": request, "agent_num": agent_num, "output": output}
+        {
+            "request": request,
+            "agent_num": agent_num,
+            "output": output,
+            "claude_status": claude_status,
+        }
     )
 
 
@@ -590,7 +602,18 @@ async def send_to_agent(
 
     Note: agent_num parameter is actually the issue number - sessions are named by issue.
     """
+    import logging
+    from datetime import datetime
     from agenttree.tmux import send_message
+
+    # Log all messages sent via web UI for debugging mystery messages
+    logger = logging.getLogger("agenttree.web")
+    client_ip = request.client.host if request.client else "unknown"
+    user_agent = request.headers.get("user-agent", "unknown")[:100]
+    logger.info(
+        f"[SEND] issue={agent_num} msg={message!r} "
+        f"ip={client_ip} ua={user_agent} time={datetime.now().isoformat()}"
+    )
 
     config = load_config()
     # Pad issue number to 3 digits to match tmux session naming
@@ -598,7 +621,12 @@ async def send_to_agent(
     session_name = f"{config.project}-issue-{padded_num}"
 
     # Send message - result will appear in tmux output on next poll
-    send_message(session_name, message)
+    result = send_message(session_name, message)
+
+    # Log if Claude isn't running
+    if result == "claude_exited":
+        logger.warning(f"[SEND] Claude exited for issue={agent_num}, message went to shell")
+
     return HTMLResponse("")
 
 
