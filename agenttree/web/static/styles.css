@@ -1723,15 +1723,25 @@ button[disabled] {
     background: #1e1e1e !important;
 }
 
-/* Line numbers */
+/* Line numbers - disable sticky positioning so they scroll with content */
 .d2h-code-linenumber {
     background: var(--bg-secondary) !important;
     border-color: var(--border-light) !important;
     color: var(--text-muted) !important;
+    position: static !important;
 }
 
 [data-theme="dark"] .d2h-code-linenumber {
     background: #141414 !important;
+}
+
+/* Ensure diff table scrolls normally */
+.d2h-diff-table {
+    table-layout: auto;
+}
+
+.d2h-code-side-linenumber {
+    position: static !important;
 }
 
 /* File list */
