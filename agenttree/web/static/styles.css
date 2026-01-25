@@ -2132,4 +2132,433 @@ button[disabled] {
 
 .controller-panel .send-form.htmx-request .btn-loading {
     display: inline;
+/* ============================================
+   MOBILE VIEW STYLES
+   ============================================ */
+
+/* Mobile Container - full viewport height */
+.mobile-container {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    height: 100dvh; /* Dynamic viewport height for mobile browsers */
+    overflow: hidden;
+    background: var(--bg-primary);
+}
+
+/* Mobile Header */
+.mobile-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+}
+
+.mobile-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0;
+}
+
+.mobile-desktop-link {
+    font-size: 14px;
+    color: var(--text-accent);
+    text-decoration: none;
+}
+
+.mobile-desktop-link:hover {
+    text-decoration: underline;
+}
+
+/* Mobile Panels - hidden by default, shown when active */
+.mobile-panel {
+    display: none;
+    flex-direction: column;
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+}
+
+.mobile-panel.active {
+    display: flex;
+}
+
+/* Issues list panel */
+.mobile-panel-issues {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.mobile-issues-list {
+    padding: 8px;
+    padding-bottom: 80px; /* Space for FAB */
+}
+
+/* Mobile-specific issue item overrides */
+.mobile-container .issue-item {
+    padding: 14px 12px;
+    margin-bottom: 8px;
+    border-radius: 8px;
+    min-height: 44px; /* Touch target */
+    border-left: 3px solid transparent;
+}
+
+.mobile-container .issue-item[data-stage="backlog"] {
+    border-left-color: #9ca3af;
+}
+
+.mobile-container .issue-item[data-stage="plan"],
+.mobile-container .issue-item[data-stage="planning"] {
+    border-left-color: #60a5fa;
+}
+
+.mobile-container .issue-item[data-stage="plan_review"] {
+    border-left-color: #f59e0b;
+}
+
+.mobile-container .issue-item[data-stage="implement"],
+.mobile-container .issue-item[data-stage="implementing"] {
+    border-left-color: #8b5cf6;
+}
+
+.mobile-container .issue-item[data-stage="implementation_review"] {
+    border-left-color: #f59e0b;
+}
+
+.mobile-container .issue-item .issue-title {
+    font-size: 15px;
+}
+
+/* Detail panel */
+.mobile-panel-detail {
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.mobile-container .issue-detail-wrapper {
+    height: 100%;
+    overflow-y: auto;
+}
+
+.mobile-container .issue-detail-main {
+    padding: 16px;
+}
+
+/* Chat panel - full width */
+.mobile-panel-chat {
+    display: none;
+    flex-direction: column;
+}
+
+.mobile-panel-chat.active {
+    display: flex;
+}
+
+.mobile-container .agent-chat-panel {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    border-radius: 0;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+}
+
+.mobile-container .agent-chat-panel.collapsed {
+    width: 100%;
+    opacity: 1;
+}
+
+.mobile-container .chat-toggle {
+    display: none; /* Hide toggle on mobile - use bottom nav instead */
+}
+
+.mobile-container .chat-content {
+    flex: 1;
+    overflow-y: auto;
+}
+
+/* Mobile-specific button overrides - larger touch targets */
+.mobile-container .btn {
+    min-height: 44px;
+    padding: 12px 16px;
+    font-size: 15px;
+}
+
+.mobile-container .btn-small {
+    min-height: 36px;
+    padding: 8px 12px;
+    font-size: 14px;
+}
+
+/* Mobile-specific file tabs */
+.mobile-container .file-tabs {
+    padding: 8px 12px;
+    gap: 8px;
+}
+
+.mobile-container .file-tab {
+    padding: 10px 14px;
+    font-size: 14px;
+    min-height: 40px;
+}
+
+/* Mobile-specific badges */
+.mobile-container .badge {
+    padding: 4px 10px;
+    font-size: 12px;
+}
+
+/* Bottom Navigation */
+.mobile-bottom-nav {
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    height: 56px;
+    padding-bottom: env(safe-area-inset-bottom, 0);
+    background: var(--bg-secondary);
+    border-top: 1px solid var(--border-color);
+    flex-shrink: 0;
+}
+
+.mobile-tab-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    flex: 1;
+    height: 100%;
+    padding: 8px 0;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: color 0.2s;
+}
+
+.mobile-tab-btn svg {
+    width: 22px;
+    height: 22px;
+}
+
+.mobile-tab-btn span {
+    font-size: 11px;
+    font-weight: 500;
+}
+
+.mobile-tab-btn.active {
+    color: var(--text-accent);
+}
+
+.mobile-tab-btn:active {
+    background: var(--bg-hover);
+}
+
+/* Floating Action Button */
+.mobile-fab {
+    position: fixed;
+    bottom: calc(72px + env(safe-area-inset-bottom, 0));
+    right: 16px;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: var(--text-accent);
+    color: white;
+    border: none;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.2s, box-shadow 0.2s;
+    z-index: 100;
+}
+
+.mobile-fab svg {
+    width: 24px;
+    height: 24px;
+}
+
+.mobile-fab:active {
+    transform: scale(0.95);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* Empty State */
+.mobile-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    padding: 40px 20px;
+    text-align: center;
+    color: var(--text-muted);
+}
+
+.mobile-empty-icon {
+    width: 64px;
+    height: 64px;
+    margin-bottom: 16px;
+    opacity: 0.5;
+}
+
+.mobile-empty-state p {
+    font-size: 16px;
+    margin-bottom: 20px;
+}
+
+/* New Issue Form Overlay */
+.mobile-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    z-index: 200;
+}
+
+.mobile-form-container {
+    width: 100%;
+    max-height: 90vh;
+    background: var(--bg-card);
+    border-radius: 16px 16px 0 0;
+    padding: 20px;
+    padding-bottom: calc(20px + env(safe-area-inset-bottom, 0));
+    overflow-y: auto;
+    animation: slideUp 0.3s ease-out;
+}
+
+@keyframes slideUp {
+    from {
+        transform: translateY(100%);
+    }
+    to {
+        transform: translateY(0);
+    }
+}
+
+.mobile-form-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.mobile-form-header h2 {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0;
+}
+
+.mobile-form-close {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    border-radius: 50%;
+}
+
+.mobile-form-close:active {
+    background: var(--bg-hover);
+}
+
+.mobile-form-close svg {
+    width: 24px;
+    height: 24px;
+}
+
+.mobile-form-field {
+    margin-bottom: 20px;
+}
+
+.mobile-form-field label {
+    display: block;
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+}
+
+.mobile-form-field input,
+.mobile-form-field textarea {
+    width: 100%;
+    padding: 14px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 16px; /* Prevent iOS zoom */
+    font-family: inherit;
+    transition: border-color 0.2s;
+}
+
+.mobile-form-field input:focus,
+.mobile-form-field textarea:focus {
+    outline: none;
+    border-color: var(--text-accent);
+}
+
+.mobile-form-field textarea {
+    resize: vertical;
+    min-height: 120px;
+}
+
+.mobile-char-counter {
+    font-size: 12px;
+    color: var(--text-muted);
+    text-align: right;
+    margin-top: 6px;
+}
+
+.mobile-char-counter.valid {
+    color: #22c55e;
+}
+
+.mobile-char-counter.invalid {
+    color: #ef4444;
+}
+
+.mobile-form-actions {
+    display: flex;
+    gap: 12px;
+    margin-top: 24px;
+}
+
+.mobile-form-actions .btn {
+    flex: 1;
+}
+
+.mobile-form-error {
+    color: #ef4444;
+    font-size: 14px;
+    text-align: center;
+    margin-top: 16px;
+}
+
+[data-theme="dark"] .mobile-form-error {
+    color: #f87171;
+}
+
+/* Mobile-specific action buttons in detail view */
+.mobile-container .action-buttons {
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.mobile-container .action-buttons .btn {
+    flex: 1;
+    min-width: calc(50% - 4px);
 }

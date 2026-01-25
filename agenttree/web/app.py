@@ -637,6 +637,66 @@ async def flow(
     )
 
 
+@app.get("/mobile", response_class=HTMLResponse)
+async def mobile(
+    request: Request,
+    issue: str | None = None,
+    tab: str | None = None,
+    user: str | None = Depends(get_current_user)
+) -> HTMLResponse:
+    """Mobile-optimized view with bottom tab navigation."""
+    agent_manager.clear_session_cache()  # Fresh session data per request
+    issues = issue_crud.list_issues(sync=False)  # Skip sync for fast web reads
+    web_issues = _sort_flow_issues([convert_issue_to_web(i) for i in issues])
+
+    # Select issue from URL param or default to first
+    selected_issue = None
+    selected_issue_id = None
+    if issue:
+        for wi in web_issues:
+            if str(wi.number) == issue or str(wi.number).zfill(3) == issue:
+                selected_issue_id = str(wi.number).zfill(3)
+                break
+    if not selected_issue_id and web_issues:
+        selected_issue_id = str(web_issues[0].number).zfill(3)
+
+    # Reload selected issue with dependents for detail view
+    if selected_issue_id:
+        issue_obj = issue_crud.get_issue(selected_issue_id, sync=False)
+        if issue_obj:
+            selected_issue = convert_issue_to_web(issue_obj, load_dependents=True)
+
+    # Load all file contents upfront for selected issue
+    files: list[dict[str, str]] = []
+    commits_behind = 0
+    if selected_issue and selected_issue_id:
+        files = get_issue_files(selected_issue_id, include_content=True)
+        if selected_issue.tmux_active:
+            issue_obj = issue_crud.get_issue(selected_issue_id, sync=False)
+            if issue_obj and issue_obj.worktree_dir:
+                from agenttree.hooks import get_commits_behind_main
+                commits_behind = get_commits_behind_main(issue_obj.worktree_dir)
+
+    # Determine active tab: default to 'issues' if no issue, 'detail' if issue specified
+    active_tab = tab if tab in ["issues", "detail", "chat"] else None
+    if not active_tab:
+        active_tab = "detail" if selected_issue else "issues"
+
+    return templates.TemplateResponse(
+        "mobile.html",
+        {
+            "request": request,
+            "issues": web_issues,
+            "selected_issue": selected_issue,
+            "issue": selected_issue,
+            "files": files,
+            "commits_behind": commits_behind,
+            "active_page": "mobile",
+            "active_tab": active_tab,
+        }
+    )
+
+
 @app.get("/agent/{agent_num}/tmux", response_class=HTMLResponse)
 async def agent_tmux(
     request: Request,
