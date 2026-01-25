@@ -732,6 +732,7 @@ def update_issue_metadata(
     worktree_dir: Optional[str] = None,
     assigned_agent: Optional[str] = None,
     clear_assigned_agent: bool = False,
+    clear_pr: bool = False,
 ) -> Optional[Issue]:
     """Update metadata fields on an issue.
 
@@ -745,6 +746,7 @@ def update_issue_metadata(
         worktree_dir: Worktree directory path (optional)
         assigned_agent: Assigned agent number (optional)
         clear_assigned_agent: If True, sets assigned_agent to None
+        clear_pr: If True, sets pr_number and pr_url to None
 
     Returns:
         Updated Issue object or None if not found
@@ -784,6 +786,9 @@ def update_issue_metadata(
         issue.assigned_agent = assigned_agent
     if clear_assigned_agent:
         issue.assigned_agent = None
+    if clear_pr:
+        issue.pr_number = None
+        issue.pr_url = None
     issue.updated = now
 
     # Write back
@@ -1169,3 +1174,84 @@ def delete_session(issue_id: str) -> None:
     session_path = get_session_path(issue_id)
     if session_path and session_path.exists():
         session_path.unlink()
+
+
+def get_output_files_after_stage(target_stage: str) -> list[str]:
+    """Get list of output files for stages AFTER the target stage.
+
+    Used by rollback to determine which files need to be archived.
+
+    Args:
+        target_stage: The stage being rolled back to (files from this stage are NOT included)
+
+    Returns:
+        List of output filenames (e.g., ["spec.md", "spec_review.md", "review.md"])
+
+    Raises:
+        ValueError: If target_stage is not a valid stage name
+    """
+    from agenttree.config import load_config
+
+    config = load_config()
+
+    # Find target stage index
+    stage_names = [s.name for s in config.stages]
+    if target_stage not in stage_names:
+        raise ValueError(f"Unknown stage: {target_stage}")
+
+    target_idx = stage_names.index(target_stage)
+
+    # Collect output files from stages after target
+    output_files: set[str] = set()
+    for stage in config.stages[target_idx + 1 :]:
+        # Stage-level output
+        if stage.output:
+            output_files.add(stage.output)
+
+        # Substage outputs
+        for substage in stage.substages.values():
+            if substage.output:
+                output_files.add(substage.output)
+
+    return list(output_files)
+
+
+def archive_issue_files(issue_id: str, files: list[str]) -> list[str]:
+    """Archive output files from an issue directory.
+
+    Moves specified files to an archive/ subdirectory with timestamp prefix
+    to avoid collisions when rolling back multiple times.
+
+    Args:
+        issue_id: Issue ID
+        files: List of filenames to archive (e.g., ["spec.md", "review.md"])
+
+    Returns:
+        List of successfully archived file paths (relative to issue dir)
+    """
+    issue_dir = get_issue_dir(issue_id)
+    if not issue_dir:
+        raise ValueError(f"Issue {issue_id} not found")
+
+    archive_dir = issue_dir / "archive"
+    archive_dir.mkdir(exist_ok=True)
+
+    archived: list[str] = []
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+
+    for filename in files:
+        src_path = issue_dir / filename
+        if not src_path.exists():
+            continue  # Skip files that don't exist
+
+        dest_name = f"{timestamp}-{filename}"
+        dest_path = archive_dir / dest_name
+
+        try:
+            src_path.rename(dest_path)
+            archived.append(f"archive/{dest_name}")
+        except OSError as e:
+            # Log warning but continue with other files
+            print(f"Warning: Could not archive {filename}: {e}")
+
+    return archived

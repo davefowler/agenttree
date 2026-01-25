@@ -95,7 +95,7 @@ class TestGetOutputFilesAfterStage:
         """Given stage research, should return files from plan and later stages."""
         from agenttree.issues import get_output_files_after_stage
 
-        with patch("agenttree.issues.load_config", return_value=mock_config):
+        with patch("agenttree.config.load_config", return_value=mock_config):
             files = get_output_files_after_stage("research")
 
         # After research: plan (spec.md), plan_assess (spec_review.md),
@@ -111,20 +111,21 @@ class TestGetOutputFilesAfterStage:
         """Given stage plan, should return files from plan_assess and later."""
         from agenttree.issues import get_output_files_after_stage
 
-        with patch("agenttree.issues.load_config", return_value=mock_config):
+        with patch("agenttree.config.load_config", return_value=mock_config):
             files = get_output_files_after_stage("plan")
 
         assert "spec_review.md" in files
         assert "review.md" in files
         assert "feedback.md" in files
-        assert "spec.md" not in files  # plan's own output is not included
+        # spec.md IS included because plan_revise (after plan) also outputs spec.md
+        assert "spec.md" in files
         assert "research.md" not in files
 
     def test_after_implement_returns_empty(self, mock_config):
         """Given stage implement, should return empty (no files after implement)."""
         from agenttree.issues import get_output_files_after_stage
 
-        with patch("agenttree.issues.load_config", return_value=mock_config):
+        with patch("agenttree.config.load_config", return_value=mock_config):
             files = get_output_files_after_stage("implement")
 
         # Only implementation_review and terminal stages after implement, none have output
@@ -134,7 +135,7 @@ class TestGetOutputFilesAfterStage:
         """Given invalid stage name, should raise ValueError."""
         from agenttree.issues import get_output_files_after_stage
 
-        with patch("agenttree.issues.load_config", return_value=mock_config):
+        with patch("agenttree.config.load_config", return_value=mock_config):
             with pytest.raises(ValueError, match="Unknown stage"):
                 get_output_files_after_stage("nonexistent_stage")
 
@@ -143,7 +144,7 @@ class TestGetOutputFilesAfterStage:
         from agenttree.issues import get_output_files_after_stage
 
         # plan and plan_revise both have spec.md as output
-        with patch("agenttree.issues.load_config", return_value=mock_config):
+        with patch("agenttree.config.load_config", return_value=mock_config):
             files = get_output_files_after_stage("define")
 
         # Count occurrences of spec.md
@@ -297,7 +298,7 @@ class TestRollbackValidation:
                     result = cli_runner.invoke(main, ["rollback", "42", "implement", "-y"])
 
         assert result.exit_code == 1
-        assert "ahead" in result.output.lower() or "Cannot rollback forward" in result.output
+        assert "not before" in result.output.lower() or "cannot rollback" in result.output.lower()
 
     def test_rejects_rollback_in_container(self, cli_runner, mock_config):
         """Should error when running inside a container."""
@@ -329,32 +330,29 @@ class TestRollbackUpdatesState:
             updated="2026-01-01T00:00:00Z",
         )
 
-        updated_issue = None
-
-        def capture_update(issue_id, stage, substage=None, agent=None):
-            nonlocal updated_issue
-            updated_issue = (issue_id, stage, substage)
-            return mock_issue
-
         with patch("agenttree.cli.load_config", return_value=mock_config):
             with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
                 with patch("agenttree.cli.is_running_in_container", return_value=False):
-                    with patch("agenttree.issues.get_issue_dir", return_value=temp_issue_dir):
-                        with patch("agenttree.cli.update_issue_stage", side_effect=capture_update):
-                            with patch("agenttree.cli.delete_session"):
-                                with patch("agenttree.cli.get_output_files_after_stage", return_value=[]):
-                                    with patch("agenttree.cli.archive_issue_files", return_value=[]):
-                                        result = cli_runner.invoke(main, ["rollback", "42", "plan", "-y"])
+                    with patch("agenttree.cli.get_issue_dir", return_value=temp_issue_dir):
+                        with patch("agenttree.cli.delete_session"):
+                            with patch("agenttree.agents_repo.sync_agents_repo"):
+                                with patch("agenttree.cli.get_active_agent", return_value=None):
+                                    result = cli_runner.invoke(main, ["rollback", "42", "plan", "-y"])
 
         assert result.exit_code == 0
-        assert updated_issue is not None
-        assert updated_issue[1] == "plan"  # stage
-        assert updated_issue[2] == "draft"  # first substage of plan
+        # Check the issue.yaml was updated
+        yaml_path = temp_issue_dir / "issue.yaml"
+        import yaml
+        with open(yaml_path) as f:
+            data = yaml.safe_load(f)
+        assert data["stage"] == "plan"
+        assert data["substage"] == "draft"  # first substage of plan
 
     def test_clears_pr_metadata(self, cli_runner, mock_config, temp_issue_dir):
         """Should clear PR metadata when rolling back."""
         from agenttree.cli import main
         from agenttree.issues import Issue
+        import yaml as pyyaml
 
         mock_issue = Issue(
             id="42",
@@ -368,26 +366,32 @@ class TestRollbackUpdatesState:
             pr_url="https://github.com/org/repo/pull/123",
         )
 
-        metadata_cleared = False
-
-        def capture_metadata_update(issue_id, clear_pr=False, **kwargs):
-            nonlocal metadata_cleared
-            if clear_pr:
-                metadata_cleared = True
-            return mock_issue
+        # Update the issue.yaml with PR metadata
+        yaml_path = temp_issue_dir / "issue.yaml"
+        with open(yaml_path) as f:
+            data = pyyaml.safe_load(f)
+        data["stage"] = "implementation_review"
+        data["substage"] = None
+        data["pr_number"] = 123
+        data["pr_url"] = "https://github.com/org/repo/pull/123"
+        with open(yaml_path, "w") as f:
+            pyyaml.dump(data, f)
 
         with patch("agenttree.cli.load_config", return_value=mock_config):
             with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
                 with patch("agenttree.cli.is_running_in_container", return_value=False):
-                    with patch("agenttree.issues.get_issue_dir", return_value=temp_issue_dir):
-                        with patch("agenttree.cli.update_issue_stage", return_value=mock_issue):
-                            with patch("agenttree.cli.update_issue_metadata", side_effect=capture_metadata_update):
-                                with patch("agenttree.cli.delete_session"):
-                                    with patch("agenttree.cli.get_output_files_after_stage", return_value=[]):
-                                        with patch("agenttree.cli.archive_issue_files", return_value=[]):
-                                            result = cli_runner.invoke(main, ["rollback", "42", "implement", "-y"])
+                    with patch("agenttree.cli.get_issue_dir", return_value=temp_issue_dir):
+                        with patch("agenttree.cli.delete_session"):
+                            with patch("agenttree.agents_repo.sync_agents_repo"):
+                                with patch("agenttree.cli.get_active_agent", return_value=None):
+                                    result = cli_runner.invoke(main, ["rollback", "42", "implement", "-y"])
 
-        assert metadata_cleared is True
+        assert result.exit_code == 0
+        # Check the issue.yaml had PR metadata cleared
+        with open(yaml_path) as f:
+            data = pyyaml.safe_load(f)
+        assert "pr_number" not in data
+        assert "pr_url" not in data
 
 
 class TestRollbackHandlesAgent:
