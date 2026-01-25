@@ -620,6 +620,7 @@ def update_issue_stage(
     stage: str,
     substage: Optional[str] = None,
     agent: Optional[int] = None,
+    validate: bool = True,
 ) -> Optional[Issue]:
     """Update an issue's stage and substage.
 
@@ -628,9 +629,13 @@ def update_issue_stage(
         stage: New stage (string)
         substage: New substage (optional)
         agent: Agent number making the change (optional)
+        validate: If True, validate the transition using the state machine (default: True)
 
     Returns:
         Updated Issue object or None if not found
+
+    Raises:
+        InvalidTransitionError: If validate=True and the transition is invalid
     """
     # Sync before and after writing
     agents_path = get_agenttree_path()
@@ -648,6 +653,18 @@ def update_issue_stage(
         data = yaml.safe_load(f)
 
     issue = Issue(**data)
+
+    # Validate the transition using the state machine
+    if validate:
+        from agenttree.state_machine import validate_state_transition, InvalidTransitionError
+        try:
+            validate_state_transition(
+                issue.stage, issue.substage,
+                stage, substage,
+            )
+        except InvalidTransitionError:
+            # Re-raise to let caller handle it
+            raise
 
     # Update stage
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

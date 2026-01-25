@@ -380,8 +380,9 @@ class TestDependencies:
         from agenttree.issues import check_dependencies_met, update_issue_stage
 
         # Create dependency issue and mark as accepted
+        # (validate=False to skip state machine validation in tests)
         dep_issue = create_issue("Dependency Issue")
-        update_issue_stage(dep_issue.id, ACCEPTED, None)
+        update_issue_stage(dep_issue.id, ACCEPTED, None, validate=False)
 
         # Create issue with dependency
         dependent_issue = create_issue("Dependent Issue", dependencies=[dep_issue.id])
@@ -453,7 +454,8 @@ class TestDependencies:
         dep1 = create_issue("Dependent 1 Backlog", stage=BACKLOG, dependencies=[base.id])
         dep2 = create_issue("Dependent 2 Define", dependencies=[base.id])  # default: define
         dep3 = create_issue("Dependent 3 Implement")
-        update_issue_stage(dep3.id, IMPLEMENT, None)
+        # (validate=False to skip state machine validation in tests)
+        update_issue_stage(dep3.id, IMPLEMENT, None, validate=False)
         # Add dependency after stage change
         from agenttree.issues import get_issue_dir
         import yaml
@@ -488,8 +490,9 @@ class TestDependencies:
         from agenttree.issues import get_ready_issues, update_issue_stage
 
         # Create dependency and mark as accepted
+        # (validate=False to skip state machine validation in tests)
         dep = create_issue("Dependency")
-        update_issue_stage(dep.id, ACCEPTED, None)
+        update_issue_stage(dep.id, ACCEPTED, None, validate=False)
 
         # Create blocked issue in backlog
         blocked = create_issue("Blocked Issue", stage=BACKLOG, dependencies=[dep.id])
