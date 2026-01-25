@@ -3150,4 +3150,84 @@ class TestRollbackHook:
         errors = run_builtin_validator(tmp_path, hook, issue=mock_issue)
         assert len(errors) == 1
         assert "failed" in errors[0].lower()
+class TestGetCodeDirectory:
+    """Tests for get_code_directory() helper function."""
 
+    @patch('agenttree.hooks.is_running_in_container', return_value=True)
+    def test_returns_workspace_in_container(self, mock_in_container, tmp_path):
+        """Should return /workspace when running in container."""
+        from agenttree.hooks import get_code_directory
+
+        issue = Issue(
+            id="123",
+            slug="test-issue",
+            title="Test Issue",
+            created="2024-01-01T00:00:00Z",
+            updated="2024-01-01T00:00:00Z",
+            worktree_dir=".worktrees/issue-123-test",
+        )
+        issue_dir = tmp_path / "_agenttree" / "issues" / "123-test-issue"
+
+        result = get_code_directory(issue, issue_dir)
+
+        assert result == Path("/workspace")
+
+    @patch('agenttree.hooks.is_running_in_container', return_value=False)
+    def test_returns_worktree_dir_on_host_when_set(self, mock_in_container, tmp_path):
+        """Should return worktree_dir on host when it's set."""
+        from agenttree.hooks import get_code_directory
+
+        issue = Issue(
+            id="123",
+            slug="test-issue",
+            title="Test Issue",
+            created="2024-01-01T00:00:00Z",
+            updated="2024-01-01T00:00:00Z",
+            worktree_dir=".worktrees/issue-123-test",
+        )
+        issue_dir = tmp_path / "_agenttree" / "issues" / "123-test-issue"
+
+        result = get_code_directory(issue, issue_dir)
+
+        assert result == Path(".worktrees/issue-123-test")
+
+    @patch('agenttree.hooks.is_running_in_container', return_value=False)
+    def test_returns_issue_dir_on_host_when_worktree_none(self, mock_in_container, tmp_path):
+        """Should return issue_dir on host when worktree_dir is None."""
+        from agenttree.hooks import get_code_directory
+
+        issue = Issue(
+            id="123",
+            slug="test-issue",
+            title="Test Issue",
+            created="2024-01-01T00:00:00Z",
+            updated="2024-01-01T00:00:00Z",
+            worktree_dir=None,
+        )
+        issue_dir = tmp_path / "_agenttree" / "issues" / "123-test-issue"
+
+        result = get_code_directory(issue, issue_dir)
+
+        assert result == issue_dir
+
+    @patch('agenttree.hooks.is_running_in_container', return_value=False)
+    def test_returns_issue_dir_when_issue_none_on_host(self, mock_in_container, tmp_path):
+        """Should return issue_dir when issue is None on host."""
+        from agenttree.hooks import get_code_directory
+
+        issue_dir = tmp_path / "_agenttree" / "issues" / "123-test-issue"
+
+        result = get_code_directory(None, issue_dir)
+
+        assert result == issue_dir
+
+    @patch('agenttree.hooks.is_running_in_container', return_value=True)
+    def test_returns_workspace_when_issue_none_in_container(self, mock_in_container, tmp_path):
+        """Should return /workspace when issue is None in container."""
+        from agenttree.hooks import get_code_directory
+
+        issue_dir = tmp_path / "_agenttree" / "issues" / "123-test-issue"
+
+        result = get_code_directory(None, issue_dir)
+
+        assert result == Path("/workspace")
