@@ -12,6 +12,7 @@ import asyncio
 import secrets
 import os
 import re
+import html
 from typing import List, Dict, Optional
 from datetime import datetime
 from contextlib import asynccontextmanager
@@ -46,6 +47,37 @@ def _strip_claude_input_prompt(output: str) -> str:
             return '\n'.join(lines[:i]).rstrip()
 
     return output
+
+
+def _colorize_tmux_output(output: str) -> str:
+    """Colorize tmux output by wrapping user input lines in HTML spans.
+
+    User input lines (starting with ❯) are wrapped in <span class="tmux-user-input">.
+    All content is HTML-escaped to prevent XSS.
+
+    Args:
+        output: Raw tmux output text
+
+    Returns:
+        HTML string with colorized lines joined by <br> tags
+    """
+    if not output:
+        return ""
+
+    lines = output.split('\n')
+    result_lines = []
+
+    for line in lines:
+        # HTML-escape the line first to prevent XSS
+        escaped_line = html.escape(line)
+
+        # Check if this is a user input line (starts with ❯)
+        if line.startswith('❯'):
+            result_lines.append(f'<span class="tmux-user-input">{escaped_line}</span>')
+        else:
+            result_lines.append(escaped_line)
+
+    return '<br>'.join(result_lines)
 
 
 # Get the directory where this file is located
@@ -460,8 +492,9 @@ async def agent_tmux(
         )
 
         if result.returncode == 0:
-            # Strip Claude Code's input prompt separator from the output
-            output = _strip_claude_input_prompt(result.stdout)
+            # Strip Claude Code's input prompt separator and colorize the output
+            stripped = _strip_claude_input_prompt(result.stdout)
+            output = _colorize_tmux_output(stripped)
         else:
             output = "Tmux session not active"
     except (subprocess.TimeoutExpired, FileNotFoundError):

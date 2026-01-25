@@ -953,6 +953,11 @@ button[disabled] {
     min-height: 0;
 }
 
+/* User input lines in tmux output - muted color to distinguish from agent output */
+.agent-chat-panel .tmux-output .tmux-user-input {
+    color: var(--text-muted);
+}
+
 .agent-chat-panel .tmux-input-container {
     padding: 10px;
     background: var(--bg-card);

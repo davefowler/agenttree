@@ -470,6 +470,118 @@ class TestAgentTmuxEndpoint:
         assert "not active" in response.text.lower()
 
 
+class TestColorizeTmuxOutput:
+    """Tests for _colorize_tmux_output function."""
+
+    def test_user_input_wrapped_in_span(self):
+        """Test that lines starting with ❯ are wrapped in tmux-user-input span."""
+        from agenttree.web.app import _colorize_tmux_output
+
+        output = "❯ hello world"
+        result = _colorize_tmux_output(output)
+
+        assert '<span class="tmux-user-input">' in result
+        assert "❯ hello world" in result
+        assert "</span>" in result
+
+    def test_agent_output_not_wrapped(self):
+        """Test that agent output lines are not wrapped in span."""
+        from agenttree.web.app import _colorize_tmux_output
+
+        output = "Agent response here"
+        result = _colorize_tmux_output(output)
+
+        assert "tmux-user-input" not in result
+        assert "Agent response here" in result
+
+    def test_html_special_chars_escaped(self):
+        """Test that HTML special characters are properly escaped."""
+        from agenttree.web.app import _colorize_tmux_output
+
+        output = "Code: <script>alert('xss')</script>"
+        result = _colorize_tmux_output(output)
+
+        assert "<script>" not in result
+        assert "&lt;script&gt;" in result
+        assert "&#x27;" in result or "&apos;" in result or "'" not in result.replace("&#x27;", "")
+
+    def test_html_escape_in_user_input(self):
+        """Test HTML escaping in user input lines."""
+        from agenttree.web.app import _colorize_tmux_output
+
+        output = "❯ <dangerous & input>"
+        result = _colorize_tmux_output(output)
+
+        assert "&lt;dangerous" in result
+        assert "&amp;" in result
+        assert "&gt;" in result
+        assert '<span class="tmux-user-input">' in result
+
+    def test_empty_input_returns_empty(self):
+        """Test that empty input returns empty output."""
+        from agenttree.web.app import _colorize_tmux_output
+
+        result = _colorize_tmux_output("")
+
+        assert result == ""
+
+    def test_mixed_content(self):
+        """Test mixed content with user input and agent output."""
+        from agenttree.web.app import _colorize_tmux_output
+
+        output = "Agent greeting\n❯ user command\nAgent response\n❯ another command"
+        result = _colorize_tmux_output(output)
+
+        # Should have two user input spans
+        assert result.count('class="tmux-user-input"') == 2
+        assert "Agent greeting" in result
+        assert "Agent response" in result
+        assert "user command" in result
+        assert "another command" in result
+
+    def test_whitespace_preserved(self):
+        """Test that leading whitespace is preserved in output."""
+        from agenttree.web.app import _colorize_tmux_output
+
+        output = "    indented line"
+        result = _colorize_tmux_output(output)
+
+        # Whitespace should be preserved
+        assert "    indented line" in result or "&#32;" in result or "&nbsp;" in result
+
+    def test_unicode_handling(self):
+        """Test Unicode handling with ❯ character and other Unicode."""
+        from agenttree.web.app import _colorize_tmux_output
+
+        output = "❯ こんにちは 🎉"
+        result = _colorize_tmux_output(output)
+
+        assert '<span class="tmux-user-input">' in result
+        assert "こんにちは" in result
+        assert "🎉" in result
+
+    def test_empty_lines_preserved(self):
+        """Test that empty lines are preserved as br tags."""
+        from agenttree.web.app import _colorize_tmux_output
+
+        output = "Line 1\n\nLine 3"
+        result = _colorize_tmux_output(output)
+
+        # Should have <br> tags for line breaks
+        assert "<br>" in result
+
+    def test_br_tags_for_line_breaks(self):
+        """Test that lines are joined with br tags."""
+        from agenttree.web.app import _colorize_tmux_output
+
+        output = "Line 1\nLine 2"
+        result = _colorize_tmux_output(output)
+
+        assert "Line 1" in result
+        assert "Line 2" in result
+        assert "<br>" in result
+
+
 class TestSendToAgentEndpoint:
     """Tests for send message to agent endpoint."""
 
