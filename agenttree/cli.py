@@ -836,6 +836,8 @@ def start_agent(
                 update_agent_container_id(issue.id, container_uuid)
                 console.print(f"[dim]Container UUID: {container_uuid[:12]}...[/dim]")
                 break
+        else:
+            console.print(f"[yellow]Warning: Could not find container UUID for cleanup tracking[/yellow]")
 
     console.print(f"\n[bold]Agent ready for issue #{issue.id}[/bold]")
     console.print(f"  Container: {agent.container}")

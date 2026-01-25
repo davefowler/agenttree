@@ -392,13 +392,22 @@ def find_container_by_worktree(worktree_path: Path) -> Optional[str]:
         # Normalize the worktree path for comparison
         abs_worktree = str(worktree_path.resolve())
 
+        # Limit containers checked to avoid performance issues with many containers
+        MAX_CONTAINERS_TO_CHECK = 50
+        checked = 0
+
         for container in containers:
+            if checked >= MAX_CONTAINERS_TO_CHECK:
+                break
+
             if container.get("status") != "running":
                 continue
 
             container_id: Optional[str] = container.get("id")
             if not container_id:
                 continue
+
+            checked += 1
 
             # Inspect container to get mount info
             inspect_result = subprocess.run(
@@ -426,7 +435,8 @@ def find_container_by_worktree(worktree_path: Path) -> Optional[str]:
 
         return None
 
-    except Exception:
+    except (subprocess.TimeoutExpired, subprocess.SubprocessError, json.JSONDecodeError):
+        # Expected errors when container runtime unavailable or returns bad data
         return None
 
 
