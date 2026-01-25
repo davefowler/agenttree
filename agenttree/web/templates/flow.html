@@ -73,8 +73,32 @@
             const isOn = lightElement.classList.contains('on');
 
             if (isOn) {
-                // Agent is running - navigate to issue
-                window.location.href = `/flow?issue=${issueNumber}`;
+                // Agent is running - stop it
+                lightElement.classList.remove('on');
+                lightElement.classList.add('stopping');
+                lightElement.title = 'Stopping agent...';
+
+                try {
+                    const response = await fetch(`/api/issues/${issueNumber}/stop`, {
+                        method: 'POST'
+                    });
+
+                    if (response.ok) {
+                        lightElement.classList.remove('stopping');
+                        lightElement.classList.add('off');
+                        lightElement.title = 'No agent - click to start';
+                        setTimeout(() => location.reload(), 500);
+                    } else {
+                        lightElement.classList.remove('stopping');
+                        lightElement.classList.add('on');
+                        lightElement.title = 'Failed to stop agent';
+                    }
+                } catch (error) {
+                    console.error('Error stopping agent:', error);
+                    lightElement.classList.remove('stopping');
+                    lightElement.classList.add('on');
+                    lightElement.title = 'Error stopping agent';
+                }
                 return;
             }
 
@@ -134,7 +158,32 @@
             const isOn = lightElement.classList.contains('on');
 
             if (isOn) {
-                // Already running - do nothing (use chat icon to toggle chat)
+                // Agent is running - stop it
+                lightElement.classList.remove('on');
+                lightElement.classList.add('stopping');
+                lightElement.title = 'Stopping agent...';
+
+                try {
+                    const response = await fetch(`/api/issues/${issueNumber}/stop`, {
+                        method: 'POST'
+                    });
+
+                    if (response.ok) {
+                        lightElement.classList.remove('stopping');
+                        lightElement.classList.add('off');
+                        lightElement.title = 'No agent - click to start';
+                        setTimeout(() => location.reload(), 500);
+                    } else {
+                        lightElement.classList.remove('stopping');
+                        lightElement.classList.add('on');
+                        lightElement.title = 'Failed to stop agent';
+                    }
+                } catch (error) {
+                    console.error('Error stopping agent:', error);
+                    lightElement.classList.remove('stopping');
+                    lightElement.classList.add('on');
+                    lightElement.title = 'Error stopping agent';
+                }
                 return;
             }
 

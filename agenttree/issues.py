@@ -423,6 +423,53 @@ def check_dependencies_met(issue: Issue) -> tuple[bool, list[str]]:
     return len(unmet) == 0, unmet
 
 
+def remove_dependency(issue_id: str, dep_id: str) -> Optional[Issue]:
+    """Remove a dependency from an issue.
+
+    Args:
+        issue_id: Issue to remove dependency from
+        dep_id: Dependency issue ID to remove
+
+    Returns:
+        Updated Issue object or None if not found
+    """
+    # Sync before and after writing
+    agents_path = get_agenttree_path()
+    sync_agents_repo(agents_path, pull_only=True)
+
+    issue_dir = get_issue_dir(issue_id)
+    if not issue_dir:
+        return None
+
+    yaml_path = issue_dir / "issue.yaml"
+    if not yaml_path.exists():
+        return None
+
+    with open(yaml_path) as f:
+        data = yaml.safe_load(f)
+
+    issue = Issue(**data)
+
+    # Normalize dep_id to match format in dependencies list
+    dep_normalized = f"{int(dep_id.lstrip('0') or '0'):03d}"
+
+    # Remove the dependency
+    if dep_normalized in issue.dependencies:
+        issue.dependencies.remove(dep_normalized)
+    elif dep_id in issue.dependencies:
+        issue.dependencies.remove(dep_id)
+
+    # Update timestamp
+    issue.updated = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    # Write back
+    with open(yaml_path, "w") as f:
+        yaml.dump(issue.model_dump(exclude_none=True), f, default_flow_style=False, sort_keys=False)
+
+    sync_agents_repo(agents_path)
+    return issue
+
+
 def detect_circular_dependency(
     issue_id: str,
     new_dependencies: list[str],

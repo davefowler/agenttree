@@ -585,6 +585,41 @@ button[disabled] {
     text-decoration: underline;
 }
 
+/* Dependency pill with remove button */
+.dep-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    margin: 0 2px;
+}
+
+.dep-pill .dep-remove {
+    display: none;
+    background: none;
+    border: none;
+    color: inherit;
+    font-size: 14px;
+    line-height: 1;
+    padding: 0 2px;
+    margin-left: 2px;
+    cursor: pointer;
+    opacity: 0.6;
+    border-radius: 2px;
+}
+
+.dep-pill:hover .dep-remove {
+    display: inline;
+}
+
+.dep-pill .dep-remove:hover {
+    opacity: 1;
+    background: rgba(0, 0, 0, 0.1);
+}
+
+[data-theme="dark"] .dep-pill .dep-remove:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
 .detail-actions {
     display: flex;
     align-items: center;
@@ -649,6 +684,13 @@ button[disabled] {
     animation: blink 0.5s ease-in-out infinite;
 }
 
+.agent-light.stopping {
+    background: #f97316;
+    border: 2px solid #ea580c;
+    box-shadow: 0 0 8px rgba(249, 115, 22, 0.6);
+    animation: blink 0.3s ease-in-out infinite;
+}
+
 .agent-light.stalled {
     background: #f97316;
     border: 2px solid #ea580c;
@@ -698,6 +740,13 @@ button[disabled] {
     border: 2px solid #f59e0b;
     box-shadow: 0 0 8px rgba(251, 191, 36, 0.6);
     animation: blink 0.5s ease-in-out infinite;
+}
+
+.agent-light-large.stopping {
+    background: #f97316;
+    border: 2px solid #ea580c;
+    box-shadow: 0 0 8px rgba(249, 115, 22, 0.6);
+    animation: blink 0.3s ease-in-out infinite;
 }
 
 @keyframes blink {

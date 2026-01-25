@@ -28,7 +28,14 @@
                     <span><a href="{{ issue.pr_url }}" target="_blank">PR #{{ issue.pr_number }}</a></span>
                     {% endif %}
                     {% if issue.dependencies %}
-                    <span class="dependency-info">Blocked by: {% for dep in issue.dependencies %}<a href="?issue={{ dep }}">#{{ dep }}</a>{% if not loop.last %}, {% endif %}{% endfor %}</span>
+                    <span class="dependency-info">Blocked by:
+                        {% for dep in issue.dependencies %}
+                        <span class="dep-pill" data-issue="{{ issue.number }}" data-dep="{{ dep }}">
+                            <a href="?issue={{ dep }}">#{{ dep }}</a>
+                            <button class="dep-remove" onclick="removeDependency('{{ issue.number }}', '{{ dep }}', this.parentElement)" title="Remove dependency">&times;</button>
+                        </span>
+                        {% endfor %}
+                    </span>
                     {% endif %}
                     {% if issue.dependents %}
                     <span class="dependent-info">Blocks: {% for dep in issue.dependents %}<a href="?issue={{ dep }}">#{{ dep }}</a>{% if not loop.last %}, {% endif %}{% endfor %}</span>
@@ -294,6 +301,31 @@ async function archiveIssue(issueNumber, btn) {
         console.error('Error archiving issue:', error);
         btn.disabled = false;
         btn.textContent = 'Archive';
+    }
+}
+
+// Remove a dependency from an issue
+async function removeDependency(issueNumber, depId, pillElement) {
+    try {
+        const response = await fetch(`/api/issues/${issueNumber}/dependencies/${depId}`, {
+            method: 'DELETE'
+        });
+
+        if (response.ok) {
+            // Remove the pill from the DOM
+            pillElement.remove();
+            // If no more dependencies, remove the whole "Blocked by:" span
+            const depInfo = document.querySelector('.dependency-info');
+            if (depInfo && depInfo.querySelectorAll('.dep-pill').length === 0) {
+                depInfo.remove();
+            }
+        } else {
+            const data = await response.json();
+            alert(`Cannot remove dependency: ${data.detail || 'Unknown error'}`);
+        }
+    } catch (error) {
+        console.error('Error removing dependency:', error);
+        alert('Error removing dependency');
     }
 }
 

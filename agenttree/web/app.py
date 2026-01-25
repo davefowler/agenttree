@@ -622,6 +622,21 @@ async def start_issue(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/issues/{issue_id}/stop")
+async def stop_issue(
+    issue_id: str,
+    user: Optional[str] = Depends(get_current_user)
+) -> dict:
+    """Stop an agent working on an issue (kills the tmux session)."""
+    try:
+        padded_id = issue_id.zfill(3)
+        session_name = f"{get_project_name()}-issue-{padded_id}"
+        agent_manager.stop_issue_agent(session_name)
+        return {"ok": True, "status": f"Stopped agent for issue #{issue_id}"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/api/issues/{issue_id}/agent-status")
 async def get_agent_status(
     issue_id: str,
@@ -810,6 +825,27 @@ async def create_issue_api(
             problem=description,
         )
         return {"ok": True, "issue_id": issue.id, "title": issue.title}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/issues/{issue_id}/dependencies/{dep_id}")
+async def remove_dependency(
+    issue_id: str,
+    dep_id: str,
+    user: Optional[str] = Depends(get_current_user)
+) -> dict:
+    """Remove a dependency from an issue."""
+    from agenttree.issues import remove_dependency as remove_dep
+
+    issue_id_normalized = issue_id.lstrip("0") or "0"
+    dep_id_normalized = dep_id.lstrip("0") or "0"
+
+    try:
+        issue = remove_dep(issue_id_normalized, dep_id_normalized)
+        if not issue:
+            raise HTTPException(status_code=404, detail=f"Issue {issue_id} not found")
+        return {"ok": True, "issue_id": issue.id, "dependencies": issue.dependencies}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
