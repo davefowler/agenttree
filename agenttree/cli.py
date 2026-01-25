@@ -1622,7 +1622,7 @@ def issue_create(
         # Auto-start agent unless blocked or --no-start specified
         if has_unmet_deps:
             console.print(f"\n[yellow]Issue blocked by dependencies - will auto-start when deps complete[/yellow]")
-        elif no_start:
+        elif no_start or effective_stage == "backlog":
             console.print(f"\n[bold]Next steps:[/bold]")
             console.print(f"  1. Fill in problem.md: [cyan]_agenttree/issues/{issue.id}-{issue.slug}/problem.md[/cyan]")
             console.print(f"  2. Start agent: [cyan]agenttree start {issue.id}[/cyan]")

@@ -337,6 +337,35 @@ class TestIssueCreateCommand:
         assert "blocked by dependencies" in result.output
         mock_start_agent.assert_not_called()
 
+    def test_issue_create_skips_auto_start_with_explicit_backlog_stage(self, cli_runner, mock_config, tmp_path):
+        """Should skip auto-start when issue is explicitly created in backlog stage."""
+        from agenttree.cli import main
+
+        mock_config.agents_dir = tmp_path / "_agenttree"
+        mock_config.agents_dir.mkdir()
+        (mock_config.agents_dir / "issues").mkdir()
+        (mock_config.agents_dir / "skills").mkdir()
+
+        mock_issue = MagicMock()
+        mock_issue.id = "42"
+        mock_issue.title = "A valid issue title here"
+        mock_issue.slug = "a-valid-issue-title-here"
+        mock_issue.stage = "backlog"
+        mock_issue.dependencies = None
+
+        problem = "This is a detailed problem statement that is at least 50 characters long for the test."
+
+        with patch("agenttree.cli.load_config", return_value=mock_config):
+            with patch("agenttree.cli.create_issue_func", return_value=mock_issue):
+                with patch("agenttree.cli.start_agent") as mock_start_agent:
+                    result = cli_runner.invoke(main, ["issue", "create", "A valid issue title here", "--problem", problem, "--stage", "backlog"])
+
+        assert result.exit_code == 0
+        # Should show "Next steps" message, not auto-start
+        assert "Next steps" in result.output
+        assert "agenttree start" in result.output
+        mock_start_agent.assert_not_called()
+
 
 class TestStatusCommand:
     """Tests for the status command."""
