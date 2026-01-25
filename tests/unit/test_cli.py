@@ -1233,3 +1233,221 @@ class TestRollbackCommand:
         assert result.exit_code == 0
         assert "Attaching to controller" in result.output
         mock_attach.assert_called_once_with("testproject-controller-000")
+
+
+class TestIssueShowCommand:
+    """Tests for the issue show command with --json and --field flags."""
+
+    def test_issue_show_not_found(self, cli_runner, mock_config):
+        """Should error when issue not found."""
+        from agenttree.cli import main
+
+        with patch("agenttree.cli.load_config", return_value=mock_config):
+            with patch("agenttree.cli.get_issue_func", return_value=None):
+                result = cli_runner.invoke(main, ["issue", "show", "999"])
+
+        assert result.exit_code == 1
+        assert "not found" in result.output.lower()
+
+    def test_issue_show_json(self, cli_runner, mock_config, tmp_path):
+        """Should output JSON when --json flag is used."""
+        import json
+        from agenttree.cli import main
+        from agenttree.issues import Issue, Priority
+
+        mock_issue = Issue(
+            id="042",
+            slug="test-issue",
+            title="Test Issue",
+            created="2026-01-11T12:00:00Z",
+            updated="2026-01-11T12:00:00Z",
+            stage="implement",
+            substage="code",
+            priority=Priority.HIGH,
+            branch="issue-042-test-issue",
+        )
+
+        issue_dir = tmp_path / "_agenttree" / "issues" / "042-test-issue"
+        issue_dir.mkdir(parents=True)
+        (issue_dir / "problem.md").write_text("# Problem")
+
+        with patch("agenttree.cli.load_config", return_value=mock_config):
+            with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
+                with patch("agenttree.cli.get_issue_dir", return_value=issue_dir):
+                    with patch("agenttree.issues.get_issue_dir", return_value=issue_dir):
+                        result = cli_runner.invoke(main, ["issue", "show", "042", "--json"])
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert data["id"] == "042"
+        assert data["title"] == "Test Issue"
+        assert data["stage"] == "implement"
+        assert data["substage"] == "code"
+        assert data["branch"] == "issue-042-test-issue"
+        assert data["priority"] == "high"
+        assert data["issue_dir_rel"] == "_agenttree/issues/042-test-issue"
+        assert data["stage_substage"] == "implement.code"
+        # JSON includes docs
+        assert "problem_md" in data
+
+    def test_issue_show_field(self, cli_runner, mock_config, tmp_path):
+        """Should output single field value when --field is used."""
+        from agenttree.cli import main
+        from agenttree.issues import Issue, Priority
+
+        mock_issue = Issue(
+            id="042",
+            slug="test-issue",
+            title="Test Issue",
+            created="2026-01-11T12:00:00Z",
+            updated="2026-01-11T12:00:00Z",
+            stage="implement",
+            substage="code",
+            branch="issue-042-test-issue",
+            worktree_dir="/path/to/worktree",
+        )
+
+        issue_dir = tmp_path / "_agenttree" / "issues" / "042-test-issue"
+        issue_dir.mkdir(parents=True)
+
+        with patch("agenttree.cli.load_config", return_value=mock_config):
+            with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
+                with patch("agenttree.cli.get_issue_dir", return_value=issue_dir):
+                    with patch("agenttree.issues.get_issue_dir", return_value=issue_dir):
+                        result = cli_runner.invoke(main, ["issue", "show", "042", "--field", "branch"])
+
+        assert result.exit_code == 0
+        assert result.output.strip() == "issue-042-test-issue"
+
+    def test_issue_show_field_worktree_dir(self, cli_runner, mock_config, tmp_path):
+        """Should output worktree_dir field value correctly."""
+        from agenttree.cli import main
+        from agenttree.issues import Issue
+
+        mock_issue = Issue(
+            id="042",
+            slug="test-issue",
+            title="Test Issue",
+            created="2026-01-11T12:00:00Z",
+            updated="2026-01-11T12:00:00Z",
+            worktree_dir="/path/to/worktree",
+        )
+
+        issue_dir = tmp_path / "_agenttree" / "issues" / "042-test-issue"
+        issue_dir.mkdir(parents=True)
+
+        with patch("agenttree.cli.load_config", return_value=mock_config):
+            with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
+                with patch("agenttree.cli.get_issue_dir", return_value=issue_dir):
+                    with patch("agenttree.issues.get_issue_dir", return_value=issue_dir):
+                        result = cli_runner.invoke(main, ["issue", "show", "042", "--field", "worktree_dir"])
+
+        assert result.exit_code == 0
+        assert result.output.strip() == "/path/to/worktree"
+
+    def test_issue_show_field_stage_substage(self, cli_runner, mock_config, tmp_path):
+        """Should output combined stage_substage field."""
+        from agenttree.cli import main
+        from agenttree.issues import Issue
+
+        mock_issue = Issue(
+            id="042",
+            slug="test-issue",
+            title="Test Issue",
+            created="2026-01-11T12:00:00Z",
+            updated="2026-01-11T12:00:00Z",
+            stage="implement",
+            substage="code",
+        )
+
+        issue_dir = tmp_path / "_agenttree" / "issues" / "042-test-issue"
+        issue_dir.mkdir(parents=True)
+
+        with patch("agenttree.cli.load_config", return_value=mock_config):
+            with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
+                with patch("agenttree.cli.get_issue_dir", return_value=issue_dir):
+                    with patch("agenttree.issues.get_issue_dir", return_value=issue_dir):
+                        result = cli_runner.invoke(main, ["issue", "show", "042", "--field", "stage_substage"])
+
+        assert result.exit_code == 0
+        assert result.output.strip() == "implement.code"
+
+    def test_issue_show_field_unknown(self, cli_runner, mock_config, tmp_path):
+        """Should error when field name is unknown."""
+        from agenttree.cli import main
+        from agenttree.issues import Issue
+
+        mock_issue = Issue(
+            id="042",
+            slug="test-issue",
+            title="Test Issue",
+            created="2026-01-11T12:00:00Z",
+            updated="2026-01-11T12:00:00Z",
+        )
+
+        issue_dir = tmp_path / "_agenttree" / "issues" / "042-test-issue"
+        issue_dir.mkdir(parents=True)
+
+        with patch("agenttree.cli.load_config", return_value=mock_config):
+            with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
+                with patch("agenttree.cli.get_issue_dir", return_value=issue_dir):
+                    with patch("agenttree.issues.get_issue_dir", return_value=issue_dir):
+                        result = cli_runner.invoke(main, ["issue", "show", "042", "--field", "nonexistent_field"])
+
+        assert result.exit_code == 1
+        assert "Unknown field" in result.output
+        assert "Available fields" in result.output
+
+    def test_issue_show_field_list_value(self, cli_runner, mock_config, tmp_path):
+        """Should output list values as JSON."""
+        import json
+        from agenttree.cli import main
+        from agenttree.issues import Issue
+
+        mock_issue = Issue(
+            id="042",
+            slug="test-issue",
+            title="Test Issue",
+            created="2026-01-11T12:00:00Z",
+            updated="2026-01-11T12:00:00Z",
+            labels=["bug", "urgent"],
+        )
+
+        issue_dir = tmp_path / "_agenttree" / "issues" / "042-test-issue"
+        issue_dir.mkdir(parents=True)
+
+        with patch("agenttree.cli.load_config", return_value=mock_config):
+            with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
+                with patch("agenttree.cli.get_issue_dir", return_value=issue_dir):
+                    with patch("agenttree.issues.get_issue_dir", return_value=issue_dir):
+                        result = cli_runner.invoke(main, ["issue", "show", "042", "--field", "labels"])
+
+        assert result.exit_code == 0
+        labels = json.loads(result.output.strip())
+        assert labels == ["bug", "urgent"]
+
+    def test_issue_show_field_none_value(self, cli_runner, mock_config, tmp_path):
+        """Should output empty string for None values."""
+        from agenttree.cli import main
+        from agenttree.issues import Issue
+
+        mock_issue = Issue(
+            id="042",
+            slug="test-issue",
+            title="Test Issue",
+            created="2026-01-11T12:00:00Z",
+            updated="2026-01-11T12:00:00Z",
+            branch=None,  # No branch assigned
+        )
+
+        issue_dir = tmp_path / "_agenttree" / "issues" / "042-test-issue"
+        issue_dir.mkdir(parents=True)
+
+        with patch("agenttree.cli.load_config", return_value=mock_config):
+            with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
+                with patch("agenttree.cli.get_issue_dir", return_value=issue_dir):
+                    with patch("agenttree.issues.get_issue_dir", return_value=issue_dir):
+                        result = cli_runner.invoke(main, ["issue", "show", "042", "--field", "branch"])
+
+        assert result.exit_code == 0
+        assert result.output.strip() == ""
