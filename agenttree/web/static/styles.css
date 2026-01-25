@@ -154,6 +154,33 @@ header h1 {
     background: var(--btn-bg-hover);
 }
 
+.btn-new-issue {
+    margin-left: 15px;
+    padding: 6px 14px;
+    background: #5d8a6b;
+    border: 1px solid #4a7359;
+    border-radius: 4px;
+    color: #f8f6f0;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-new-issue:hover {
+    background: #4a7359;
+    border-color: #3d6149;
+}
+
+[data-theme="dark"] .btn-new-issue {
+    background: #3d6b5a;
+    border-color: #2d5a4a;
+}
+
+[data-theme="dark"] .btn-new-issue:hover {
+    background: #4a7d68;
+}
+
 /* ==============================================
    Buttons
    ============================================== */
@@ -1416,4 +1443,74 @@ button[disabled] {
 
 .flow-sidebar .issue-item[data-stage="not_doing"] {
     border-left-color: #ef4444;
+}
+
+/* ==============================================
+   New Issue Modal
+   ============================================== */
+
+.new-issue-modal-content {
+    max-width: 500px;
+    height: auto;
+    max-height: 400px;
+    padding: 30px;
+}
+
+.new-issue-form-container h2 {
+    margin: 0 0 25px 0;
+    color: var(--text-accent);
+    font-size: 20px;
+    font-weight: 600;
+}
+
+.form-group {
+    margin-bottom: 20px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 6px;
+    font-weight: 500;
+    color: var(--text-primary);
+    font-size: 14px;
+}
+
+.form-group input[type="text"],
+.form-group select {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--bg-card);
+    color: var(--text-primary);
+    font-size: 14px;
+    transition: border-color 0.2s;
+}
+
+.form-group input[type="text"]:focus,
+.form-group select:focus {
+    outline: none;
+    border-color: var(--text-accent);
+}
+
+.form-group input[type="text"]::placeholder {
+    color: var(--text-muted);
+}
+
+.form-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 25px;
+}
+
+.form-error {
+    color: #dc2626;
+    font-size: 13px;
+    margin-top: 15px;
+    min-height: 20px;
+}
+
+[data-theme="dark"] .form-error {
+    color: #f87171;
 }
