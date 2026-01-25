@@ -32,7 +32,7 @@
                         {% for dep in issue.dependencies %}
                         <span class="dep-pill" data-issue="{{ issue.number }}" data-dep="{{ dep }}">
                             <a href="?issue={{ dep }}">#{{ dep }}</a>
-                            <button class="dep-remove" onclick="removeDependency('{{ issue.number }}', '{{ dep }}', this.parentElement)" title="Remove dependency">&times;</button>
+                            <button class="dep-remove" onclick="removeDependency('{{ issue.number }}', '{{ dep }}', this.parentElement)" title="Remove dependency">x</button>
                         </span>
                         {% endfor %}
                     </span>

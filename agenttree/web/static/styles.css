@@ -589,35 +589,37 @@ button[disabled] {
 .dep-pill {
     display: inline-flex;
     align-items: center;
-    gap: 2px;
     margin: 0 2px;
 }
 
 .dep-pill .dep-remove {
-    display: none;
+    visibility: hidden;
+    opacity: 0;
     background: none;
     border: none;
     color: inherit;
-    font-size: 14px;
+    font-size: 12px;
+    font-weight: bold;
     line-height: 1;
-    padding: 0 2px;
-    margin-left: 2px;
+    padding: 0 3px;
+    margin-left: 1px;
     cursor: pointer;
-    opacity: 0.6;
     border-radius: 2px;
+    transition: opacity 0.15s, visibility 0.15s;
 }
 
 .dep-pill:hover .dep-remove {
-    display: inline;
+    visibility: visible;
+    opacity: 0.6;
 }
 
 .dep-pill .dep-remove:hover {
     opacity: 1;
-    background: rgba(0, 0, 0, 0.1);
+    background: rgba(0, 0, 0, 0.15);
 }
 
 [data-theme="dark"] .dep-pill .dep-remove:hover {
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.15);
 }
 
 .detail-actions {
