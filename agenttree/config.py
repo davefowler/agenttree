@@ -118,6 +118,17 @@ class StageConfig(BaseModel):
         return getattr(self, event, [])
 
 
+class ControllerConfig(BaseModel):
+    """Configuration for the controller agent's stall monitoring.
+
+    These settings control how the controller detects and handles stalled agents.
+    """
+
+    stall_threshold_min: int = 20  # Minutes before agent considered stalled
+    nudge_cooldown_min: int = 30  # Minutes between nudges for same agent
+    max_nudges_before_escalate: int = 3  # Escalate after N failed nudges
+
+
 class SecurityConfig(BaseModel):
     """Security configuration for agents.
 
@@ -148,6 +159,7 @@ class Config(BaseModel):
     security: SecurityConfig = Field(default_factory=SecurityConfig)
     merge_strategy: str = "squash"  # squash, merge, or rebase
     hooks: HooksConfig = Field(default_factory=HooksConfig)
+    controller: ControllerConfig = Field(default_factory=ControllerConfig)
 
     def get_port_for_agent(self, agent_num: int) -> int:
         """Get port number for a specific agent.
