@@ -33,6 +33,36 @@
             <button class="toggle-btn" onclick="setStageView('all')" id="toggle-all">All Stages</button>
         </div>
         <button class="btn btn-new-issue" onclick="openNewIssueModal()">+ New Issue</button>
+        {% elif active_page == 'flow' %}
+        <div class="flow-controls">
+            <label class="flow-control-label">Sort:</label>
+            <select class="flow-select" onchange="updateFlowParams('sort', this.value)">
+                <option value="stage" {{ 'selected' if current_sort == 'stage' else '' }}>Stage</option>
+                <option value="updated" {{ 'selected' if current_sort == 'updated' else '' }}>Updated</option>
+                <option value="created" {{ 'selected' if current_sort == 'created' else '' }}>Created</option>
+                <option value="number" {{ 'selected' if current_sort == 'number' else '' }}>Number</option>
+            </select>
+            <label class="flow-control-label">Filter:</label>
+            <select class="flow-select" onchange="updateFlowParams('filter', this.value)">
+                <option value="all" {{ 'selected' if current_filter == 'all' else '' }}>All</option>
+                <option value="review" {{ 'selected' if current_filter == 'review' else '' }}>Review</option>
+                <option value="running" {{ 'selected' if current_filter == 'running' else '' }}>Running</option>
+                <option value="open" {{ 'selected' if current_filter == 'open' else '' }}>Open</option>
+            </select>
+        </div>
+        <script>
+            function updateFlowParams(param, value) {
+                const url = new URL(window.location);
+                if (value === 'stage' && param === 'sort') {
+                    url.searchParams.delete('sort');
+                } else if (value === 'all' && param === 'filter') {
+                    url.searchParams.delete('filter');
+                } else {
+                    url.searchParams.set(param, value);
+                }
+                window.location.href = url.toString();
+            }
+        </script>
         {% endif %}
         <button class="controller-toggle" onclick="toggleControllerPanel()" title="Toggle controller panel">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

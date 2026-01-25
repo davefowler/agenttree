@@ -1,6 +1,7 @@
 """Tests for web API endpoints."""
 
 import pytest
+from types import SimpleNamespace
 from unittest.mock import Mock, patch, MagicMock
 from datetime import datetime
 
@@ -127,6 +128,202 @@ class TestFlowEndpoint:
 
         assert response.status_code == 200
         assert "text/html" in response.headers["content-type"]
+
+    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.app.agent_manager")
+    def test_flow_accepts_sort_param(self, mock_agent_mgr, mock_crud, client):
+        """Test flow endpoint accepts sort parameter."""
+        mock_crud.list_issues.return_value = []
+        mock_agent_mgr.clear_session_cache = Mock()
+
+        response = client.get("/flow?sort=updated")
+
+        assert response.status_code == 200
+        assert "text/html" in response.headers["content-type"]
+
+    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.app.agent_manager")
+    def test_flow_accepts_filter_param(self, mock_agent_mgr, mock_crud, client):
+        """Test flow endpoint accepts filter parameter."""
+        mock_crud.list_issues.return_value = []
+        mock_agent_mgr.clear_session_cache = Mock()
+
+        response = client.get("/flow?filter=review")
+
+        assert response.status_code == 200
+        assert "text/html" in response.headers["content-type"]
+
+    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.app.agent_manager")
+    def test_flow_sort_and_filter_combined(self, mock_agent_mgr, mock_crud, client):
+        """Test flow can sort and filter at the same time."""
+        mock_crud.list_issues.return_value = []
+        mock_agent_mgr.clear_session_cache = Mock()
+
+        response = client.get("/flow?sort=updated&filter=review")
+
+        assert response.status_code == 200
+        assert "text/html" in response.headers["content-type"]
+
+
+class TestFlowSortingFunctions:
+    """Tests for flow sorting and filtering functions."""
+
+    def test_sort_flow_issues_by_updated(self):
+        """Test sorting by updated date."""
+        from agenttree.web.app import _sort_flow_issues
+        from agenttree.web.models import Issue as WebIssue, StageEnum
+
+        issue1 = WebIssue(
+            number=1, title="Older", body="", labels=[], assignees=[],
+            stage=StageEnum.BACKLOG, substage=None, assigned_agent=None,
+            tmux_active=False, pr_url=None, pr_number=None,
+            created_at=datetime(2024, 1, 1), updated_at=datetime(2024, 1, 1),
+            dependencies=[], dependents=[],
+        )
+        issue2 = WebIssue(
+            number=2, title="Newer", body="", labels=[], assignees=[],
+            stage=StageEnum.BACKLOG, substage=None, assigned_agent=None,
+            tmux_active=False, pr_url=None, pr_number=None,
+            created_at=datetime(2024, 1, 1), updated_at=datetime(2024, 1, 2),
+            dependencies=[], dependents=[],
+        )
+
+        result = _sort_flow_issues([issue1, issue2], sort_by="updated")
+
+        # Newer issue should come first
+        assert result[0].number == 2
+        assert result[1].number == 1
+
+    def test_sort_flow_issues_by_number(self):
+        """Test sorting by issue number."""
+        from agenttree.web.app import _sort_flow_issues
+        from agenttree.web.models import Issue as WebIssue, StageEnum
+
+        issue10 = WebIssue(
+            number=10, title="Ten", body="", labels=[], assignees=[],
+            stage=StageEnum.BACKLOG, substage=None, assigned_agent=None,
+            tmux_active=False, pr_url=None, pr_number=None,
+            created_at=datetime(2024, 1, 1), updated_at=datetime(2024, 1, 1),
+            dependencies=[], dependents=[],
+        )
+        issue5 = WebIssue(
+            number=5, title="Five", body="", labels=[], assignees=[],
+            stage=StageEnum.BACKLOG, substage=None, assigned_agent=None,
+            tmux_active=False, pr_url=None, pr_number=None,
+            created_at=datetime(2024, 1, 1), updated_at=datetime(2024, 1, 1),
+            dependencies=[], dependents=[],
+        )
+
+        result = _sort_flow_issues([issue10, issue5], sort_by="number")
+
+        # Lower number should come first
+        assert result[0].number == 5
+        assert result[1].number == 10
+
+    def test_sort_flow_issues_by_created(self):
+        """Test sorting by created date."""
+        from agenttree.web.app import _sort_flow_issues
+        from agenttree.web.models import Issue as WebIssue, StageEnum
+
+        issue1 = WebIssue(
+            number=1, title="Older", body="", labels=[], assignees=[],
+            stage=StageEnum.BACKLOG, substage=None, assigned_agent=None,
+            tmux_active=False, pr_url=None, pr_number=None,
+            created_at=datetime(2024, 1, 1), updated_at=datetime(2024, 1, 1),
+            dependencies=[], dependents=[],
+        )
+        issue2 = WebIssue(
+            number=2, title="Newer", body="", labels=[], assignees=[],
+            stage=StageEnum.BACKLOG, substage=None, assigned_agent=None,
+            tmux_active=False, pr_url=None, pr_number=None,
+            created_at=datetime(2024, 1, 2), updated_at=datetime(2024, 1, 1),
+            dependencies=[], dependents=[],
+        )
+
+        result = _sort_flow_issues([issue1, issue2], sort_by="created")
+
+        # Newer created should come first
+        assert result[0].number == 2
+        assert result[1].number == 1
+
+    def test_filter_flow_issues_review(self):
+        """Test filtering to review stages."""
+        from agenttree.web.app import _filter_flow_issues
+        from agenttree.web.models import Issue as WebIssue, StageEnum
+
+        review_issue = WebIssue(
+            number=1, title="Review", body="", labels=[], assignees=[],
+            stage=StageEnum.IMPLEMENTATION_REVIEW, substage=None,
+            assigned_agent="1", tmux_active=False, pr_url=None, pr_number=None,
+            created_at=datetime(2024, 1, 1), updated_at=datetime(2024, 1, 1),
+            dependencies=[], dependents=[],
+        )
+        other_issue = WebIssue(
+            number=2, title="Other", body="", labels=[], assignees=[],
+            stage=StageEnum.IMPLEMENT, substage=None, assigned_agent=None,
+            tmux_active=False, pr_url=None, pr_number=None,
+            created_at=datetime(2024, 1, 1), updated_at=datetime(2024, 1, 1),
+            dependencies=[], dependents=[],
+        )
+
+        result = _filter_flow_issues([review_issue, other_issue], filter_by="review")
+
+        # Only review issue should remain
+        assert len(result) == 1
+        assert result[0].number == 1
+
+    def test_filter_flow_issues_running(self):
+        """Test filtering to running agents."""
+        from agenttree.web.app import _filter_flow_issues
+        from agenttree.web.models import Issue as WebIssue, StageEnum
+
+        running_issue = WebIssue(
+            number=1, title="Running", body="", labels=[], assignees=[],
+            stage=StageEnum.IMPLEMENT, substage=None, assigned_agent="1",
+            tmux_active=True, pr_url=None, pr_number=None,
+            created_at=datetime(2024, 1, 1), updated_at=datetime(2024, 1, 1),
+            dependencies=[], dependents=[],
+        )
+        stopped_issue = WebIssue(
+            number=2, title="Stopped", body="", labels=[], assignees=[],
+            stage=StageEnum.IMPLEMENT, substage=None, assigned_agent=None,
+            tmux_active=False, pr_url=None, pr_number=None,
+            created_at=datetime(2024, 1, 1), updated_at=datetime(2024, 1, 1),
+            dependencies=[], dependents=[],
+        )
+
+        result = _filter_flow_issues([running_issue, stopped_issue], filter_by="running")
+
+        # Only running issue should remain
+        assert len(result) == 1
+        assert result[0].number == 1
+
+    def test_filter_flow_issues_open(self):
+        """Test filtering to hide closed issues."""
+        from agenttree.web.app import _filter_flow_issues
+        from agenttree.web.models import Issue as WebIssue, StageEnum
+
+        open_issue = WebIssue(
+            number=1, title="Open", body="", labels=[], assignees=[],
+            stage=StageEnum.IMPLEMENT, substage=None, assigned_agent=None,
+            tmux_active=False, pr_url=None, pr_number=None,
+            created_at=datetime(2024, 1, 1), updated_at=datetime(2024, 1, 1),
+            dependencies=[], dependents=[],
+        )
+        accepted_issue = WebIssue(
+            number=2, title="Accepted", body="", labels=[], assignees=[],
+            stage=StageEnum.ACCEPTED, substage=None, assigned_agent=None,
+            tmux_active=False, pr_url=None, pr_number=None,
+            created_at=datetime(2024, 1, 1), updated_at=datetime(2024, 1, 1),
+            dependencies=[], dependents=[],
+        )
+
+        result = _filter_flow_issues([open_issue, accepted_issue], filter_by="open")
+
+        # Only open issue should remain
+        assert len(result) == 1
+        assert result[0].number == 1
 
 
 class TestAgentStatusEndpoint:
