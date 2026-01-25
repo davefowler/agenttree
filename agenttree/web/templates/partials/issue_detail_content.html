@@ -76,7 +76,7 @@
         <div class="file-tabs-container">
             <div class="file-tabs" id="file-tabs-{{ issue.number }}">
                 {% for file in files %}
-                <button class="file-tab{% if loop.last %} active{% endif %}"
+                <button class="file-tab{% if loop.last and not issue.has_worktree %} active{% endif %}"
                         onclick="selectFileTab(event, '{{ issue.number }}', '{{ file.name }}')"
                         data-filename="{{ file.name }}">
                     {{ file.display_name }}
@@ -84,6 +84,13 @@
                 {% else %}
                 <span class="no-files">No files found</span>
                 {% endfor %}
+                {% if issue.has_worktree %}
+                <button class="file-tab{% if files|length == 0 %} active{% endif %}"
+                        onclick="selectFileTab(event, '{{ issue.number }}', 'changes'); loadDiff('{{ issue.number }}')"
+                        data-filename="changes">
+                    Changes
+                </button>
+                {% endif %}
             </div>
         </div>
 
@@ -118,6 +125,20 @@
                 <p>No files found for this issue</p>
             </div>
             {% endfor %}
+
+            {% if issue.has_worktree %}
+            <!-- Diff content area -->
+            <div class="file-content-item"
+                 data-filename="changes"
+                 style="display: none;">
+                <div class="diff-loading" id="diff-loading-{{ issue.number }}" style="display: none;">
+                    <div class="spinner"></div>
+                    <span>Loading diff...</span>
+                </div>
+                <div class="diff-error" id="diff-error-{{ issue.number }}" style="display: none;"></div>
+                <div class="diff-content" id="diff-content-{{ issue.number }}"></div>
+            </div>
+            {% endif %}
         </div>
 
         <!-- Timestamps -->
@@ -276,6 +297,75 @@ async function archiveIssue(issueNumber, btn) {
         console.error('Error archiving issue:', error);
         btn.disabled = false;
         btn.textContent = 'Archive';
+    }
+}
+
+// Track which diffs have been loaded to avoid re-fetching
+const loadedDiffs = new Set();
+
+async function loadDiff(issueNumber) {
+    // Skip if already loaded
+    if (loadedDiffs.has(issueNumber)) {
+        return;
+    }
+
+    const loadingEl = document.getElementById(`diff-loading-${issueNumber}`);
+    const errorEl = document.getElementById(`diff-error-${issueNumber}`);
+    const contentEl = document.getElementById(`diff-content-${issueNumber}`);
+
+    if (!loadingEl || !contentEl) return;
+
+    // Show loading state
+    loadingEl.style.display = 'flex';
+    errorEl.style.display = 'none';
+    contentEl.innerHTML = '';
+
+    try {
+        const response = await fetch(`/api/issues/${issueNumber}/diff`);
+        const data = await response.json();
+
+        loadingEl.style.display = 'none';
+
+        if (data.error) {
+            errorEl.textContent = data.error;
+            errorEl.style.display = 'block';
+            return;
+        }
+
+        if (!data.has_changes) {
+            contentEl.innerHTML = '<div class="diff-empty">No differences from main</div>';
+            loadedDiffs.add(issueNumber);
+            return;
+        }
+
+        // Show truncation warning if applicable
+        if (data.truncated) {
+            errorEl.textContent = 'Diff truncated due to size. View full diff in PR.';
+            errorEl.className = 'diff-warning';
+            errorEl.style.display = 'block';
+        }
+
+        // Render diff with diff2html
+        if (typeof Diff2HtmlUI !== 'undefined') {
+            const diff2htmlUi = new Diff2HtmlUI(contentEl, data.diff, {
+                drawFileList: true,
+                matching: 'lines',
+                outputFormat: 'line-by-line',
+                fileContentToggle: true
+            });
+            diff2htmlUi.draw();
+            diff2htmlUi.highlightCode();
+        } else {
+            // Fallback: show raw diff
+            contentEl.innerHTML = '<pre class="diff-raw">' + data.diff.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</pre>';
+        }
+
+        loadedDiffs.add(issueNumber);
+    } catch (error) {
+        loadingEl.style.display = 'none';
+        errorEl.textContent = 'Failed to load diff: ' + error.message;
+        errorEl.style.display = 'block';
+        console.error('Error loading diff:', error);
     }
 }
 </script>
