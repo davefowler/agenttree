@@ -1,0 +1,123 @@
+<!-- Controller panel - right-side overlay for main controller agent -->
+<div class="controller-panel" id="controller-panel">
+    <div class="controller-panel-header">
+        <h4>Controller</h4>
+        <button class="controller-panel-close" onclick="toggleControllerPanel()" title="Close panel">&times;</button>
+    </div>
+    <div class="controller-panel-content">
+        <div class="controller-status" id="controller-status">
+            <span class="status-indicator" id="controller-status-indicator"></span>
+            <span id="controller-status-text">Checking...</span>
+        </div>
+        <div class="tmux-output" id="controller-tmux-output"
+             hx-get="/controller/tmux"
+             hx-trigger="load, every 2s [document.visibilityState=='visible' && !document.getElementById('controller-panel').classList.contains('collapsed')]"
+             hx-swap="innerHTML">
+            Loading...
+        </div>
+        <div class="tmux-input-container">
+            <form hx-post="/controller/send"
+                  hx-trigger="submit"
+                  hx-swap="none"
+                  hx-on::after-request="this.reset()"
+                  class="send-form">
+                <input type="text" name="message" class="tmux-input"
+                       placeholder="Send message to controller..."
+                       autocomplete="off"
+                       required>
+                <button type="submit" class="send-button">
+                    <span class="btn-text">Send</span>
+                    <span class="btn-loading htmx-indicator">...</span>
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+<script>
+(function() {
+    // Prevent duplicate initialization
+    if (window._controllerPanelInitialized) return;
+    window._controllerPanelInitialized = true;
+
+    // Controller panel toggle with localStorage persistence
+    window.toggleControllerPanel = function() {
+        const panel = document.getElementById('controller-panel');
+        if (panel) {
+            panel.classList.toggle('collapsed');
+            const isOpen = !panel.classList.contains('collapsed');
+            localStorage.setItem('controllerPanelOpen', isOpen ? '1' : '0');
+
+            // If opening, refresh the tmux output
+            if (isOpen) {
+                htmx.trigger('#controller-tmux-output', 'load');
+                checkControllerStatus();
+            }
+        }
+    };
+
+    // Check controller status
+    async function checkControllerStatus() {
+        try {
+            const response = await fetch('/api/controller/status');
+            if (response.ok) {
+                const data = await response.json();
+                const indicator = document.getElementById('controller-status-indicator');
+                const text = document.getElementById('controller-status-text');
+                if (data.active) {
+                    indicator.classList.remove('inactive');
+                    indicator.classList.add('active');
+                    text.textContent = 'Controller active';
+                } else {
+                    indicator.classList.remove('active');
+                    indicator.classList.add('inactive');
+                    text.textContent = 'Controller not running';
+                }
+            }
+        } catch (e) {
+            console.error('Error checking controller status:', e);
+        }
+    }
+
+    // Smart auto-scroll for controller panel
+    const wasAtBottom = new Map();
+
+    document.body.addEventListener('htmx:beforeSwap', function(e) {
+        const target = e.detail.target;
+        if (target && target.id === 'controller-tmux-output') {
+            const isAtBottom = target.scrollHeight - target.scrollTop - target.clientHeight < 50;
+            wasAtBottom.set(target.id, isAtBottom);
+        }
+    });
+
+    document.body.addEventListener('htmx:afterSwap', function(e) {
+        const target = e.detail.target;
+        if (target && target.id === 'controller-tmux-output') {
+            if (wasAtBottom.get(target.id)) {
+                target.scrollTop = target.scrollHeight;
+            }
+            wasAtBottom.delete(target.id);
+        }
+    });
+
+    // Initialize panel state from localStorage
+    const isOpen = localStorage.getItem('controllerPanelOpen') === '1';
+    const panel = document.getElementById('controller-panel');
+    if (panel) {
+        if (!isOpen) {
+            panel.classList.add('collapsed');
+        }
+        // Check status on initial load if panel is open
+        if (isOpen) {
+            checkControllerStatus();
+        }
+    }
+
+    // Poll controller status every 10 seconds when panel is open
+    setInterval(function() {
+        const panel = document.getElementById('controller-panel');
+        if (panel && !panel.classList.contains('collapsed')) {
+            checkControllerStatus();
+        }
+    }, 10000);
+})();
+</script>

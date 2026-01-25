@@ -1848,3 +1848,192 @@ button[disabled] {
 .d2h-diff-tbody > tr > td {
     border-color: var(--border-light) !important;
 }
+
+/* ==============================================
+   Controller Toggle Button
+   ============================================== */
+
+.controller-toggle {
+    background: var(--btn-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 6px 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.controller-toggle:hover {
+    background: var(--btn-bg-hover);
+    color: var(--text-accent);
+}
+
+.controller-toggle svg {
+    display: block;
+}
+
+/* ==============================================
+   Controller Panel
+   ============================================== */
+
+.controller-panel {
+    position: fixed;
+    top: 0;
+    right: 0;
+    width: 400px;
+    height: 100vh;
+    background: #1e3a2f;
+    display: flex;
+    flex-direction: column;
+    z-index: 200;
+    box-shadow: -4px 0 20px rgba(0, 0, 0, 0.3);
+    transition: transform 0.3s ease, opacity 0.3s ease;
+}
+
+.controller-panel.collapsed {
+    transform: translateX(100%);
+    opacity: 0;
+    pointer-events: none;
+}
+
+.controller-panel-header {
+    background: #2d4a3e;
+    padding: 14px 16px;
+    border-bottom: 1px solid #4a7c6f;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.controller-panel-header h4 {
+    color: #a8d5ba;
+    font-size: 15px;
+    font-weight: 600;
+    margin: 0;
+}
+
+.controller-panel-close {
+    background: none;
+    border: none;
+    color: #8eb89c;
+    cursor: pointer;
+    font-size: 22px;
+    padding: 2px 8px;
+    line-height: 1;
+    border-radius: 4px;
+    transition: all 0.2s;
+}
+
+.controller-panel-close:hover {
+    color: #a8d5ba;
+    background: rgba(168, 213, 186, 0.1);
+}
+
+.controller-panel-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.controller-status {
+    padding: 10px 16px;
+    background: #2d4a3e;
+    border-bottom: 1px solid #4a7c6f;
+    font-size: 12px;
+    color: #a8d5ba;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.controller-status .status-indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    transition: all 0.2s;
+}
+
+.controller-status .status-indicator.active {
+    background: #4ade80;
+    box-shadow: 0 0 6px rgba(74, 222, 128, 0.5);
+}
+
+.controller-status .status-indicator.inactive {
+    background: #6b7280;
+}
+
+.controller-panel .tmux-output {
+    flex: 1;
+    background: #0d1f18;
+    padding: 12px;
+    overflow-y: auto;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: #e8e4d9;
+    min-height: 0;
+}
+
+.controller-panel .tmux-input-container {
+    padding: 12px;
+    background: #2d4a3e;
+    border-top: 1px solid #4a7c6f;
+}
+
+.controller-panel .send-form {
+    display: flex;
+    gap: 8px;
+}
+
+.controller-panel .tmux-input {
+    flex: 1;
+    padding: 10px 14px;
+    background: #1e3a2f;
+    border: 1px solid #4a7c6f;
+    border-radius: 4px;
+    color: #e8e4d9;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 13px;
+}
+
+.controller-panel .tmux-input:focus {
+    outline: none;
+    border-color: #a8d5ba;
+}
+
+.controller-panel .send-button {
+    padding: 10px 18px;
+    background: #4a7c6f;
+    border: 1px solid #5a9a88;
+    border-radius: 4px;
+    color: #e8e4d9;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.controller-panel .send-button:hover {
+    background: #5a9a88;
+}
+
+.controller-panel .send-button:active {
+    background: #3d6a5f;
+}
+
+.controller-panel .send-button .btn-loading {
+    display: none;
+}
+
+.controller-panel .send-form.htmx-request .btn-text {
+    display: none;
+}
+
+.controller-panel .send-form.htmx-request .btn-loading {
+    display: inline;
+}
