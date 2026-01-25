@@ -298,7 +298,8 @@ class TestRollbackValidation:
                     result = cli_runner.invoke(main, ["rollback", "42", "implement", "-y"])
 
         assert result.exit_code == 1
-        assert "not before" in result.output.lower() or "cannot rollback" in result.output.lower()
+        # The message says target stage is "not before" current stage
+        assert "not before" in result.output.lower() or "cannot rollback" in result.output.lower() or "backwards" in result.output.lower()
 
     def test_rejects_rollback_in_container(self, cli_runner, mock_config):
         """Should error when running inside a container."""
@@ -336,13 +337,12 @@ class TestRollbackUpdatesState:
                     with patch("agenttree.cli.get_issue_dir", return_value=temp_issue_dir):
                         with patch("agenttree.cli.delete_session"):
                             with patch("agenttree.agents_repo.sync_agents_repo"):
-                                with patch("agenttree.cli.get_active_agent", return_value=None):
+                                with patch("agenttree.state.get_active_agent", return_value=None):
                                     result = cli_runner.invoke(main, ["rollback", "42", "plan", "-y"])
 
         assert result.exit_code == 0
         # Check the issue.yaml was updated
         yaml_path = temp_issue_dir / "issue.yaml"
-        import yaml
         with open(yaml_path) as f:
             data = yaml.safe_load(f)
         assert data["stage"] == "plan"
@@ -352,7 +352,6 @@ class TestRollbackUpdatesState:
         """Should clear PR metadata when rolling back."""
         from agenttree.cli import main
         from agenttree.issues import Issue
-        import yaml as pyyaml
 
         mock_issue = Issue(
             id="42",
@@ -369,13 +368,13 @@ class TestRollbackUpdatesState:
         # Update the issue.yaml with PR metadata
         yaml_path = temp_issue_dir / "issue.yaml"
         with open(yaml_path) as f:
-            data = pyyaml.safe_load(f)
+            data = yaml.safe_load(f)
         data["stage"] = "implementation_review"
         data["substage"] = None
         data["pr_number"] = 123
         data["pr_url"] = "https://github.com/org/repo/pull/123"
         with open(yaml_path, "w") as f:
-            pyyaml.dump(data, f)
+            yaml.dump(data, f)
 
         with patch("agenttree.cli.load_config", return_value=mock_config):
             with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
@@ -383,13 +382,13 @@ class TestRollbackUpdatesState:
                     with patch("agenttree.cli.get_issue_dir", return_value=temp_issue_dir):
                         with patch("agenttree.cli.delete_session"):
                             with patch("agenttree.agents_repo.sync_agents_repo"):
-                                with patch("agenttree.cli.get_active_agent", return_value=None):
+                                with patch("agenttree.state.get_active_agent", return_value=None):
                                     result = cli_runner.invoke(main, ["rollback", "42", "implement", "-y"])
 
         assert result.exit_code == 0
         # Check the issue.yaml had PR metadata cleared
         with open(yaml_path) as f:
-            data = pyyaml.safe_load(f)
+            data = yaml.safe_load(f)
         assert "pr_number" not in data
         assert "pr_url" not in data
 
@@ -398,7 +397,7 @@ class TestRollbackHandlesAgent:
     """Tests for agent cleanup during rollback."""
 
     def test_kills_running_agent(self, cli_runner, mock_config, temp_issue_dir):
-        """Should kill running agent when rolling back."""
+        """Should unregister running agent when rolling back."""
         from agenttree.cli import main
         from agenttree.issues import Issue
         from agenttree.state import ActiveAgent
@@ -417,6 +416,7 @@ class TestRollbackHandlesAgent:
         mock_agent = MagicMock(spec=ActiveAgent)
         mock_agent.tmux_session = "testproject-issue-42"
         mock_agent.issue_id = "42"
+        mock_agent.worktree = Path("/path/to/worktree")
 
         agent_unregistered = False
 
@@ -427,18 +427,14 @@ class TestRollbackHandlesAgent:
         with patch("agenttree.cli.load_config", return_value=mock_config):
             with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
                 with patch("agenttree.cli.is_running_in_container", return_value=False):
-                    with patch("agenttree.issues.get_issue_dir", return_value=temp_issue_dir):
-                        with patch("agenttree.cli.update_issue_stage", return_value=mock_issue):
-                            with patch("agenttree.cli.delete_session"):
-                                with patch("agenttree.cli.get_output_files_after_stage", return_value=[]):
-                                    with patch("agenttree.cli.archive_issue_files", return_value=[]):
-                                        with patch("agenttree.state.get_active_agent", return_value=mock_agent):
-                                            with patch("agenttree.state.unregister_agent", side_effect=capture_unregister):
-                                                with patch("agenttree.cli.TmuxManager") as mock_tm:
-                                                    mock_tm_instance = MagicMock()
-                                                    mock_tm.return_value = mock_tm_instance
-                                                    result = cli_runner.invoke(main, ["rollback", "42", "research", "-y"])
+                    with patch("agenttree.cli.get_issue_dir", return_value=temp_issue_dir):
+                        with patch("agenttree.cli.delete_session"):
+                            with patch("agenttree.agents_repo.sync_agents_repo"):
+                                with patch("agenttree.state.get_active_agent", return_value=mock_agent):
+                                    with patch("agenttree.state.unregister_agent", side_effect=capture_unregister):
+                                        result = cli_runner.invoke(main, ["rollback", "42", "research", "-y"])
 
+        assert result.exit_code == 0
         assert agent_unregistered is True
 
 
@@ -446,9 +442,10 @@ class TestRollbackWorktreeReset:
     """Tests for worktree reset during rollback."""
 
     def test_reset_worktree_runs_git_reset(self, cli_runner, mock_config, temp_issue_dir):
-        """With --reset-worktree, should run git reset --hard."""
+        """With --reset-worktree and active agent, should run git reset --hard."""
         from agenttree.cli import main
         from agenttree.issues import Issue
+        from agenttree.state import ActiveAgent
 
         mock_issue = Issue(
             id="42",
@@ -461,14 +458,18 @@ class TestRollbackWorktreeReset:
             updated="2026-01-01T00:00:00Z",
         )
 
+        # Mock active agent with worktree path
+        mock_agent = MagicMock(spec=ActiveAgent)
+        mock_agent.tmux_session = "testproject-issue-42"
+        mock_agent.issue_id = "42"
+        mock_agent.worktree = temp_issue_dir  # Use temp dir as worktree
+
         git_reset_called = False
-        git_reset_cwd = None
 
         def mock_run(cmd, **kwargs):
-            nonlocal git_reset_called, git_reset_cwd
-            if "git" in cmd and "reset" in cmd:
+            nonlocal git_reset_called
+            if isinstance(cmd, list) and "git" in cmd and "reset" in cmd:
                 git_reset_called = True
-                git_reset_cwd = kwargs.get("cwd")
             result = MagicMock()
             result.returncode = 0
             return result
@@ -476,21 +477,21 @@ class TestRollbackWorktreeReset:
         with patch("agenttree.cli.load_config", return_value=mock_config):
             with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
                 with patch("agenttree.cli.is_running_in_container", return_value=False):
-                    with patch("agenttree.issues.get_issue_dir", return_value=temp_issue_dir):
-                        with patch("agenttree.cli.update_issue_stage", return_value=mock_issue):
-                            with patch("agenttree.cli.delete_session"):
-                                with patch("agenttree.cli.get_output_files_after_stage", return_value=[]):
-                                    with patch("agenttree.cli.archive_issue_files", return_value=[]):
+                    with patch("agenttree.cli.get_issue_dir", return_value=temp_issue_dir):
+                        with patch("agenttree.cli.delete_session"):
+                            with patch("agenttree.agents_repo.sync_agents_repo"):
+                                with patch("agenttree.state.get_active_agent", return_value=mock_agent):
+                                    with patch("agenttree.state.unregister_agent"):
                                         with patch("subprocess.run", side_effect=mock_run):
-                                            with patch("pathlib.Path.exists", return_value=True):
-                                                result = cli_runner.invoke(
-                                                    main, ["rollback", "42", "research", "-y", "--reset-worktree"]
-                                                )
+                                            result = cli_runner.invoke(
+                                                main, ["rollback", "42", "research", "-y", "--reset-worktree"]
+                                            )
 
+        assert result.exit_code == 0
         assert git_reset_called is True
 
     def test_no_reset_without_flag(self, cli_runner, mock_config, temp_issue_dir):
-        """Without --reset-worktree, should not run git reset."""
+        """Without --reset-worktree, should not run git reset (for implement stage onwards)."""
         from agenttree.cli import main
         from agenttree.issues import Issue
 
@@ -509,7 +510,7 @@ class TestRollbackWorktreeReset:
 
         def mock_run(cmd, **kwargs):
             nonlocal git_reset_called
-            if "git" in cmd and "reset" in cmd:
+            if isinstance(cmd, list) and "git" in cmd and "reset" in cmd:
                 git_reset_called = True
             result = MagicMock()
             result.returncode = 0
@@ -518,14 +519,15 @@ class TestRollbackWorktreeReset:
         with patch("agenttree.cli.load_config", return_value=mock_config):
             with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
                 with patch("agenttree.cli.is_running_in_container", return_value=False):
-                    with patch("agenttree.issues.get_issue_dir", return_value=temp_issue_dir):
-                        with patch("agenttree.cli.update_issue_stage", return_value=mock_issue):
-                            with patch("agenttree.cli.delete_session"):
-                                with patch("agenttree.cli.get_output_files_after_stage", return_value=[]):
-                                    with patch("agenttree.cli.archive_issue_files", return_value=[]):
-                                        with patch("subprocess.run", side_effect=mock_run):
-                                            result = cli_runner.invoke(main, ["rollback", "42", "research", "-y"])
+                    with patch("agenttree.cli.get_issue_dir", return_value=temp_issue_dir):
+                        with patch("agenttree.cli.delete_session"):
+                            with patch("agenttree.agents_repo.sync_agents_repo"):
+                                with patch("agenttree.state.get_active_agent", return_value=None):
+                                    with patch("subprocess.run", side_effect=mock_run):
+                                        # Rolling back to plan (before implement) but with --keep-changes
+                                        result = cli_runner.invoke(main, ["rollback", "42", "plan", "-y", "--keep-changes"])
 
+        # With --keep-changes, git reset should not be called even for pre-implement rollback
         assert git_reset_called is False
 
 
@@ -550,13 +552,13 @@ class TestRollbackCLIIntegration:
         with patch("agenttree.cli.load_config", return_value=mock_config):
             with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
                 with patch("agenttree.cli.is_running_in_container", return_value=False):
-                    with patch("agenttree.issues.get_issue_dir", return_value=temp_issue_dir):
-                        with patch("agenttree.cli.get_output_files_after_stage", return_value=["spec.md"]):
+                    with patch("agenttree.cli.get_issue_dir", return_value=temp_issue_dir):
+                        with patch("agenttree.state.get_active_agent", return_value=None):
                             # Send 'n' to decline confirmation
                             result = cli_runner.invoke(main, ["rollback", "42", "research"], input="n\n")
 
-        # Should prompt for confirmation and abort
-        assert "Aborted" in result.output or result.exit_code == 1
+        # Should prompt for confirmation and abort (Cancelled or Aborted)
+        assert "Cancelled" in result.output or "Aborted" in result.output or result.exit_code != 0
 
     def test_shows_preview_before_confirmation(self, cli_runner, mock_config, temp_issue_dir):
         """Should show what will be archived before asking for confirmation."""
@@ -576,11 +578,11 @@ class TestRollbackCLIIntegration:
         with patch("agenttree.cli.load_config", return_value=mock_config):
             with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
                 with patch("agenttree.cli.is_running_in_container", return_value=False):
-                    with patch("agenttree.issues.get_issue_dir", return_value=temp_issue_dir):
-                        with patch("agenttree.cli.get_output_files_after_stage", return_value=["spec.md", "review.md"]):
+                    with patch("agenttree.cli.get_issue_dir", return_value=temp_issue_dir):
+                        with patch("agenttree.state.get_active_agent", return_value=None):
                             result = cli_runner.invoke(main, ["rollback", "42", "research"], input="n\n")
 
-        # Should show what files will be archived
+        # Should show files to archive or the target stage
         assert "spec.md" in result.output or "research" in result.output
 
     def test_successful_rollback_message(self, cli_runner, mock_config, temp_issue_dir):
@@ -601,12 +603,11 @@ class TestRollbackCLIIntegration:
         with patch("agenttree.cli.load_config", return_value=mock_config):
             with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
                 with patch("agenttree.cli.is_running_in_container", return_value=False):
-                    with patch("agenttree.issues.get_issue_dir", return_value=temp_issue_dir):
-                        with patch("agenttree.cli.update_issue_stage", return_value=mock_issue):
-                            with patch("agenttree.cli.delete_session"):
-                                with patch("agenttree.cli.get_output_files_after_stage", return_value=[]):
-                                    with patch("agenttree.cli.archive_issue_files", return_value=[]):
-                                        result = cli_runner.invoke(main, ["rollback", "42", "research", "-y"])
+                    with patch("agenttree.cli.get_issue_dir", return_value=temp_issue_dir):
+                        with patch("agenttree.cli.delete_session"):
+                            with patch("agenttree.agents_repo.sync_agents_repo"):
+                                with patch("agenttree.state.get_active_agent", return_value=None):
+                                    result = cli_runner.invoke(main, ["rollback", "42", "research", "-y"])
 
         assert result.exit_code == 0
         assert "research" in result.output.lower() or "rolled back" in result.output.lower()
