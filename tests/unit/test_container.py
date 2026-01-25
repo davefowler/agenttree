@@ -132,6 +132,29 @@ class TestGetGitWorktreeInfo:
         assert worktree_dir == worktrees_dir
 
 
+    def test_port_exposure_adds_p_flag(
+        self, runtime: ContainerRuntime, tmp_worktree: Path
+    ) -> None:
+        """Test that port parameter adds -p flag for port mapping."""
+        with patch.object(Path, 'home', return_value=tmp_worktree.parent):
+            cmd = runtime.build_run_command(tmp_worktree, port=9001)
+
+        # Check that -p flag is present with correct port mapping
+        assert '-p' in cmd
+        port_idx = cmd.index('-p')
+        assert cmd[port_idx + 1] == '9001:9001'
+
+    def test_no_port_exposure_without_port_param(
+        self, runtime: ContainerRuntime, tmp_worktree: Path
+    ) -> None:
+        """Test that -p flag is not added when port is None."""
+        with patch.object(Path, 'home', return_value=tmp_worktree.parent):
+            cmd = runtime.build_run_command(tmp_worktree, port=None)
+
+        # Check that -p flag is not present
+        assert '-p' not in cmd
+
+
 class TestContainerRuntimeDetection:
     """Tests for container runtime detection."""
 

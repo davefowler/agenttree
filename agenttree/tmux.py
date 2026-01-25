@@ -505,6 +505,15 @@ class TmuxManager:
         # Ensure container system is running (Apple Container)
         container_runtime.ensure_system_running()
 
+        # Calculate port for dev server if serve command is configured
+        port = None
+        if self.config.commands.get("serve"):
+            try:
+                issue_num = int(issue_id)
+                port = self.config.get_port_for_agent(issue_num)
+            except (ValueError, TypeError):
+                pass  # Skip port exposure if issue_id is not a valid number
+
         # Build container command with model from config
         container_cmd = container_runtime.build_run_command(
             worktree_path=worktree_path,
@@ -512,6 +521,7 @@ class TmuxManager:
             dangerous=True,  # Safe because we're in a container
             model=self.config.default_model,
             agent_host=agent_host,
+            port=port,
         )
 
         # Join command for shell execution

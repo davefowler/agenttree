@@ -181,6 +181,7 @@ class ContainerRuntime:
         agent_num: Optional[int] = None,
         model: Optional[str] = None,
         agent_host: str = "agent",
+        port: Optional[int] = None,
     ) -> List[str]:
         """Build the container run command.
 
@@ -193,6 +194,7 @@ class ContainerRuntime:
             agent_num: Agent number for container naming
             model: Model to use (e.g., "opus", "sonnet"). Defaults to CLI default.
             agent_host: Agent host type (e.g., "agent", "review"). Defaults to "agent".
+            port: Dev server port to expose (e.g., 9001). If provided, adds -p port:port mapping.
 
         Returns:
             Command list
@@ -223,6 +225,10 @@ class ContainerRuntime:
         # Name container for persistence (can restart without re-auth)
         if agent_num is not None:
             cmd.extend(["--name", f"agenttree-agent-{agent_num}"])
+
+        # Expose dev server port if configured
+        if port is not None:
+            cmd.extend(["-p", f"{port}:{port}"])
 
         # Mount git directory for worktrees so git operations work in container
         # Worktrees have a .git file pointing to /path/to/repo/.git/worktrees/name

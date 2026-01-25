@@ -75,6 +75,8 @@ class Issue(BaseModel):
 
     history: list[HistoryEntry] = Field(default_factory=list)
 
+    custom_agent_spawned: Optional[str] = None  # Stage name where custom agent was spawned
+
 
 def slugify(text: str) -> str:
     """Convert text to a URL-friendly slug."""
