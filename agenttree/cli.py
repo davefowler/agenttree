@@ -1522,6 +1522,11 @@ def issue() -> None:
     multiple=True,
     help="Issue ID that must be completed first (can be used multiple times)"
 )
+@click.option(
+    "--no-start",
+    is_flag=True,
+    help="Skip auto-starting an agent for this issue"
+)
 @click.pass_context
 def issue_create(
     ctx: click.Context,
@@ -1533,8 +1538,9 @@ def issue_create(
     context: Optional[str],
     solutions: Optional[str],
     depends_on: tuple,
+    no_start: bool,
 ) -> None:
-    """Create a new issue.
+    """Create a new issue and auto-start an agent.
 
     Creates an issue directory in _agenttree/issues/ with:
     - issue.yaml (metadata)
@@ -1543,6 +1549,9 @@ def issue_create(
     The --problem flag is required and must be at least 50 characters.
     Title must be at least 10 characters.
 
+    After creation, an agent is automatically started for the issue. Use
+    --no-start to skip auto-starting the agent.
+
     Issues with unmet dependencies are placed in backlog and auto-started when
     all dependencies are completed.
 
@@ -1550,6 +1559,7 @@ def issue_create(
         agenttree issue create "Fix login validation bug" --problem "Login fails silently when password contains special chars. Should show error message."
         agenttree issue create "Add dark mode toggle" -p high -l ui --problem "Users need dark mode. Add toggle in settings that persists preference."
         agenttree issue create "Feature B depends on A" --depends-on 053 --problem "This feature requires issue 053 to be completed first. It builds on that work."
+        agenttree issue create "My feature title here" --problem "Description of the feature..." --no-start
     """
     # Validate title and problem length
     MIN_TITLE_LENGTH = 10
@@ -1609,13 +1619,16 @@ def issue_create(
         if issue.dependencies:
             console.print(f"[dim]  Dependencies: {', '.join(issue.dependencies)}[/dim]")
 
-        # Show next steps
+        # Auto-start agent unless blocked or --no-start specified
         if has_unmet_deps:
             console.print(f"\n[yellow]Issue blocked by dependencies - will auto-start when deps complete[/yellow]")
-        else:
+        elif no_start or effective_stage == "backlog":
             console.print(f"\n[bold]Next steps:[/bold]")
             console.print(f"  1. Fill in problem.md: [cyan]_agenttree/issues/{issue.id}-{issue.slug}/problem.md[/cyan]")
             console.print(f"  2. Start agent: [cyan]agenttree start {issue.id}[/cyan]")
+        else:
+            console.print(f"\n[cyan]Auto-starting agent...[/cyan]")
+            ctx.invoke(start_agent, issue_id=issue.id)
 
     except Exception as e:
         console.print(f"[red]Error creating issue: {e}[/red]")

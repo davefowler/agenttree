@@ -53,3 +53,6 @@ Thumbs.db
 _agenttree
 .worktrees/
 .playwright-mcp/
+
+# AgentTree directories
+_agenttree/
