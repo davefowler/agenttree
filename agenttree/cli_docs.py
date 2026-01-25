@@ -11,6 +11,8 @@ import os
 import subprocess
 from pathlib import Path
 from datetime import datetime
+from typing import Any, Dict
+
 import click
 from rich.console import Console
 
@@ -119,7 +121,7 @@ def get_current_task_info(agents_path: Path, agent_num: int) -> dict:
     default="medium",
     help="Complexity level",
 )
-def create_rfc(title: str, related_issue: int, complexity: str):
+def create_rfc(title: str, related_issue: int, complexity: str) -> None:
     """Create an RFC (Request for Comments) design proposal.
 
     RFCs are automatically numbered (scans existing RFCs for next number).
@@ -237,7 +239,7 @@ def create_rfc(title: str, related_issue: int, complexity: str):
     default="medium",
     help="Severity level",
 )
-def create_investigation(title: str, issue: int, severity: str):
+def create_investigation(title: str, issue: int, severity: str) -> None:
     """Create an investigation document for bug analysis.
 
     Investigations track the process of debugging an issue.
@@ -358,7 +360,7 @@ def create_investigation(title: str, issue: int, severity: str):
     default="nice_to_know",
     help="Severity (for gotchas)",
 )
-def create_note(title: str, type: str, tags: str, applies_to: str, severity: str):
+def create_note(title: str, type: str, tags: str, applies_to: str, severity: str) -> None:
     """Create a note with auto-populated frontmatter.
 
     Examples:
@@ -444,7 +446,7 @@ def create_note(title: str, type: str, tags: str, applies_to: str, severity: str
 @click.argument("agent_num", type=int)
 @click.option("--pr", type=int, help="PR number created")
 @click.option("--skip-summary", is_flag=True, help="Skip updating context summary")
-def complete(agent_num: int, pr: int, skip_summary: bool):
+def complete(agent_num: int, pr: int, skip_summary: bool) -> None:
     """Mark task as complete and update context summary.
 
     This command:
@@ -494,7 +496,7 @@ def complete(agent_num: int, pr: int, skip_summary: bool):
         commits_data = []
 
     # Update frontmatter
-    updates = {
+    updates: Dict[str, Any] = {
         "completed_at": utc_now(),
         "status": "completed",
         "commits": commits_data,
@@ -528,7 +530,7 @@ def complete(agent_num: int, pr: int, skip_summary: bool):
 
             if context_file.exists():
                 # Update context summary frontmatter
-                updates = {
+                context_updates: Dict[str, Any] = {
                     "summary_created": utc_now(),
                     "final_commit": commits_data[-1]["hash"] if commits_data else None,
                     "pr_number": pr,
@@ -536,7 +538,7 @@ def complete(agent_num: int, pr: int, skip_summary: bool):
                     "commits_count": len(commits_data),
                 }
 
-                add_frontmatter_fields(context_file, updates)
+                add_frontmatter_fields(context_file, context_updates)
 
                 console.print(f"\n[cyan]Opening context summary for final review...[/cyan]")
                 console.print(f"[dim]Fill in the sections if you haven't already:[/dim]")
@@ -561,7 +563,7 @@ def complete(agent_num: int, pr: int, skip_summary: bool):
 @click.argument("agent_num", type=int)
 @click.option("--task", "task_num", type=int, help="Issue number to resume")
 @click.option("--pr", type=int, help="PR number to resume")
-def resume(agent_num: int, task_num: int, pr: int):
+def resume(agent_num: int, task_num: int, pr: int) -> None:
     """Resume work on a previous task.
 
     This command:
@@ -619,6 +621,10 @@ def resume(agent_num: int, task_num: int, pr: int):
     work_branch = frontmatter_data.get("work_branch")
     issue_number = frontmatter_data.get("issue_number")
     pr_number = frontmatter_data.get("pr_number")
+
+    if not work_branch:
+        console.print("[red]Error: No work branch found in task file[/red]")
+        return
 
     console.print(f"\n[cyan]Resuming task: {frontmatter_data.get('issue_title')}[/cyan]")
     console.print(f"[dim]Issue: #{issue_number}[/dim]")

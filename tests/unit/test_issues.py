@@ -31,6 +31,8 @@ from agenttree.issues import (
     INDEPENDENT_CODE_REVIEW,
     IMPLEMENTATION_REVIEW,
     ACCEPTED,
+    DOCS_UPDATE,
+    CLOSED,
     NOT_DOING,
 )
 
@@ -318,9 +320,23 @@ class TestStageTransitions:
         assert is_review is False
 
     def test_get_next_stage_at_accepted(self):
-        """accepted -> stays at accepted"""
+        """accepted -> docs_update (no longer terminal)"""
         next_stage, next_substage, is_review = get_next_stage(ACCEPTED, None)
-        assert next_stage == ACCEPTED
+        assert next_stage == DOCS_UPDATE
+        assert next_substage is None
+        assert is_review is False
+
+    def test_get_next_stage_at_docs_update(self):
+        """docs_update -> closed"""
+        next_stage, next_substage, is_review = get_next_stage(DOCS_UPDATE, None)
+        assert next_stage == CLOSED
+        assert next_substage is None
+        assert is_review is False
+
+    def test_get_next_stage_at_closed(self):
+        """closed -> stays at closed (terminal)"""
+        next_stage, next_substage, is_review = get_next_stage(CLOSED, None)
+        assert next_stage == CLOSED
         assert next_substage is None
         assert is_review is False
 

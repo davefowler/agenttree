@@ -2889,5 +2889,191 @@ def tui_command() -> None:
     app.run()
 
 
+# =============================================================================
+# Documentation Commands
+# =============================================================================
+
+@main.group()
+def docs() -> None:
+    """Manage AgentTree documentation.
+
+    Documentation is stored in _agenttree/docs/ and provides a knowledge base
+    for agents and humans working with AgentTree.
+    """
+    pass
+
+
+@docs.command("init")
+@click.option(
+    "--populate", "-p",
+    is_flag=True,
+    help="Spawn an agent to populate initial documentation"
+)
+def docs_init(populate: bool) -> None:
+    """Initialize documentation structure.
+
+    Creates _agenttree/docs/ with template documentation files.
+    Optionally detects and offers to move existing notes.
+
+    Examples:
+        agenttree docs init
+        agenttree docs init --populate
+    """
+    from pathlib import Path
+
+    agents_dir = Path("_agenttree")
+    docs_dir = agents_dir / "docs"
+    notes_dir = agents_dir / "notes"
+
+    # Check if docs already exists
+    if docs_dir.exists():
+        console.print("[yellow]Documentation already exists at _agenttree/docs/[/yellow]")
+        console.print("Use 'agenttree docs import' to import additional notes.")
+        return
+
+    # Create directory structure
+    console.print("[bold]Initializing documentation structure...[/bold]")
+    docs_dir.mkdir(parents=True, exist_ok=True)
+    (docs_dir / "modules").mkdir(exist_ok=True)
+    (docs_dir / "decisions").mkdir(exist_ok=True)
+    notes_dir.mkdir(exist_ok=True)
+
+    # Create stub files
+    index_content = """# AgentTree Documentation
+
+This directory contains documentation for agents and humans.
+
+## Quick Links
+
+- [Architecture Overview](architecture.md) - System design and key concepts
+- [Module Documentation](modules/) - Detailed module guides
+- [Decision Records](decisions/) - Architectural decisions
+
+## Getting Started
+
+Run `agenttree docs init --populate` to have an agent analyze your codebase
+and populate this documentation.
+"""
+    (docs_dir / "index.md").write_text(index_content)
+
+    architecture_stub = """# Architecture
+
+<!-- TODO: Document your system architecture here -->
+<!-- Run 'agenttree docs init --populate' to have an agent fill this in -->
+
+## Overview
+
+## Key Concepts
+
+## Component Interactions
+"""
+    (docs_dir / "architecture.md").write_text(architecture_stub)
+
+    console.print(f"[green]Created documentation structure at {docs_dir}[/green]")
+
+    # Check for existing notes directories
+    potential_notes = []
+    for name in ["notes", "docs", "research", "planning"]:
+        path = Path(name)
+        if path.exists() and path.is_dir() and path != docs_dir:
+            potential_notes.append(path)
+
+    # Check for loose markdown files in root
+    root_md_files = [f for f in Path(".").glob("*.md")
+                     if f.name not in ["README.md", "CHANGELOG.md", "LICENSE.md", "CLAUDE.md", "CONTRIBUTING.md"]]
+
+    if potential_notes or root_md_files:
+        console.print()
+        console.print("[bold]Found existing notes that could be imported:[/bold]")
+        for path in potential_notes:
+            console.print(f"  - {path}/")
+        for path in root_md_files:
+            console.print(f"  - {path}")
+        console.print()
+        console.print("Run 'agenttree docs import' to move these to _agenttree/notes/")
+
+    if populate:
+        console.print()
+        console.print("[yellow]--populate flag set but agent spawning not yet implemented[/yellow]")
+        console.print("Please manually populate the documentation or create an issue for this.")
+
+
+@docs.command("import")
+@click.argument("paths", nargs=-1, type=click.Path(exists=True))
+@click.option(
+    "--dry-run", "-n",
+    is_flag=True,
+    help="Show what would be moved without actually moving"
+)
+def docs_import(paths: tuple, dry_run: bool) -> None:
+    """Import existing notes into _agenttree/notes/.
+
+    Moves note files and directories to _agenttree/notes/ to keep them
+    organized and reduce commit log bloat from AI-generated artifacts.
+
+    If no paths specified, scans for common notes directories.
+
+    Examples:
+        agenttree docs import
+        agenttree docs import notes/ research/
+        agenttree docs import --dry-run
+    """
+    import shutil
+    from pathlib import Path
+
+    agents_dir = Path("_agenttree")
+    notes_dir = agents_dir / "notes"
+
+    if not notes_dir.exists():
+        notes_dir.mkdir(parents=True, exist_ok=True)
+
+    # If no paths specified, scan for common notes locations
+    if not paths:
+        potential = []
+        for name in ["notes", "research", "planning"]:
+            path = Path(name)
+            if path.exists() and path.is_dir():
+                potential.append(path)
+
+        # Check for loose markdown files
+        root_md_files = [f for f in Path(".").glob("*.md")
+                        if f.name not in ["README.md", "CHANGELOG.md", "LICENSE.md", "CLAUDE.md", "CONTRIBUTING.md"]]
+        potential.extend(root_md_files)
+
+        if not potential:
+            console.print("[yellow]No notes found to import[/yellow]")
+            console.print("Specify paths explicitly: agenttree docs import path/to/notes/")
+            return
+
+        paths = tuple(str(p) for p in potential)
+
+    # Process each path
+    moved = []
+    for path_str in paths:
+        path = Path(path_str)
+        dest = notes_dir / path.name
+
+        if dest.exists():
+            console.print(f"[yellow]Skipping {path}: already exists at {dest}[/yellow]")
+            continue
+
+        if dry_run:
+            console.print(f"[dim]Would move: {path} -> {dest}[/dim]")
+        else:
+            if path.is_dir():
+                shutil.move(str(path), str(dest))
+            else:
+                shutil.move(str(path), str(dest))
+            console.print(f"[green]Moved: {path} -> {dest}[/green]")
+            moved.append((path, dest))
+
+    if dry_run:
+        console.print()
+        console.print("[dim]Dry run - no files were moved[/dim]")
+    elif moved:
+        console.print()
+        console.print(f"[green]Imported {len(moved)} items to {notes_dir}[/green]")
+
+
 if __name__ == "__main__":
     main()

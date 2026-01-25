@@ -36,6 +36,8 @@ IMPLEMENT = "implement"
 INDEPENDENT_CODE_REVIEW = "independent_code_review"
 IMPLEMENTATION_REVIEW = "implementation_review"
 ACCEPTED = "accepted"
+DOCS_UPDATE = "docs_update"
+CLOSED = "closed"
 NOT_DOING = "not_doing"
 
 

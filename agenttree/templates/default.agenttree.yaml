@@ -203,12 +203,28 @@ stages:
       - pr_approved:
 
   - name: accepted
-    terminal: true
     host: controller  # Host handles merge/cleanup (agents can't push)
     post_start:
       - merge_pr:
       - cleanup_agent:
       - start_blocked_issues:
+
+  - name: docs_update
+    host: agent
+    output: docs_update.md
+    post_start:
+      - create_file:
+          template: docs_update.md
+          dest: docs_update.md
+    pre_completion:
+      - section_check:
+          file: docs_update.md
+          section: Documentation Review
+          expect: not_empty
+
+  - name: closed
+    terminal: true
+    host: controller
 
   - name: not_doing
     terminal: true
