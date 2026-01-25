@@ -48,7 +48,6 @@ class Issue(IssueBase):
     url: Optional[str] = None
     pr_url: Optional[str] = None
     pr_number: Optional[int] = None
-    assigned_agent: Optional[str] = None
     tmux_active: bool = False
     has_worktree: bool = False
     created_at: datetime
@@ -67,7 +66,6 @@ class IssueUpdate(BaseModel):
 
     stage: Optional[StageEnum] = None
     status: Optional[IssueStatus] = None
-    assigned_agent: Optional[str] = None
 
 
 class IssueMoveRequest(BaseModel):

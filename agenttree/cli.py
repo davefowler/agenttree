@@ -689,7 +689,6 @@ def start_agent(
         get_issue_names,
     )
     from agenttree.worktree import create_worktree, update_worktree_with_main
-    from agenttree.issues import assign_agent
 
     repo_path = Path.cwd()
     config = load_config(repo_path)
@@ -795,9 +794,6 @@ def start_agent(
         port=port,
         project=config.project,
     )
-
-    # Mark issue as having an assigned agent (for web UI status light)
-    assign_agent(issue.id, int(issue.id))
 
     # Save branch and worktree info to issue metadata
     update_issue_metadata(issue.id, branch=names["branch"], worktree_dir=str(worktree_path))
@@ -1125,10 +1121,6 @@ def kill(issue_id: str) -> None:
 
     tmux_manager.stop_issue_agent(agent.tmux_session)
     unregister_agent(agent.issue_id)
-
-    # Clear assigned_agent in issue metadata to prevent ghost status
-    from agenttree.issues import update_issue_metadata
-    update_issue_metadata(agent.issue_id, clear_assigned_agent=True)
 
     console.print(f"[green]✓ Killed agent for issue #{agent.issue_id}[/green]")
 
@@ -1646,16 +1638,11 @@ def issue_create(
     help="Filter by priority"
 )
 @click.option(
-    "--agent", "-a",
-    type=int,
-    help="Filter by assigned agent"
-)
-@click.option(
     "--json", "as_json",
     is_flag=True,
     help="Output as JSON"
 )
-def issue_list(stage: Optional[str], priority: Optional[str], agent: Optional[int], as_json: bool) -> None:
+def issue_list(stage: Optional[str], priority: Optional[str], as_json: bool) -> None:
     """List issues.
 
     Examples:
@@ -1666,12 +1653,10 @@ def issue_list(stage: Optional[str], priority: Optional[str], agent: Optional[in
     """
     stage_filter = stage if stage else None
     priority_filter = Priority(priority) if priority else None
-    agent_filter = str(agent) if agent is not None else None
 
     issues = list_issues_func(
         stage=stage_filter,
         priority=priority_filter,
-        assigned_agent=agent_filter,
     )
 
     if as_json:
@@ -1688,10 +1673,8 @@ def issue_list(stage: Optional[str], priority: Optional[str], agent: Optional[in
     table.add_column("Title", style="white")
     table.add_column("Stage", style="magenta")
     table.add_column("Priority", style="yellow")
-    table.add_column("Agent", style="green")
 
     for issue in issues:
-        agent_str = f"Agent {issue.assigned_agent}" if issue.assigned_agent else "-"
         stage_str = issue.stage
         if issue.substage:
             stage_str += f".{issue.substage}"
@@ -1709,7 +1692,6 @@ def issue_list(stage: Optional[str], priority: Optional[str], agent: Optional[in
             issue.title[:40] + ("..." if len(issue.title) > 40 else ""),
             stage_str,
             f"[{priority_style}]{issue.priority.value}[/{priority_style}]",
-            agent_str,
         )
 
     console.print(table)
@@ -1743,9 +1725,6 @@ def issue_show(issue_id: str) -> None:
         console.print()
 
     console.print(f"[bold]Priority:[/bold] {issue.priority.value}")
-
-    if issue.assigned_agent:
-        console.print(f"[bold]Assigned:[/bold] Agent {issue.assigned_agent}")
 
     if issue.labels:
         console.print(f"[bold]Labels:[/bold] {', '.join(issue.labels)}")
@@ -1927,14 +1906,12 @@ def stage_status(issue_id: Optional[str]) -> None:
         table.add_column("ID", style="cyan")
         table.add_column("Title", style="white")
         table.add_column("Stage", style="magenta")
-        table.add_column("Agent", style="green")
 
         for active_issue in active_issues:
             stage_str = active_issue.stage
             if active_issue.substage:
                 stage_str += f".{active_issue.substage}"
-            agent_str = f"Agent {active_issue.assigned_agent}" if active_issue.assigned_agent else "-"
-            table.add_row(active_issue.id, active_issue.title[:40], stage_str, agent_str)
+            table.add_row(active_issue.id, active_issue.title[:40], stage_str)
 
         console.print(table)
         return
@@ -1950,9 +1927,6 @@ def stage_status(issue_id: Optional[str]) -> None:
         console.print(f".{issue.substage}")
     else:
         console.print()
-
-    if issue.assigned_agent:
-        console.print(f"[bold]Agent:[/bold] {issue.assigned_agent}")
 
     # Check if waiting for non-agent host
     from agenttree.config import load_config
@@ -2512,9 +2486,6 @@ def shutdown_issue(
 
     # Delete session file
     delete_session(issue_id_normalized)
-
-    # Clear assigned_agent
-    update_issue_metadata(issue_id_normalized, clear_assigned_agent=True)
 
     console.print(f"[green]✓ Issue #{issue.id} shutdown to {stage}[/green]")
 

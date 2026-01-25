@@ -4,10 +4,10 @@
         <h4>Agent Chat</h4>
     </div>
     <div class="agent-chat-content">
-        {% if issue.assigned_agent %}
+        {% if issue.tmux_active %}
         <div class="agent-status">
             <span class="status-indicator active"></span>
-            Agent {{ issue.assigned_agent }} assigned
+            Agent running
         </div>
         <div class="tmux-output" id="tmux-output-{{ issue.number }}"
              hx-get="/agent/{{ issue.number }}/tmux"

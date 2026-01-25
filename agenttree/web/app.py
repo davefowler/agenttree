@@ -269,7 +269,6 @@ def convert_issue_to_web(issue: issue_crud.Issue, load_dependents: bool = False)
         assignees=[],
         stage=stage,
         substage=issue.substage,
-        assigned_agent=issue.assigned_agent,
         tmux_active=tmux_active,
         has_worktree=bool(issue.worktree_dir),
         pr_url=issue.pr_url,
@@ -361,7 +360,7 @@ async def kanban(
             # Load all file contents upfront for CSS toggle tabs
             files = get_issue_files(issue, include_content=True)
             # Get commits behind for rebase button
-            if selected_issue.assigned_agent and issue_obj.worktree_dir:
+            if selected_issue.tmux_active and issue_obj.worktree_dir:
                 from agenttree.hooks import get_commits_behind_main
                 commits_behind = get_commits_behind_main(issue_obj.worktree_dir)
 
@@ -520,7 +519,7 @@ async def flow(
         # Load all file contents upfront for CSS toggle tabs
         files = get_issue_files(selected_issue_id, include_content=True)
         # Get commits behind for rebase button
-        if selected_issue.assigned_agent:
+        if selected_issue.tmux_active:
             issue_obj = issue_crud.get_issue(selected_issue_id, sync=False)
             if issue_obj and issue_obj.worktree_dir:
                 from agenttree.hooks import get_commits_behind_main
@@ -633,14 +632,9 @@ async def get_agent_status(
     padded_id = issue_id.zfill(3)
     tmux_active = agent_manager._check_issue_tmux_session(padded_id)
 
-    # Also check if agent is assigned
-    issue = issue_crud.get_issue(issue_id, sync=False)
-    assigned_agent = issue.assigned_agent if issue else None
-
     return {
         "tmux_active": tmux_active,
-        "assigned_agent": assigned_agent,
-        "status": "running" if tmux_active else ("stalled" if assigned_agent else "off")
+        "status": "running" if tmux_active else "off"
     }
 
 
@@ -776,30 +770,44 @@ async def approve_issue(
 @app.post("/api/issues")
 async def create_issue_api(
     request: Request,
-    title: str = Form(...),
-    priority: str = Form("medium"),
+    description: str = Form(""),
+    title: str = Form(""),
     user: Optional[str] = Depends(get_current_user)
 ) -> dict:
     """Create a new issue via the web UI.
 
     Creates an issue in the 'define' stage with default substage 'refine'.
+    If no title is provided, one is auto-generated from the description.
     """
     from agenttree.issues import Priority
 
-    # Validate title length
-    if len(title.strip()) < 10:
-        raise HTTPException(status_code=400, detail="Title must be at least 10 characters")
+    description = description.strip()
+    title = title.strip()
 
-    # Map priority string to enum
-    try:
-        priority_enum = Priority(priority.lower())
-    except ValueError:
-        priority_enum = Priority.MEDIUM
+    # Require at least a description
+    if not description:
+        raise HTTPException(status_code=400, detail="Please provide a description")
+
+    # Auto-generate title from description if not provided
+    if not title:
+        # Take first line or first 60 chars of description
+        first_line = description.split('\n')[0].strip()
+        # Remove "Problem:" prefix if present
+        if first_line.lower().startswith('problem:'):
+            first_line = first_line[8:].strip()
+        # Truncate and clean up
+        title = first_line[:60].strip()
+        if len(first_line) > 60:
+            title = title.rsplit(' ', 1)[0] + '...'
+        # Fallback if still empty
+        if not title or len(title) < 5:
+            title = f"Issue from web UI"
 
     try:
         issue = issue_crud.create_issue(
-            title=title.strip(),
-            priority=priority_enum,
+            title=title,
+            priority=Priority.MEDIUM,
+            problem=description,
         )
         return {"ok": True, "issue_id": issue.id, "title": issue.title}
     except Exception as e:
@@ -829,14 +837,14 @@ async def rebase_issue(
     if not success:
         raise HTTPException(status_code=400, detail=message)
 
-    # Notify the agent if one is assigned and has an active tmux session
-    if issue.assigned_agent:
-        from agenttree.tmux import send_message
+    # Notify the agent if there's an active tmux session
+    from agenttree.tmux import send_message, session_exists
 
-        config = load_config()
-        padded_num = issue.assigned_agent.zfill(3)
-        session_name = f"{config.project}-issue-{padded_num}"
+    config = load_config()
+    padded_id = issue_id.zfill(3)
+    session_name = f"{config.project}-issue-{padded_id}"
 
+    if session_exists(session_name):
         notification = (
             "Your branch has been rebased onto the latest main. "
             "Please review the recent changes and update your work if needed. "

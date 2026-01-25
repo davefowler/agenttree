@@ -59,7 +59,6 @@ class Issue(BaseModel):
     stage: str = DEFINE
     substage: Optional[str] = "refine"
 
-    assigned_agent: Optional[str] = None
     branch: Optional[str] = None
     worktree_dir: Optional[str] = None  # Absolute path to worktree directory
 
@@ -282,7 +281,6 @@ def create_issue(
 def list_issues(
     stage: Optional[str] = None,
     priority: Optional[Priority] = None,
-    assigned_agent: Optional[str] = None,
     sync: bool = True,
 ) -> list[Issue]:
     """List issues, optionally filtered.
@@ -290,7 +288,6 @@ def list_issues(
     Args:
         stage: Filter by stage
         priority: Filter by priority
-        assigned_agent: Filter by assigned agent
         sync: If True, sync with remote before reading (default True for CLI, False for web)
 
     Returns:
@@ -327,8 +324,6 @@ def list_issues(
         if stage and issue.stage != stage:
             continue
         if priority and issue.priority != priority:
-            continue
-        if assigned_agent is not None and issue.assigned_agent != assigned_agent:
             continue
 
         issues.append(issue)
@@ -679,49 +674,6 @@ def update_issue_stage(
     return issue
 
 
-def assign_agent(issue_id: str, agent_num: int) -> Optional[Issue]:
-    """Assign an agent to an issue.
-
-    Args:
-        issue_id: Issue ID
-        agent_num: Agent number to assign
-
-    Returns:
-        Updated Issue object or None if not found
-    """
-    # Sync before and after writing
-    agents_path = get_agenttree_path()
-    sync_agents_repo(agents_path, pull_only=True)
-
-    issue_dir = get_issue_dir(issue_id)
-    if not issue_dir:
-        return None
-
-    yaml_path = issue_dir / "issue.yaml"
-    if not yaml_path.exists():
-        return None
-
-    with open(yaml_path) as f:
-        data = yaml.safe_load(f)
-
-    issue = Issue(**data)
-
-    # Update assignment
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    issue.assigned_agent = str(agent_num)
-    issue.updated = now
-
-    # Write back
-    with open(yaml_path, "w") as f:
-        data = issue.model_dump(mode="json")
-        yaml.dump(data, f, default_flow_style=False, sort_keys=False)
-
-    # Sync after assigning agent
-    sync_agents_repo(agents_path, pull_only=False, commit_message=f"Assign agent {agent_num} to issue {issue_id}")
-
-    return issue
-
-
 def update_issue_metadata(
     issue_id: str,
     pr_number: Optional[int] = None,
@@ -730,8 +682,6 @@ def update_issue_metadata(
     github_issue: Optional[int] = None,
     relevant_url: Optional[str] = None,
     worktree_dir: Optional[str] = None,
-    assigned_agent: Optional[str] = None,
-    clear_assigned_agent: bool = False,
     clear_pr: bool = False,
 ) -> Optional[Issue]:
     """Update metadata fields on an issue.
@@ -744,8 +694,6 @@ def update_issue_metadata(
         github_issue: GitHub issue number (optional)
         relevant_url: Relevant URL (optional)
         worktree_dir: Worktree directory path (optional)
-        assigned_agent: Assigned agent number (optional)
-        clear_assigned_agent: If True, sets assigned_agent to None
         clear_pr: If True, sets pr_number and pr_url to None
 
     Returns:
@@ -782,10 +730,6 @@ def update_issue_metadata(
         issue.relevant_url = relevant_url
     if worktree_dir is not None:
         issue.worktree_dir = worktree_dir
-    if assigned_agent is not None:
-        issue.assigned_agent = assigned_agent
-    if clear_assigned_agent:
-        issue.assigned_agent = None
     if clear_pr:
         issue.pr_number = None
         issue.pr_url = None

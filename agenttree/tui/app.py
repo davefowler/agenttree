@@ -59,9 +59,6 @@ class DetailPanel(Static):
         content += "\n"
         content += f"[dim]Priority:[/dim] {issue.priority.value}\n"
 
-        if issue.assigned_agent:
-            content += f"[dim]Agent:[/dim] {issue.assigned_agent}\n"
-
         if issue.labels:
             content += f"[dim]Labels:[/dim] {', '.join(issue.labels)}\n"
 
@@ -154,7 +151,6 @@ class IssueTable(DataTable):  # type: ignore[type-arg]
         self.add_column("Title", key="title")
         self.add_column("Stage", key="stage", width=22)
         self.add_column("Priority", key="priority", width=10)
-        self.add_column("Agent", key="agent", width=7)
 
     def populate(self, issues: list[Issue]) -> None:
         """Populate the table with issues."""
@@ -170,14 +166,11 @@ class IssueTable(DataTable):  # type: ignore[type-arg]
             if issue.substage:
                 stage_str += f".{issue.substage}"
 
-            agent_str = str(issue.assigned_agent) if issue.assigned_agent else "-"
-
             self.add_row(
                 issue.id,
                 issue.title[:40] + "..." if len(issue.title) > 40 else issue.title,
                 stage_str,
                 issue.priority.value,
-                agent_str,
                 key=issue.id,
             )
 
@@ -403,10 +396,6 @@ class TUIApp(App):  # type: ignore[type-arg]
 
         if not issue:
             status.show_message("No issue selected")
-            return
-
-        if issue.assigned_agent:
-            status.show_message(f"Issue #{issue.id} already has agent {issue.assigned_agent}")
             return
 
         # Note: Starting an agent requires more complex logic (worktree, tmux, etc.)

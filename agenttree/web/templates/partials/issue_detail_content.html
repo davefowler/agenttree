@@ -1,5 +1,5 @@
 <!-- Unified issue detail content - used by both kanban modal and flow panel -->
-<div class="issue-detail-wrapper" data-issue-id="{{ issue.number }}" data-agent-num="{{ issue.assigned_agent or '' }}">
+<div class="issue-detail-wrapper" data-issue-id="{{ issue.number }}">
     <div class="issue-detail-main">
         <!-- Issue header -->
         <div class="detail-header">
@@ -8,9 +8,9 @@
                     #{{ issue.number }}: {{ issue.title }}
                 </div>
                 <div class="detail-title-actions">
-                    <div class="agent-light-large {% if issue.tmux_active %}on{% elif issue.assigned_agent %}stalled{% else %}off{% endif %}"
+                    <div class="agent-light-large {% if issue.tmux_active %}on{% else %}off{% endif %}"
                          onclick="toggleAgentFromDetail('{{ issue.number }}', this)"
-                         title="{% if issue.tmux_active %}Agent running{% elif issue.assigned_agent %}Agent stalled - click to restart{% else %}Click to start agent{% endif %}">
+                         title="{% if issue.tmux_active %}Agent running{% else %}Click to start agent{% endif %}">
                     </div>
                     <button class="chat-toggle-icon"
                             onclick="toggleChatPanel('{{ issue.number }}')"
@@ -24,9 +24,6 @@
             <div class="detail-meta-row">
                 <div class="detail-meta">
                     <span>Stage: {{ issue.stage.replace('_', ' ').title() if issue.stage is string else issue.stage.value.replace('_', ' ').title() }}</span>
-                    {% if issue.assigned_agent %}
-                    <span>Agent: {{ issue.assigned_agent }}</span>
-                    {% endif %}
                     {% if issue.pr_url %}
                     <span><a href="{{ issue.pr_url }}" target="_blank">PR #{{ issue.pr_number }}</a></span>
                     {% endif %}
@@ -39,7 +36,7 @@
                 </div>
                 <div class="detail-actions" id="detail-actions-{{ issue.number }}">
                     {% set stage_value = issue.stage if issue.stage is string else issue.stage.value %}
-                    {% if issue.assigned_agent and commits_behind is defined and commits_behind > 0 %}
+                    {% if issue.tmux_active and commits_behind is defined and commits_behind > 0 %}
                     <button class="btn btn-rebase"
                             onclick="rebaseIssue('{{ issue.number }}', this)">
                         Rebase ({{ commits_behind }} behind)

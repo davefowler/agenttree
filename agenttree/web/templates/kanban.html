@@ -69,18 +69,18 @@
                 <h2>Create New Issue</h2>
                 <form id="new-issue-form" onsubmit="submitNewIssue(event)">
                     <div class="form-group">
-                        <label for="issue-title">Title</label>
-                        <input type="text" id="issue-title" name="title" required minlength="10"
-                               placeholder="Issue title (min 10 characters)">
+                        <label for="issue-description">Description</label>
+                        <textarea id="issue-description" name="description" rows="12" autofocus
+                                  placeholder="Describe the problem and any ideas for solutions...">Problem:
+
+
+Possible solutions:
+</textarea>
                     </div>
                     <div class="form-group">
-                        <label for="issue-priority">Priority</label>
-                        <select id="issue-priority" name="priority">
-                            <option value="low">Low</option>
-                            <option value="medium" selected>Medium</option>
-                            <option value="high">High</option>
-                            <option value="critical">Critical</option>
-                        </select>
+                        <label for="issue-title">Title <span class="label-hint">(optional - auto-generated if blank)</span></label>
+                        <input type="text" id="issue-title" name="title"
+                               placeholder="Leave blank to auto-generate from description">
                     </div>
                     <div class="form-actions">
                         <button type="button" class="btn" onclick="closeNewIssueModal()">Cancel</button>
