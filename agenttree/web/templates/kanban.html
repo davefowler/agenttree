@@ -58,6 +58,37 @@
         </div>
     </div>
 
+    <!-- Modal for new issue -->
+    <div id="new-issue-modal" class="modal">
+        <div class="modal-content new-issue-modal-content">
+            <button class="modal-close" onclick="closeNewIssueModal()">&times;</button>
+            <div class="new-issue-form-container">
+                <h2>Create New Issue</h2>
+                <form id="new-issue-form" onsubmit="submitNewIssue(event)">
+                    <div class="form-group">
+                        <label for="issue-title">Title</label>
+                        <input type="text" id="issue-title" name="title" required minlength="10"
+                               placeholder="Issue title (min 10 characters)">
+                    </div>
+                    <div class="form-group">
+                        <label for="issue-priority">Priority</label>
+                        <select id="issue-priority" name="priority">
+                            <option value="low">Low</option>
+                            <option value="medium" selected>Medium</option>
+                            <option value="high">High</option>
+                            <option value="critical">Critical</option>
+                        </select>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn" onclick="closeNewIssueModal()">Cancel</button>
+                        <button type="submit" class="btn btn-primary" id="create-issue-btn">Create Issue</button>
+                    </div>
+                    <div id="new-issue-error" class="form-error"></div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <script>
     (function() {
         // Wrap in IIFE to avoid duplicate declarations on HTMX swaps
@@ -197,8 +228,12 @@
 
         // Close modal on escape key
         document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape' && document.getElementById('issue-modal').classList.contains('active')) {
-                window.closeIssueModal();
+            if (e.key === 'Escape') {
+                if (document.getElementById('new-issue-modal').classList.contains('active')) {
+                    window.closeNewIssueModal();
+                } else if (document.getElementById('issue-modal').classList.contains('active')) {
+                    window.closeIssueModal();
+                }
             }
         });
 
@@ -211,6 +246,63 @@
                 }
             });
         }
+
+        // New issue modal on background click
+        const newIssueModal = document.getElementById('new-issue-modal');
+        if (newIssueModal) {
+            newIssueModal.addEventListener('click', (e) => {
+                if (e.target.id === 'new-issue-modal') {
+                    window.closeNewIssueModal();
+                }
+            });
+        }
+
+        // New issue modal functions
+        window.openNewIssueModal = function() {
+            document.getElementById('new-issue-modal').classList.add('active');
+            document.getElementById('issue-title').focus();
+        };
+
+        window.closeNewIssueModal = function() {
+            document.getElementById('new-issue-modal').classList.remove('active');
+            document.getElementById('new-issue-form').reset();
+            document.getElementById('new-issue-error').textContent = '';
+        };
+
+        window.submitNewIssue = async function(event) {
+            event.preventDefault();
+            const form = document.getElementById('new-issue-form');
+            const formData = new FormData(form);
+            const errorDiv = document.getElementById('new-issue-error');
+            const submitBtn = document.getElementById('create-issue-btn');
+
+            // Disable button while submitting
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Creating...';
+            errorDiv.textContent = '';
+
+            try {
+                const response = await fetch('/api/issues', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    // Success - reload the page to show new issue
+                    location.reload();
+                } else {
+                    errorDiv.textContent = data.detail || 'Failed to create issue';
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Create Issue';
+                }
+            } catch (error) {
+                errorDiv.textContent = 'Error creating issue: ' + error.message;
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Create Issue';
+            }
+        };
 
         // Stage toggle functionality
         const reviewStages = ['backlog', 'plan_review', 'implementation_review'];
