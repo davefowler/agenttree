@@ -259,7 +259,8 @@ class TestDependencyEdgeCases:
         with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
                 dep_issue = create_issue(title="Dependency Issue")
-                update_issue_stage(dep_issue.id, "accepted")
+                # Skip validation for test setup - we're intentionally jumping to accepted
+                update_issue_stage(dep_issue.id, "accepted", validate=False)
 
                 main_issue = create_issue(title="Main Issue")
 

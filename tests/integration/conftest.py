@@ -66,6 +66,14 @@ def agenttree_config() -> dict[str, Any]:
                 "startup_prompt": "Read TASK.md"
             }
         },
+        "hosts": {
+            "review": {
+                "description": "Independent code reviewer",
+                "container": {"enabled": True},
+                "tool": "claude",
+                "model": "opus",
+            }
+        },
         "stages": [
             {"name": "backlog"},
             {
@@ -151,11 +159,20 @@ def agenttree_config() -> dict[str, Any]:
                 }
             },
             {
+                "name": "independent_code_review",
+                "host": "review",
+                "output": "independent_review.md",
+            },
+            {
                 "name": "implementation_review",
                 "human_review": True,
                 "host": "controller",
                 "post_start": [{"create_pr": {}}],
-                "pre_completion": [{"pr_approved": {}}]
+                "pre_completion": [{"pr_approved": {}}],
+                "substages": {
+                    "ci_wait": {},
+                    "review": {}
+                }
             },
             {
                 "name": "accepted",
@@ -222,7 +239,8 @@ Review overview here.
 
 <!-- None -->
 """,
-        "feedback.md": "# Feedback\n\nFeedback notes here.\n"
+        "feedback.md": "# Feedback\n\nFeedback notes here.\n",
+        "independent_review.md": "# Independent Code Review\n\n## Review Findings\n\n<!-- Findings here -->\n"
     }
 
     for name, content in templates.items():

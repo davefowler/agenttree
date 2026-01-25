@@ -348,8 +348,9 @@ class TestApprovalBoundary:
                 issue_dir = agenttree_path / "issues" / f"{issue.id}-{issue.slug}"
 
                 # Agent creates session and works through to plan_review
+                # Bypass validation for test setup
                 session = create_session(issue.id)
-                update_issue_stage(issue.id, "plan_review", None)
+                update_issue_stage(issue.id, "plan_review", None, validate=False)
 
                 # Simulate agent having worked on plan_review (oriented = True, last_stage synced)
                 mark_session_oriented(issue.id, "plan_review", None)
@@ -363,7 +364,8 @@ class TestApprovalBoundary:
                 # === HUMAN APPROVAL ===
                 # Human approves - updates issue stage but NOT session
                 # (This is what approve command does - intentionally skips update_session_stage)
-                update_issue_stage(issue.id, "implement", "setup")
+                # Bypass validation for test setup - simulating human approval from plan_review
+                update_issue_stage(issue.id, "implement", "setup", validate=False)
 
                 # === AGENT RUNS NEXT ===
                 # Agent calls next - should detect stage mismatch

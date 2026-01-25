@@ -253,6 +253,39 @@ Implementation of the login flow fixes as specified. All three issues have been 
     (issue_dir / "review.md").write_text(content)
 
 
+def create_valid_independent_review_md(issue_dir: Path) -> None:
+    """Create an independent_review.md that passes INDEPENDENT_CODE_REVIEW hooks.
+
+    Requires:
+    - File exists
+    - Review Findings section not empty
+    """
+    content = """# Independent Code Review
+
+## Review Findings
+
+The implementation has been reviewed by an independent reviewer.
+
+### Code Quality
+- Code is clean and well-structured
+- Follows project conventions
+- No obvious security issues
+
+### Test Coverage
+- Unit tests cover main functionality
+- Integration tests verify end-to-end flow
+
+### Recommendations
+- Consider adding more error handling for edge cases
+- Documentation could be more detailed
+
+## Verdict
+
+Approved for merge. No blocking issues found.
+"""
+    (issue_dir / "independent_review.md").write_text(content)
+
+
 def create_failing_review_md(issue_dir: Path, reason: str = "low_score") -> None:
     """Create a review.md that will FAIL validation.
 
@@ -432,8 +465,9 @@ def setup_issue_at_stage(
         "plan_revise": [create_valid_problem_md, create_valid_research_md, create_valid_spec_md, create_valid_spec_review_md],
         "plan_review": [create_valid_problem_md, create_valid_research_md, create_valid_spec_md, create_valid_spec_review_md],
         "implement": [create_valid_problem_md, create_valid_research_md, create_valid_spec_md, create_valid_spec_review_md],
-        "implementation_review": [create_valid_problem_md, create_valid_research_md, create_valid_spec_md, create_valid_spec_review_md, create_valid_review_md],
-        "accepted": [create_valid_problem_md, create_valid_research_md, create_valid_spec_md, create_valid_spec_review_md, create_valid_review_md],
+        "independent_code_review": [create_valid_problem_md, create_valid_research_md, create_valid_spec_md, create_valid_spec_review_md, create_valid_review_md, create_valid_independent_review_md],
+        "implementation_review": [create_valid_problem_md, create_valid_research_md, create_valid_spec_md, create_valid_spec_review_md, create_valid_review_md, create_valid_independent_review_md],
+        "accepted": [create_valid_problem_md, create_valid_research_md, create_valid_spec_md, create_valid_spec_review_md, create_valid_review_md, create_valid_independent_review_md],
     }
 
     creators = stages_needing_content.get(stage, [])

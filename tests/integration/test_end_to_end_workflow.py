@@ -25,6 +25,7 @@ from tests.integration.helpers import (
     create_valid_spec_md,
     create_valid_spec_review_md,
     create_valid_review_md,
+    create_valid_independent_review_md,
     make_commit,
 )
 
@@ -135,8 +136,8 @@ class TestEndToEndWorkflow:
                 create_valid_spec_md(issue_dir)
                 create_valid_spec_review_md(issue_dir)
 
-                # Skip directly to implement stage
-                update_issue_stage(issue.id, "implement", "code")
+                # Skip directly to implement stage (bypass validation for test setup)
+                update_issue_stage(issue.id, "implement", "code", validate=False)
                 issue = get_issue(issue.id)
 
                 assert issue.stage == "implement"
@@ -161,6 +162,10 @@ class TestEndToEndWorkflow:
                     # (enter hooks may create template with unchecked items)
                     if current_substage in ["code_review", "address_review", "wrapup", "feedback"]:
                         create_valid_review_md(issue_dir)
+
+                    # Create independent_review.md for independent_code_review stage
+                    if current_stage == "independent_code_review":
+                        create_valid_independent_review_md(issue_dir)
 
                     # Mock has_commits_to_push for feedback stage
                     with patch("agenttree.hooks.has_commits_to_push", return_value=True):
@@ -232,8 +237,13 @@ class TestEndToEndWorkflow:
                     elif current_stage in ["plan", "plan_assess", "plan_revise", "plan_review"]:
                         create_valid_spec_md(issue_dir)
                         create_valid_spec_review_md(issue_dir)
-                    elif current_stage in ["implement", "implementation_review"]:
+                    elif current_stage == "implement":
                         create_valid_review_md(issue_dir)
+                    elif current_stage == "independent_code_review":
+                        create_valid_independent_review_md(issue_dir)
+                    elif current_stage == "implementation_review":
+                        create_valid_review_md(issue_dir)
+                        create_valid_independent_review_md(issue_dir)
 
                     # Execute exit hooks with proper mocking for hooks that need external setup
                     with patch("agenttree.hooks.has_commits_to_push", return_value=True):
@@ -259,7 +269,8 @@ class TestEndToEndWorkflow:
                 # Verify we touched all major stages
                 stage_names = set(s[0] for s in all_stages_visited)
                 expected_stages = {"define", "research", "plan", "plan_assess", "plan_revise",
-                                   "plan_review", "implement", "implementation_review", "accepted"}
+                                   "plan_review", "implement", "independent_code_review",
+                                   "implementation_review", "accepted"}
                 missing = expected_stages - stage_names
                 assert not missing, f"Missing stages: {missing}"
 
@@ -326,6 +337,9 @@ Just a brief problem description without required sections.
             assert next_substage == "feedback"
 
             next_stage, next_substage, _ = get_next_stage("implement", "feedback")
+            assert next_stage == "independent_code_review"
+
+            next_stage, next_substage, _ = get_next_stage("independent_code_review", None)
             assert next_stage == "implementation_review"
 
     def test_history_tracks_transitions(self, workflow_repo: Path, mock_sync: MagicMock):
@@ -376,8 +390,9 @@ class TestWorkflowEdgeCases:
                 issue_dir = agenttree_path / "issues" / f"{issue.id}-{issue.slug}"
 
                 # Create problem.md and skip to plan.refine (last substage of plan)
+                # Bypass validation for test setup - we're testing hook behavior, not state machine
                 create_valid_problem_md(issue_dir)
-                update_issue_stage(issue.id, "plan", "refine")
+                update_issue_stage(issue.id, "plan", "refine", validate=False)
                 issue = get_issue(issue.id)
 
                 # Execute enter hooks - this creates spec.md from template with empty sections
