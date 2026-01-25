@@ -647,6 +647,39 @@ async def approve_issue(
     return {"ok": True}
 
 
+@app.post("/api/issues")
+async def create_issue_api(
+    request: Request,
+    title: str = Form(...),
+    priority: str = Form("medium"),
+    user: Optional[str] = Depends(get_current_user)
+) -> dict:
+    """Create a new issue via the web UI.
+
+    Creates an issue in the 'define' stage with default substage 'refine'.
+    """
+    from agenttree.issues import Priority
+
+    # Validate title length
+    if len(title.strip()) < 10:
+        raise HTTPException(status_code=400, detail="Title must be at least 10 characters")
+
+    # Map priority string to enum
+    try:
+        priority_enum = Priority(priority.lower())
+    except ValueError:
+        priority_enum = Priority.MEDIUM
+
+    try:
+        issue = issue_crud.create_issue(
+            title=title.strip(),
+            priority=priority_enum,
+        )
+        return {"ok": True, "issue_id": issue.id, "title": issue.title}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/issues/{issue_id}/rebase")
 async def rebase_issue(
     issue_id: str,
