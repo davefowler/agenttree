@@ -24,6 +24,7 @@ from agenttree.issues import (
     get_issue as get_issue_func,
     get_issue_dir,
     get_next_stage,
+    find_checkpoint,
     update_issue_stage,
     update_issue_metadata,
     load_skill,
@@ -38,6 +39,7 @@ from agenttree.issues import (
     # Stage constants (strings)
     BACKLOG,
     DEFINE,
+    IMPLEMENT,
     PLAN_ASSESS,
     PLAN_REVISE,
     ACCEPTED,
@@ -2281,6 +2283,241 @@ def defer_issue(issue_id: str) -> None:
     console.print(f"[green]✓ Issue #{issue.id} moved to backlog[/green]")
     console.print(f"\n[dim]Stop the agent if running:[/dim]")
     console.print(f"  agenttree kill {issue.id}")
+
+
+@main.command("rollback-checkpoint")
+@click.argument("issue_id", type=str)
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
+@click.option(
+    "--reset-worktree",
+    is_flag=True,
+    help="Reset worktree to origin/main (discards code changes)",
+)
+@click.option(
+    "--keep-changes",
+    is_flag=True,
+    help="Keep code changes in worktree (default for implement stages)",
+)
+def rollback_checkpoint(
+    issue_id: str,
+    yes: bool,
+    reset_worktree: bool,
+    keep_changes: bool,
+) -> None:
+    """Roll back an issue to the last approved checkpoint.
+
+    A checkpoint is the stage immediately after the most recent human review
+    stage (plan_review or implementation_review). This allows restarting work
+    from a known-good state when an agent gets stuck or produces poor work.
+
+    If no review stage exists in history, falls back to the define stage.
+
+    Examples:
+        agenttree rollback-checkpoint 042           # Roll back to last checkpoint
+        agenttree rollback-checkpoint 042 --yes    # Skip confirmation
+        agenttree rollback-checkpoint 042 --reset-worktree  # Also discard code changes
+    """
+    from datetime import datetime, timezone
+    from agenttree.state import get_active_agent, unregister_agent
+    from agenttree.agents_repo import sync_agents_repo
+    from agenttree.issues import get_agenttree_path
+    import shutil
+    import yaml as pyyaml
+
+    # Block if in container
+    if is_running_in_container():
+        console.print("[red]Error: 'rollback-checkpoint' cannot be run from inside a container[/red]")
+        console.print("[dim]This command is for human reviewers only.[/dim]")
+        sys.exit(1)
+
+    # Normalize issue ID
+    issue_id_normalized = issue_id.lstrip("0") or "0"
+    issue = get_issue_func(issue_id_normalized)
+    if not issue:
+        console.print(f"[red]Issue {issue_id} not found[/red]")
+        sys.exit(1)
+
+    # Check if at terminal stage
+    config = load_config()
+    if config.is_terminal(issue.stage):
+        console.print(f"[red]Cannot rollback: issue is at terminal stage '{issue.stage}'[/red]")
+        sys.exit(1)
+
+    # Find the checkpoint
+    checkpoint_stage, checkpoint_substage = find_checkpoint(issue, config)
+
+    # Check if there's actually a review stage in history (vs fallback)
+    has_checkpoint = any(
+        entry.stage in HUMAN_REVIEW_STAGES
+        for entry in issue.history
+        if not config.is_terminal(config.get_next_stage(entry.stage, entry.substage)[0])
+    )
+
+    # Check if already at checkpoint
+    if issue.stage == checkpoint_stage and issue.substage == checkpoint_substage:
+        console.print(f"[yellow]Issue is already at checkpoint ({checkpoint_stage}.{checkpoint_substage})[/yellow]")
+        if not yes:
+            if not click.confirm("Rollback anyway?"):
+                console.print("[yellow]Cancelled[/yellow]")
+                return
+
+    # Check for active agent
+    active_agent = get_active_agent(issue_id_normalized)
+
+    # Get stage names for comparison
+    stage_names = config.get_stage_names()
+    try:
+        current_idx = stage_names.index(issue.stage)
+        target_idx = stage_names.index(checkpoint_stage)
+    except ValueError:
+        console.print(f"[red]Error: invalid stage configuration[/red]")
+        sys.exit(1)
+
+    # Collect stages to archive
+    stages_to_archive = stage_names[target_idx + 1 : current_idx + 1]
+
+    # Collect output files from stages being rolled back
+    files_to_archive: list[str] = []
+    for stage in stages_to_archive:
+        stage_config = config.get_stage(stage)
+        if stage_config:
+            if stage_config.output:
+                files_to_archive.append(stage_config.output)
+            for substage_config in stage_config.substages.values():
+                if substage_config.output:
+                    files_to_archive.append(substage_config.output)
+
+    # Determine worktree reset behavior
+    implement_idx = stage_names.index(IMPLEMENT) if IMPLEMENT in stage_names else -1
+    auto_reset = target_idx < implement_idx if implement_idx >= 0 else False
+    should_reset = reset_worktree or (auto_reset and not keep_changes)
+
+    # Get issue directory
+    issue_dir = get_issue_dir(issue_id_normalized)
+
+    # Show confirmation
+    console.print(f"\n[bold]Rollback Issue #{issue.id}: {issue.title}[/bold]")
+    console.print(f"\n  Current stage: [yellow]{issue.stage}[/yellow]")
+    target_str = checkpoint_stage
+    if checkpoint_substage:
+        target_str += f".{checkpoint_substage}"
+    console.print(f"  Target stage:  [green]{target_str}[/green]")
+
+    if has_checkpoint:
+        console.print(f"  Checkpoint type: [cyan]Review stage checkpoint[/cyan]")
+    else:
+        console.print(f"  Checkpoint type: [yellow]Fallback (no prior review)[/yellow]")
+
+    if files_to_archive:
+        console.print(f"\n  Files to archive:")
+        for f in files_to_archive:
+            file_path = issue_dir / f if issue_dir else Path(f)
+            exists = " (exists)" if file_path.exists() else " (not found)"
+            console.print(f"    - {f}{exists}")
+
+    if active_agent:
+        console.print(f"\n  [yellow]⚠ Active agent will be unregistered[/yellow]")
+
+    if should_reset:
+        console.print(f"\n  [yellow]⚠ Worktree will be reset to origin/main[/yellow]")
+    else:
+        console.print(f"\n  [dim]Worktree changes will be preserved[/dim]")
+
+    console.print()
+
+    # Confirm unless --yes
+    if not yes:
+        if not click.confirm("Proceed with rollback?"):
+            console.print("[yellow]Cancelled[/yellow]")
+            return
+
+    # === Execute rollback ===
+
+    # 1. Archive output files
+    if issue_dir and files_to_archive:
+        archive_dir = issue_dir / "archive"
+        archive_dir.mkdir(exist_ok=True)
+
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        rollback_dir = archive_dir / f"rollback_{timestamp}"
+        rollback_dir.mkdir(exist_ok=True)
+
+        archived_count = 0
+        for filename in files_to_archive:
+            src = issue_dir / filename
+            if src.exists():
+                dst = rollback_dir / filename
+                shutil.move(str(src), str(dst))
+                console.print(f"  [dim]Archived: {filename}[/dim]")
+                archived_count += 1
+
+        if archived_count > 0:
+            console.print(f"[green]✓ Archived {archived_count} file(s) to archive/rollback_{timestamp}/[/green]")
+
+    # 2. Update issue stage with rollback history entry
+    if issue_dir:
+        yaml_path = issue_dir / "issue.yaml"
+        if yaml_path.exists():
+            with open(yaml_path) as fh:
+                data = pyyaml.safe_load(fh)
+
+            now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            data["stage"] = checkpoint_stage
+            data["substage"] = checkpoint_substage
+            data["updated"] = now
+
+            history_entry = {
+                "stage": checkpoint_stage,
+                "substage": checkpoint_substage,
+                "timestamp": now,
+                "type": "rollback",
+            }
+            if "history" not in data:
+                data["history"] = []
+            data["history"].append(history_entry)
+
+            # Clear PR metadata
+            if "pr_number" in data:
+                del data["pr_number"]
+            if "pr_url" in data:
+                del data["pr_url"]
+
+            with open(yaml_path, "w") as fh:
+                pyyaml.dump(data, fh, default_flow_style=False, sort_keys=False)
+
+            console.print(f"[green]✓ Issue stage set to {target_str}[/green]")
+
+    # 3. Clear agent session
+    delete_session(issue_id_normalized)
+    console.print("[green]✓ Cleared agent session[/green]")
+
+    # 4. Unregister active agent (if any)
+    if active_agent:
+        unregister_agent(issue_id_normalized)
+        console.print("[green]✓ Unregistered active agent[/green]")
+
+    # 5. Reset worktree if requested
+    if should_reset and active_agent:
+        worktree_path = active_agent.worktree
+        if worktree_path.exists():
+            try:
+                subprocess.run(
+                    ["git", "reset", "--hard", "origin/main"],
+                    cwd=worktree_path,
+                    capture_output=True,
+                    check=True,
+                )
+                console.print("[green]✓ Reset worktree to origin/main[/green]")
+            except subprocess.CalledProcessError as e:
+                console.print(f"[yellow]Warning: Failed to reset worktree: {e}[/yellow]")
+
+    # 6. Sync changes
+    agents_path = get_agenttree_path()
+    sync_agents_repo(agents_path, pull_only=False, commit_message=f"Rollback issue {issue_id} to checkpoint {target_str}")
+
+    console.print(f"\n[green]✓ Issue #{issue.id} rolled back to {target_str}[/green]")
+    console.print(f"\n[dim]Restart the agent when ready:[/dim]")
+    console.print(f"  agenttree start {issue.id}")
 
 
 @main.command("shutdown")

@@ -7,6 +7,7 @@ import pytest
 
 from agenttree.issues import (
     Issue,
+    HistoryEntry,
     Priority,
     slugify,
     create_issue,
@@ -14,6 +15,7 @@ from agenttree.issues import (
     get_issue,
     get_agenttree_path,
     get_next_stage,
+    find_checkpoint,
     update_issue_stage,
     load_skill,
     STAGE_ORDER,
@@ -336,6 +338,111 @@ class TestStageTransitions:
         assert next_stage == NOT_DOING
         assert next_substage is None
         assert is_review is False
+
+
+class TestFindCheckpoint:
+    """Tests for find_checkpoint function."""
+
+    @pytest.fixture
+    def mock_config(self):
+        """Create a mock config with real stage progression."""
+        from agenttree.config import load_config
+        return load_config()
+
+    def _make_issue(self, history: list[HistoryEntry]) -> Issue:
+        """Create a test issue with given history."""
+        return Issue(
+            id="1",
+            slug="test-issue",
+            title="Test Issue",
+            created="2026-01-25T00:00:00Z",
+            updated="2026-01-25T00:00:00Z",
+            stage=IMPLEMENT,
+            substage="code",
+            history=history,
+        )
+
+    def test_checkpoint_after_plan_review(self, mock_config):
+        """Returns implement.setup when plan_review is most recent review stage."""
+        history = [
+            HistoryEntry(stage=DEFINE, substage="refine", timestamp="2026-01-01T00:00:00Z"),
+            HistoryEntry(stage=RESEARCH, substage="explore", timestamp="2026-01-02T00:00:00Z"),
+            HistoryEntry(stage=PLAN, substage="draft", timestamp="2026-01-03T00:00:00Z"),
+            HistoryEntry(stage=PLAN_REVIEW, substage=None, timestamp="2026-01-04T00:00:00Z"),
+            HistoryEntry(stage=IMPLEMENT, substage="setup", timestamp="2026-01-05T00:00:00Z"),
+        ]
+        issue = self._make_issue(history)
+
+        stage, substage = find_checkpoint(issue, mock_config)
+        assert stage == IMPLEMENT
+        assert substage == "setup"
+
+    def test_checkpoint_skips_terminal_stage(self, mock_config):
+        """Returns implement.setup when implementation_review leads to terminal stage."""
+        # After implementation_review comes accepted (terminal), so we skip to plan_review
+        history = [
+            HistoryEntry(stage=DEFINE, substage="refine", timestamp="2026-01-01T00:00:00Z"),
+            HistoryEntry(stage=PLAN_REVIEW, substage=None, timestamp="2026-01-02T00:00:00Z"),
+            HistoryEntry(stage=IMPLEMENT, substage="setup", timestamp="2026-01-03T00:00:00Z"),
+            HistoryEntry(stage=IMPLEMENTATION_REVIEW, substage=None, timestamp="2026-01-04T00:00:00Z"),
+        ]
+        issue = self._make_issue(history)
+
+        stage, substage = find_checkpoint(issue, mock_config)
+        # Should skip implementation_review (leads to accepted) and use plan_review
+        assert stage == IMPLEMENT
+        assert substage == "setup"
+
+    def test_checkpoint_fallback_no_review_stages(self, mock_config):
+        """Returns define.refine when no review stages in history."""
+        history = [
+            HistoryEntry(stage=DEFINE, substage="refine", timestamp="2026-01-01T00:00:00Z"),
+            HistoryEntry(stage=RESEARCH, substage="explore", timestamp="2026-01-02T00:00:00Z"),
+            HistoryEntry(stage=PLAN, substage="draft", timestamp="2026-01-03T00:00:00Z"),
+        ]
+        issue = self._make_issue(history)
+
+        stage, substage = find_checkpoint(issue, mock_config)
+        assert stage == DEFINE
+        assert substage == "refine"
+
+    def test_checkpoint_fallback_empty_history(self, mock_config):
+        """Returns define.refine when history is empty."""
+        issue = self._make_issue([])
+
+        stage, substage = find_checkpoint(issue, mock_config)
+        assert stage == DEFINE
+        assert substage == "refine"
+
+    def test_checkpoint_uses_most_recent_review(self, mock_config):
+        """Returns checkpoint after most recent non-terminal review stage."""
+        # Multiple review stages - should use the most recent valid one (plan_review)
+        history = [
+            HistoryEntry(stage=DEFINE, substage="refine", timestamp="2026-01-01T00:00:00Z"),
+            HistoryEntry(stage=PLAN_REVIEW, substage=None, timestamp="2026-01-02T00:00:00Z"),
+            HistoryEntry(stage=IMPLEMENT, substage="setup", timestamp="2026-01-03T00:00:00Z"),
+            HistoryEntry(stage=IMPLEMENTATION_REVIEW, substage=None, timestamp="2026-01-04T00:00:00Z"),
+        ]
+        issue = self._make_issue(history)
+
+        stage, substage = find_checkpoint(issue, mock_config)
+        # implementation_review leads to terminal, so falls back to plan_review
+        assert stage == IMPLEMENT
+        assert substage == "setup"
+
+    def test_checkpoint_only_implementation_review(self, mock_config):
+        """Returns define.refine when only review is implementation_review (terminal)."""
+        # Only implementation_review in history, which leads to terminal stage
+        history = [
+            HistoryEntry(stage=DEFINE, substage="refine", timestamp="2026-01-01T00:00:00Z"),
+            HistoryEntry(stage=IMPLEMENTATION_REVIEW, substage=None, timestamp="2026-01-02T00:00:00Z"),
+        ]
+        issue = self._make_issue(history)
+
+        stage, substage = find_checkpoint(issue, mock_config)
+        # No valid checkpoint, falls back to define
+        assert stage == DEFINE
+        assert substage == "refine"
 
 
 class TestDependencies:

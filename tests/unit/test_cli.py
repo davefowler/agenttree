@@ -744,3 +744,212 @@ class TestSandboxCommand:
 
         assert result.exit_code == 1
         assert "No container runtime" in result.output
+
+
+class TestRollbackCheckpointCommand:
+    """Tests for the rollback-checkpoint command."""
+
+    def test_rollback_checkpoint_blocks_in_container(self, cli_runner, mock_config):
+        """Should error when run from inside a container."""
+        from agenttree.cli import main
+
+        with patch("agenttree.cli.load_config", return_value=mock_config):
+            with patch("agenttree.cli.is_running_in_container", return_value=True):
+                result = cli_runner.invoke(main, ["rollback-checkpoint", "42"])
+
+        assert result.exit_code == 1
+        assert "cannot be run from inside a container" in result.output
+
+    def test_rollback_checkpoint_issue_not_found(self, cli_runner, mock_config):
+        """Should error when issue not found."""
+        from agenttree.cli import main
+
+        with patch("agenttree.cli.load_config", return_value=mock_config):
+            with patch("agenttree.cli.is_running_in_container", return_value=False):
+                with patch("agenttree.cli.get_issue_func", return_value=None):
+                    result = cli_runner.invoke(main, ["rollback-checkpoint", "999"])
+
+        assert result.exit_code == 1
+        assert "not found" in result.output.lower()
+
+    def test_rollback_checkpoint_terminal_stage(self, cli_runner, mock_config):
+        """Should error when issue is at terminal stage."""
+        from agenttree.cli import main
+
+        mock_issue = MagicMock()
+        mock_issue.id = "42"
+        mock_issue.title = "Test Issue"
+        mock_issue.stage = "accepted"
+        mock_issue.substage = None
+
+        mock_config.is_terminal.return_value = True
+
+        with patch("agenttree.cli.load_config", return_value=mock_config):
+            with patch("agenttree.cli.is_running_in_container", return_value=False):
+                with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
+                    result = cli_runner.invoke(main, ["rollback-checkpoint", "42"])
+
+        assert result.exit_code == 1
+        assert "terminal stage" in result.output.lower()
+
+    def test_rollback_checkpoint_declined(self, cli_runner, mock_config):
+        """Should cancel when user declines confirmation."""
+        from agenttree.cli import main
+
+        mock_issue = MagicMock()
+        mock_issue.id = "42"
+        mock_issue.title = "Test Issue"
+        mock_issue.stage = "implement"
+        mock_issue.substage = "code"
+        mock_issue.history = []
+
+        mock_config.is_terminal.return_value = False
+        mock_config.get_human_review_stages.return_value = ["plan_review", "implementation_review"]
+        mock_config.get_stage_names.return_value = ["backlog", "define", "implement", "accepted"]
+        mock_config.get_stage.return_value = None
+
+        with patch("agenttree.cli.load_config", return_value=mock_config):
+            with patch("agenttree.cli.is_running_in_container", return_value=False):
+                with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
+                    with patch("agenttree.cli.find_checkpoint", return_value=("define", "refine")):
+                        with patch("agenttree.state.get_active_agent", return_value=None):
+                            with patch("agenttree.cli.get_issue_dir", return_value=None):
+                                # User says "n" to confirmation
+                                result = cli_runner.invoke(
+                                    main, ["rollback-checkpoint", "42"], input="n\n"
+                                )
+
+        assert result.exit_code == 0
+        assert "Cancelled" in result.output
+
+    def test_rollback_checkpoint_yes_flag(self, cli_runner, mock_config, tmp_path):
+        """Should skip confirmation with --yes flag."""
+        from agenttree.cli import main
+
+        mock_issue = MagicMock()
+        mock_issue.id = "42"
+        mock_issue.title = "Test Issue"
+        mock_issue.stage = "implement"
+        mock_issue.substage = "code"
+        mock_issue.history = []
+
+        mock_config.is_terminal.return_value = False
+        mock_config.get_human_review_stages.return_value = ["plan_review", "implementation_review"]
+        mock_config.get_stage_names.return_value = ["backlog", "define", "implement", "accepted"]
+        mock_config.get_stage.return_value = None
+
+        # Create a temporary issue directory with issue.yaml
+        issue_dir = tmp_path / "42-test-issue"
+        issue_dir.mkdir()
+        (issue_dir / "issue.yaml").write_text(
+            "id: '42'\nslug: test-issue\ntitle: Test Issue\n"
+            "stage: implement\nsubstage: code\nhistory: []\n"
+            "created: '2026-01-25T00:00:00Z'\nupdated: '2026-01-25T00:00:00Z'\n"
+        )
+
+        with patch("agenttree.cli.load_config", return_value=mock_config):
+            with patch("agenttree.cli.is_running_in_container", return_value=False):
+                with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
+                    with patch("agenttree.cli.find_checkpoint", return_value=("define", "refine")):
+                        with patch("agenttree.state.get_active_agent", return_value=None):
+                            with patch("agenttree.cli.get_issue_dir", return_value=issue_dir):
+                                with patch("agenttree.cli.delete_session"):
+                                    with patch("agenttree.agents_repo.sync_agents_repo"):
+                                        with patch("agenttree.issues.get_agenttree_path", return_value=tmp_path):
+                                            result = cli_runner.invoke(
+                                                main, ["rollback-checkpoint", "42", "--yes"]
+                                            )
+
+        assert result.exit_code == 0
+        assert "rolled back" in result.output.lower()
+
+    def test_rollback_checkpoint_with_active_agent(self, cli_runner, mock_config, tmp_path):
+        """Should warn when active agent is running."""
+        from agenttree.cli import main
+
+        mock_issue = MagicMock()
+        mock_issue.id = "42"
+        mock_issue.title = "Test Issue"
+        mock_issue.stage = "implement"
+        mock_issue.substage = "code"
+        mock_issue.history = []
+
+        mock_agent = MagicMock()
+        mock_agent.tmux_session = "agent-42"
+        mock_agent.issue_id = "42"
+        mock_agent.worktree = tmp_path / "worktree"
+
+        mock_config.is_terminal.return_value = False
+        mock_config.get_human_review_stages.return_value = ["plan_review", "implementation_review"]
+        mock_config.get_stage_names.return_value = ["backlog", "define", "implement", "accepted"]
+        mock_config.get_stage.return_value = None
+
+        # Create a temporary issue directory with issue.yaml
+        issue_dir = tmp_path / "42-test-issue"
+        issue_dir.mkdir()
+        (issue_dir / "issue.yaml").write_text(
+            "id: '42'\nslug: test-issue\ntitle: Test Issue\n"
+            "stage: implement\nsubstage: code\nhistory: []\n"
+            "created: '2026-01-25T00:00:00Z'\nupdated: '2026-01-25T00:00:00Z'\n"
+        )
+
+        with patch("agenttree.cli.load_config", return_value=mock_config):
+            with patch("agenttree.cli.is_running_in_container", return_value=False):
+                with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
+                    with patch("agenttree.cli.find_checkpoint", return_value=("define", "refine")):
+                        with patch("agenttree.state.get_active_agent", return_value=mock_agent):
+                            with patch("agenttree.cli.get_issue_dir", return_value=issue_dir):
+                                with patch("agenttree.cli.delete_session"):
+                                    with patch("agenttree.state.unregister_agent"):
+                                        with patch("agenttree.agents_repo.sync_agents_repo"):
+                                            with patch("agenttree.issues.get_agenttree_path", return_value=tmp_path):
+                                                result = cli_runner.invoke(
+                                                    main, ["rollback-checkpoint", "42", "--yes"]
+                                                )
+
+        assert result.exit_code == 0
+        assert "Active agent will be unregistered" in result.output
+        assert "Unregistered active agent" in result.output
+
+    def test_rollback_checkpoint_fallback_to_define(self, cli_runner, mock_config, tmp_path):
+        """Should indicate fallback when no checkpoint exists."""
+        from agenttree.cli import main
+
+        mock_issue = MagicMock()
+        mock_issue.id = "42"
+        mock_issue.title = "Test Issue"
+        mock_issue.stage = "plan"
+        mock_issue.substage = "draft"
+        mock_issue.history = []  # No review stages
+
+        mock_config.is_terminal.return_value = False
+        mock_config.get_human_review_stages.return_value = ["plan_review", "implementation_review"]
+        mock_config.get_stage_names.return_value = ["backlog", "define", "plan", "implement", "accepted"]
+        mock_config.get_stage.return_value = None
+        mock_config.get_next_stage.return_value = ("implement", "setup", False)
+
+        # Create a temporary issue directory with issue.yaml
+        issue_dir = tmp_path / "42-test-issue"
+        issue_dir.mkdir()
+        (issue_dir / "issue.yaml").write_text(
+            "id: '42'\nslug: test-issue\ntitle: Test Issue\n"
+            "stage: plan\nsubstage: draft\nhistory: []\n"
+            "created: '2026-01-25T00:00:00Z'\nupdated: '2026-01-25T00:00:00Z'\n"
+        )
+
+        with patch("agenttree.cli.load_config", return_value=mock_config):
+            with patch("agenttree.cli.is_running_in_container", return_value=False):
+                with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
+                    with patch("agenttree.cli.find_checkpoint", return_value=("define", "refine")):
+                        with patch("agenttree.state.get_active_agent", return_value=None):
+                            with patch("agenttree.cli.get_issue_dir", return_value=issue_dir):
+                                with patch("agenttree.cli.delete_session"):
+                                    with patch("agenttree.agents_repo.sync_agents_repo"):
+                                        with patch("agenttree.issues.get_agenttree_path", return_value=tmp_path):
+                                            result = cli_runner.invoke(
+                                                main, ["rollback-checkpoint", "42", "--yes"]
+                                            )
+
+        assert result.exit_code == 0
+        # Should show fallback message
+        assert "Fallback" in result.output or "no prior review" in result.output.lower()

@@ -7,7 +7,10 @@ import re
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
+
+if TYPE_CHECKING:
+    from agenttree.config import Config
 
 import yaml
 from pydantic import BaseModel, Field
@@ -591,6 +594,45 @@ HUMAN_REVIEW_STAGES = {
     PLAN_REVIEW,
     IMPLEMENTATION_REVIEW,
 }
+
+
+def find_checkpoint(issue: Issue, config: "Config") -> tuple[str, Optional[str]]:
+    """Find the checkpoint stage to roll back to.
+
+    A checkpoint is the stage immediately after the most recent human review stage
+    (plan_review or implementation_review) in the issue's history. This allows
+    rolling back to the last approved state when an agent gets stuck or produces
+    poor work.
+
+    Args:
+        issue: The issue to find checkpoint for
+        config: Config object for stage calculations
+
+    Returns:
+        Tuple of (stage, substage) representing the checkpoint.
+        If no review stage found in history, returns (DEFINE, "refine") as fallback.
+        If the most recent review stage leads to a terminal stage
+        (implementation_review -> accepted), looks for the prior review stage.
+    """
+    review_stages = set(config.get_human_review_stages())
+
+    # Iterate through history in reverse to find most recent review stage
+    for entry in reversed(issue.history):
+        if entry.stage in review_stages:
+            # Found a review stage, get the next stage after it
+            next_stage, next_substage, _ = config.get_next_stage(
+                entry.stage, entry.substage
+            )
+
+            # If the next stage is terminal (e.g., accepted after implementation_review),
+            # skip this review stage and look for an earlier one
+            if config.is_terminal(next_stage):
+                continue
+
+            return (next_stage, next_substage)
+
+    # No valid checkpoint found - fall back to define stage
+    return (DEFINE, "refine")
 
 
 def get_next_stage(
