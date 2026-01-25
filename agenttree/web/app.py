@@ -281,19 +281,55 @@ def convert_issue_to_web(issue: issue_crud.Issue, load_dependents: bool = False)
     )
 
 
-def get_kanban_board() -> KanbanBoard:
-    """Build a kanban board from issues."""
+def filter_issues(issues: List[WebIssue], search: Optional[str]) -> List[WebIssue]:
+    """Filter issues by search query.
+
+    Matches against issue number, title, and labels (case-insensitive).
+    Returns all issues if search is None or empty.
+    """
+    if not search or not search.strip():
+        return issues
+
+    query = search.lower().strip()
+    filtered = []
+    for issue in issues:
+        # Match against number
+        if query in str(issue.number):
+            filtered.append(issue)
+            continue
+        # Match against title
+        if query in issue.title.lower():
+            filtered.append(issue)
+            continue
+        # Match against labels
+        if any(query in label.lower() for label in issue.labels):
+            filtered.append(issue)
+            continue
+    return filtered
+
+
+def get_kanban_board(search: Optional[str] = None) -> KanbanBoard:
+    """Build a kanban board from issues.
+
+    Args:
+        search: Optional search query to filter issues
+    """
     # Initialize all stages with empty lists
     stages: Dict[StageEnum, List[WebIssue]] = {stage: [] for stage in StageEnum}
 
     # Get all issues and organize by stage (no sync for fast web reads)
     issues = issue_crud.list_issues(sync=False)
-    for issue in issues:
-        web_issue = convert_issue_to_web(issue)
+    web_issues = [convert_issue_to_web(issue) for issue in issues]
+
+    # Apply search filter if provided
+    if search:
+        web_issues = filter_issues(web_issues, search)
+
+    for web_issue in web_issues:
         if web_issue.stage in stages:
             stages[web_issue.stage].append(web_issue)
 
-    return KanbanBoard(stages=stages, total_issues=len(issues))
+    return KanbanBoard(stages=stages, total_issues=len(web_issues))
 
 
 @app.get("/")
@@ -307,11 +343,12 @@ async def kanban(
     request: Request,
     issue: Optional[str] = None,
     chat: Optional[str] = None,
+    search: Optional[str] = None,
     user: Optional[str] = Depends(get_current_user)
 ) -> HTMLResponse:
     """Kanban board page."""
     agent_manager.clear_session_cache()  # Fresh session data per request
-    board = get_kanban_board()
+    board = get_kanban_board(search=search)
 
     # If issue param provided, load issue detail for modal
     selected_issue = None
@@ -339,6 +376,7 @@ async def kanban(
             "files": files,
             "commits_behind": commits_behind,
             "chat_open": chat == "1",
+            "search": search or "",
         }
     )
 
@@ -446,12 +484,17 @@ async def flow(
     request: Request,
     issue: Optional[str] = None,
     chat: Optional[str] = None,
+    search: Optional[str] = None,
     user: Optional[str] = Depends(get_current_user)
 ) -> HTMLResponse:
     """Flow view page."""
     agent_manager.clear_session_cache()  # Fresh session data per request
     issues = issue_crud.list_issues(sync=False)  # Skip sync for fast web reads
     web_issues = _sort_flow_issues([convert_issue_to_web(i) for i in issues])
+
+    # Apply search filter if provided
+    if search:
+        web_issues = filter_issues(web_issues, search)
 
     # Select issue from URL param or default to first
     selected_issue = None
@@ -494,6 +537,7 @@ async def flow(
             "commits_behind": commits_behind,
             "active_page": "flow",
             "chat_open": chat == "1",
+            "search": search or "",
         }
     )
 

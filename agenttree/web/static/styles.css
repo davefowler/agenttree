@@ -181,6 +181,33 @@ header h1 {
     background: #4a7d68;
 }
 
+/* Search Input */
+.search-container {
+    display: flex;
+    align-items: center;
+}
+
+.search-input {
+    padding: 6px 12px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: 13px;
+    width: 200px;
+    transition: all 0.2s;
+}
+
+.search-input:focus {
+    outline: none;
+    border-color: var(--text-accent);
+    box-shadow: 0 0 0 2px rgba(45, 90, 74, 0.2);
+}
+
+.search-input::placeholder {
+    color: var(--text-muted);
+}
+
 /* ==============================================
    Buttons
    ============================================== */
@@ -1174,6 +1201,19 @@ button[disabled] {
 
 [data-theme="dark"] .kanban-column .issue-item[data-stage="not_doing"] {
     background: #450a0a;
+}
+
+/* Old/completed issues (accepted, not_doing) shown grayed out in search results */
+.issue-old,
+.issue-item.issue-old {
+    opacity: 0.6;
+}
+
+.issue-old .issue-number,
+.issue-old .issue-title,
+.issue-item.issue-old .issue-number,
+.issue-item.issue-old .issue-title {
+    color: var(--text-muted);
 }
 
 /* Kanban Modal */

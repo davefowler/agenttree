@@ -6,7 +6,7 @@ Optional:
   - 'selected_issue' - for active state
   - 'draggable' - enable drag (kanban only)
 #}
-<a class="issue-item {% if selected_issue and issue.number == selected_issue.number %}active{% endif %}"
+<a class="issue-item {% if selected_issue and issue.number == selected_issue.number %}active{% endif %}{% if issue.stage.value in ['accepted', 'not_doing'] %} issue-old{% endif %}"
    href="{{ base_url }}?issue={{ issue.number }}"
    data-issue="{{ issue.number }}"
    data-stage="{{ issue.stage.value }}"
