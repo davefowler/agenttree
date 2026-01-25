@@ -462,9 +462,10 @@ def remove_dependency(issue_id: str, dep_id: str) -> Optional[Issue]:
     # Update timestamp
     issue.updated = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    # Write back
+    # Write back - use mode='json' to serialize enums as strings
+    issue_data = issue.model_dump(exclude_none=True, mode='json')
     with open(yaml_path, "w") as f:
-        yaml.dump(issue.model_dump(exclude_none=True), f, default_flow_style=False, sort_keys=False)
+        yaml.dump(issue_data, f, default_flow_style=False, sort_keys=False)
 
     sync_agents_repo(agents_path)
     return issue
