@@ -822,6 +822,21 @@ def start_agent(
     )
     console.print(f"[green]✓ Started {tool_name} in container[/green]")
 
+    # For Apple Containers, look up the UUID and store it for cleanup
+    if runtime.get_runtime_name() == "container":
+        import time
+        from agenttree.container import find_container_by_worktree
+        from agenttree.state import update_agent_container_id
+
+        # Wait for container to start, then find its UUID
+        for _ in range(10):  # Try for up to 5 seconds
+            time.sleep(0.5)
+            container_uuid = find_container_by_worktree(worktree_path)
+            if container_uuid:
+                update_agent_container_id(issue.id, container_uuid)
+                console.print(f"[dim]Container UUID: {container_uuid[:12]}...[/dim]")
+                break
+
     console.print(f"\n[bold]Agent ready for issue #{issue.id}[/bold]")
     console.print(f"  Container: {agent.container}")
     console.print(f"  Port: {agent.port}")

@@ -18,6 +18,7 @@ class StageEnum(str, Enum):
     PLAN_REVIEW = "plan_review"
     IMPLEMENT = "implement"
     IMPLEMENTATION_REVIEW = "implementation_review"
+    INDEPENDENT_CODE_REVIEW = "independent_code_review"
     ACCEPTED = "accepted"
     NOT_DOING = "not_doing"
 
@@ -58,7 +59,7 @@ class Issue(IssueBase):
     @property
     def is_review(self) -> bool:
         """Check if issue is in a human review stage."""
-        return self.stage in (StageEnum.PLAN_REVIEW, StageEnum.IMPLEMENTATION_REVIEW)
+        return self.stage in (StageEnum.PLAN_REVIEW, StageEnum.IMPLEMENTATION_REVIEW, StageEnum.INDEPENDENT_CODE_REVIEW)
 
 
 class IssueUpdate(BaseModel):

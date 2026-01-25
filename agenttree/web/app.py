@@ -728,7 +728,7 @@ async def approve_issue(
     from agenttree.config import load_config
     from agenttree.hooks import execute_exit_hooks, execute_enter_hooks, ValidationError
 
-    HUMAN_REVIEW_STAGES = ["plan_review", "implementation_review"]
+    HUMAN_REVIEW_STAGES = ["plan_review", "implementation_review", "independent_code_review"]
 
     # Get issue
     issue_id_normalized = issue_id.lstrip("0") or "0"

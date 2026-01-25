@@ -2172,6 +2172,13 @@ def ensure_pr_for_issue(issue_id: str) -> bool:
         return False
 
 
+def _is_uuid(s: str) -> bool:
+    """Check if a string looks like a UUID (Apple Container ID format)."""
+    import re
+    # UUID format: 8-4-4-4-12 hex characters
+    return bool(re.match(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', s.lower()))
+
+
 def cleanup_issue_agent(issue: Issue) -> None:
     """Clean up agent resources when issue is accepted.
 
@@ -2199,25 +2206,42 @@ def cleanup_issue_agent(issue: Issue) -> None:
 
     # Stop container (if running) - use detected runtime (container/docker/podman)
     try:
-        from agenttree.container import get_container_runtime
+        from agenttree.container import get_container_runtime, find_container_by_worktree
         runtime = get_container_runtime()
         if runtime.runtime:
+            container_id = agent.container
+
+            # For Apple Containers, we need the UUID, not the name
+            # If the stored ID looks like a name (not a UUID), try to find the UUID
+            if runtime.runtime == "container" and not _is_uuid(container_id):
+                # Try to find the container by its worktree mount
+                worktree_path = Path(agent.worktree)
+                if not worktree_path.is_absolute():
+                    worktree_path = Path.cwd() / worktree_path
+                found_uuid = find_container_by_worktree(worktree_path)
+                if found_uuid:
+                    container_id = found_uuid
+                    console.print(f"[dim]  Found container UUID: {container_id[:12]}...[/dim]")
+                else:
+                    console.print(f"[yellow]  Could not find container UUID for {agent.container}[/yellow]")
+
             result = subprocess.run(
-                [runtime.runtime, "stop", agent.container],
+                [runtime.runtime, "stop", container_id],
                 capture_output=True,
                 text=True,
                 check=False,
             )
             if result.returncode == 0:
-                console.print(f"[dim]  Stopped container: {agent.container}[/dim]")
+                console.print(f"[dim]  Stopped container: {container_id[:12] if len(container_id) > 12 else container_id}[/dim]")
 
-            # Remove container
-            subprocess.run(
-                [runtime.runtime, "rm", agent.container],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
+            # Remove container (only for Docker/Podman - Apple Containers auto-removes)
+            if runtime.runtime != "container":
+                subprocess.run(
+                    [runtime.runtime, "rm", container_id],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
     except Exception as e:
         console.print(f"[yellow]  Warning: Could not stop container: {e}[/yellow]")
 
