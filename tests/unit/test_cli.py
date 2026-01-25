@@ -744,3 +744,56 @@ class TestSandboxCommand:
 
         assert result.exit_code == 1
         assert "No container runtime" in result.output
+
+
+class TestDiagramCommand:
+    """Tests for the diagram command."""
+
+    def test_diagram_command_outputs_dot(self, cli_runner):
+        """Verify agenttree diagram outputs valid DOT to stdout."""
+        from agenttree.cli import main
+
+        result = cli_runner.invoke(main, ["diagram"])
+
+        assert result.exit_code == 0
+        assert "digraph" in result.output
+        assert "backlog" in result.output
+        assert "accepted" in result.output
+        assert "->" in result.output  # Has transitions
+
+    def test_diagram_command_saves_to_file(self, cli_runner, tmp_path):
+        """Verify agenttree diagram -o workflow.dot saves file."""
+        from agenttree.cli import main
+
+        output_file = tmp_path / "workflow.dot"
+
+        result = cli_runner.invoke(main, ["diagram", "-o", str(output_file)])
+
+        assert result.exit_code == 0
+        assert output_file.exists()
+
+        content = output_file.read_text()
+        assert "digraph" in content
+        assert "backlog" in content
+
+    def test_diagram_command_format_png_requires_graphviz(self, cli_runner, monkeypatch):
+        """Verify helpful error if graphviz missing for png format."""
+        from agenttree.cli import main
+
+        # Mock shutil.which to return None (graphviz not installed)
+        monkeypatch.setattr("shutil.which", lambda x: None)
+
+        result = cli_runner.invoke(main, ["diagram", "--format", "png"])
+
+        assert result.exit_code == 1
+        assert "graphviz" in result.output.lower() or "dot" in result.output.lower()
+
+    def test_diagram_command_format_dot_default(self, cli_runner):
+        """Verify DOT is the default format."""
+        from agenttree.cli import main
+
+        result = cli_runner.invoke(main, ["diagram"])
+
+        assert result.exit_code == 0
+        # DOT format output
+        assert result.output.strip().startswith("digraph")

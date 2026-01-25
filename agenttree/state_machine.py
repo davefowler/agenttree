@@ -5,10 +5,131 @@ to validate and manage issue stage transitions. It centralizes state logic, prev
 invalid transitions, and can generate state machine diagrams for documentation.
 """
 
-from typing import Optional
+from __future__ import annotations
+
+import logging
+from functools import lru_cache
+from typing import TYPE_CHECKING, Optional
+
+if TYPE_CHECKING:
+    from agenttree.config import Config
 
 from transitions import Machine
 from transitions.core import MachineError
+
+logger = logging.getLogger(__name__)
+
+# Module-level flag to ensure config validation runs only once
+_config_validated: bool = False
+
+# Fallback values for when config loading fails
+_FALLBACK_HUMAN_REVIEW_STATES = frozenset({
+    "plan_review",
+    "implementation_review.ci_wait",
+    "implementation_review.review",
+})
+
+_FALLBACK_TERMINAL_STATES = frozenset({"accepted", "not_doing"})
+
+
+def load_config() -> Config:
+    """Lazy import of load_config to avoid circular imports."""
+    from agenttree.config import load_config as _load_config
+    return _load_config()
+
+
+@lru_cache(maxsize=1)
+def _get_human_review_states() -> frozenset[str]:
+    """Get human review states from config, with fallback.
+
+    Returns a frozenset of all states that require human review.
+    For stages with substages, includes all substages (e.g., "implementation_review.ci_wait").
+    """
+    try:
+        config = load_config()
+        result: set[str] = set()
+
+        for stage in config.stages:
+            if stage.human_review:
+                if stage.substages:
+                    # Add all substages
+                    for substage_name in stage.substages.keys():
+                        result.add(f"{stage.name}.{substage_name}")
+                else:
+                    result.add(stage.name)
+
+        return frozenset(result)
+    except Exception as e:
+        logger.warning(f"Could not load config for human review states, using fallback: {e}")
+        return _FALLBACK_HUMAN_REVIEW_STATES
+
+
+@lru_cache(maxsize=1)
+def _get_terminal_states() -> frozenset[str]:
+    """Get terminal states from config, with fallback.
+
+    Returns a frozenset of all terminal states (states that cannot advance further).
+    """
+    try:
+        config = load_config()
+        result: set[str] = set()
+
+        for stage in config.stages:
+            if stage.terminal:
+                result.add(stage.name)
+
+        return frozenset(result)
+    except Exception as e:
+        logger.warning(f"Could not load config for terminal states, using fallback: {e}")
+        return _FALLBACK_TERMINAL_STATES
+
+
+def validate_config_sync() -> None:
+    """Validate that state machine STATES matches config.
+
+    This function runs once on first IssueStateMachine instantiation.
+    It compares the hardcoded STATES list with config-derived states
+    and logs a warning if there's a mismatch.
+    """
+    global _config_validated
+
+    if _config_validated:
+        return
+
+    _config_validated = True
+
+    try:
+        config = load_config()
+
+        # Build set of states from config
+        config_states: set[str] = set()
+        for stage in config.stages:
+            if stage.substages:
+                for substage_name in stage.substages.keys():
+                    config_states.add(f"{stage.name}.{substage_name}")
+            else:
+                config_states.add(stage.name)
+
+        # Compare with hardcoded STATES
+        machine_states = set(IssueStateMachine.STATES)
+
+        missing_from_machine = config_states - machine_states
+        extra_in_machine = machine_states - config_states
+
+        if missing_from_machine:
+            logger.warning(
+                f"Config has states not in state machine STATES: {sorted(missing_from_machine)}. "
+                "Update agenttree/state_machine.py to add these states."
+            )
+
+        if extra_in_machine:
+            logger.debug(
+                f"State machine has states not in config: {sorted(extra_in_machine)}. "
+                "These may be transitional states or the config was simplified."
+            )
+
+    except Exception as e:
+        logger.warning(f"Could not validate config sync: {e}")
 
 
 class InvalidTransitionError(Exception):
@@ -140,6 +261,9 @@ class IssueStateMachine:
         Args:
             initial_state: Initial state for the machine (default: "backlog")
         """
+        # Validate config sync on first instantiation
+        validate_config_sync()
+
         self._state = initial_state
 
         # Create the machine
@@ -216,7 +340,7 @@ class IssueStateMachine:
         Returns:
             The next state, or None if at a terminal state
         """
-        if self.current_state in self.TERMINAL_STATES:
+        if self.current_state in _get_terminal_states():
             return None
 
         for t in self.TRANSITIONS:
@@ -231,7 +355,7 @@ class IssueStateMachine:
         Returns:
             True if human review is required before advancing
         """
-        return self.current_state in self.HUMAN_REVIEW_STATES
+        return self.current_state in _get_human_review_states()
 
     def is_terminal(self) -> bool:
         """Check if the current state is terminal.
@@ -239,7 +363,7 @@ class IssueStateMachine:
         Returns:
             True if this is a terminal state (accepted or not_doing)
         """
-        return self.current_state in self.TERMINAL_STATES
+        return self.current_state in _get_terminal_states()
 
     def get_valid_transitions(self) -> list[str]:
         """Get all valid target states from the current state.
@@ -355,11 +479,14 @@ def generate_diagram(
     ]
 
     # Add state nodes with styling
+    terminal_states = _get_terminal_states()
+    human_review_states = _get_human_review_states()
+
     for state in IssueStateMachine.STATES:
-        if state in IssueStateMachine.TERMINAL_STATES:
+        if state in terminal_states:
             # Terminal states are double-bordered
             lines.append(f'    "{state}" [shape=doublecircle];')
-        elif state in IssueStateMachine.HUMAN_REVIEW_STATES:
+        elif state in human_review_states:
             # Human review states are highlighted
             lines.append(f'    "{state}" [style="rounded,filled", fillcolor=lightyellow];')
         else:

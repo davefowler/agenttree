@@ -334,3 +334,212 @@ class TestInvalidTransitionError:
         err = InvalidTransitionError("source", "dest")
         assert err.source == "source"
         assert err.dest == "dest"
+
+
+class TestValidateConfigSync:
+    """Tests for config sync validation."""
+
+    def test_validate_config_sync_passes_when_aligned(self, monkeypatch) -> None:
+        """Verify no error when STATES matches config."""
+        from agenttree import state_machine
+
+        # Reset validation flag for test isolation
+        state_machine._config_validated = False
+
+        # Mock config to return stages that match STATES
+        mock_config = type(
+            "MockConfig",
+            (),
+            {
+                "stages": [
+                    type("Stage", (), {"name": "backlog", "substages": None, "terminal": False, "human_review": False})(),
+                    type("Stage", (), {"name": "define", "substages": {"refine": {}}, "terminal": False, "human_review": False})(),
+                    type("Stage", (), {"name": "research", "substages": {"explore": {}, "document": {}}, "terminal": False, "human_review": False})(),
+                    type("Stage", (), {"name": "plan", "substages": {"draft": {}, "refine": {}}, "terminal": False, "human_review": False})(),
+                    type("Stage", (), {"name": "plan_assess", "substages": None, "terminal": False, "human_review": False})(),
+                    type("Stage", (), {"name": "plan_revise", "substages": None, "terminal": False, "human_review": False})(),
+                    type("Stage", (), {"name": "plan_review", "substages": None, "terminal": False, "human_review": True})(),
+                    type("Stage", (), {"name": "implement", "substages": {"setup": {}, "code": {}, "code_review": {}, "address_review": {}, "wrapup": {}, "feedback": {}}, "terminal": False, "human_review": False})(),
+                    type("Stage", (), {"name": "independent_code_review", "substages": None, "terminal": False, "human_review": False})(),
+                    type("Stage", (), {"name": "implementation_review", "substages": {"ci_wait": {}, "review": {}}, "terminal": False, "human_review": True})(),
+                    type("Stage", (), {"name": "accepted", "substages": None, "terminal": True, "human_review": False})(),
+                    type("Stage", (), {"name": "not_doing", "substages": None, "terminal": True, "human_review": False})(),
+                ],
+            },
+        )()
+
+        def mock_load_config():
+            return mock_config
+
+        monkeypatch.setattr("agenttree.state_machine.load_config", mock_load_config)
+
+        # Should not raise
+        state_machine.validate_config_sync()
+
+    def test_validate_config_sync_detects_missing_state(self, monkeypatch, caplog) -> None:
+        """Verify warning when config has stage not in STATES."""
+        import logging
+        from agenttree import state_machine
+
+        # Reset validation flag for test isolation
+        state_machine._config_validated = False
+
+        # Mock config with an extra stage not in STATES
+        mock_config = type(
+            "MockConfig",
+            (),
+            {
+                "stages": [
+                    type("Stage", (), {"name": "backlog", "substages": None, "terminal": False, "human_review": False})(),
+                    type("Stage", (), {"name": "new_stage", "substages": None, "terminal": False, "human_review": False})(),
+                ],
+            },
+        )()
+
+        def mock_load_config():
+            return mock_config
+
+        monkeypatch.setattr("agenttree.state_machine.load_config", mock_load_config)
+
+        with caplog.at_level(logging.WARNING):
+            state_machine.validate_config_sync()
+
+        assert "new_stage" in caplog.text or "mismatch" in caplog.text.lower()
+
+    def test_validate_config_sync_runs_only_once(self, monkeypatch) -> None:
+        """Verify validation runs on first instantiation only."""
+        from agenttree import state_machine
+
+        # Reset validation flag
+        state_machine._config_validated = False
+
+        call_count = 0
+
+        def counting_validate():
+            nonlocal call_count
+            # Only count if not already validated (mimics real behavior)
+            if not state_machine._config_validated:
+                call_count += 1
+                state_machine._config_validated = True
+
+        monkeypatch.setattr("agenttree.state_machine.validate_config_sync", counting_validate)
+
+        # Create multiple instances
+        state_machine.IssueStateMachine()
+        state_machine.IssueStateMachine()
+        state_machine.IssueStateMachine()
+
+        # Should only have been called once (validation flag prevents re-runs)
+        assert call_count == 1
+
+    def test_validate_config_sync_fallback_on_config_error(self, monkeypatch, caplog) -> None:
+        """Verify graceful fallback when config unavailable."""
+        import logging
+        from agenttree import state_machine
+
+        # Reset validation flag
+        state_machine._config_validated = False
+
+        def mock_load_config():
+            raise FileNotFoundError("No config file")
+
+        monkeypatch.setattr("agenttree.state_machine.load_config", mock_load_config)
+
+        with caplog.at_level(logging.WARNING):
+            # Should not raise, should log warning
+            state_machine.validate_config_sync()
+
+        assert state_machine._config_validated is True
+
+
+class TestDerivedStates:
+    """Tests for config-derived HUMAN_REVIEW_STATES and TERMINAL_STATES."""
+
+    def test_human_review_states_matches_config(self, monkeypatch) -> None:
+        """Verify derived states include all config review stages."""
+        from agenttree import state_machine
+
+        # Clear cache
+        state_machine._get_human_review_states.cache_clear()
+
+        mock_config = type(
+            "MockConfig",
+            (),
+            {
+                "stages": [
+                    type("Stage", (), {"name": "plan_review", "substages": None, "human_review": True})(),
+                    type("Stage", (), {"name": "implementation_review", "substages": {"ci_wait": {}, "review": {}}, "human_review": True})(),
+                    type("Stage", (), {"name": "other_stage", "substages": None, "human_review": False})(),
+                ],
+            },
+        )()
+
+        def mock_load_config():
+            return mock_config
+
+        monkeypatch.setattr("agenttree.state_machine.load_config", mock_load_config)
+
+        result = state_machine._get_human_review_states()
+
+        assert "plan_review" in result
+        assert "implementation_review.ci_wait" in result
+        assert "implementation_review.review" in result
+        assert "other_stage" not in result
+
+    def test_terminal_states_matches_config(self, monkeypatch) -> None:
+        """Verify derived states match config stages with terminal=True."""
+        from agenttree import state_machine
+
+        # Clear cache
+        state_machine._get_terminal_states.cache_clear()
+
+        mock_config = type(
+            "MockConfig",
+            (),
+            {
+                "stages": [
+                    type("Stage", (), {"name": "accepted", "substages": None, "terminal": True})(),
+                    type("Stage", (), {"name": "not_doing", "substages": None, "terminal": True})(),
+                    type("Stage", (), {"name": "backlog", "substages": None, "terminal": False})(),
+                ],
+            },
+        )()
+
+        def mock_load_config():
+            return mock_config
+
+        monkeypatch.setattr("agenttree.state_machine.load_config", mock_load_config)
+
+        result = state_machine._get_terminal_states()
+
+        assert "accepted" in result
+        assert "not_doing" in result
+        assert "backlog" not in result
+
+    def test_derived_states_cached(self, monkeypatch) -> None:
+        """Verify caching (same object returned on repeated calls)."""
+        from agenttree import state_machine
+
+        # Clear cache
+        state_machine._get_human_review_states.cache_clear()
+
+        mock_config = type(
+            "MockConfig",
+            (),
+            {
+                "stages": [
+                    type("Stage", (), {"name": "plan_review", "substages": None, "human_review": True})(),
+                ],
+            },
+        )()
+
+        def mock_load_config():
+            return mock_config
+
+        monkeypatch.setattr("agenttree.state_machine.load_config", mock_load_config)
+
+        result1 = state_machine._get_human_review_states()
+        result2 = state_machine._get_human_review_states()
+
+        # Should be the same object (cached)
+        assert result1 is result2

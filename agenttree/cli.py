@@ -2889,5 +2889,70 @@ def tui_command() -> None:
     app.run()
 
 
+@main.command("diagram")
+@click.option("-o", "--output", type=click.Path(), help="Output file path")
+@click.option(
+    "--format",
+    "fmt",
+    type=click.Choice(["dot", "png", "svg"]),
+    default="dot",
+    help="Output format (default: dot)",
+)
+def diagram_command(output: str | None, fmt: str) -> None:
+    """Generate workflow state machine diagram.
+
+    Outputs a Graphviz DOT diagram of the issue workflow state machine.
+    By default, outputs DOT format to stdout.
+
+    For PNG/SVG output, graphviz must be installed on your system.
+
+    Examples:
+        agenttree diagram                    # Output DOT to stdout
+        agenttree diagram -o workflow.dot    # Save DOT to file
+        agenttree diagram --format png -o workflow.png  # Render as PNG
+    """
+    import shutil
+    import subprocess
+
+    from agenttree.state_machine import generate_diagram
+
+    # Generate DOT source
+    dot_source = generate_diagram(title="AgentTree Issue Workflow")
+
+    if fmt == "dot":
+        # Just output the DOT source
+        if output:
+            with open(output, "w") as f:
+                f.write(dot_source)
+            console.print(f"[green]Saved diagram to {output}[/green]")
+        else:
+            console.print(dot_source)
+    else:
+        # Need graphviz for PNG/SVG
+        if not shutil.which("dot"):
+            console.print("[red]Error: graphviz is not installed[/red]")
+            console.print()
+            console.print("To render PNG/SVG diagrams, install graphviz:")
+            console.print("  macOS: brew install graphviz")
+            console.print("  Ubuntu/Debian: sudo apt install graphviz")
+            console.print("  Or use --format dot for DOT output (no graphviz needed)")
+            sys.exit(1)
+
+        # Render using dot command
+        output_file = output or f"workflow.{fmt}"
+        try:
+            result = subprocess.run(
+                ["dot", f"-T{fmt}", "-o", output_file],
+                input=dot_source,
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+            console.print(f"[green]Saved {fmt.upper()} diagram to {output_file}[/green]")
+        except subprocess.CalledProcessError as e:
+            console.print(f"[red]Error running graphviz: {e.stderr}[/red]")
+            sys.exit(1)
+
+
 if __name__ == "__main__":
     main()
