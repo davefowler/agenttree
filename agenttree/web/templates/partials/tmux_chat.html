@@ -1,0 +1,65 @@
+<!-- Reusable tmux chat component
+     Parameters (set via {% with %} before including):
+     - chat_id: unique identifier for this chat instance (e.g., "controller" or issue number)
+     - get_url: endpoint to fetch tmux output (e.g., "/agent/0/tmux")
+     - post_url: endpoint to send messages (e.g., "/agent/0/send")
+     - placeholder: input placeholder text (e.g., "Send message to controller...")
+     - is_active: whether the agent is active (optional, for status display)
+-->
+<div class="tmux-chat-content">
+    <div class="tmux-output" id="tmux-output-{{ chat_id }}"
+         hx-get="{{ get_url }}"
+         hx-trigger="load, every 2s [document.visibilityState=='visible']"
+         hx-swap="innerHTML">
+        Loading...
+    </div>
+    <div class="tmux-input-container">
+        <form hx-post="{{ post_url }}"
+              hx-trigger="submit"
+              hx-swap="none"
+              hx-on::after-request="this.reset()"
+              class="send-form">
+            <input type="text" name="message" class="tmux-input"
+                   placeholder="{{ placeholder | default('Send message...') }}"
+                   autocomplete="off"
+                   required>
+            <button type="submit" class="send-button">
+                <span class="btn-text">Send</span>
+                <span class="btn-loading htmx-indicator">...</span>
+            </button>
+        </form>
+    </div>
+</div>
+
+<script>
+// Smart auto-scroll: only scroll to bottom if user was already at bottom
+// This script is idempotent - safe to include multiple times
+(function() {
+    // Guard against duplicate initialization
+    if (window._tmuxChatInitialized) return;
+    window._tmuxChatInitialized = true;
+
+    // Track which tmux outputs were at bottom before HTMX swap
+    const wasAtBottom = new Map();
+
+    // Before swap: check if scrolled to bottom (within 50px tolerance)
+    document.body.addEventListener('htmx:beforeSwap', function(e) {
+        const target = e.detail.target;
+        if (target && target.classList.contains('tmux-output')) {
+            const isAtBottom = target.scrollHeight - target.scrollTop - target.clientHeight < 50;
+            wasAtBottom.set(target.id, isAtBottom);
+        }
+    });
+
+    // After swap: scroll to bottom if user was at bottom
+    document.body.addEventListener('htmx:afterSwap', function(e) {
+        const target = e.detail.target;
+        if (target && target.classList.contains('tmux-output')) {
+            if (wasAtBottom.get(target.id)) {
+                target.scrollTop = target.scrollHeight;
+            }
+            wasAtBottom.delete(target.id);
+        }
+    });
+})();
+</script>

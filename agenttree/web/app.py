@@ -228,19 +228,13 @@ class AgentManager:
         self._active_sessions = None
 
     def _check_issue_tmux_session(self, issue_id: str) -> bool:
-        """Check if tmux session exists for an issue-bound agent."""
+        """Check if tmux session exists for an issue-bound agent.
+
+        Note: Controller is agent 0, so _check_issue_tmux_session("000") checks controller.
+        """
         # Session names are: {project}-issue-{issue_id}
         session_name = f"{_config.project}-issue-{issue_id}"
         return session_name in self._get_active_sessions()
-
-    def _check_controller_session(self) -> bool:
-        """Check if the controller tmux session exists."""
-        session_name = f"{_config.project}-controller"
-        return session_name in self._get_active_sessions()
-
-    def get_controller_session_name(self) -> str:
-        """Get the controller tmux session name."""
-        return f"{_config.project}-controller"
 
 
 # Global agent manager - will be initialized in startup
@@ -641,67 +635,8 @@ async def send_to_agent(
     return HTMLResponse("")
 
 
-# Controller tmux routes
-
-@app.get("/controller/tmux", response_class=HTMLResponse)
-async def controller_tmux(
-    request: Request,
-    user: Optional[str] = Depends(get_current_user)
-) -> HTMLResponse:
-    """Get tmux output for the controller agent (HTMX endpoint)."""
-    session_name = agent_manager.get_controller_session_name()
-
-    # Capture tmux output
-    try:
-        result = subprocess.run(
-            ["tmux", "capture-pane", "-t", session_name, "-p"],
-            capture_output=True,
-            text=True,
-            timeout=2
-        )
-
-        if result.returncode == 0:
-            # Strip Claude Code's input prompt separator from the output
-            output = _strip_claude_input_prompt(result.stdout)
-        else:
-            output = "Controller session not active. Start it with: agenttree controller"
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        output = "Could not capture controller output"
-
-    return templates.TemplateResponse(
-        "partials/tmux_output.html",
-        {"request": request, "agent_num": "controller", "output": output}
-    )
-
-
-@app.post("/controller/send", response_class=HTMLResponse)
-async def send_to_controller(
-    request: Request,
-    message: str = Form(...),
-    user: Optional[str] = Depends(get_current_user)
-) -> HTMLResponse:
-    """Send a message to the controller agent via tmux."""
-    from agenttree.tmux import send_message
-
-    session_name = agent_manager.get_controller_session_name()
-
-    # Send message - result will appear in tmux output on next poll
-    send_message(session_name, message)
-    return HTMLResponse("")
-
-
-@app.get("/api/controller/status")
-async def get_controller_status(
-    user: Optional[str] = Depends(get_current_user)
-) -> dict:
-    """Check if the controller tmux session is running."""
-    agent_manager.clear_session_cache()
-    is_active = agent_manager._check_controller_session()
-
-    return {
-        "active": is_active,
-        "session_name": agent_manager.get_controller_session_name()
-    }
+# Controller routes removed - controller is now agent 0
+# Use /agent/0/tmux, /agent/0/send, /api/issues/0/agent-status instead
 
 
 @app.post("/api/issues/{issue_id}/start")

@@ -1,4 +1,4 @@
-<!-- Controller panel - right-side overlay for main controller agent -->
+<!-- Controller panel - right-side overlay for controller agent (agent 0) -->
 <div class="controller-panel" id="controller-panel">
     <div class="controller-panel-header">
         <h4>Controller</h4>
@@ -9,28 +9,9 @@
             <span class="status-indicator" id="controller-status-indicator"></span>
             <span id="controller-status-text">Checking...</span>
         </div>
-        <div class="tmux-output" id="controller-tmux-output"
-             hx-get="/controller/tmux"
-             hx-trigger="load, every 2s [document.visibilityState=='visible' && !document.getElementById('controller-panel').classList.contains('collapsed')]"
-             hx-swap="innerHTML">
-            Loading...
-        </div>
-        <div class="tmux-input-container">
-            <form hx-post="/controller/send"
-                  hx-trigger="submit"
-                  hx-swap="none"
-                  hx-on::after-request="this.reset()"
-                  class="send-form">
-                <input type="text" name="message" class="tmux-input"
-                       placeholder="Send message to controller..."
-                       autocomplete="off"
-                       required>
-                <button type="submit" class="send-button">
-                    <span class="btn-text">Send</span>
-                    <span class="btn-loading htmx-indicator">...</span>
-                </button>
-            </form>
-        </div>
+        {% with chat_id="controller", get_url="/agent/0/tmux", post_url="/agent/0/send", placeholder="Send message to controller..." %}
+            {% include "partials/tmux_chat.html" %}
+        {% endwith %}
     </div>
 </div>
 <script>
@@ -49,21 +30,21 @@
 
             // If opening, refresh the tmux output
             if (isOpen) {
-                htmx.trigger('#controller-tmux-output', 'load');
+                htmx.trigger('#tmux-output-controller', 'load');
                 checkControllerStatus();
             }
         }
     };
 
-    // Check controller status
+    // Check controller status using the agent status endpoint
     async function checkControllerStatus() {
         try {
-            const response = await fetch('/api/controller/status');
+            const response = await fetch('/api/issues/0/agent-status');
             if (response.ok) {
                 const data = await response.json();
                 const indicator = document.getElementById('controller-status-indicator');
                 const text = document.getElementById('controller-status-text');
-                if (data.active) {
+                if (data.tmux_active) {
                     indicator.classList.remove('inactive');
                     indicator.classList.add('active');
                     text.textContent = 'Controller active';
@@ -74,30 +55,18 @@
                 }
             }
         } catch (e) {
-            console.error('Error checking controller status:', e);
+            // Endpoint may not exist yet for agent 0, show as inactive
+            const indicator = document.getElementById('controller-status-indicator');
+            const text = document.getElementById('controller-status-text');
+            if (indicator) {
+                indicator.classList.remove('active');
+                indicator.classList.add('inactive');
+            }
+            if (text) {
+                text.textContent = 'Controller not running';
+            }
         }
     }
-
-    // Smart auto-scroll for controller panel
-    const wasAtBottom = new Map();
-
-    document.body.addEventListener('htmx:beforeSwap', function(e) {
-        const target = e.detail.target;
-        if (target && target.id === 'controller-tmux-output') {
-            const isAtBottom = target.scrollHeight - target.scrollTop - target.clientHeight < 50;
-            wasAtBottom.set(target.id, isAtBottom);
-        }
-    });
-
-    document.body.addEventListener('htmx:afterSwap', function(e) {
-        const target = e.detail.target;
-        if (target && target.id === 'controller-tmux-output') {
-            if (wasAtBottom.get(target.id)) {
-                target.scrollTop = target.scrollHeight;
-            }
-            wasAtBottom.delete(target.id);
-        }
-    });
 
     // Initialize panel state from localStorage
     const isOpen = localStorage.getItem('controllerPanelOpen') === '1';
