@@ -138,6 +138,38 @@ header h1 {
     border-color: var(--text-accent);
 }
 
+.flow-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+}
+
+.flow-control-label {
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.flow-select {
+    padding: 6px 10px;
+    background: var(--btn-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.flow-select:hover {
+    background: var(--btn-bg-hover);
+}
+
+.flow-select:focus {
+    outline: none;
+    border-color: var(--text-accent);
+}
+
 .theme-toggle {
     margin-left: auto;
     background: var(--btn-bg);
