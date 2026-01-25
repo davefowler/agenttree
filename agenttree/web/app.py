@@ -656,10 +656,15 @@ async def stop_issue(
     user: Optional[str] = Depends(get_current_user)
 ) -> dict:
     """Stop an agent working on an issue (kills the tmux session)."""
+    from agenttree.tmux import kill_session
+    from agenttree.state import unregister_agent
+
     try:
         padded_id = issue_id.zfill(3)
-        session_name = f"{get_project_name()}-issue-{padded_id}"
-        agent_manager.stop_issue_agent(session_name)
+        session_name = f"{_config.project}-issue-{padded_id}"
+        kill_session(session_name)
+        # Also unregister from state
+        unregister_agent(padded_id)
         return {"ok": True, "status": f"Stopped agent for issue #{issue_id}"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
