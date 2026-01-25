@@ -809,6 +809,8 @@ def start_agent(
 
     # Start agent in tmux (always in container)
     tool_name = tool or config.default_tool
+    # Resolve model from stage config (substage → stage → default)
+    model_name = config.model_for(issue.stage, issue.substage)
     runtime = get_container_runtime()
 
     if not runtime.is_available():
@@ -817,12 +819,14 @@ def start_agent(
         sys.exit(1)
 
     console.print(f"[dim]Container runtime: {runtime.get_runtime_name()}[/dim]")
+    console.print(f"[dim]Model: {model_name}[/dim]")
     tmux_manager.start_issue_agent_in_container(
         issue_id=issue.id,
         session_name=agent.tmux_session,
         worktree_path=worktree_path,
         tool_name=tool_name,
         container_runtime=runtime,
+        model=model_name,
     )
     console.print(f"[green]✓ Started {tool_name} in container[/green]")
 

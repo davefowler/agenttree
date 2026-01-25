@@ -385,6 +385,7 @@ class TmuxManager:
         worktree_path: Path,
         tool_name: str,
         container_runtime: "ContainerRuntime",
+        model: Optional[str] = None,
     ) -> None:
         """Start an issue-bound agent in a container within a tmux session.
 
@@ -394,6 +395,7 @@ class TmuxManager:
             worktree_path: Path to the issue's worktree
             tool_name: Name of the AI tool to use
             container_runtime: Container runtime instance
+            model: Model to use (defaults to config.default_model if not specified)
         """
         # Kill existing session if it exists
         if session_exists(session_name):
@@ -405,12 +407,13 @@ class TmuxManager:
         # Ensure container system is running (Apple Container)
         container_runtime.ensure_system_running()
 
-        # Build container command with model from config
+        # Build container command with resolved model
+        resolved_model = model or self.config.default_model
         container_cmd = container_runtime.build_run_command(
             worktree_path=worktree_path,
             ai_tool=tool_name,
             dangerous=True,  # Safe because we're in a container
-            model=self.config.default_model,
+            model=resolved_model,
         )
 
         # Join command for shell execution
