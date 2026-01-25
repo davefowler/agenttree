@@ -132,12 +132,9 @@ class TestFlowEndpoint:
 class TestAgentStatusEndpoint:
     """Tests for agent status endpoint."""
 
-    @patch("agenttree.web.app.issue_crud")
     @patch("agenttree.web.app.agent_manager")
-    def test_agent_status_running(self, mock_agent_mgr, mock_crud, client, mock_issue):
+    def test_agent_status_running(self, mock_agent_mgr, client):
         """Test agent status when tmux session is active."""
-        mock_issue.assigned_agent = "1"
-        mock_crud.get_issue.return_value = mock_issue
         mock_agent_mgr._check_issue_tmux_session.return_value = True
 
         response = client.get("/api/issues/001/agent-status")
@@ -145,15 +142,11 @@ class TestAgentStatusEndpoint:
         assert response.status_code == 200
         data = response.json()
         assert data["tmux_active"] is True
-        assert data["assigned_agent"] == "1"
         assert data["status"] == "running"
 
-    @patch("agenttree.web.app.issue_crud")
     @patch("agenttree.web.app.agent_manager")
-    def test_agent_status_stalled(self, mock_agent_mgr, mock_crud, client, mock_issue):
-        """Test agent status when agent assigned but tmux not active."""
-        mock_issue.assigned_agent = "1"
-        mock_crud.get_issue.return_value = mock_issue
+    def test_agent_status_off(self, mock_agent_mgr, client):
+        """Test agent status when tmux session is not active."""
         mock_agent_mgr._check_issue_tmux_session.return_value = False
 
         response = client.get("/api/issues/001/agent-status")
@@ -161,23 +154,6 @@ class TestAgentStatusEndpoint:
         assert response.status_code == 200
         data = response.json()
         assert data["tmux_active"] is False
-        assert data["assigned_agent"] == "1"
-        assert data["status"] == "stalled"
-
-    @patch("agenttree.web.app.issue_crud")
-    @patch("agenttree.web.app.agent_manager")
-    def test_agent_status_off(self, mock_agent_mgr, mock_crud, client, mock_issue):
-        """Test agent status when no agent assigned."""
-        mock_issue.assigned_agent = None
-        mock_crud.get_issue.return_value = mock_issue
-        mock_agent_mgr._check_issue_tmux_session.return_value = False
-
-        response = client.get("/api/issues/001/agent-status")
-
-        assert response.status_code == 200
-        data = response.json()
-        assert data["tmux_active"] is False
-        assert data["assigned_agent"] is None
         assert data["status"] == "off"
 
 

@@ -110,7 +110,44 @@ def send_keys(session_name: str, keys: str, submit: bool = True) -> None:
         )
 
 
-def send_message(session_name: str, message: str) -> bool:
+def is_claude_running(session_name: str) -> bool:
+    """Check if Claude CLI is running in a tmux session.
+
+    Looks for the Claude prompt character in the pane content.
+    This distinguishes between "tmux session exists" and "Claude is actually running".
+
+    Args:
+        session_name: Name of the tmux session
+
+    Returns:
+        True if Claude CLI appears to be running (prompt visible)
+    """
+    if not session_exists(session_name):
+        return False
+
+    # Check recent pane content for Claude prompt
+    pane_content = capture_pane(session_name, lines=30)
+
+    # Look for Claude prompt at end of content (recent lines)
+    # Claude CLI shows "❯" when ready for input
+    # Also check it's not at a shell prompt (➜ or $ at start of line)
+    lines = pane_content.strip().split('\n')
+
+    for line in reversed(lines[-10:]):  # Check last 10 non-empty lines
+        line = line.strip()
+        if not line:
+            continue
+        # Claude prompt
+        if line.startswith('❯') or '❯' in line:
+            return True
+        # Shell prompts indicate Claude exited
+        if line.startswith('➜') or line.startswith('$') or line.endswith('$'):
+            return False
+
+    return False
+
+
+def send_message(session_name: str, message: str, check_claude: bool = True) -> str:
     """Send a message to a tmux session if it's alive.
 
     This is the preferred way to send messages to agents - it checks
@@ -119,18 +156,25 @@ def send_message(session_name: str, message: str) -> bool:
     Args:
         session_name: Name of the tmux session
         message: Message to send
+        check_claude: If True, verify Claude CLI is running (not just tmux session)
 
     Returns:
-        True if message was sent, False if session doesn't exist
+        "sent" if message was sent successfully
+        "no_session" if tmux session doesn't exist
+        "claude_exited" if session exists but Claude CLI isn't running
+        "error" if send failed
     """
     if not session_exists(session_name):
-        return False
+        return "no_session"
+
+    if check_claude and not is_claude_running(session_name):
+        return "claude_exited"
 
     try:
         send_keys(session_name, message, submit=True)
-        return True
+        return "sent"
     except subprocess.CalledProcessError:
-        return False
+        return "error"
 
 
 def attach_session(session_name: str) -> None:
@@ -437,14 +481,20 @@ class TmuxManager:
         """
         kill_session(session_name)
 
-    def send_message_to_issue(self, session_name: str, message: str) -> None:
+    def send_message_to_issue(self, session_name: str, message: str) -> str:
         """Send a message to an issue-bound agent.
 
         Args:
             session_name: Tmux session name
             message: Message to send
+
+        Returns:
+            "sent" if message was sent successfully
+            "no_session" if tmux session doesn't exist
+            "claude_exited" if session exists but Claude CLI isn't running
+            "error" if send failed
         """
-        send_keys(session_name, message)
+        return send_message(session_name, message, check_claude=True)
 
     def attach_to_issue(self, session_name: str) -> None:
         """Attach to an issue-bound agent's tmux session.

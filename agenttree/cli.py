@@ -822,6 +822,23 @@ def start_agent(
     )
     console.print(f"[green]✓ Started {tool_name} in container[/green]")
 
+    # For Apple Containers, look up the UUID and store it for cleanup
+    if runtime.get_runtime_name() == "container":
+        import time
+        from agenttree.container import find_container_by_worktree
+        from agenttree.state import update_agent_container_id
+
+        # Wait for container to start, then find its UUID
+        for _ in range(10):  # Try for up to 5 seconds
+            time.sleep(0.5)
+            container_uuid = find_container_by_worktree(worktree_path)
+            if container_uuid:
+                update_agent_container_id(issue.id, container_uuid)
+                console.print(f"[dim]Container UUID: {container_uuid[:12]}...[/dim]")
+                break
+        else:
+            console.print(f"[yellow]Warning: Could not find container UUID for cleanup tracking[/yellow]")
+
     console.print(f"\n[bold]Agent ready for issue #{issue.id}[/bold]")
     console.print(f"  Container: {agent.container}")
     console.print(f"  Port: {agent.port}")
@@ -1087,10 +1104,25 @@ def send(issue_id: str, message: str) -> None:
 
     if not tmux_manager.is_issue_running(agent.tmux_session):
         console.print(f"[red]Error: Agent for issue #{issue_id} is not running[/red]")
+        console.print(f"[yellow]Restart with: agenttree start {issue_id}[/yellow]")
         sys.exit(1)
 
-    tmux_manager.send_message_to_issue(agent.tmux_session, message)
-    console.print(f"[green]✓ Sent message to issue #{agent.issue_id}[/green]")
+    result = tmux_manager.send_message_to_issue(agent.tmux_session, message)
+
+    if result == "sent":
+        console.print(f"[green]✓ Sent message to issue #{agent.issue_id}[/green]")
+    elif result == "claude_exited":
+        console.print(f"[red]Error: Claude CLI has exited in issue #{agent.issue_id}'s session[/red]")
+        console.print(f"[dim]The tmux session is running but Claude is not responding.[/dim]")
+        console.print(f"[yellow]Restart with: agenttree start {issue_id}[/yellow]")
+        sys.exit(1)
+    elif result == "no_session":
+        console.print(f"[red]Error: Tmux session not found for issue #{agent.issue_id}[/red]")
+        console.print(f"[yellow]Restart with: agenttree start {issue_id}[/yellow]")
+        sys.exit(1)
+    else:
+        console.print(f"[red]Error: Failed to send message to issue #{agent.issue_id}[/red]")
+        sys.exit(1)
 
 
 @main.command()

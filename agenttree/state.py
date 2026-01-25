@@ -181,6 +181,30 @@ def register_agent(agent: ActiveAgent) -> None:
         save_state(state)
 
 
+def update_agent_container_id(issue_id: str, container_id: str) -> None:
+    """Update an agent's container ID (for Apple Containers UUID tracking).
+
+    Apple Containers use UUIDs instead of names. This function updates the
+    stored container ID after the container has started and we can look up
+    its UUID.
+
+    Args:
+        issue_id: Issue ID
+        container_id: Container UUID
+    """
+    with state_lock():
+        state = load_state()
+
+        if "active_agents" not in state:
+            return
+
+        if issue_id not in state["active_agents"]:
+            return
+
+        state["active_agents"][issue_id]["container"] = container_id
+        save_state(state)
+
+
 def unregister_agent(issue_id: str) -> Optional[ActiveAgent]:
     """Unregister an active agent.
 

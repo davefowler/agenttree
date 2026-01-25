@@ -70,6 +70,7 @@ class TestSendCommand:
                 with patch("agenttree.cli.TmuxManager") as mock_tm_class:
                     mock_tm = MagicMock()
                     mock_tm.is_issue_running.return_value = True
+                    mock_tm.send_message_to_issue.return_value = "sent"
                     mock_tm_class.return_value = mock_tm
 
                     result = cli_runner.invoke(main, ["send", "42", "hello"])
