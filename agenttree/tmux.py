@@ -473,6 +473,44 @@ class TmuxManager:
             )
             send_keys(session_name, startup_prompt)
 
+    def start_controller(
+        self,
+        session_name: str,
+        repo_path: Path,
+        tool_name: str,
+    ) -> None:
+        """Start the controller agent on the host (not in a container).
+
+        The controller runs on the main branch and orchestrates other agents.
+
+        Args:
+            session_name: Tmux session name (typically {project}-issue-000)
+            repo_path: Path to the repository root
+            tool_name: Name of the AI tool to use
+        """
+        # Kill existing session if it exists
+        if session_exists(session_name):
+            kill_session(session_name)
+
+        # Get tool config
+        tool_config = self.config.get_tool_config(tool_name)
+
+        # Build command to run the AI tool directly (not in container)
+        # Controller runs on the host with full access
+        ai_command = tool_config.command
+
+        # Create tmux session running the AI tool
+        create_session(session_name, repo_path, ai_command)
+
+        # Wait for prompt before sending startup message
+        if wait_for_prompt(session_name, prompt_char="❯", timeout=30.0):
+            # Load controller instructions
+            startup_prompt = (
+                "You are the Controller agent for this AgentTree project. "
+                "Read your instructions: cat _agenttree/skills/controller.md && agenttree status"
+            )
+            send_keys(session_name, startup_prompt)
+
     def stop_issue_agent(self, session_name: str) -> None:
         """Stop an issue-bound agent's tmux session.
 
