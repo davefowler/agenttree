@@ -27,6 +27,9 @@
                     {% if issue.pr_url %}
                     <span><a href="{{ issue.pr_url }}" target="_blank">PR #{{ issue.pr_number }}</a></span>
                     {% endif %}
+                    {% if issue.port and issue.tmux_active %}
+                    <span><a href="http://localhost:{{ issue.port }}" target="_blank">Dev Server :{{ issue.port }}</a></span>
+                    {% endif %}
                     {% if issue.dependencies %}
                     <span class="dependency-info">Blocked by:
                         {% for dep in issue.dependencies %}

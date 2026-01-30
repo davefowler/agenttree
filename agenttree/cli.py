@@ -10,7 +10,7 @@ from rich.table import Table
 
 from agenttree.config import load_config, Config
 from agenttree.worktree import WorktreeManager
-from agenttree.tmux import TmuxManager
+from agenttree.tmux import TmuxManager, save_tmux_history_to_file
 from agenttree.github import ensure_gh_cli
 from agenttree.container import get_container_runtime
 from agenttree.dependencies import check_all_dependencies, print_dependency_report
@@ -23,6 +23,7 @@ from agenttree.issues import (
     list_issues as list_issues_func,
     get_issue as get_issue_func,
     get_issue_dir,
+    get_issue_context,
     get_next_stage,
     update_issue_stage,
     update_issue_metadata,
@@ -862,6 +863,8 @@ def start_agent(
 
     # Start agent in tmux (always in container)
     tool_name = tool or config.default_tool
+    # Resolve model from stage config (substage → stage → default)
+    model_name = config.model_for(issue.stage, issue.substage)
     runtime = get_container_runtime()
 
     if not runtime.is_available():
@@ -870,6 +873,7 @@ def start_agent(
         sys.exit(1)
 
     console.print(f"[dim]Container runtime: {runtime.get_runtime_name()}[/dim]")
+    console.print(f"[dim]Model: {model_name}[/dim]")
 
     # Use the host parameter (which was either explicitly set or defaults to "agent")
     tmux_manager.start_issue_agent_in_container(
@@ -878,6 +882,7 @@ def start_agent(
         worktree_path=worktree_path,
         tool_name=tool_name,
         container_runtime=runtime,
+        model=model_name,
         agent_host=host,
         has_merge_conflicts=has_merge_conflicts,
     )
@@ -1757,20 +1762,55 @@ def issue_list(stage: Optional[str], priority: Optional[str], as_json: bool) -> 
 
 @issue.command("show")
 @click.argument("issue_id")
-def issue_show(issue_id: str) -> None:
+@click.option("--json", "as_json", is_flag=True, help="Output full issue as JSON")
+@click.option("--field", "field_name", help="Output just one field value (e.g., branch, worktree_dir, stage)")
+def issue_show(issue_id: str, as_json: bool, field_name: Optional[str]) -> None:
     """Show issue details.
 
     Examples:
         agenttree issue show 001
         agenttree issue show 1
         agenttree issue show 001-fix-login
+
+    Machine-readable output:
+        agenttree issue show 060 --json
+        agenttree issue show 060 --field branch
+        agenttree issue show 060 --field worktree_dir
+        agenttree issue show 060 --field stage
     """
+    import json
+
     issue = get_issue_func(issue_id)
 
     if not issue:
         console.print(f"[red]Issue {issue_id} not found[/red]")
         sys.exit(1)
 
+    # Machine-readable output modes
+    if as_json or field_name:
+        # Don't include docs by default for --field (faster), include for --json
+        context = get_issue_context(issue, include_docs=as_json)
+
+        if field_name:
+            # Output single field value
+            if field_name not in context:
+                console.print(f"[red]Unknown field: {field_name}[/red]")
+                console.print(f"[dim]Available fields: {', '.join(sorted(context.keys()))}[/dim]")
+                sys.exit(1)
+            value = context[field_name]
+            # Print raw value for scripting (no formatting)
+            if value is None:
+                print("")
+            elif isinstance(value, (list, dict)):
+                print(json.dumps(value))
+            else:
+                print(value)
+        else:
+            # Output full JSON
+            print(json.dumps(context, indent=2))
+        return
+
+    # Human-readable output (existing behavior)
     issue_dir = get_issue_dir(issue_id)
 
     console.print(f"\n[bold cyan]Issue {issue.id}: {issue.title}[/bold cyan]\n")
@@ -2158,6 +2198,19 @@ def stage_next(issue_id: Optional[str], reassess: bool) -> None:
     except ValidationError as e:
         console.print(f"[red]Cannot proceed: {e}[/red]")
         sys.exit(1)
+
+    # Save tmux history if enabled in config
+    config = load_config()
+    if config.save_tmux_history:
+        issue_dir = get_issue_dir(issue_id)
+        if issue_dir:
+            session_name = config.get_issue_tmux_session(issue_id)
+            stage_str = from_stage
+            if from_substage:
+                stage_str += f".{from_substage}"
+            history_file = issue_dir / "tmux_history.log"
+            if save_tmux_history_to_file(session_name, history_file, stage_str):
+                console.print(f"[dim]Saved tmux history to {history_file.name}[/dim]")
 
     # Update issue stage in database
     updated = update_issue_stage(issue_id, next_stage, next_substage)

@@ -73,6 +73,7 @@ class SubstageConfig(BaseModel):
     output: Optional[str] = None  # Document created by this substage
     output_optional: bool = False  # If True, missing output file doesn't error
     skill: Optional[str] = None   # Override skill file path
+    model: Optional[str] = None   # Model to use for this substage (overrides stage model)
     validators: list[str] = Field(default_factory=list)  # Legacy format
     pre_completion: list[dict] = Field(default_factory=list)  # Hooks before completing
     post_start: list[dict] = Field(default_factory=list)  # Hooks after starting
@@ -85,6 +86,7 @@ class StageConfig(BaseModel):
     output: Optional[str] = None  # Document created by this stage
     output_optional: bool = False  # If True, missing output file doesn't error
     skill: Optional[str] = None   # Override skill file path
+    model: Optional[str] = None   # Model to use for this stage (overrides default_model)
     human_review: bool = False    # Requires human approval to exit
     terminal: bool = False        # Cannot progress from here (accepted, not_doing)
     redirect_only: bool = False   # Only reachable via StageRedirect, skipped in normal progression
@@ -149,6 +151,7 @@ class Config(BaseModel):
     security: SecurityConfig = Field(default_factory=SecurityConfig)
     merge_strategy: str = "squash"  # squash, merge, or rebase
     hooks: HooksConfig = Field(default_factory=HooksConfig)
+    save_tmux_history: bool = False  # Save tmux session history on stage transitions
 
     def get_port_for_agent(self, agent_num: int) -> int:
         """Get port number for a specific agent.
@@ -171,6 +174,25 @@ class Config(BaseModel):
             )
 
         return port
+
+    def get_port_for_issue(self, issue_id: str) -> Optional[int]:
+        """Get port number for a specific issue.
+
+        Port is calculated from issue ID using the configured port_range.
+        Returns None if issue_id is not a valid integer or if the port
+        would exceed the configured range.
+
+        Args:
+            issue_id: Issue ID (string, typically numeric like "001", "042")
+
+        Returns:
+            Port number, or None if issue_id is invalid or exceeds range
+        """
+        try:
+            issue_num = int(issue_id)
+            return self.get_port_for_agent(issue_num)
+        except (ValueError, TypeError):
+            return None
 
     def get_worktree_path(self, agent_num: int) -> Path:
         """Get worktree path for a specific agent (legacy numbered agents).
@@ -469,6 +491,38 @@ class Config(BaseModel):
 
         # Fall back to stage output
         return stage.output
+
+    def model_for(self, stage_name: str, substage: Optional[str] = None) -> str:
+        """Get the model to use for a stage/substage.
+
+        Resolution order:
+        1. Substage model (if substage specified and has model)
+        2. Stage model (if stage has model)
+        3. default_model (fallback)
+
+        Args:
+            stage_name: Name of the stage
+            substage: Optional substage name
+
+        Returns:
+            Model name (e.g., "opus", "haiku", "sonnet")
+        """
+        stage = self.get_stage(stage_name)
+        if stage is None:
+            return self.default_model
+
+        # Check substage model first
+        if substage:
+            substage_config = stage.get_substage(substage)
+            if substage_config and substage_config.model:
+                return substage_config.model
+
+        # Check stage model
+        if stage.model:
+            return stage.model
+
+        # Fall back to default model
+        return self.default_model
 
     def validators_for(self, stage_name: str, substage: Optional[str] = None) -> list[str]:
         """Get validators for a stage/substage.

@@ -67,6 +67,34 @@ class TestConfig:
         with pytest.raises(ValueError, match="Agent number 5 exceeds port range"):
             config.get_port_for_agent(5)
 
+    def test_get_port_for_issue(self) -> None:
+        """Test getting port number for an issue ID."""
+        config = Config(port_range="9001-9099")
+        assert config.get_port_for_issue("001") == 9001
+        assert config.get_port_for_issue("042") == 9042
+        assert config.get_port_for_issue("99") == 9099
+
+    def test_get_port_for_issue_custom_range(self) -> None:
+        """Test port for issue uses configured port_range."""
+        config = Config(port_range="8001-8009")
+        assert config.get_port_for_issue("1") == 8001
+        assert config.get_port_for_issue("5") == 8005
+
+    def test_get_port_for_issue_out_of_range(self) -> None:
+        """Test returns None when issue ID exceeds port range."""
+        config = Config(port_range="9001-9009")
+        # Issue 10 would need port 9010, exceeds range 9001-9009
+        assert config.get_port_for_issue("10") is None
+        # Issue 100 would need port 9100, exceeds range
+        assert config.get_port_for_issue("100") is None
+
+    def test_get_port_for_issue_invalid_id(self) -> None:
+        """Test returns None for non-numeric issue IDs."""
+        config = Config(port_range="9001-9099")
+        assert config.get_port_for_issue("invalid") is None
+        assert config.get_port_for_issue("abc") is None
+        assert config.get_port_for_issue("") is None
+
     def test_get_worktree_path(self) -> None:
         """Test getting worktree path for an agent."""
         config = Config(project="myapp", worktrees_dir="/tmp/worktrees")
@@ -418,6 +446,121 @@ commands:
         assert isinstance(config.commands["lint"], list)
 
 
+class TestModelPerStageConfig:
+    """Tests for model-per-stage configuration."""
+
+    def test_stage_config_has_model_field(self) -> None:
+        """StageConfig should accept optional model field."""
+        from agenttree.config import StageConfig
+
+        stage = StageConfig(name="research", model="haiku")
+        assert stage.model == "haiku"
+
+    def test_stage_config_model_defaults_to_none(self) -> None:
+        """StageConfig model should default to None."""
+        from agenttree.config import StageConfig
+
+        stage = StageConfig(name="research")
+        assert stage.model is None
+
+    def test_substage_config_has_model_field(self) -> None:
+        """SubstageConfig should accept optional model field."""
+        from agenttree.config import SubstageConfig
+
+        substage = SubstageConfig(name="code_review", model="opus")
+        assert substage.model == "opus"
+
+    def test_substage_config_model_defaults_to_none(self) -> None:
+        """SubstageConfig model should default to None."""
+        from agenttree.config import SubstageConfig
+
+        substage = SubstageConfig(name="code")
+        assert substage.model is None
+
+    def test_model_for_returns_default_when_not_specified(self) -> None:
+        """model_for() should return default_model when stage has no model."""
+        from agenttree.config import StageConfig
+
+        config = Config(
+            default_model="opus",
+            stages=[StageConfig(name="research")]
+        )
+        assert config.model_for("research") == "opus"
+
+    def test_model_for_returns_stage_model(self) -> None:
+        """model_for() should return stage-level model when specified."""
+        from agenttree.config import StageConfig
+
+        config = Config(
+            default_model="opus",
+            stages=[StageConfig(name="research", model="haiku")]
+        )
+        assert config.model_for("research") == "haiku"
+
+    def test_model_for_returns_substage_model(self) -> None:
+        """model_for() should return substage model when specified (overrides stage)."""
+        from agenttree.config import StageConfig, SubstageConfig
+
+        config = Config(
+            default_model="opus",
+            stages=[
+                StageConfig(
+                    name="implement",
+                    model="sonnet",
+                    substages={
+                        "code_review": SubstageConfig(name="code_review", model="opus")
+                    }
+                )
+            ]
+        )
+        assert config.model_for("implement", "code_review") == "opus"
+
+    def test_model_for_substage_inherits_from_stage(self) -> None:
+        """When substage has no model but stage does, use stage model."""
+        from agenttree.config import StageConfig, SubstageConfig
+
+        config = Config(
+            default_model="opus",
+            stages=[
+                StageConfig(
+                    name="implement",
+                    model="sonnet",
+                    substages={
+                        "code": SubstageConfig(name="code")
+                    }
+                )
+            ]
+        )
+        assert config.model_for("implement", "code") == "sonnet"
+
+    def test_model_for_unknown_stage(self) -> None:
+        """model_for() should return default_model for unknown stage name."""
+        config = Config(default_model="opus", stages=[])
+        assert config.model_for("nonexistent") == "opus"
+
+    def test_model_from_yaml(self, tmp_path: Path) -> None:
+        """model config should load correctly from YAML file."""
+        config_file = tmp_path / ".agenttree.yaml"
+        config_content = """
+default_model: sonnet
+stages:
+  - name: research
+    model: haiku
+  - name: implement
+    model: opus
+    substages:
+      code_review:
+        model: gpt-5.2
+"""
+        config_file.write_text(config_content)
+
+        config = load_config(tmp_path)
+        assert config.default_model == "sonnet"
+        assert config.model_for("research") == "haiku"
+        assert config.model_for("implement") == "opus"
+        assert config.model_for("implement", "code_review") == "gpt-5.2"
+
+
 class TestRedirectOnlyStages:
     """Tests for redirect_only stage behavior."""
 
@@ -510,3 +653,33 @@ class TestRedirectOnlyStages:
 
         stage = StageConfig(name="test")
         assert stage.redirect_only is False
+
+
+class TestSaveTmuxHistoryConfig:
+    """Tests for save_tmux_history config option."""
+
+    def test_save_tmux_history_defaults_to_false(self) -> None:
+        """save_tmux_history should default to False."""
+        config = Config()
+        assert config.save_tmux_history is False
+
+    def test_save_tmux_history_can_be_enabled(self) -> None:
+        """save_tmux_history should be configurable to True."""
+        config = Config(save_tmux_history=True)
+        assert config.save_tmux_history is True
+
+    def test_save_tmux_history_from_yaml(self, tmp_path: Path) -> None:
+        """save_tmux_history should be loadable from YAML config."""
+        config_file = tmp_path / ".agenttree.yaml"
+        config_file.write_text("save_tmux_history: true")
+
+        config = load_config(tmp_path)
+        assert config.save_tmux_history is True
+
+    def test_save_tmux_history_false_from_yaml(self, tmp_path: Path) -> None:
+        """save_tmux_history: false should be loadable from YAML config."""
+        config_file = tmp_path / ".agenttree.yaml"
+        config_file.write_text("save_tmux_history: false")
+
+        config = load_config(tmp_path)
+        assert config.save_tmux_history is False
