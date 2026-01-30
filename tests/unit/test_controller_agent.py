@@ -50,9 +50,7 @@ class TestGetStalledAgents:
             "oriented": True,
         }))
 
-        # Mock tmux session exists
-        with patch("agenttree.controller_agent.session_exists", return_value=True):
-            stalled = get_stalled_agents(tmp_path, threshold_min=20)
+        stalled = get_stalled_agents(tmp_path, threshold_min=20)
 
         assert len(stalled) == 1
         assert stalled[0]["issue_id"] == "042"
@@ -91,9 +89,7 @@ class TestGetStalledAgents:
             "oriented": True,
         }))
 
-        # Mock tmux session exists
-        with patch("agenttree.controller_agent.session_exists", return_value=True):
-            stalled = get_stalled_agents(tmp_path, threshold_min=20)
+        stalled = get_stalled_agents(tmp_path, threshold_min=20)
 
         assert len(stalled) == 0
 
@@ -129,9 +125,7 @@ class TestGetStalledAgents:
             "oriented": True,
         }))
 
-        # Mock tmux session exists
-        with patch("agenttree.controller_agent.session_exists", return_value=True):
-            stalled = get_stalled_agents(tmp_path, threshold_min=20)
+        stalled = get_stalled_agents(tmp_path, threshold_min=20)
 
         # Should not be detected because plan_review is a human review stage
         assert len(stalled) == 0
@@ -169,15 +163,13 @@ class TestGetStalledAgents:
             "oriented": True,
         }))
 
-        # Mock tmux session exists
-        with patch("agenttree.controller_agent.session_exists", return_value=True):
-            # With 20 min threshold, should not be stalled
-            stalled_20 = get_stalled_agents(tmp_path, threshold_min=20)
-            assert len(stalled_20) == 0
+        # With 20 min threshold, should not be stalled
+        stalled_20 = get_stalled_agents(tmp_path, threshold_min=20)
+        assert len(stalled_20) == 0
 
-            # With 10 min threshold, should be stalled
-            stalled_10 = get_stalled_agents(tmp_path, threshold_min=10)
-            assert len(stalled_10) == 1
+        # With 10 min threshold, should be stalled
+        stalled_10 = get_stalled_agents(tmp_path, threshold_min=10)
+        assert len(stalled_10) == 1
 
 
 class TestLogStall:
@@ -251,9 +243,8 @@ class TestStallsCommand:
         }))
 
         runner = CliRunner()
-        with patch("agenttree.controller_agent.session_exists", return_value=True):
-            with patch("agenttree.cli.Path.cwd", return_value=tmp_path):
-                result = runner.invoke(main, ["stalls"])
+        with patch("agenttree.cli.Path.cwd", return_value=tmp_path):
+            result = runner.invoke(main, ["stalls"])
 
         assert result.exit_code == 0
         assert "042" in result.output or "stalled" in result.output.lower()
