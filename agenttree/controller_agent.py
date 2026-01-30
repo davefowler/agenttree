@@ -6,11 +6,19 @@ stalled agents and log interventions.
 
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Optional, TypedDict
 
 import yaml
 
-from agenttree.tmux import session_exists
+
+class StalledAgent(TypedDict):
+    """Type definition for stalled agent info."""
+
+    issue_id: str
+    stage: str
+    minutes_stalled: int
+    title: str
+
 
 
 # Human review stages that should be excluded from stall detection
@@ -23,7 +31,7 @@ TERMINAL_STAGES = {"accepted", "not_doing", "closed"}
 def get_stalled_agents(
     agents_dir: Path,
     threshold_min: int = 20,
-) -> list[dict]:
+) -> list[StalledAgent]:
     """Return list of stalled agents with their details.
 
     An agent is considered stalled if:
@@ -47,7 +55,7 @@ def get_stalled_agents(
     if not issues_dir.exists():
         return []
 
-    stalled = []
+    stalled: list[StalledAgent] = []
     now = datetime.now(timezone.utc)
 
     for issue_dir in issues_dir.iterdir():
@@ -196,8 +204,7 @@ def get_nudge_count(agents_dir: Path, issue_id: str) -> int:
                 count += 1
             else:
                 # Once we see a different issue, stop counting
-                # This is a simple heuristic - could be improved
-                pass
+                break
         return count
     except Exception:
         return 0
