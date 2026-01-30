@@ -229,7 +229,8 @@ class Config(BaseModel):
         Returns:
             Tmux session name
         """
-        return f"{self.project}-agent-{agent_num}"
+        # Standardized on -issue- naming pattern
+        return f"{self.project}-issue-{agent_num}"
 
     def get_issue_tmux_session(self, issue_id: str) -> str:
         """Get tmux session name for an issue-bound agent.

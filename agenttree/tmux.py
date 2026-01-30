@@ -468,9 +468,11 @@ class TmuxManager:
             List of agent sessions
         """
         all_sessions = list_sessions()
-        project_prefix = f"{self.config.project}-agent-"
+        # Check for both -issue- (standard) and -agent- (legacy) patterns
+        issue_prefix = f"{self.config.project}-issue-"
+        agent_prefix = f"{self.config.project}-agent-"
 
-        return [s for s in all_sessions if s.name.startswith(project_prefix)]
+        return [s for s in all_sessions if s.name.startswith(issue_prefix) or s.name.startswith(agent_prefix)]
 
     # Issue-based agent methods
 

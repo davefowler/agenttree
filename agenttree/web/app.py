@@ -170,7 +170,7 @@ def verify_credentials(credentials: Optional[HTTPBasicCredentials] = Depends(sec
             headers={"WWW-Authenticate": "Basic"},
         )
 
-    return credentials.username
+    return str(credentials.username)
 
 
 # Favicon routes
@@ -232,9 +232,11 @@ class AgentManager:
 
         Note: Controller is agent 0, so _check_issue_tmux_session("000") checks controller.
         """
-        # Session names are: {project}-issue-{issue_id}
-        session_name = f"{_config.project}-issue-{issue_id}"
-        return session_name in self._get_active_sessions()
+        active = self._get_active_sessions()
+        # Check both naming patterns: {project}-issue-{id} and {project}-agent-{id}
+        issue_name = f"{_config.project}-issue-{issue_id}"
+        agent_name = f"{_config.project}-agent-{issue_id}"
+        return issue_name in active or agent_name in active
 
 
 # Global agent manager - will be initialized in startup
@@ -386,18 +388,39 @@ async def kanban(
     )
 
 
+# File ordering by workflow stage (problem first, then spec, etc.)
+STAGE_FILE_ORDER = [
+    "problem.md",
+    "spec.md",
+    "review.md",
+    "implementation.md",
+]
+
+
 def get_issue_files(issue_id: str, include_content: bool = False) -> list[dict[str, str]]:
     """Get list of markdown files for an issue.
 
     Returns list of dicts with keys: name, display_name, size, modified
     If include_content=True, also includes 'content' key with file contents.
+
+    Files are ordered by workflow stage (problem.md first, then spec.md, etc.),
+    with any unknown files at the end sorted alphabetically.
     """
     issue_dir = issue_crud.get_issue_dir(issue_id)
     if not issue_dir:
         return []
 
+    # Build file list
+    file_list = list(issue_dir.glob("*.md"))
+
+    # Sort by stage order, then alphabetically for unknown files
+    def file_sort_key(f: Path) -> tuple[int, str]:
+        if f.name in STAGE_FILE_ORDER:
+            return (STAGE_FILE_ORDER.index(f.name), f.name)
+        return (len(STAGE_FILE_ORDER), f.name)  # Unknown files sorted after known ones
+
     files: list[dict[str, str]] = []
-    for f in sorted(issue_dir.glob("*.md")):
+    for f in sorted(file_list, key=file_sort_key):
         file_info: dict[str, str] = {
             "name": f.name,
             "display_name": f.stem.replace("_", " ").title(),
@@ -413,8 +436,8 @@ def get_issue_files(issue_id: str, include_content: bool = False) -> list[dict[s
     return files
 
 
-# Maximum diff size in bytes (100KB)
-MAX_DIFF_SIZE = 100 * 1024
+# Maximum diff size in bytes (50KB - smaller for faster rendering)
+MAX_DIFF_SIZE = 50 * 1024
 
 
 def get_issue_diff(issue_id: str) -> dict:
@@ -434,23 +457,23 @@ def get_issue_diff(issue_id: str) -> dict:
         return {"diff": "", "stat": "", "has_changes": False, "error": "Worktree not found", "truncated": False}
 
     try:
-        # Get the diff
+        # Get the diff (--no-color for speed, limit context lines)
         diff_result = subprocess.run(
-            ["git", "diff", "main...HEAD"],
+            ["git", "diff", "--no-color", "-U3", "main...HEAD"],
             cwd=worktree_path,
             capture_output=True,
             text=True,
-            timeout=5
+            timeout=10
         )
         diff_output = diff_result.stdout
 
         # Get the stat summary
         stat_result = subprocess.run(
-            ["git", "diff", "main...HEAD", "--stat"],
+            ["git", "diff", "--no-color", "--stat", "main...HEAD"],
             cwd=worktree_path,
             capture_output=True,
             text=True,
-            timeout=5
+            timeout=10
         )
         stat_output = stat_result.stdout
 
@@ -462,12 +485,27 @@ def get_issue_diff(issue_id: str) -> dict:
 
         has_changes = bool(diff_output.strip())
 
+        # Count lines added/removed
+        additions = 0
+        deletions = 0
+        files_changed = 0
+        for line in diff_output.split('\n'):
+            if line.startswith('+') and not line.startswith('+++'):
+                additions += 1
+            elif line.startswith('-') and not line.startswith('---'):
+                deletions += 1
+            elif line.startswith('diff --git'):
+                files_changed += 1
+
         return {
             "diff": diff_output,
             "stat": stat_output,
             "has_changes": has_changes,
             "error": None,
-            "truncated": truncated
+            "truncated": truncated,
+            "additions": additions,
+            "deletions": deletions,
+            "files_changed": files_changed
         }
     except subprocess.TimeoutExpired:
         return {"diff": "", "stat": "", "has_changes": False, "error": "Diff generation timed out", "truncated": False}
@@ -562,29 +600,38 @@ async def agent_tmux(
     config = load_config()
     # Pad issue number to 3 digits to match tmux session naming
     padded_num = agent_num.zfill(3)
-    session_name = f"{config.project}-issue-{padded_num}"
+    # Try both session naming patterns: -issue- and -agent-
+    session_names = [
+        f"{config.project}-issue-{padded_num}",
+        f"{config.project}-agent-{padded_num}",
+    ]
 
-    # Capture tmux output
+    # Capture tmux output - try both session name patterns
     claude_status = "unknown"
-    try:
-        result = subprocess.run(
-            ["tmux", "capture-pane", "-t", session_name, "-p"],
-            capture_output=True,
-            text=True,
-            timeout=2
-        )
+    session_name = None
+    result = None
+    for name in session_names:
+        try:
+            result = subprocess.run(
+                ["tmux", "capture-pane", "-t", name, "-p"],
+                capture_output=True,
+                text=True,
+                timeout=2
+            )
+            if result.returncode == 0:
+                session_name = name
+                break
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            continue
 
-        if result.returncode == 0:
-            # Strip Claude Code's input prompt separator from the output
-            output = _strip_claude_input_prompt(result.stdout)
-            # Check if Claude is actually running (not just tmux session)
-            claude_status = "running" if is_claude_running(session_name) else "exited"
-        else:
-            output = "Tmux session not active"
-            claude_status = "no_session"
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        output = "Could not capture tmux output"
-        claude_status = "error"
+    if result and result.returncode == 0 and session_name:
+        # Strip Claude Code's input prompt separator from the output
+        output = _strip_claude_input_prompt(result.stdout)
+        # Check if Claude is actually running (not just tmux session)
+        claude_status = "running" if is_claude_running(session_name) else "exited"
+    else:
+        output = "Tmux session not active"
+        claude_status = "no_session"
 
     return templates.TemplateResponse(
         "partials/tmux_output.html",
