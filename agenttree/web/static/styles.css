@@ -1572,8 +1572,15 @@ button[disabled] {
 .new-issue-modal-content {
     max-width: 500px;
     height: auto;
-    max-height: 400px;
+    max-height: 80vh;
     padding: 30px;
+    padding-top: 40px;
+    overflow-y: auto;
+}
+
+.new-issue-modal-content .modal-close {
+    top: 10px;
+    right: 12px;
 }
 
 .new-issue-form-container h2 {
@@ -1668,6 +1675,48 @@ button[disabled] {
    Diff View Styles
    ============================================== */
 
+/* Diff summary header */
+.diff-summary {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 12px 16px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    margin-bottom: 16px;
+    font-size: 14px;
+}
+
+.diff-stat-files {
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+.diff-stat-additions {
+    color: #16a34a;
+    font-weight: 600;
+}
+
+.diff-stat-deletions {
+    color: #dc2626;
+    font-weight: 600;
+}
+
+.diff-stat-truncated {
+    color: var(--text-muted);
+    font-style: italic;
+    font-size: 12px;
+}
+
+[data-theme="dark"] .diff-stat-additions {
+    color: #4ade80;
+}
+
+[data-theme="dark"] .diff-stat-deletions {
+    color: #f87171;
+}
+
 /* Loading spinner */
 .diff-loading {
     display: flex;
@@ -1752,6 +1801,21 @@ button[disabled] {
 .d2h-file-header {
     background: var(--bg-secondary) !important;
     border-color: var(--border-color) !important;
+    /* Disable sticky positioning to prevent padding issues when scrolling */
+    position: static !important;
+    top: auto !important;
+}
+
+/* Disable sticky on all diff2html elements that might use it */
+.d2h-file-wrapper,
+.d2h-file-diff,
+.d2h-files-diff {
+    position: static !important;
+}
+
+.d2h-file-collapse,
+.d2h-file-collapse-input {
+    position: static !important;
 }
 
 .d2h-file-name {

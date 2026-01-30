@@ -163,7 +163,7 @@ def notify_remote_agent(
     Returns:
         True if notification sent successfully
     """
-    session_name = f"{project_name}-agent-{agent_num}"
+    session_name = f"{project_name}-issue-{agent_num}"
 
     # Send keys to tmux session (simulates typing the message)
     # The agent should be configured to check for new tasks
