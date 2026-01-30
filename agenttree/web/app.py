@@ -1,7 +1,7 @@
 """Web dashboard for AgentTree using FastAPI + HTMX."""
 
 from fastapi import FastAPI, Request, Form, WebSocket, WebSocketDisconnect, Depends, HTTPException, status
-from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse, Response
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -12,7 +12,7 @@ import asyncio
 import secrets
 import os
 import re
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, AsyncIterator, Callable, Awaitable
 from datetime import datetime
 from contextlib import asynccontextmanager
 
@@ -81,7 +81,7 @@ async def background_sync_loop(interval: int = 10) -> None:
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """FastAPI lifespan context - starts/stops background sync."""
     global _sync_task
 
@@ -109,7 +109,9 @@ app = FastAPI(title="AgentTree Dashboard", lifespan=lifespan)
 class NoCacheMiddleware(BaseHTTPMiddleware):
     """Disable caching for HTML responses during development."""
 
-    async def dispatch(self, request: Request, call_next):
+    async def dispatch(
+        self, request: Request, call_next: Callable[[Request], Awaitable["Response"]]
+    ) -> "Response":
         response = await call_next(request)
         # Disable cache for HTML responses
         if response.headers.get("content-type", "").startswith("text/html"):
@@ -226,7 +228,10 @@ class AgentManager:
         self._active_sessions = None
 
     def _check_issue_tmux_session(self, issue_id: str) -> bool:
-        """Check if tmux session exists for an issue-bound agent."""
+        """Check if tmux session exists for an issue-bound agent.
+
+        Note: Controller is agent 0, so _check_issue_tmux_session("000") checks controller.
+        """
         # Session names are: {project}-issue-{issue_id}
         session_name = f"{_config.project}-issue-{issue_id}"
         return session_name in self._get_active_sessions()
@@ -269,8 +274,8 @@ def convert_issue_to_web(issue: issue_crud.Issue, load_dependents: bool = False)
         assignees=[],
         stage=stage,
         substage=issue.substage,
-        assigned_agent=issue.assigned_agent,
         tmux_active=tmux_active,
+        has_worktree=bool(issue.worktree_dir),
         pr_url=issue.pr_url,
         pr_number=issue.pr_number,
         created_at=datetime.fromisoformat(issue.created.replace("Z", "+00:00")),
@@ -280,19 +285,55 @@ def convert_issue_to_web(issue: issue_crud.Issue, load_dependents: bool = False)
     )
 
 
-def get_kanban_board() -> KanbanBoard:
-    """Build a kanban board from issues."""
+def filter_issues(issues: List[WebIssue], search: Optional[str]) -> List[WebIssue]:
+    """Filter issues by search query.
+
+    Matches against issue number, title, and labels (case-insensitive).
+    Returns all issues if search is None or empty.
+    """
+    if not search or not search.strip():
+        return issues
+
+    query = search.lower().strip()
+    filtered = []
+    for issue in issues:
+        # Match against number
+        if query in str(issue.number):
+            filtered.append(issue)
+            continue
+        # Match against title
+        if query in issue.title.lower():
+            filtered.append(issue)
+            continue
+        # Match against labels
+        if any(query in label.lower() for label in issue.labels):
+            filtered.append(issue)
+            continue
+    return filtered
+
+
+def get_kanban_board(search: Optional[str] = None) -> KanbanBoard:
+    """Build a kanban board from issues.
+
+    Args:
+        search: Optional search query to filter issues
+    """
     # Initialize all stages with empty lists
     stages: Dict[StageEnum, List[WebIssue]] = {stage: [] for stage in StageEnum}
 
     # Get all issues and organize by stage (no sync for fast web reads)
     issues = issue_crud.list_issues(sync=False)
-    for issue in issues:
-        web_issue = convert_issue_to_web(issue)
+    web_issues = [convert_issue_to_web(issue) for issue in issues]
+
+    # Apply search filter if provided
+    if search:
+        web_issues = filter_issues(web_issues, search)
+
+    for web_issue in web_issues:
         if web_issue.stage in stages:
             stages[web_issue.stage].append(web_issue)
 
-    return KanbanBoard(stages=stages, total_issues=len(issues))
+    return KanbanBoard(stages=stages, total_issues=len(web_issues))
 
 
 @app.get("/")
@@ -306,11 +347,12 @@ async def kanban(
     request: Request,
     issue: Optional[str] = None,
     chat: Optional[str] = None,
+    search: Optional[str] = None,
     user: Optional[str] = Depends(get_current_user)
 ) -> HTMLResponse:
     """Kanban board page."""
     agent_manager.clear_session_cache()  # Fresh session data per request
-    board = get_kanban_board()
+    board = get_kanban_board(search=search)
 
     # If issue param provided, load issue detail for modal
     selected_issue = None
@@ -323,7 +365,7 @@ async def kanban(
             # Load all file contents upfront for CSS toggle tabs
             files = get_issue_files(issue, include_content=True)
             # Get commits behind for rebase button
-            if selected_issue.assigned_agent and issue_obj.worktree_dir:
+            if selected_issue.tmux_active and issue_obj.worktree_dir:
                 from agenttree.hooks import get_commits_behind_main
                 commits_behind = get_commits_behind_main(issue_obj.worktree_dir)
 
@@ -338,6 +380,7 @@ async def kanban(
             "files": files,
             "commits_behind": commits_behind,
             "chat_open": chat == "1",
+            "search": search or "",
         }
     )
 
@@ -369,6 +412,68 @@ def get_issue_files(issue_id: str, include_content: bool = False) -> list[dict[s
     return files
 
 
+# Maximum diff size in bytes (100KB)
+MAX_DIFF_SIZE = 100 * 1024
+
+
+def get_issue_diff(issue_id: str) -> dict:
+    """Get git diff for an issue's worktree.
+
+    Returns dict with keys: diff, stat, has_changes, error, truncated
+    """
+    issue = issue_crud.get_issue(issue_id)
+    if not issue:
+        return {"diff": "", "stat": "", "has_changes": False, "error": "Issue not found", "truncated": False}
+
+    if not issue.worktree_dir:
+        return {"diff": "", "stat": "", "has_changes": False, "error": "No worktree for this issue", "truncated": False}
+
+    worktree_path = Path(issue.worktree_dir)
+    if not worktree_path.exists():
+        return {"diff": "", "stat": "", "has_changes": False, "error": "Worktree not found", "truncated": False}
+
+    try:
+        # Get the diff
+        diff_result = subprocess.run(
+            ["git", "diff", "main...HEAD"],
+            cwd=worktree_path,
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        diff_output = diff_result.stdout
+
+        # Get the stat summary
+        stat_result = subprocess.run(
+            ["git", "diff", "main...HEAD", "--stat"],
+            cwd=worktree_path,
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        stat_output = stat_result.stdout
+
+        # Check for truncation
+        truncated = False
+        if len(diff_output) > MAX_DIFF_SIZE:
+            diff_output = diff_output[:MAX_DIFF_SIZE]
+            truncated = True
+
+        has_changes = bool(diff_output.strip())
+
+        return {
+            "diff": diff_output,
+            "stat": stat_output,
+            "has_changes": has_changes,
+            "error": None,
+            "truncated": truncated
+        }
+    except subprocess.TimeoutExpired:
+        return {"diff": "", "stat": "", "has_changes": False, "error": "Diff generation timed out", "truncated": False}
+    except Exception as e:
+        return {"diff": "", "stat": "", "has_changes": False, "error": str(e), "truncated": False}
+
+
 # Cache stage list for sorting efficiency
 _STAGE_LIST = list(StageEnum)
 
@@ -383,12 +488,17 @@ async def flow(
     request: Request,
     issue: Optional[str] = None,
     chat: Optional[str] = None,
+    search: Optional[str] = None,
     user: Optional[str] = Depends(get_current_user)
 ) -> HTMLResponse:
     """Flow view page."""
     agent_manager.clear_session_cache()  # Fresh session data per request
     issues = issue_crud.list_issues(sync=False)  # Skip sync for fast web reads
     web_issues = _sort_flow_issues([convert_issue_to_web(i) for i in issues])
+
+    # Apply search filter if provided
+    if search:
+        web_issues = filter_issues(web_issues, search)
 
     # Select issue from URL param or default to first
     selected_issue = None
@@ -414,7 +524,7 @@ async def flow(
         # Load all file contents upfront for CSS toggle tabs
         files = get_issue_files(selected_issue_id, include_content=True)
         # Get commits behind for rebase button
-        if selected_issue.assigned_agent:
+        if selected_issue.tmux_active:
             issue_obj = issue_crud.get_issue(selected_issue_id, sync=False)
             if issue_obj and issue_obj.worktree_dir:
                 from agenttree.hooks import get_commits_behind_main
@@ -431,6 +541,7 @@ async def flow(
             "commits_behind": commits_behind,
             "active_page": "flow",
             "chat_open": chat == "1",
+            "search": search or "",
         }
     )
 
@@ -445,12 +556,15 @@ async def agent_tmux(
 
     Note: agent_num parameter is actually the issue number - sessions are named by issue.
     """
+    from agenttree.tmux import is_claude_running
+
     config = load_config()
     # Pad issue number to 3 digits to match tmux session naming
     padded_num = agent_num.zfill(3)
     session_name = f"{config.project}-issue-{padded_num}"
 
     # Capture tmux output
+    claude_status = "unknown"
     try:
         result = subprocess.run(
             ["tmux", "capture-pane", "-t", session_name, "-p"],
@@ -462,14 +576,23 @@ async def agent_tmux(
         if result.returncode == 0:
             # Strip Claude Code's input prompt separator from the output
             output = _strip_claude_input_prompt(result.stdout)
+            # Check if Claude is actually running (not just tmux session)
+            claude_status = "running" if is_claude_running(session_name) else "exited"
         else:
             output = "Tmux session not active"
+            claude_status = "no_session"
     except (subprocess.TimeoutExpired, FileNotFoundError):
         output = "Could not capture tmux output"
+        claude_status = "error"
 
     return templates.TemplateResponse(
         "partials/tmux_output.html",
-        {"request": request, "agent_num": agent_num, "output": output}
+        {
+            "request": request,
+            "agent_num": agent_num,
+            "output": output,
+            "claude_status": claude_status,
+        }
     )
 
 
@@ -484,7 +607,18 @@ async def send_to_agent(
 
     Note: agent_num parameter is actually the issue number - sessions are named by issue.
     """
+    import logging
+    from datetime import datetime
     from agenttree.tmux import send_message
+
+    # Log all messages sent via web UI for debugging mystery messages
+    logger = logging.getLogger("agenttree.web")
+    client_ip = request.client.host if request.client else "unknown"
+    user_agent = request.headers.get("user-agent", "unknown")[:100]
+    logger.info(
+        f"[SEND] issue={agent_num} msg={message!r} "
+        f"ip={client_ip} ua={user_agent} time={datetime.now().isoformat()}"
+    )
 
     config = load_config()
     # Pad issue number to 3 digits to match tmux session naming
@@ -492,8 +626,17 @@ async def send_to_agent(
     session_name = f"{config.project}-issue-{padded_num}"
 
     # Send message - result will appear in tmux output on next poll
-    send_message(session_name, message)
+    result = send_message(session_name, message)
+
+    # Log if Claude isn't running
+    if result == "claude_exited":
+        logger.warning(f"[SEND] Claude exited for issue={agent_num}, message went to shell")
+
     return HTMLResponse("")
+
+
+# Controller routes removed - controller is now agent 0
+# Use /agent/0/tmux, /agent/0/send, /api/issues/0/agent-status instead
 
 
 @app.post("/api/issues/{issue_id}/start")
@@ -516,6 +659,26 @@ async def start_issue(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/issues/{issue_id}/stop")
+async def stop_issue(
+    issue_id: str,
+    user: Optional[str] = Depends(get_current_user)
+) -> dict:
+    """Stop an agent working on an issue (kills the tmux session)."""
+    from agenttree.tmux import kill_session
+    from agenttree.state import unregister_agent
+
+    try:
+        padded_id = issue_id.zfill(3)
+        session_name = f"{_config.project}-issue-{padded_id}"
+        kill_session(session_name)
+        # Also unregister from state
+        unregister_agent(padded_id)
+        return {"ok": True, "status": f"Stopped agent for issue #{issue_id}"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/api/issues/{issue_id}/agent-status")
 async def get_agent_status(
     issue_id: str,
@@ -526,15 +689,29 @@ async def get_agent_status(
     padded_id = issue_id.zfill(3)
     tmux_active = agent_manager._check_issue_tmux_session(padded_id)
 
-    # Also check if agent is assigned
-    issue = issue_crud.get_issue(issue_id, sync=False)
-    assigned_agent = issue.assigned_agent if issue else None
-
     return {
         "tmux_active": tmux_active,
-        "assigned_agent": assigned_agent,
-        "status": "running" if tmux_active else ("stalled" if assigned_agent else "off")
+        "status": "running" if tmux_active else "off"
     }
+
+
+@app.get("/api/issues/{issue_id}/diff")
+async def get_diff(
+    issue_id: str,
+    user: Optional[str] = Depends(get_current_user)
+) -> dict:
+    """Get git diff for an issue's worktree.
+
+    Returns the raw diff output for rendering with diff2html on the client.
+    """
+    issue_id = issue_id.zfill(3)
+
+    # Check issue exists
+    issue = issue_crud.get_issue(issue_id)
+    if not issue:
+        raise HTTPException(status_code=404, detail="Issue not found")
+
+    return get_issue_diff(issue_id)
 
 
 @app.post("/api/issues/{issue_id}/move")
@@ -591,9 +768,9 @@ async def approve_issue(
     executes enter hooks. Only works from human review stages.
     """
     from agenttree.config import load_config
-    from agenttree.hooks import execute_exit_hooks, execute_enter_hooks, ValidationError
+    from agenttree.hooks import execute_exit_hooks, execute_enter_hooks, ValidationError, StageRedirect
 
-    HUMAN_REVIEW_STAGES = ["plan_review", "implementation_review"]
+    HUMAN_REVIEW_STAGES = ["plan_review", "implementation_review", "independent_code_review"]
 
     # Get issue
     issue_id_normalized = issue_id.lstrip("0") or "0"
@@ -612,6 +789,10 @@ async def approve_issue(
     # Execute exit hooks (validation)
     try:
         execute_exit_hooks(issue, issue.stage, issue.substage)
+    except StageRedirect as redirect:
+        # Redirect to a different stage instead of normal next stage
+        next_stage = redirect.target_stage
+        next_substage = None
     except ValidationError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -650,32 +831,67 @@ async def approve_issue(
 @app.post("/api/issues")
 async def create_issue_api(
     request: Request,
-    title: str = Form(...),
-    priority: str = Form("medium"),
+    description: str = Form(""),
+    title: str = Form(""),
     user: Optional[str] = Depends(get_current_user)
 ) -> dict:
     """Create a new issue via the web UI.
 
     Creates an issue in the 'define' stage with default substage 'refine'.
+    If no title is provided, one is auto-generated from the description.
     """
     from agenttree.issues import Priority
 
-    # Validate title length
-    if len(title.strip()) < 10:
-        raise HTTPException(status_code=400, detail="Title must be at least 10 characters")
+    description = description.strip()
+    title = title.strip()
 
-    # Map priority string to enum
-    try:
-        priority_enum = Priority(priority.lower())
-    except ValueError:
-        priority_enum = Priority.MEDIUM
+    # Require at least a description
+    if not description:
+        raise HTTPException(status_code=400, detail="Please provide a description")
+
+    # Auto-generate title from description if not provided
+    if not title:
+        # Take first line or first 60 chars of description
+        first_line = description.split('\n')[0].strip()
+        # Remove "Problem:" prefix if present
+        if first_line.lower().startswith('problem:'):
+            first_line = first_line[8:].strip()
+        # Truncate and clean up
+        title = first_line[:60].strip()
+        if len(first_line) > 60:
+            title = title.rsplit(' ', 1)[0] + '...'
+        # Fallback if still empty
+        if not title or len(title) < 5:
+            title = f"Issue from web UI"
 
     try:
         issue = issue_crud.create_issue(
-            title=title.strip(),
-            priority=priority_enum,
+            title=title,
+            priority=Priority.MEDIUM,
+            problem=description,
         )
         return {"ok": True, "issue_id": issue.id, "title": issue.title}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/issues/{issue_id}/dependencies/{dep_id}")
+async def remove_dependency(
+    issue_id: str,
+    dep_id: str,
+    user: Optional[str] = Depends(get_current_user)
+) -> dict:
+    """Remove a dependency from an issue."""
+    from agenttree.issues import remove_dependency as remove_dep
+
+    issue_id_normalized = issue_id.lstrip("0") or "0"
+    dep_id_normalized = dep_id.lstrip("0") or "0"
+
+    try:
+        issue = remove_dep(issue_id_normalized, dep_id_normalized)
+        if not issue:
+            raise HTTPException(status_code=404, detail=f"Issue {issue_id} not found")
+        return {"ok": True, "issue_id": issue.id, "dependencies": issue.dependencies}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -703,14 +919,14 @@ async def rebase_issue(
     if not success:
         raise HTTPException(status_code=400, detail=message)
 
-    # Notify the agent if one is assigned and has an active tmux session
-    if issue.assigned_agent:
-        from agenttree.tmux import send_message
+    # Notify the agent if there's an active tmux session
+    from agenttree.tmux import send_message, session_exists
 
-        config = load_config()
-        padded_num = issue.assigned_agent.zfill(3)
-        session_name = f"{config.project}-issue-{padded_num}"
+    config = load_config()
+    padded_id = issue_id.zfill(3)
+    session_name = f"{config.project}-issue-{padded_id}"
 
+    if session_exists(session_name):
         notification = (
             "Your branch has been rebased onto the latest main. "
             "Please review the recent changes and update your work if needed. "

@@ -80,14 +80,12 @@ class TestIssueModel:
             updated="2026-01-11T12:00:00Z",
             stage=IMPLEMENT,
             substage="code",
-            assigned_agent="3",
             branch="agenttree-3/001-test",
             labels=["bug", "critical"],
             priority=Priority.CRITICAL,
         )
         assert issue.stage == IMPLEMENT
         assert issue.substage == "code"
-        assert issue.assigned_agent == "3"
         assert "bug" in issue.labels
 
 
@@ -689,6 +687,9 @@ class TestLoadSkill:
         from agenttree.config import Config
         mock_config = Config(commands={"git_branch": "echo 'test-branch'"})
         monkeypatch.setattr("agenttree.config.load_config", lambda *args, **kwargs: mock_config)
+
+        # Mock is_running_in_container to avoid /workspace path issues in CI
+        monkeypatch.setattr("agenttree.hooks.is_running_in_container", lambda: False)
 
         # Create a mock issue
         from agenttree.issues import Issue

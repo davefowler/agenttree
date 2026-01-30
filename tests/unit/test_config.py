@@ -416,3 +416,97 @@ commands:
         )
         assert isinstance(config.commands["test"], str)
         assert isinstance(config.commands["lint"], list)
+
+
+class TestRedirectOnlyStages:
+    """Tests for redirect_only stage behavior."""
+
+    def test_redirect_only_stage_skipped_in_normal_progression(self) -> None:
+        """Stages with redirect_only=True should be skipped in normal stage progression."""
+        from agenttree.config import Config, StageConfig
+
+        config = Config(
+            stages=[
+                StageConfig(name="implement"),
+                StageConfig(name="independent_code_review"),
+                StageConfig(name="address_independent_review", redirect_only=True),  # Should be skipped
+                StageConfig(name="implementation_review"),
+                StageConfig(name="accepted", terminal=True),
+            ]
+        )
+
+        # From independent_code_review, should go to implementation_review, skipping address_independent_review
+        next_stage, next_substage, is_terminal = config.get_next_stage("independent_code_review")
+        assert next_stage == "implementation_review"
+        assert next_substage is None
+        assert is_terminal is False
+
+    def test_redirect_only_stage_not_included_in_normal_order(self) -> None:
+        """redirect_only stages should be accessible but skipped during normal progression."""
+        from agenttree.config import Config, StageConfig
+
+        config = Config(
+            stages=[
+                StageConfig(name="implement"),
+                StageConfig(name="review", redirect_only=True),
+                StageConfig(name="accepted", terminal=True),
+            ]
+        )
+
+        # From implement, should go directly to accepted, skipping redirect_only review
+        # Note: get_next_stage returns (stage, substage, human_review), not is_terminal
+        next_stage, next_substage, human_review = config.get_next_stage("implement")
+        assert next_stage == "accepted"
+        # accepted is terminal but human_review is False
+        assert human_review is False
+        # Verify accepted is indeed terminal
+        assert config.is_terminal("accepted") is True
+
+    def test_redirect_only_stage_can_still_be_entered_directly(self) -> None:
+        """redirect_only stages should still be retrievable and configurable."""
+        from agenttree.config import Config, StageConfig
+
+        config = Config(
+            stages=[
+                StageConfig(name="implement"),
+                StageConfig(
+                    name="address_review",
+                    redirect_only=True,
+                    host="agent",
+                    output="response.md"
+                ),
+                StageConfig(name="accepted", terminal=True),
+            ]
+        )
+
+        # Stage should exist and be retrievable
+        stage = config.get_stage("address_review")
+        assert stage is not None
+        assert stage.redirect_only is True
+        assert stage.host == "agent"
+        assert stage.output == "response.md"
+
+    def test_multiple_consecutive_redirect_only_stages_skipped(self) -> None:
+        """Multiple consecutive redirect_only stages should all be skipped."""
+        from agenttree.config import Config, StageConfig
+
+        config = Config(
+            stages=[
+                StageConfig(name="implement"),
+                StageConfig(name="address_review1", redirect_only=True),
+                StageConfig(name="address_review2", redirect_only=True),
+                StageConfig(name="final_review"),
+                StageConfig(name="accepted", terminal=True),
+            ]
+        )
+
+        # From implement, should skip both redirect_only stages
+        next_stage, next_substage, is_terminal = config.get_next_stage("implement")
+        assert next_stage == "final_review"
+
+    def test_redirect_only_defaults_to_false(self) -> None:
+        """StageConfig redirect_only should default to False."""
+        from agenttree.config import StageConfig
+
+        stage = StageConfig(name="test")
+        assert stage.redirect_only is False

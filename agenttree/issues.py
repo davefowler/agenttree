@@ -45,6 +45,7 @@ class HistoryEntry(BaseModel):
     substage: Optional[str] = None
     timestamp: str
     agent: Optional[int] = None
+    type: str = "transition"  # "transition" (normal), "rollback", etc.
 
 
 class Issue(BaseModel):
@@ -58,7 +59,6 @@ class Issue(BaseModel):
     stage: str = DEFINE
     substage: Optional[str] = "refine"
 
-    assigned_agent: Optional[str] = None
     branch: Optional[str] = None
     worktree_dir: Optional[str] = None  # Absolute path to worktree directory
 
@@ -74,8 +74,6 @@ class Issue(BaseModel):
     relevant_url: Optional[str] = None
 
     history: list[HistoryEntry] = Field(default_factory=list)
-
-    custom_agent_spawned: Optional[str] = None  # Stage name where custom agent was spawned
 
 
 def slugify(text: str) -> str:
@@ -281,7 +279,6 @@ def create_issue(
 def list_issues(
     stage: Optional[str] = None,
     priority: Optional[Priority] = None,
-    assigned_agent: Optional[str] = None,
     sync: bool = True,
 ) -> list[Issue]:
     """List issues, optionally filtered.
@@ -289,7 +286,6 @@ def list_issues(
     Args:
         stage: Filter by stage
         priority: Filter by priority
-        assigned_agent: Filter by assigned agent
         sync: If True, sync with remote before reading (default True for CLI, False for web)
 
     Returns:
@@ -326,8 +322,6 @@ def list_issues(
         if stage and issue.stage != stage:
             continue
         if priority and issue.priority != priority:
-            continue
-        if assigned_agent is not None and issue.assigned_agent != assigned_agent:
             continue
 
         issues.append(issue)
@@ -425,6 +419,54 @@ def check_dependencies_met(issue: Issue) -> tuple[bool, list[str]]:
             unmet.append(dep_id)
 
     return len(unmet) == 0, unmet
+
+
+def remove_dependency(issue_id: str, dep_id: str) -> Optional[Issue]:
+    """Remove a dependency from an issue.
+
+    Args:
+        issue_id: Issue to remove dependency from
+        dep_id: Dependency issue ID to remove
+
+    Returns:
+        Updated Issue object or None if not found
+    """
+    # Sync before and after writing
+    agents_path = get_agenttree_path()
+    sync_agents_repo(agents_path, pull_only=True)
+
+    issue_dir = get_issue_dir(issue_id)
+    if not issue_dir:
+        return None
+
+    yaml_path = issue_dir / "issue.yaml"
+    if not yaml_path.exists():
+        return None
+
+    with open(yaml_path) as f:
+        data = yaml.safe_load(f)
+
+    issue = Issue(**data)
+
+    # Normalize dep_id to match format in dependencies list
+    dep_normalized = f"{int(dep_id.lstrip('0') or '0'):03d}"
+
+    # Remove the dependency
+    if dep_normalized in issue.dependencies:
+        issue.dependencies.remove(dep_normalized)
+    elif dep_id in issue.dependencies:
+        issue.dependencies.remove(dep_id)
+
+    # Update timestamp
+    issue.updated = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    # Write back - use mode='json' to serialize enums as strings
+    issue_data = issue.model_dump(exclude_none=True, mode='json')
+    with open(yaml_path, "w") as f:
+        yaml.dump(issue_data, f, default_flow_style=False, sort_keys=False)
+
+    sync_agents_repo(agents_path)
+    return issue
 
 
 def detect_circular_dependency(
@@ -696,49 +738,6 @@ def update_issue_stage(
     return issue
 
 
-def assign_agent(issue_id: str, agent_num: int) -> Optional[Issue]:
-    """Assign an agent to an issue.
-
-    Args:
-        issue_id: Issue ID
-        agent_num: Agent number to assign
-
-    Returns:
-        Updated Issue object or None if not found
-    """
-    # Sync before and after writing
-    agents_path = get_agenttree_path()
-    sync_agents_repo(agents_path, pull_only=True)
-
-    issue_dir = get_issue_dir(issue_id)
-    if not issue_dir:
-        return None
-
-    yaml_path = issue_dir / "issue.yaml"
-    if not yaml_path.exists():
-        return None
-
-    with open(yaml_path) as f:
-        data = yaml.safe_load(f)
-
-    issue = Issue(**data)
-
-    # Update assignment
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    issue.assigned_agent = str(agent_num)
-    issue.updated = now
-
-    # Write back
-    with open(yaml_path, "w") as f:
-        data = issue.model_dump(mode="json")
-        yaml.dump(data, f, default_flow_style=False, sort_keys=False)
-
-    # Sync after assigning agent
-    sync_agents_repo(agents_path, pull_only=False, commit_message=f"Assign agent {agent_num} to issue {issue_id}")
-
-    return issue
-
-
 def update_issue_metadata(
     issue_id: str,
     pr_number: Optional[int] = None,
@@ -747,8 +746,7 @@ def update_issue_metadata(
     github_issue: Optional[int] = None,
     relevant_url: Optional[str] = None,
     worktree_dir: Optional[str] = None,
-    assigned_agent: Optional[str] = None,
-    clear_assigned_agent: bool = False,
+    clear_pr: bool = False,
 ) -> Optional[Issue]:
     """Update metadata fields on an issue.
 
@@ -760,8 +758,7 @@ def update_issue_metadata(
         github_issue: GitHub issue number (optional)
         relevant_url: Relevant URL (optional)
         worktree_dir: Worktree directory path (optional)
-        assigned_agent: Assigned agent number (optional)
-        clear_assigned_agent: If True, sets assigned_agent to None
+        clear_pr: If True, sets pr_number and pr_url to None
 
     Returns:
         Updated Issue object or None if not found
@@ -797,10 +794,9 @@ def update_issue_metadata(
         issue.relevant_url = relevant_url
     if worktree_dir is not None:
         issue.worktree_dir = worktree_dir
-    if assigned_agent is not None:
-        issue.assigned_agent = assigned_agent
-    if clear_assigned_agent:
-        issue.assigned_agent = None
+    if clear_pr:
+        issue.pr_number = None
+        issue.pr_url = None
     issue.updated = now
 
     # Write back
@@ -952,14 +948,11 @@ def load_skill(
     # Inject command outputs for referenced commands
     # Commands run in worktree directory if available, otherwise issue directory
     from agenttree.commands import get_referenced_commands, get_command_output
+    from agenttree.hooks import get_code_directory
 
     if config.commands:
-        # Determine working directory for commands
-        cwd = None
-        if issue.worktree_dir:
-            cwd = Path(issue.worktree_dir)
-        elif issue_dir:
-            cwd = issue_dir
+        # Determine working directory for commands (container-aware)
+        cwd = get_code_directory(issue, issue_dir) if issue_dir else None
 
         # Find commands referenced in the template
         referenced = get_referenced_commands(skill_content, config.commands)
@@ -1186,3 +1179,84 @@ def delete_session(issue_id: str) -> None:
     session_path = get_session_path(issue_id)
     if session_path and session_path.exists():
         session_path.unlink()
+
+
+def get_output_files_after_stage(target_stage: str) -> list[str]:
+    """Get list of output files for stages AFTER the target stage.
+
+    Used by rollback to determine which files need to be archived.
+
+    Args:
+        target_stage: The stage being rolled back to (files from this stage are NOT included)
+
+    Returns:
+        List of output filenames (e.g., ["spec.md", "spec_review.md", "review.md"])
+
+    Raises:
+        ValueError: If target_stage is not a valid stage name
+    """
+    from agenttree.config import load_config
+
+    config = load_config()
+
+    # Find target stage index
+    stage_names = [s.name for s in config.stages]
+    if target_stage not in stage_names:
+        raise ValueError(f"Unknown stage: {target_stage}")
+
+    target_idx = stage_names.index(target_stage)
+
+    # Collect output files from stages after target
+    output_files: set[str] = set()
+    for stage in config.stages[target_idx + 1 :]:
+        # Stage-level output
+        if stage.output:
+            output_files.add(stage.output)
+
+        # Substage outputs
+        for substage in stage.substages.values():
+            if substage.output:
+                output_files.add(substage.output)
+
+    return list(output_files)
+
+
+def archive_issue_files(issue_id: str, files: list[str]) -> list[str]:
+    """Archive output files from an issue directory.
+
+    Moves specified files to an archive/ subdirectory with timestamp prefix
+    to avoid collisions when rolling back multiple times.
+
+    Args:
+        issue_id: Issue ID
+        files: List of filenames to archive (e.g., ["spec.md", "review.md"])
+
+    Returns:
+        List of successfully archived file paths (relative to issue dir)
+    """
+    issue_dir = get_issue_dir(issue_id)
+    if not issue_dir:
+        raise ValueError(f"Issue {issue_id} not found")
+
+    archive_dir = issue_dir / "archive"
+    archive_dir.mkdir(exist_ok=True)
+
+    archived: list[str] = []
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+
+    for filename in files:
+        src_path = issue_dir / filename
+        if not src_path.exists():
+            continue  # Skip files that don't exist
+
+        dest_name = f"{timestamp}-{filename}"
+        dest_path = archive_dir / dest_name
+
+        try:
+            src_path.rename(dest_path)
+            archived.append(f"archive/{dest_name}")
+        except OSError as e:
+            # Log warning but continue with other files
+            print(f"Warning: Could not archive {filename}: {e}")
+
+    return archived

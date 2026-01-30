@@ -53,7 +53,7 @@ def get_git_worktree_info(worktree_path: Path) -> Tuple[Optional[Path], Optional
 class ContainerRuntime:
     """Container runtime manager."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize container runtime."""
         self.runtime = self.detect_runtime()
 
@@ -247,6 +247,16 @@ class ContainerRuntime:
         if claude_config_dir.exists():
             cmd.extend(["-v", f"{claude_config_dir}:/home/agent/.claude-host:ro"])
 
+        # Mount session storage for conversation persistence across restarts
+        # Each worktree gets its own session directory, mapped to Claude's project path
+        # This allows using `claude -c` to continue previous conversations
+        sessions_dir = abs_path / ".claude-sessions"
+        sessions_dir.mkdir(exist_ok=True)
+        cmd.extend(["-v", f"{sessions_dir}:/home/agent/.claude/projects/-workspace"])
+
+        # Check if there are existing sessions to continue
+        has_prior_session = any(sessions_dir.glob("*.jsonl"))
+
         # Pass through auth credentials
         # Helper to get credential from env or file
         def get_credential(env_var: str, file_key: str) -> Optional[str]:
@@ -277,6 +287,11 @@ class ContainerRuntime:
 
         cmd.append(image)
         cmd.append(ai_tool)
+
+        # Use -c to continue previous session if one exists
+        # Only add -c when there's a prior session (Claude exits if no session to continue)
+        if has_prior_session:
+            cmd.append("-c")
 
         if model:
             cmd.extend(["--model", model])
@@ -355,3 +370,111 @@ def get_container_runtime() -> ContainerRuntime:
     if _runtime is None:
         _runtime = ContainerRuntime()
     return _runtime
+
+
+def find_container_by_worktree(worktree_path: Path) -> Optional[str]:
+    """Find a running container's UUID by its worktree mount path.
+
+    Apple Containers use UUIDs, not names. This function inspects running
+    containers to find one that has the given worktree mounted.
+
+    Args:
+        worktree_path: Path to the worktree (e.g., .worktrees/issue-045-...)
+
+    Returns:
+        Container UUID if found, None otherwise
+    """
+    runtime = get_container_runtime()
+    if runtime.runtime != "container":
+        # Docker/Podman use names, not UUIDs - return None to use name-based lookup
+        return None
+
+    try:
+        import json
+
+        # Get list of running containers
+        result = subprocess.run(
+            ["container", "list", "--format", "json"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            return None
+
+        containers = json.loads(result.stdout) if result.stdout.strip() else []
+
+        # Normalize the worktree path for comparison
+        abs_worktree = str(worktree_path.resolve())
+
+        # Limit containers checked to avoid performance issues with many containers
+        MAX_CONTAINERS_TO_CHECK = 50
+        checked = 0
+
+        for container in containers:
+            if checked >= MAX_CONTAINERS_TO_CHECK:
+                break
+
+            if container.get("status") != "running":
+                continue
+
+            container_id: Optional[str] = container.get("id")
+            if not container_id:
+                continue
+
+            checked += 1
+
+            # Inspect container to get mount info
+            inspect_result = subprocess.run(
+                ["container", "inspect", container_id],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if inspect_result.returncode != 0:
+                continue
+
+            try:
+                inspect_data = json.loads(inspect_result.stdout)
+                if not inspect_data:
+                    continue
+
+                mounts = inspect_data[0].get("configuration", {}).get("mounts", [])
+                for mount in mounts:
+                    source = mount.get("source", "")
+                    # Check if this mount matches our worktree
+                    if source.rstrip("/") == abs_worktree.rstrip("/"):
+                        return container_id
+            except (json.JSONDecodeError, IndexError, KeyError):
+                continue
+
+        return None
+
+    except (subprocess.TimeoutExpired, subprocess.SubprocessError, json.JSONDecodeError):
+        # Expected errors when container runtime unavailable or returns bad data
+        return None
+
+
+def stop_container_by_id(container_id: str) -> bool:
+    """Stop a container by its UUID.
+
+    Args:
+        container_id: Container UUID
+
+    Returns:
+        True if stopped successfully, False otherwise
+    """
+    runtime = get_container_runtime()
+    if not runtime.runtime:
+        return False
+
+    try:
+        result = subprocess.run(
+            [runtime.runtime, "stop", container_id],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        return result.returncode == 0
+    except Exception:
+        return False

@@ -305,6 +305,18 @@ class ValidationError(Exception):
     pass
 
 
+class StageRedirect(Exception):
+    """Raised when a hook failure should redirect to a different stage instead of blocking.
+
+    Used with on_fail_stage option in hooks.
+    """
+
+    def __init__(self, target_stage: str, reason: str = ""):
+        self.target_stage = target_stage
+        self.reason = reason
+        super().__init__(f"Redirect to stage '{target_stage}': {reason}")
+
+
 # =============================================================================
 # Hook Type Registry
 # =============================================================================
@@ -314,9 +326,13 @@ HOOK_TYPES = {
     # Validators (return errors if validation fails)
     "file_exists", "has_commits", "field_check", "section_check", "pr_approved",
     "min_words", "has_list_items", "contains", "ci_check", "wrapup_verified",
+    "checkbox_checked",  # Review loop: check if checkbox is marked
     # Actions (perform side effects)
     "create_file", "create_pr", "merge_pr", "run", "rebase",
     "cleanup_agent", "start_blocked_issues",
+    "version_file",  # Review loop: rename file to versioned name
+    "loop_check",  # Review loop: count iterations and fail if max exceeded
+    "rollback",  # Review loop: programmatic rollback to earlier stage
     # Controller hooks (run on post-sync)
     "push_pending_branches", "check_controller_stages", "check_merged_prs",
     "check_ci_status", "check_custom_agent_stages",
@@ -684,9 +700,10 @@ def run_builtin_validator(
             section = params["section"]
             expect = params["expect"]
 
-            # Find section content (between ##/### Section and next ##/### or end)
-            # Supports both h2 (##) and h3 (###) headers
-            pattern = rf'^##[#]?\s*{re.escape(section)}.*?\n(.*?)(?=\n##|\Z)'
+            # Find section content (between ## Section and next same-level header or end)
+            # Includes subsections (###, ####) as part of the section content
+            # The lookahead stops at "\n## " followed by a letter/word (not "#")
+            pattern = rf'^##\s*{re.escape(section)}.*?\n(.*?)(?=\n## [A-Za-z]|\Z)'
             section_match = re.search(pattern, content, re.MULTILINE | re.DOTALL)
 
             if not section_match:
@@ -732,7 +749,7 @@ def run_builtin_validator(
 
             if section:
                 # Find section content
-                pattern = rf'^##[#]?\s*{re.escape(section)}.*?\n(.*?)(?=\n##|\Z)'
+                pattern = rf'^##\s*{re.escape(section)}.*?\n(.*?)(?=\n## [A-Za-z]|\Z)'
                 section_match = re.search(pattern, content, re.MULTILINE | re.DOTALL)
                 if not section_match:
                     errors.append(f"Section '{section}' not found in {params['file']}")
@@ -757,7 +774,7 @@ def run_builtin_validator(
             errors.append(f"File '{params['file']}' not found for has_list_items check")
         else:
             content = file_path.read_text()
-            pattern = rf'^##[#]?\s*{re.escape(section)}.*?\n(.*?)(?=\n##|\Z)'
+            pattern = rf'^##\s*{re.escape(section)}.*?\n(.*?)(?=\n## [A-Za-z]|\Z)'
             section_match = re.search(pattern, content, re.MULTILINE | re.DOTALL)
 
             if not section_match:
@@ -781,7 +798,7 @@ def run_builtin_validator(
             errors.append(f"File '{params['file']}' not found for contains check")
         else:
             content = file_path.read_text()
-            pattern = rf'^##[#]?\s*{re.escape(section)}.*?\n(.*?)(?=\n##|\Z)'
+            pattern = rf'^##\s*{re.escape(section)}.*?\n(.*?)(?=\n## [A-Za-z]|\Z)'
             section_match = re.search(pattern, content, re.MULTILINE | re.DOTALL)
 
             if not section_match:
@@ -960,6 +977,30 @@ def run_builtin_validator(
                         else:
                             context[var_name] = ""
 
+                    # Add latest_independent_review - find highest-numbered version
+                    # Looks for independent_review_v*.md and uses the highest version
+                    versioned_reviews = sorted(issue_dir.glob("independent_review_v*.md"))
+                    if versioned_reviews:
+                        # Use the latest versioned review
+                        context["latest_independent_review"] = versioned_reviews[-1].read_text()
+                    elif (issue_dir / "independent_review.md").exists():
+                        # Fall back to unversioned file
+                        context["latest_independent_review"] = (issue_dir / "independent_review.md").read_text()
+                    else:
+                        context["latest_independent_review"] = ""
+
+                    # Add latest_independent_review_response - for re-reviews to see implementer's response
+                    versioned_responses = sorted(issue_dir.glob("independent_review_response_v*.md"))
+                    if versioned_responses:
+                        context["latest_independent_review_response"] = versioned_responses[-1].read_text()
+                    elif (issue_dir / "independent_review_response.md").exists():
+                        context["latest_independent_review_response"] = (issue_dir / "independent_review_response.md").read_text()
+                    else:
+                        context["latest_independent_review_response"] = ""
+
+                    # Count review iterations for context
+                    context["review_iteration"] = len(versioned_reviews) + 1
+
                 # Add git diff stats for review templates
                 git_stats = get_git_diff_stats()
                 context["files_changed"] = git_stats['files_changed']
@@ -970,11 +1011,7 @@ def run_builtin_validator(
                 config = load_config()
                 if config.commands:
                     # Determine working directory for commands
-                    cwd = None
-                    if issue and hasattr(issue, 'worktree_dir') and issue.worktree_dir:
-                        cwd = Path(issue.worktree_dir)
-                    else:
-                        cwd = issue_dir
+                    cwd = get_code_directory(issue, issue_dir)
 
                     # Find commands referenced in the template
                     referenced = get_referenced_commands(template_content, config.commands)
@@ -1022,6 +1059,106 @@ def run_builtin_validator(
         issue = kwargs.get("issue")
         if issue:
             check_and_start_blocked_issues(issue)
+
+    # === Review loop hooks ===
+
+    elif hook_type == "checkbox_checked":
+        # Check that a specific checkbox is marked in a markdown file
+        # Supports on_fail_stage for conditional routing
+        file_path = issue_dir / params["file"]
+        checkbox_text = params.get("checkbox", "")
+        on_fail_stage = params.get("on_fail_stage")
+
+        if not file_path.exists():
+            errors.append(f"File '{params['file']}' not found for checkbox check")
+        else:
+            content = file_path.read_text()
+            # Look for checked checkbox with the specified text
+            # Pattern: [x] or [X] followed by the checkbox text
+            checked_pattern = rf'\[[ ]?[xX][ ]?\]\s*\**{re.escape(checkbox_text)}'
+            unchecked_pattern = rf'\[\s*\]\s*\**{re.escape(checkbox_text)}'
+
+            if re.search(checked_pattern, content):
+                # Checkbox is checked, validation passes
+                pass
+            elif re.search(unchecked_pattern, content):
+                # Checkbox exists but is unchecked
+                if on_fail_stage:
+                    # Raise redirect instead of error
+                    raise StageRedirect(
+                        on_fail_stage,
+                        f"Checkbox '{checkbox_text}' is not checked in {params['file']}"
+                    )
+                else:
+                    errors.append(f"Checkbox '{checkbox_text}' is not checked in {params['file']}")
+            else:
+                errors.append(f"Checkbox '{checkbox_text}' not found in {params['file']}")
+
+    elif hook_type == "version_file":
+        # Rename file.md to file_v{N}.md where N is next available version
+        # Used in post_start to preserve history before creating new version
+        filename = params.get("file", "")
+        if not filename:
+            errors.append("version_file hook requires 'file' parameter")
+        else:
+            file_path = issue_dir / filename
+            if file_path.exists():
+                # Find next version number
+                base_name = file_path.stem
+                ext = file_path.suffix
+                version = 1
+                while (issue_dir / f"{base_name}_v{version}{ext}").exists():
+                    version += 1
+
+                # Rename to versioned name
+                versioned_path = issue_dir / f"{base_name}_v{version}{ext}"
+                file_path.rename(versioned_path)
+                console.print(f"[dim]Versioned {filename} → {versioned_path.name}[/dim]")
+            # If file doesn't exist, silently skip (it might not exist on first iteration)
+
+    elif hook_type == "loop_check":
+        # Count versioned files and fail if max exceeded
+        # Used to prevent infinite review loops
+        pattern = params.get("count_files", "")
+        max_iterations = params.get("max", 3)
+        error_msg = params.get("error", f"Review loop exceeded {max_iterations} iterations")
+
+        if pattern:
+            # Count matching files (using pathlib's glob, not the glob module)
+            matches = list(issue_dir.glob(pattern))
+            if len(matches) >= max_iterations:
+                errors.append(f"{error_msg} (found {len(matches)} iterations)")
+                console.print(f"[yellow]Loop limit reached: {len(matches)} >= {max_iterations}[/yellow]")
+
+    elif hook_type == "rollback":
+        # Programmatic rollback to an earlier stage
+        # Used in post_completion to loop back for re-review
+        to_stage = params.get("to_stage", "")
+        auto_yes = params.get("yes", True)  # Default to auto-confirm for programmatic rollback
+
+        if not to_stage:
+            errors.append("rollback hook requires 'to_stage' parameter")
+        else:
+            issue = kwargs.get("issue")
+            if issue:
+                try:
+                    # Import from rollback module to avoid circular imports
+                    from agenttree.rollback import execute_rollback
+                    success = execute_rollback(
+                        issue_id=issue.id,
+                        target_stage=to_stage,
+                        yes=auto_yes,
+                        reset_worktree=False,
+                        keep_changes=True,
+                    )
+                    if success:
+                        console.print(f"[green]✓ Rolled back to {to_stage}[/green]")
+                    else:
+                        errors.append(f"Rollback to {to_stage} failed")
+                except Exception as e:
+                    errors.append(f"Rollback failed: {e}")
+            else:
+                errors.append("rollback hook requires issue context")
 
     # Controller hooks (delegated to agents_repo functions)
     elif hook_type == "push_pending_branches":
@@ -1263,12 +1400,9 @@ def execute_hooks(
             continue
 
         if hook_type == "run":
-            # Shell command hook - use worktree_dir if available, otherwise issue_dir
+            # Shell command hook - use correct directory based on context
             issue = kwargs.get("issue")
-            if issue and hasattr(issue, 'worktree_dir') and issue.worktree_dir:
-                cwd = Path(issue.worktree_dir)
-            else:
-                cwd = issue_dir
+            cwd = get_code_directory(issue, issue_dir)
             hook_errors = run_command_hook(cwd, params, **kwargs)
             # If optional flag is set and command returns "not configured", warn but don't block
             if params.get("optional") and any("not configured" in e.lower() for e in hook_errors):
@@ -1313,6 +1447,7 @@ def execute_exit_hooks(issue: "Issue", stage: str, substage: Optional[str] = Non
 
     Raises:
         ValidationError: If any validation fails (blocks transition)
+        StageRedirect: If a hook with on_fail_stage fails (redirect to different stage)
     """
     from agenttree.config import load_config
     from agenttree.issues import get_issue_dir
@@ -1972,6 +2107,29 @@ def is_running_in_container() -> bool:
     )
 
 
+def get_code_directory(issue: Optional["Issue"], issue_dir: Path) -> Path:
+    """Get the correct working directory for code operations.
+
+    Inside containers, code is always mounted at /workspace regardless of
+    the issue's worktree_dir (which is a host path). On the host, use the
+    issue's worktree_dir if set, otherwise fall back to issue_dir.
+
+    Args:
+        issue: The issue object (may be None)
+        issue_dir: The issue's _agenttree/issues/ directory (fallback)
+
+    Returns:
+        Path to the directory containing the code
+    """
+    if is_running_in_container():
+        return Path("/workspace")
+
+    if issue and hasattr(issue, 'worktree_dir') and issue.worktree_dir:
+        return Path(issue.worktree_dir)
+
+    return issue_dir
+
+
 def get_current_agent_host() -> str:
     """Get the current agent host type.
 
@@ -2172,6 +2330,13 @@ def ensure_pr_for_issue(issue_id: str) -> bool:
         return False
 
 
+def _is_uuid(s: str) -> bool:
+    """Check if a string looks like a UUID (Apple Container ID format)."""
+    import re
+    # UUID format: 8-4-4-4-12 hex characters
+    return bool(re.match(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', s.lower()))
+
+
 def cleanup_issue_agent(issue: Issue) -> None:
     """Clean up agent resources when issue is accepted.
 
@@ -2199,25 +2364,42 @@ def cleanup_issue_agent(issue: Issue) -> None:
 
     # Stop container (if running) - use detected runtime (container/docker/podman)
     try:
-        from agenttree.container import get_container_runtime
+        from agenttree.container import get_container_runtime, find_container_by_worktree
         runtime = get_container_runtime()
         if runtime.runtime:
+            container_id = agent.container
+
+            # For Apple Containers, we need the UUID, not the name
+            # If the stored ID looks like a name (not a UUID), try to find the UUID
+            if runtime.runtime == "container" and not _is_uuid(container_id):
+                # Try to find the container by its worktree mount
+                worktree_path = Path(agent.worktree)
+                if not worktree_path.is_absolute():
+                    worktree_path = Path.cwd() / worktree_path
+                found_uuid = find_container_by_worktree(worktree_path)
+                if found_uuid:
+                    container_id = found_uuid
+                    console.print(f"[dim]  Found container UUID: {container_id[:12]}...[/dim]")
+                else:
+                    console.print(f"[yellow]  Could not find container UUID for {agent.container}[/yellow]")
+
             result = subprocess.run(
-                [runtime.runtime, "stop", agent.container],
+                [runtime.runtime, "stop", container_id],
                 capture_output=True,
                 text=True,
                 check=False,
             )
             if result.returncode == 0:
-                console.print(f"[dim]  Stopped container: {agent.container}[/dim]")
+                console.print(f"[dim]  Stopped container: {container_id[:12] if len(container_id) > 12 else container_id}[/dim]")
 
-            # Remove container
-            subprocess.run(
-                [runtime.runtime, "rm", agent.container],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
+            # Remove container (only for Docker/Podman - Apple Containers auto-removes)
+            if runtime.runtime != "container":
+                subprocess.run(
+                    [runtime.runtime, "rm", container_id],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
     except Exception as e:
         console.print(f"[yellow]  Warning: Could not stop container: {e}[/yellow]")
 

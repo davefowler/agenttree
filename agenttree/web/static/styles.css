@@ -181,6 +181,33 @@ header h1 {
     background: #4a7d68;
 }
 
+/* Search Input */
+.search-container {
+    display: flex;
+    align-items: center;
+}
+
+.search-input {
+    padding: 6px 12px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: 13px;
+    width: 200px;
+    transition: all 0.2s;
+}
+
+.search-input:focus {
+    outline: none;
+    border-color: var(--text-accent);
+    box-shadow: 0 0 0 2px rgba(45, 90, 74, 0.2);
+}
+
+.search-input::placeholder {
+    color: var(--text-muted);
+}
+
 /* ==============================================
    Buttons
    ============================================== */
@@ -538,13 +565,13 @@ button[disabled] {
 }
 
 .detail-meta .dependency-info {
-    background: rgba(255, 193, 7, 0.15);
-    color: #b8860b;
+    background: rgba(239, 68, 68, 0.15);
+    color: #dc2626;
 }
 
 .detail-meta .dependent-info {
-    background: rgba(0, 128, 0, 0.1);
-    color: var(--accent-green);
+    background: rgba(34, 197, 94, 0.15);
+    color: #16a34a;
 }
 
 .detail-meta .dependency-info a,
@@ -556,6 +583,53 @@ button[disabled] {
 .detail-meta .dependency-info a:hover,
 .detail-meta .dependent-info a:hover {
     text-decoration: underline;
+}
+
+[data-theme="dark"] .detail-meta .dependency-info {
+    background: rgba(239, 68, 68, 0.2);
+    color: #f87171;
+}
+
+[data-theme="dark"] .detail-meta .dependent-info {
+    background: rgba(34, 197, 94, 0.2);
+    color: #4ade80;
+}
+
+/* Dependency pill with remove button */
+.dep-pill {
+    display: inline-flex;
+    align-items: center;
+    margin: 0 2px;
+}
+
+.dep-pill .dep-remove {
+    visibility: hidden;
+    opacity: 0;
+    background: none;
+    border: none;
+    color: inherit;
+    font-size: 12px;
+    font-weight: bold;
+    line-height: 1;
+    padding: 0 3px;
+    margin-left: 1px;
+    cursor: pointer;
+    border-radius: 2px;
+    transition: opacity 0.15s, visibility 0.15s;
+}
+
+.dep-pill:hover .dep-remove {
+    visibility: visible;
+    opacity: 0.6;
+}
+
+.dep-pill .dep-remove:hover {
+    opacity: 1;
+    background: rgba(0, 0, 0, 0.15);
+}
+
+[data-theme="dark"] .dep-pill .dep-remove:hover {
+    background: rgba(255, 255, 255, 0.15);
 }
 
 .detail-actions {
@@ -622,6 +696,13 @@ button[disabled] {
     animation: blink 0.5s ease-in-out infinite;
 }
 
+.agent-light.stopping {
+    background: #f97316;
+    border: 2px solid #ea580c;
+    box-shadow: 0 0 8px rgba(249, 115, 22, 0.6);
+    animation: blink 0.3s ease-in-out infinite;
+}
+
 .agent-light.stalled {
     background: #f97316;
     border: 2px solid #ea580c;
@@ -671,6 +752,13 @@ button[disabled] {
     border: 2px solid #f59e0b;
     box-shadow: 0 0 8px rgba(251, 191, 36, 0.6);
     animation: blink 0.5s ease-in-out infinite;
+}
+
+.agent-light-large.stopping {
+    background: #f97316;
+    border: 2px solid #ea580c;
+    box-shadow: 0 0 8px rgba(249, 115, 22, 0.6);
+    animation: blink 0.3s ease-in-out infinite;
 }
 
 @keyframes blink {
@@ -953,6 +1041,25 @@ button[disabled] {
     min-height: 0;
 }
 
+.claude-exited-warning {
+    background: #8b0000;
+    color: #fff;
+    padding: 8px 12px;
+    font-size: 12px;
+    text-align: center;
+    border-bottom: 1px solid #a00;
+}
+
+.claude-exited-warning a {
+    color: #fff;
+    text-decoration: underline;
+    font-weight: bold;
+}
+
+.claude-exited-warning a:hover {
+    color: #ffd700;
+}
+
 .agent-chat-panel .tmux-input-container {
     padding: 10px;
     background: var(--bg-card);
@@ -1174,6 +1281,19 @@ button[disabled] {
 
 [data-theme="dark"] .kanban-column .issue-item[data-stage="not_doing"] {
     background: #450a0a;
+}
+
+/* Old/completed issues (accepted, not_doing) shown grayed out in search results */
+.issue-old,
+.issue-item.issue-old {
+    opacity: 0.6;
+}
+
+.issue-old .issue-number,
+.issue-old .issue-title,
+.issue-item.issue-old .issue-number,
+.issue-item.issue-old .issue-title {
+    color: var(--text-muted);
 }
 
 /* Kanban Modal */
@@ -1497,6 +1617,35 @@ button[disabled] {
     color: var(--text-muted);
 }
 
+.form-group textarea {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--bg-card);
+    color: var(--text-primary);
+    font-size: 14px;
+    font-family: inherit;
+    line-height: 1.5;
+    resize: vertical;
+    transition: border-color 0.2s;
+}
+
+.form-group textarea:focus {
+    outline: none;
+    border-color: var(--text-accent);
+}
+
+.form-group textarea::placeholder {
+    color: var(--text-muted);
+}
+
+.label-hint {
+    font-weight: normal;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
 .form-actions {
     display: flex;
     justify-content: flex-end;
@@ -1513,4 +1662,378 @@ button[disabled] {
 
 [data-theme="dark"] .form-error {
     color: #f87171;
+}
+
+/* ==============================================
+   Diff View Styles
+   ============================================== */
+
+/* Loading spinner */
+.diff-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 40px;
+    color: var(--text-muted);
+}
+
+.diff-loading .spinner {
+    width: 24px;
+    height: 24px;
+    border: 3px solid var(--border-light);
+    border-top-color: var(--text-accent);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Error and warning messages */
+.diff-error {
+    padding: 12px 16px;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    border-radius: 6px;
+    color: #dc2626;
+    margin-bottom: 16px;
+}
+
+.diff-warning {
+    padding: 12px 16px;
+    background: #fffbeb;
+    border: 1px solid #fcd34d;
+    border-radius: 6px;
+    color: #b45309;
+    margin-bottom: 16px;
+}
+
+[data-theme="dark"] .diff-error {
+    background: #1f1215;
+    border-color: #7f1d1d;
+    color: #f87171;
+}
+
+[data-theme="dark"] .diff-warning {
+    background: #1f1a0f;
+    border-color: #78350f;
+    color: #fbbf24;
+}
+
+/* Empty diff message */
+.diff-empty {
+    padding: 40px;
+    text-align: center;
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+/* Raw diff fallback */
+.diff-raw {
+    font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    padding: 16px;
+    background: #1e1e1e;
+    color: #d4d4d4;
+    border-radius: 6px;
+    overflow-x: auto;
+    white-space: pre;
+}
+
+/* diff2html overrides to match vintage green theme */
+.d2h-wrapper {
+    font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+    font-size: 13px;
+}
+
+.d2h-file-header {
+    background: var(--bg-secondary) !important;
+    border-color: var(--border-color) !important;
+}
+
+.d2h-file-name {
+    color: var(--text-primary) !important;
+}
+
+.d2h-file-stats {
+    color: var(--text-secondary) !important;
+}
+
+/* Additions - use theme green */
+.d2h-ins {
+    background-color: #dcfce7 !important;
+}
+
+.d2h-ins .d2h-code-line-ctn,
+.d2h-code-line.d2h-ins {
+    background-color: #dcfce7 !important;
+}
+
+[data-theme="dark"] .d2h-ins,
+[data-theme="dark"] .d2h-ins .d2h-code-line-ctn,
+[data-theme="dark"] .d2h-code-line.d2h-ins {
+    background-color: #14532d !important;
+}
+
+/* Deletions - red */
+.d2h-del {
+    background-color: #fee2e2 !important;
+}
+
+.d2h-del .d2h-code-line-ctn,
+.d2h-code-line.d2h-del {
+    background-color: #fee2e2 !important;
+}
+
+[data-theme="dark"] .d2h-del,
+[data-theme="dark"] .d2h-del .d2h-code-line-ctn,
+[data-theme="dark"] .d2h-code-line.d2h-del {
+    background-color: #450a0a !important;
+}
+
+/* Code content background */
+.d2h-code-line-ctn {
+    background: var(--bg-card) !important;
+}
+
+[data-theme="dark"] .d2h-code-line-ctn {
+    background: #1e1e1e !important;
+}
+
+/* Line numbers - disable sticky positioning so they scroll with content */
+.d2h-code-linenumber {
+    background: var(--bg-secondary) !important;
+    border-color: var(--border-light) !important;
+    color: var(--text-muted) !important;
+    position: static !important;
+}
+
+[data-theme="dark"] .d2h-code-linenumber {
+    background: #141414 !important;
+}
+
+/* Ensure diff table scrolls normally */
+.d2h-diff-table {
+    table-layout: auto;
+}
+
+.d2h-code-side-linenumber {
+    position: static !important;
+}
+
+/* File list */
+.d2h-file-list-wrapper {
+    margin-bottom: 16px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.d2h-file-list {
+    background: var(--bg-card) !important;
+}
+
+[data-theme="dark"] .d2h-file-list {
+    background: var(--bg-card) !important;
+}
+
+/* Diff table styling */
+.d2h-diff-table {
+    border-color: var(--border-light) !important;
+}
+
+.d2h-diff-tbody > tr > td {
+    border-color: var(--border-light) !important;
+}
+
+/* ==============================================
+   Controller Toggle Button
+   ============================================== */
+
+.controller-toggle {
+    background: var(--btn-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 6px 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.controller-toggle:hover {
+    background: var(--btn-bg-hover);
+    color: var(--text-accent);
+}
+
+.controller-toggle svg {
+    display: block;
+}
+
+/* ==============================================
+   Controller Panel
+   ============================================== */
+
+.controller-panel {
+    position: fixed;
+    top: 0;
+    right: 0;
+    width: 400px;
+    height: 100vh;
+    background: #1e3a2f;
+    display: flex;
+    flex-direction: column;
+    z-index: 200;
+    box-shadow: -4px 0 20px rgba(0, 0, 0, 0.3);
+    transition: transform 0.3s ease, opacity 0.3s ease;
+}
+
+.controller-panel.collapsed {
+    transform: translateX(100%);
+    opacity: 0;
+    pointer-events: none;
+}
+
+.controller-panel-header {
+    background: #2d4a3e;
+    padding: 14px 16px;
+    border-bottom: 1px solid #4a7c6f;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.controller-panel-header h4 {
+    color: #a8d5ba;
+    font-size: 15px;
+    font-weight: 600;
+    margin: 0;
+}
+
+.controller-panel-close {
+    background: none;
+    border: none;
+    color: #8eb89c;
+    cursor: pointer;
+    font-size: 22px;
+    padding: 2px 8px;
+    line-height: 1;
+    border-radius: 4px;
+    transition: all 0.2s;
+}
+
+.controller-panel-close:hover {
+    color: #a8d5ba;
+    background: rgba(168, 213, 186, 0.1);
+}
+
+.controller-panel-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.controller-status {
+    padding: 10px 16px;
+    background: #2d4a3e;
+    border-bottom: 1px solid #4a7c6f;
+    font-size: 12px;
+    color: #a8d5ba;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.controller-status .status-indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    transition: all 0.2s;
+}
+
+.controller-status .status-indicator.active {
+    background: #4ade80;
+    box-shadow: 0 0 6px rgba(74, 222, 128, 0.5);
+}
+
+.controller-status .status-indicator.inactive {
+    background: #6b7280;
+}
+
+.controller-panel .tmux-output {
+    flex: 1;
+    background: #0d1f18;
+    padding: 12px;
+    overflow-y: auto;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: #e8e4d9;
+    min-height: 0;
+}
+
+.controller-panel .tmux-input-container {
+    padding: 12px;
+    background: #2d4a3e;
+    border-top: 1px solid #4a7c6f;
+}
+
+.controller-panel .send-form {
+    display: flex;
+    gap: 8px;
+}
+
+.controller-panel .tmux-input {
+    flex: 1;
+    padding: 10px 14px;
+    background: #1e3a2f;
+    border: 1px solid #4a7c6f;
+    border-radius: 4px;
+    color: #e8e4d9;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 13px;
+}
+
+.controller-panel .tmux-input:focus {
+    outline: none;
+    border-color: #a8d5ba;
+}
+
+.controller-panel .send-button {
+    padding: 10px 18px;
+    background: #4a7c6f;
+    border: 1px solid #5a9a88;
+    border-radius: 4px;
+    color: #e8e4d9;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.controller-panel .send-button:hover {
+    background: #5a9a88;
+}
+
+.controller-panel .send-button:active {
+    background: #3d6a5f;
+}
+
+.controller-panel .send-button .btn-loading {
+    display: none;
+}
+
+.controller-panel .send-form.htmx-request .btn-text {
+    display: none;
+}
+
+.controller-panel .send-form.htmx-request .btn-loading {
+    display: inline;
 }

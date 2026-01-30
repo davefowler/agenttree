@@ -1,5 +1,5 @@
 <!-- Unified issue detail content - used by both kanban modal and flow panel -->
-<div class="issue-detail-wrapper" data-issue-id="{{ issue.number }}" data-agent-num="{{ issue.assigned_agent or '' }}">
+<div class="issue-detail-wrapper" data-issue-id="{{ issue.number }}">
     <div class="issue-detail-main">
         <!-- Issue header -->
         <div class="detail-header">
@@ -8,9 +8,9 @@
                     #{{ issue.number }}: {{ issue.title }}
                 </div>
                 <div class="detail-title-actions">
-                    <div class="agent-light-large {% if issue.tmux_active %}on{% elif issue.assigned_agent %}stalled{% else %}off{% endif %}"
+                    <div class="agent-light-large {% if issue.tmux_active %}on{% else %}off{% endif %}"
                          onclick="toggleAgentFromDetail('{{ issue.number }}', this)"
-                         title="{% if issue.tmux_active %}Agent running{% elif issue.assigned_agent %}Agent stalled - click to restart{% else %}Click to start agent{% endif %}">
+                         title="{% if issue.tmux_active %}Agent running{% else %}Click to start agent{% endif %}">
                     </div>
                     <button class="chat-toggle-icon"
                             onclick="toggleChatPanel('{{ issue.number }}')"
@@ -24,14 +24,18 @@
             <div class="detail-meta-row">
                 <div class="detail-meta">
                     <span>Stage: {{ issue.stage.replace('_', ' ').title() if issue.stage is string else issue.stage.value.replace('_', ' ').title() }}</span>
-                    {% if issue.assigned_agent %}
-                    <span>Agent: {{ issue.assigned_agent }}</span>
-                    {% endif %}
                     {% if issue.pr_url %}
                     <span><a href="{{ issue.pr_url }}" target="_blank">PR #{{ issue.pr_number }}</a></span>
                     {% endif %}
                     {% if issue.dependencies %}
-                    <span class="dependency-info">Blocked by: {% for dep in issue.dependencies %}<a href="?issue={{ dep }}">#{{ dep }}</a>{% if not loop.last %}, {% endif %}{% endfor %}</span>
+                    <span class="dependency-info">Blocked by:
+                        {% for dep in issue.dependencies %}
+                        <span class="dep-pill" data-issue="{{ issue.number }}" data-dep="{{ dep }}">
+                            <a href="?issue={{ dep }}">#{{ dep }}</a>
+                            <button class="dep-remove" onclick="removeDependency('{{ issue.number }}', '{{ dep }}', this.parentElement)" title="Remove dependency">x</button>
+                        </span>
+                        {% endfor %}
+                    </span>
                     {% endif %}
                     {% if issue.dependents %}
                     <span class="dependent-info">Blocks: {% for dep in issue.dependents %}<a href="?issue={{ dep }}">#{{ dep }}</a>{% if not loop.last %}, {% endif %}{% endfor %}</span>
@@ -39,7 +43,7 @@
                 </div>
                 <div class="detail-actions" id="detail-actions-{{ issue.number }}">
                     {% set stage_value = issue.stage if issue.stage is string else issue.stage.value %}
-                    {% if issue.assigned_agent and commits_behind is defined and commits_behind > 0 %}
+                    {% if issue.tmux_active and commits_behind is defined and commits_behind > 0 %}
                     <button class="btn btn-rebase"
                             onclick="rebaseIssue('{{ issue.number }}', this)">
                         Rebase ({{ commits_behind }} behind)
@@ -76,7 +80,7 @@
         <div class="file-tabs-container">
             <div class="file-tabs" id="file-tabs-{{ issue.number }}">
                 {% for file in files %}
-                <button class="file-tab{% if loop.last %} active{% endif %}"
+                <button class="file-tab{% if loop.last and not issue.has_worktree %} active{% endif %}"
                         onclick="selectFileTab(event, '{{ issue.number }}', '{{ file.name }}')"
                         data-filename="{{ file.name }}">
                     {{ file.display_name }}
@@ -84,6 +88,13 @@
                 {% else %}
                 <span class="no-files">No files found</span>
                 {% endfor %}
+                {% if issue.has_worktree %}
+                <button class="file-tab{% if files|length == 0 %} active{% endif %}"
+                        onclick="selectFileTab(event, '{{ issue.number }}', 'changes'); loadDiff('{{ issue.number }}')"
+                        data-filename="changes">
+                    Changes
+                </button>
+                {% endif %}
             </div>
         </div>
 
@@ -118,6 +129,20 @@
                 <p>No files found for this issue</p>
             </div>
             {% endfor %}
+
+            {% if issue.has_worktree %}
+            <!-- Diff content area -->
+            <div class="file-content-item"
+                 data-filename="changes"
+                 style="display: none;">
+                <div class="diff-loading" id="diff-loading-{{ issue.number }}" style="display: none;">
+                    <div class="spinner"></div>
+                    <span>Loading diff...</span>
+                </div>
+                <div class="diff-error" id="diff-error-{{ issue.number }}" style="display: none;"></div>
+                <div class="diff-content" id="diff-content-{{ issue.number }}"></div>
+            </div>
+            {% endif %}
         </div>
 
         <!-- Timestamps -->
@@ -276,6 +301,100 @@ async function archiveIssue(issueNumber, btn) {
         console.error('Error archiving issue:', error);
         btn.disabled = false;
         btn.textContent = 'Archive';
+    }
+}
+
+// Remove a dependency from an issue
+async function removeDependency(issueNumber, depId, pillElement) {
+    try {
+        const response = await fetch(`/api/issues/${issueNumber}/dependencies/${depId}`, {
+            method: 'DELETE'
+        });
+
+        if (response.ok) {
+            // Remove the pill from the DOM
+            pillElement.remove();
+            // If no more dependencies, remove the whole "Blocked by:" span
+            const depInfo = document.querySelector('.dependency-info');
+            if (depInfo && depInfo.querySelectorAll('.dep-pill').length === 0) {
+                depInfo.remove();
+            }
+        } else {
+            const data = await response.json();
+            alert(`Cannot remove dependency: ${data.detail || 'Unknown error'}`);
+        }
+    } catch (error) {
+        console.error('Error removing dependency:', error);
+        alert('Error removing dependency');
+    }
+}
+
+// Track which diffs have been loaded to avoid re-fetching
+const loadedDiffs = new Set();
+
+async function loadDiff(issueNumber) {
+    // Skip if already loaded
+    if (loadedDiffs.has(issueNumber)) {
+        return;
+    }
+
+    const loadingEl = document.getElementById(`diff-loading-${issueNumber}`);
+    const errorEl = document.getElementById(`diff-error-${issueNumber}`);
+    const contentEl = document.getElementById(`diff-content-${issueNumber}`);
+
+    if (!loadingEl || !contentEl) return;
+
+    // Show loading state
+    loadingEl.style.display = 'flex';
+    errorEl.style.display = 'none';
+    contentEl.innerHTML = '';
+
+    try {
+        const response = await fetch(`/api/issues/${issueNumber}/diff`);
+        const data = await response.json();
+
+        loadingEl.style.display = 'none';
+
+        if (data.error) {
+            errorEl.textContent = data.error;
+            errorEl.style.display = 'block';
+            return;
+        }
+
+        if (!data.has_changes) {
+            contentEl.innerHTML = '<div class="diff-empty">No differences from main</div>';
+            loadedDiffs.add(issueNumber);
+            return;
+        }
+
+        // Show truncation warning if applicable
+        if (data.truncated) {
+            errorEl.textContent = 'Diff truncated due to size. View full diff in PR.';
+            errorEl.className = 'diff-warning';
+            errorEl.style.display = 'block';
+        }
+
+        // Render diff with diff2html
+        if (typeof Diff2HtmlUI !== 'undefined') {
+            const diff2htmlUi = new Diff2HtmlUI(contentEl, data.diff, {
+                drawFileList: true,
+                matching: 'lines',
+                outputFormat: 'line-by-line',
+                fileContentToggle: true
+            });
+            diff2htmlUi.draw();
+            diff2htmlUi.highlightCode();
+        } else {
+            // Fallback: show raw diff
+            contentEl.innerHTML = '<pre class="diff-raw">' + data.diff.replace(/</g, '&lt;').replace(/>/g, '&gt;') + '</pre>';
+        }
+
+        loadedDiffs.add(issueNumber);
+    } catch (error) {
+        loadingEl.style.display = 'none';
+        errorEl.textContent = 'Failed to load diff: ' + error.message;
+        errorEl.style.display = 'block';
+        console.error('Error loading diff:', error);
     }
 }
 </script>
