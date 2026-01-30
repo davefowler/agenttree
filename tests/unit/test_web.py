@@ -580,13 +580,15 @@ class TestApproveIssueEndpoint:
 class TestRebaseIssueEndpoint:
     """Tests for rebase issue endpoint."""
 
+    @patch("agenttree.tmux.session_exists")
     @patch("agenttree.tmux.send_message")
     @patch("agenttree.hooks.rebase_issue_branch")
     @patch("agenttree.web.app.issue_crud")
-    def test_rebase_issue_success(self, mock_crud, mock_rebase, mock_send, client, mock_review_issue):
+    def test_rebase_issue_success(self, mock_crud, mock_rebase, mock_send, mock_session_exists, client, mock_review_issue):
         """Test rebase issue succeeds."""
         mock_crud.get_issue.return_value = mock_review_issue
         mock_rebase.return_value = (True, "Rebased successfully")
+        mock_session_exists.return_value = False  # No active session
 
         response = client.post("/api/issues/002/rebase")
 
