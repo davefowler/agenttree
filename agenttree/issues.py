@@ -930,14 +930,11 @@ def load_skill(
     # Inject command outputs for referenced commands
     # Commands run in worktree directory if available, otherwise issue directory
     from agenttree.commands import get_referenced_commands, get_command_output
+    from agenttree.hooks import get_code_directory
 
     if config.commands:
-        # Determine working directory for commands
-        cwd = None
-        if issue.worktree_dir:
-            cwd = Path(issue.worktree_dir)
-        elif issue_dir:
-            cwd = issue_dir
+        # Determine working directory for commands (container-aware)
+        cwd = get_code_directory(issue, issue_dir) if issue_dir else None
 
         # Find commands referenced in the template
         referenced = get_referenced_commands(skill_content, config.commands)
