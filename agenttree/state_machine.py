@@ -201,8 +201,11 @@ class IssueStateMachine:
         "not_doing",
     ]
 
-    # All valid transitions in the workflow
-    # Each dict has trigger, source, and dest keys
+    # All valid transitions in the workflow.
+    # NOTE: This list defines which transitions ARE VALID, not which one to take.
+    # When multiple transitions exist from the same source, the config's get_next_stage()
+    # determines the actual destination. The state machine only validates that the
+    # requested transition is allowed.
     TRANSITIONS = [
         # Backlog to define
         {"trigger": "advance", "source": "backlog", "dest": "define.refine"},
@@ -219,7 +222,10 @@ class IssueStateMachine:
         {"trigger": "advance", "source": "plan_revise", "dest": "plan_review"},
         # Plan review to implement (human approval required)
         {"trigger": "advance", "source": "plan_review", "dest": "implement.setup"},
-        # Bare implement stage can advance to setup or skip to independent_code_review (for rollback/CI scenarios)
+        # Bare implement state (without substage) - allows multiple destinations:
+        # - implement.setup: normal first substage entry
+        # - independent_code_review: when CI feedback rolls back without substage
+        # Config's get_next_stage() determines which path; state machine validates it's allowed.
         {"trigger": "advance", "source": "implement", "dest": "implement.setup"},
         {"trigger": "advance", "source": "implement", "dest": "independent_code_review"},
         # Implement substages
@@ -234,9 +240,11 @@ class IssueStateMachine:
         {"trigger": "advance", "source": "independent_code_review", "dest": "implementation_review.ci_wait"},
         # Independent code review redirect to address feedback (when reviewer requests changes)
         {"trigger": "redirect", "source": "independent_code_review", "dest": "address_independent_review"},
-        # Address independent review rolls back to independent_code_review for re-review
+        # Address independent review - allows multiple destinations:
+        # - independent_code_review: normal path via post_completion rollback hook
+        # - implementation_review.ci_wait: when config's get_next_stage() calculates next
+        # The rollback hook redirects to independent_code_review; both paths must be valid.
         {"trigger": "advance", "source": "address_independent_review", "dest": "independent_code_review"},
-        # Also allow advance to implementation_review (config calculates this as next, hook redirects)
         {"trigger": "advance", "source": "address_independent_review", "dest": "implementation_review.ci_wait"},
         # Implementation review substages and to accepted
         {"trigger": "advance", "source": "implementation_review.ci_wait", "dest": "implementation_review.review"},
@@ -338,8 +346,12 @@ class IssueStateMachine:
     def get_next_state(self) -> Optional[str]:
         """Get the next state in the workflow (via 'advance' trigger).
 
+        NOTE: This returns the FIRST matching transition. When multiple transitions
+        exist from the same source, this is used for diagram generation only.
+        The actual workflow uses config's get_next_stage() to determine destination.
+
         Returns:
-            The next state, or None if at a terminal state
+            The first valid next state, or None if at a terminal state
         """
         if self.current_state in _get_terminal_states():
             return None
