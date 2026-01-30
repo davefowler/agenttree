@@ -9,9 +9,11 @@
             <span class="status-indicator" id="controller-status-indicator"></span>
             <span id="controller-status-text">Checking...</span>
         </div>
-        {% with chat_id="controller", get_url="/agent/0/tmux", post_url="/agent/0/send", placeholder="Send message to controller..." %}
-            {% include "partials/tmux_chat.html" %}
-        {% endwith %}
+        {% set chat_id = "controller" %}
+        {% set get_url = "/agent/0/tmux" %}
+        {% set post_url = "/agent/0/send" %}
+        {% set placeholder = "Send message to controller..." %}
+        {% include "partials/tmux_chat.html" %}
     </div>
 </div>
 <script>

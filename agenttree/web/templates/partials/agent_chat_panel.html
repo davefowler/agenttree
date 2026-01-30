@@ -9,9 +9,11 @@
             <span class="status-indicator active"></span>
             Agent running
         </div>
-        {% with chat_id=issue.number, get_url="/agent/" ~ issue.number ~ "/tmux", post_url="/agent/" ~ issue.number ~ "/send", placeholder="Send message to agent..." %}
-            {% include "partials/tmux_chat.html" %}
-        {% endwith %}
+        {% set chat_id = issue.number %}
+        {% set get_url = "/agent/" ~ issue.number ~ "/tmux" %}
+        {% set post_url = "/agent/" ~ issue.number ~ "/send" %}
+        {% set placeholder = "Send message to agent..." %}
+        {% include "partials/tmux_chat.html" %}
         {% else %}
         <div class="no-agent-message">
             <p>No agent assigned</p>
