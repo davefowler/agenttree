@@ -40,8 +40,7 @@ def execute_rollback(
     from datetime import datetime, timezone
     from agenttree.state import get_active_agent, unregister_agent
     from agenttree.config import load_config
-    from agenttree.issues import get_issue, get_issue_dir
-    from agenttree.agents_repo import delete_session
+    from agenttree.issues import get_issue, get_issue_dir, delete_session
     import shutil
     import yaml as pyyaml
 

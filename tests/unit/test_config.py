@@ -454,9 +454,13 @@ class TestRedirectOnlyStages:
         )
 
         # From implement, should go directly to accepted, skipping redirect_only review
-        next_stage, next_substage, is_terminal = config.get_next_stage("implement")
+        # Note: get_next_stage returns (stage, substage, human_review), not is_terminal
+        next_stage, next_substage, human_review = config.get_next_stage("implement")
         assert next_stage == "accepted"
-        assert is_terminal is True
+        # accepted is terminal but human_review is False
+        assert human_review is False
+        # Verify accepted is indeed terminal
+        assert config.is_terminal("accepted") is True
 
     def test_redirect_only_stage_can_still_be_entered_directly(self) -> None:
         """redirect_only stages should still be retrievable and configurable."""
