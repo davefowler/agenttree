@@ -433,11 +433,12 @@ This is the approach section with content.
         mock_issue.slug = "test"
         mock_issue.worktree_dir = None
 
-        # Mock load_config to return commands
+        # Mock load_config to return commands and is_running_in_container to avoid /workspace
         mock_config = Config(commands={"git_branch": "echo 'feature-branch'"})
         with patch('agenttree.hooks.load_config', return_value=mock_config):
-            hook = {"type": "create_file", "template": "stats.md", "dest": "output.md"}
-            errors = run_builtin_validator(issue_dir, hook, issue=mock_issue)
+            with patch('agenttree.hooks.is_running_in_container', return_value=False):
+                hook = {"type": "create_file", "template": "stats.md", "dest": "output.md"}
+                errors = run_builtin_validator(issue_dir, hook, issue=mock_issue)
 
         assert errors == []
 
