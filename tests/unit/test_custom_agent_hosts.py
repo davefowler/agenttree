@@ -360,8 +360,8 @@ class TestCheckCustomAgentStages:
                 result = check_custom_agent_stages(tmp_path)
                 assert result == 0
 
-    def test_skips_already_spawned_agents(self, tmp_path):
-        """Test that issues with custom_agent_spawned set are skipped."""
+    def test_skips_already_running_agents(self, tmp_path):
+        """Test that issues with running custom agent sessions are skipped."""
         from agenttree.agents_repo import check_custom_agent_stages
 
         issues_dir = tmp_path / "issues"
@@ -369,7 +369,7 @@ class TestCheckCustomAgentStages:
         issue_dir = issues_dir / "001-test"
         issue_dir.mkdir()
 
-        # Create issue.yaml with custom_agent_spawned already set
+        # Create issue.yaml at a custom agent stage
         issue_data = {
             "id": "1",
             "slug": "test",
@@ -377,18 +377,25 @@ class TestCheckCustomAgentStages:
             "created": "2024-01-01",
             "updated": "2024-01-01",
             "stage": "independent_code_review",
-            "custom_agent_spawned": "independent_code_review"  # Already spawned
         }
         (issue_dir / "issue.yaml").write_text(yaml.safe_dump(issue_data))
 
         mock_config = MagicMock()
+        mock_config.project = "testproj"
         mock_config.get_custom_agent_stages.return_value = ["independent_code_review"]
+        mock_stage_config = MagicMock()
+        mock_stage_config.host = "review"
+        mock_config.get_stage.return_value = mock_stage_config
+        mock_agent_config = MagicMock()
+        mock_config.get_agent_host.return_value = mock_agent_config
 
         with patch("agenttree.hooks.is_running_in_container", return_value=False):
             with patch("agenttree.config.load_config", return_value=mock_config):
-                result = check_custom_agent_stages(tmp_path)
-                # Should skip since already spawned
-                assert result == 0
+                # Mock session_exists to return True (agent already running)
+                with patch("agenttree.tmux.session_exists", return_value=True):
+                    result = check_custom_agent_stages(tmp_path)
+                    # Should skip since agent is already running
+                    assert result == 0
 
 
 class TestContainerAgentHost:

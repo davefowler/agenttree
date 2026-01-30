@@ -6,19 +6,19 @@ Optional:
   - 'selected_issue' - for active state
   - 'draggable' - enable drag (kanban only)
 #}
-<a class="issue-item {% if selected_issue and issue.number == selected_issue.number %}active{% endif %}"
+<a class="issue-item {% if selected_issue and issue.number == selected_issue.number %}active{% endif %}{% if issue.stage.value in ['accepted', 'not_doing'] %} issue-old{% endif %}"
    href="{{ base_url }}?issue={{ issue.number }}"
    data-issue="{{ issue.number }}"
    data-stage="{{ issue.stage.value }}"
-   data-has-agent="{{ 'true' if issue.assigned_agent else 'false' }}"
+   data-has-agent="{{ 'true' if issue.tmux_active else 'false' }}"
    {% if draggable %}
    draggable="{{ 'true' if issue.stage.value in ['plan_review', 'implementation_review'] else 'false' }}"
    {% endif %}>
     <div class="issue-header">
         <div class="issue-header-left">
-            <div class="agent-light {% if issue.tmux_active %}on{% elif issue.assigned_agent %}stalled{% else %}off{% endif %}"
+            <div class="agent-light {% if issue.tmux_active %}on{% else %}off{% endif %}"
                  onclick="event.preventDefault(); event.stopPropagation(); toggleAgent('{{ issue.number }}', this)"
-                 title="{% if issue.tmux_active %}Agent running{% elif issue.assigned_agent %}Agent stalled{% else %}No agent{% endif %}"></div>
+                 title="{% if issue.tmux_active %}Agent running{% else %}No agent{% endif %}"></div>
             <span class="issue-number">#{{ issue.number }}</span>
         </div>
         {% if show_stage %}

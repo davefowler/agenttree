@@ -4,7 +4,8 @@ import json
 import shutil
 import subprocess
 import time
-from typing import List, Optional
+from pathlib import Path
+from typing import List, Optional, Union
 from dataclasses import dataclass
 
 
@@ -535,7 +536,7 @@ class GitHubManager:
         label = self.get_agent_label(agent_num)
         remove_label_from_issue(issue_number, label)
 
-    def create_task_file(self, issue: Issue, output_path) -> None:
+    def create_task_file(self, issue: Issue, output_path: Union[str, Path]) -> None:
         """Create a TASK.md file from an issue.
 
         Args:
@@ -562,7 +563,7 @@ git commit -m "Your message (Fixes #{issue.number})"
         with open(output_path, "w") as f:
             f.write(content)
 
-    def create_adhoc_task_file(self, task_description: str, output_path) -> None:
+    def create_adhoc_task_file(self, task_description: str, output_path: Union[str, Path]) -> None:
         """Create a TASK.md file for an ad-hoc task.
 
         Args:
@@ -656,7 +657,7 @@ def sort_issues_by_priority(issues: List[IssueWithContext]) -> List[IssueWithCon
     Returns:
         Sorted list of issues
     """
-    def sort_key(issue: IssueWithContext):
+    def sort_key(issue: IssueWithContext) -> tuple[int, int, int]:
         # First priority: review stage (True = 0, False = 1, so review comes first)
         # Second priority: stage (higher stages first, None last)
         # Third priority: issue number (lower numbers first for same stage)

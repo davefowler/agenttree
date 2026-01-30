@@ -7,6 +7,9 @@
     <link rel="stylesheet" href="/static/styles.css">
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- diff2html for code diff rendering -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/diff2html@3.4.48/bundles/css/diff2html.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/diff2html@3.4.48/bundles/js/diff2html-ui.min.js"></script>
 </head>
 <body>
     {% include 'partials/header.html' %}
@@ -41,6 +44,9 @@
         </div>
     </div>
 
+    <!-- Controller panel -->
+    {% include 'partials/controller_panel.html' %}
+
     <script>
         // Handle file tab clicks - CSS toggle approach
         function selectFileTab(evt, issueId, filename) {
@@ -70,8 +76,32 @@
             const isOn = lightElement.classList.contains('on');
 
             if (isOn) {
-                // Agent is running - navigate to issue
-                window.location.href = `/flow?issue=${issueNumber}`;
+                // Agent is running - stop it
+                lightElement.classList.remove('on');
+                lightElement.classList.add('stopping');
+                lightElement.title = 'Stopping agent...';
+
+                try {
+                    const response = await fetch(`/api/issues/${issueNumber}/stop`, {
+                        method: 'POST'
+                    });
+
+                    if (response.ok) {
+                        lightElement.classList.remove('stopping');
+                        lightElement.classList.add('off');
+                        lightElement.title = 'No agent - click to start';
+                        setTimeout(() => location.reload(), 500);
+                    } else {
+                        lightElement.classList.remove('stopping');
+                        lightElement.classList.add('on');
+                        lightElement.title = 'Failed to stop agent';
+                    }
+                } catch (error) {
+                    console.error('Error stopping agent:', error);
+                    lightElement.classList.remove('stopping');
+                    lightElement.classList.add('on');
+                    lightElement.title = 'Error stopping agent';
+                }
                 return;
             }
 
@@ -131,7 +161,32 @@
             const isOn = lightElement.classList.contains('on');
 
             if (isOn) {
-                // Already running - do nothing (use chat icon to toggle chat)
+                // Agent is running - stop it
+                lightElement.classList.remove('on');
+                lightElement.classList.add('stopping');
+                lightElement.title = 'Stopping agent...';
+
+                try {
+                    const response = await fetch(`/api/issues/${issueNumber}/stop`, {
+                        method: 'POST'
+                    });
+
+                    if (response.ok) {
+                        lightElement.classList.remove('stopping');
+                        lightElement.classList.add('off');
+                        lightElement.title = 'No agent - click to start';
+                        setTimeout(() => location.reload(), 500);
+                    } else {
+                        lightElement.classList.remove('stopping');
+                        lightElement.classList.add('on');
+                        lightElement.title = 'Failed to stop agent';
+                    }
+                } catch (error) {
+                    console.error('Error stopping agent:', error);
+                    lightElement.classList.remove('stopping');
+                    lightElement.classList.add('on');
+                    lightElement.title = 'Error stopping agent';
+                }
                 return;
             }
 

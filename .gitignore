@@ -53,3 +53,9 @@ Thumbs.db
 _agenttree
 .worktrees/
 .playwright-mcp/
+
+# AgentTree directories
+_agenttree/
+
+# Claude session persistence (per-worktree)
+.claude-sessions/
