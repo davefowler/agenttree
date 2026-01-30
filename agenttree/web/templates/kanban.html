@@ -241,6 +241,28 @@ Possible solutions:
                     window.closeIssueModal();
                 }
             }
+
+            // Cmd+L (Mac) or Ctrl+L (Windows/Linux) to send highlighted text to agent
+            if (e.key === 'l' && (e.metaKey || e.ctrlKey)) {
+                const selectedText = window.getSelection().toString().trim();
+                if (!selectedText) return; // No text selected, let browser handle
+
+                // Find the visible agent chat input
+                const modal = document.getElementById('issue-modal');
+                let chatInput = null;
+
+                if (modal && modal.classList.contains('active')) {
+                    // Modal is open - find input in the modal
+                    chatInput = modal.querySelector('.tmux-input');
+                }
+
+                if (chatInput) {
+                    e.preventDefault(); // Prevent browser default (e.g., focus address bar)
+                    chatInput.value = selectedText;
+                    chatInput.focus();
+                    // Optionally auto-submit - user can edit before pressing Enter
+                }
+            }
         });
 
         // Close modal on background click
