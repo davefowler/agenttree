@@ -17,6 +17,8 @@ class StageEnum(str, Enum):
     PLAN_REVISE = "plan_revise"
     PLAN_REVIEW = "plan_review"
     IMPLEMENT = "implement"
+    INDEPENDENT_CODE_REVIEW = "independent_code_review"
+    ADDRESS_INDEPENDENT_REVIEW = "address_independent_review"
     IMPLEMENTATION_REVIEW = "implementation_review"
     ACCEPTED = "accepted"
     NOT_DOING = "not_doing"
@@ -48,8 +50,9 @@ class Issue(IssueBase):
     url: Optional[str] = None
     pr_url: Optional[str] = None
     pr_number: Optional[int] = None
-    assigned_agent: Optional[str] = None
+    port: Optional[int] = None  # Dev server port for this issue
     tmux_active: bool = False
+    has_worktree: bool = False
     created_at: datetime
     updated_at: datetime
     dependencies: List[int] = Field(default_factory=list)
@@ -58,7 +61,7 @@ class Issue(IssueBase):
     @property
     def is_review(self) -> bool:
         """Check if issue is in a human review stage."""
-        return self.stage in (StageEnum.PLAN_REVIEW, StageEnum.IMPLEMENTATION_REVIEW)
+        return self.stage in (StageEnum.PLAN_REVIEW, StageEnum.IMPLEMENTATION_REVIEW, StageEnum.INDEPENDENT_CODE_REVIEW)
 
 
 class IssueUpdate(BaseModel):
@@ -66,7 +69,6 @@ class IssueUpdate(BaseModel):
 
     stage: Optional[StageEnum] = None
     status: Optional[IssueStatus] = None
-    assigned_agent: Optional[str] = None
 
 
 class IssueMoveRequest(BaseModel):

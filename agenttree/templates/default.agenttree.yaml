@@ -11,6 +11,7 @@ worktrees_dir: .worktrees
 commands:
   test: uv run pytest
   lint: "uv run mypy agenttree || echo 'Lint warnings (optional)'"
+  # serve: "uv run uvicorn app:app --port $PORT"  # Dev server (port auto-assigned per issue)
   git_branch: git branch --show-current
   files_changed: "git diff --stat main...HEAD | grep -c '|' || echo 0"
   lines_added: "git diff --stat main...HEAD | tail -1 | awk '{print $4}' || echo 0"
@@ -19,6 +20,7 @@ commands:
 tools:
   claude:
     command: claude
+    skip_permissions: true
     startup_prompt: "Read TASK.md - it has your issue ID, stage, and workflow instructions. You MUST follow the staged workflow."
   aider:
     command: aider
@@ -47,11 +49,11 @@ hosts:
 
   # Custom review agent host
   review:
-    description: "Independent code reviewer using OpenAI Codex"
+    description: "Independent code reviewer using Claude"
     container:
       image: agenttree-agent:latest
-    tool: codex
-    model: gpt-5.2
+    tool: claude
+    model: sonnet
     skill: agents/review.md
 
 stages:
@@ -185,6 +187,38 @@ stages:
           file: independent_review.md
           section: Review Findings
           expect: not_empty
+      - checkbox_checked:
+          file: independent_review.md
+          checkbox: Approve
+          on_fail_stage: address_independent_review
+
+  # Stage where implementing agent addresses review feedback
+  # Only reachable via StageRedirect when reviewer doesn't approve
+  - name: address_independent_review
+    redirect_only: true  # Not in normal progression, only via redirect
+    host: agent  # Back to the implementing agent
+    output: independent_review_response.md
+    skill: address_independent_review.md
+    post_start:
+      - version_file:
+          file: independent_review.md
+      - version_file:
+          file: independent_review_response.md
+      - create_file:
+          template: independent_review_response.md
+          dest: independent_review_response.md
+    pre_completion:
+      - loop_check:
+          count_files: independent_review_v*.md
+          max: 5
+          error: "Review loop exceeded 5 iterations. Escalating to human review."
+      - section_check:
+          file: independent_review_response.md
+          section: Changes Made
+          expect: not_empty
+    post_completion:
+      - rollback:
+          to_stage: independent_code_review
 
   - name: implementation_review
     human_review: true

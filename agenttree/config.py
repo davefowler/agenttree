@@ -89,6 +89,7 @@ class StageConfig(BaseModel):
     model: Optional[str] = None   # Model to use for this stage (overrides default_model)
     human_review: bool = False    # Requires human approval to exit
     terminal: bool = False        # Cannot progress from here (accepted, not_doing)
+    redirect_only: bool = False   # Only reachable via StageRedirect, skipped in normal progression
     host: str = "agent"           # Who executes this stage: "agent" (in container) or "controller" (host)
     substages: Dict[str, SubstageConfig] = Field(default_factory=dict)
     pre_completion: list[dict] = Field(default_factory=list)  # Stage-level hooks before completing
@@ -150,6 +151,7 @@ class Config(BaseModel):
     security: SecurityConfig = Field(default_factory=SecurityConfig)
     merge_strategy: str = "squash"  # squash, merge, or rebase
     hooks: HooksConfig = Field(default_factory=HooksConfig)
+    save_tmux_history: bool = False  # Save tmux session history on stage transitions
 
     def get_port_for_agent(self, agent_num: int) -> int:
         """Get port number for a specific agent.
@@ -172,6 +174,25 @@ class Config(BaseModel):
             )
 
         return port
+
+    def get_port_for_issue(self, issue_id: str) -> Optional[int]:
+        """Get port number for a specific issue.
+
+        Port is calculated from issue ID using the configured port_range.
+        Returns None if issue_id is not a valid integer or if the port
+        would exceed the configured range.
+
+        Args:
+            issue_id: Issue ID (string, typically numeric like "001", "042")
+
+        Returns:
+            Port number, or None if issue_id is invalid or exceeds range
+        """
+        try:
+            issue_num = int(issue_id)
+            return self.get_port_for_agent(issue_num)
+        except (ValueError, TypeError):
+            return None
 
     def get_worktree_path(self, agent_num: int) -> Path:
         """Get worktree path for a specific agent (legacy numbered agents).
@@ -566,14 +587,18 @@ class Config(BaseModel):
             except ValueError:
                 pass  # substage not found, move to next stage
 
-        # Move to next stage
+        # Move to next stage (skip redirect_only stages)
         stage_names = self.get_stage_names()
         try:
             stage_idx = stage_names.index(current_stage)
-            if stage_idx < len(stage_names) - 1:
-                next_stage_name = stage_names[stage_idx + 1]
+            # Look for next non-redirect_only stage
+            for next_idx in range(stage_idx + 1, len(stage_names)):
+                next_stage_name = stage_names[next_idx]
                 next_stage = self.get_stage(next_stage_name)
                 if next_stage:
+                    # Skip redirect_only stages in normal progression
+                    if next_stage.redirect_only:
+                        continue
                     next_substages = next_stage.substage_order()
                     next_substage = next_substages[0] if next_substages else None
                     return next_stage_name, next_substage, next_stage.human_review

@@ -6,6 +6,12 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
+from agenttree.tmux import (
+    save_tmux_history_to_file,
+    session_exists,
+    capture_pane,
+)
+
 
 class TestSessionExists:
     """Tests for session_exists function."""
@@ -129,35 +135,59 @@ class TestSendMessage:
     """Tests for send_message function."""
 
     def test_send_message_success(self):
-        """Should return True when message sent successfully."""
+        """Should return 'sent' when message sent successfully."""
         from agenttree.tmux import send_message
 
         with patch("agenttree.tmux.session_exists", return_value=True):
-            with patch("agenttree.tmux.send_keys") as mock_send:
-                result = send_message("test-session", "hello")
+            with patch("agenttree.tmux.is_claude_running", return_value=True):
+                with patch("agenttree.tmux.send_keys") as mock_send:
+                    result = send_message("test-session", "hello")
 
-        assert result is True
+        assert result == "sent"
         mock_send.assert_called_once_with("test-session", "hello", submit=True)
 
     def test_send_message_session_not_exists(self):
-        """Should return False when session doesn't exist."""
+        """Should return 'no_session' when session doesn't exist."""
         from agenttree.tmux import send_message
 
         with patch("agenttree.tmux.session_exists", return_value=False):
             result = send_message("missing-session", "hello")
 
-        assert result is False
+        assert result == "no_session"
 
-    def test_send_message_send_fails(self):
-        """Should return False when send_keys fails."""
+    def test_send_message_claude_exited(self):
+        """Should return 'claude_exited' when Claude CLI isn't running."""
         from agenttree.tmux import send_message
 
         with patch("agenttree.tmux.session_exists", return_value=True):
-            with patch("agenttree.tmux.send_keys") as mock_send:
-                mock_send.side_effect = subprocess.CalledProcessError(1, "tmux")
+            with patch("agenttree.tmux.is_claude_running", return_value=False):
                 result = send_message("test-session", "hello")
 
-        assert result is False
+        assert result == "claude_exited"
+
+    def test_send_message_send_fails(self):
+        """Should return 'error' when send_keys fails."""
+        from agenttree.tmux import send_message
+
+        with patch("agenttree.tmux.session_exists", return_value=True):
+            with patch("agenttree.tmux.is_claude_running", return_value=True):
+                with patch("agenttree.tmux.send_keys") as mock_send:
+                    mock_send.side_effect = subprocess.CalledProcessError(1, "tmux")
+                    result = send_message("test-session", "hello")
+
+        assert result == "error"
+
+    def test_send_message_skip_claude_check(self):
+        """Should skip Claude check when check_claude=False."""
+        from agenttree.tmux import send_message
+
+        with patch("agenttree.tmux.session_exists", return_value=True):
+            with patch("agenttree.tmux.is_claude_running") as mock_claude:
+                with patch("agenttree.tmux.send_keys"):
+                    result = send_message("test-session", "hello", check_claude=False)
+
+        assert result == "sent"
+        mock_claude.assert_not_called()
 
 
 class TestCapturePane:
@@ -382,15 +412,16 @@ class TestTmuxManager:
         mock_kill.assert_called_once_with("issue-42")
 
     def test_send_message_to_issue(self, mock_config):
-        """Should send message to issue session."""
+        """Should send message to issue session and return status."""
         from agenttree.tmux import TmuxManager
 
         manager = TmuxManager(mock_config)
 
-        with patch("agenttree.tmux.send_keys") as mock_send:
-            manager.send_message_to_issue("issue-42", "hello")
+        with patch("agenttree.tmux.send_message", return_value="sent") as mock_send:
+            result = manager.send_message_to_issue("issue-42", "hello")
 
-        mock_send.assert_called_once_with("issue-42", "hello")
+        assert result == "sent"
+        mock_send.assert_called_once_with("issue-42", "hello", check_claude=True)
 
     def test_is_issue_running(self, mock_config):
         """Should check issue session existence."""
@@ -425,3 +456,203 @@ class TestTmuxManager:
         assert len(result) == 2
         assert result[0].name == "myproject-issue-042"
         assert result[1].name == "myproject-issue-043"
+
+
+class TestStartController:
+    """Tests for TmuxManager.start_controller method."""
+
+    @pytest.fixture
+    def mock_config(self):
+        """Create a mock config for testing."""
+        config = MagicMock()
+        config.project = "testproject"
+        tool_config = MagicMock()
+        tool_config.command = "claude"
+        config.get_tool_config.return_value = tool_config
+        return config
+
+    def test_start_controller_creates_session(self, mock_config, tmp_path):
+        """Should create a new tmux session for the controller."""
+        from agenttree.tmux import TmuxManager
+
+        manager = TmuxManager(mock_config)
+
+        with patch("agenttree.tmux.session_exists", return_value=False):
+            with patch("agenttree.tmux.create_session") as mock_create:
+                with patch("agenttree.tmux.wait_for_prompt", return_value=True):
+                    with patch("agenttree.tmux.send_keys") as mock_send:
+                        manager.start_controller(
+                            session_name="testproject-controller-000",
+                            repo_path=tmp_path,
+                            tool_name="claude",
+                        )
+
+        mock_create.assert_called_once_with("testproject-controller-000", tmp_path, "claude")
+        mock_send.assert_called_once()
+        # Verify the startup prompt includes controller instructions
+        startup_prompt = mock_send.call_args[0][1]
+        assert "controller" in startup_prompt.lower()
+
+    def test_start_controller_kills_existing_session(self, mock_config, tmp_path):
+        """Should kill existing session before creating new one."""
+        from agenttree.tmux import TmuxManager
+
+        manager = TmuxManager(mock_config)
+
+        with patch("agenttree.tmux.session_exists", return_value=True):
+            with patch("agenttree.tmux.kill_session") as mock_kill:
+                with patch("agenttree.tmux.create_session"):
+                    with patch("agenttree.tmux.wait_for_prompt", return_value=False):
+                        manager.start_controller(
+                            session_name="testproject-controller-000",
+                            repo_path=tmp_path,
+                            tool_name="claude",
+                        )
+
+        mock_kill.assert_called_once_with("testproject-controller-000")
+
+    def test_start_controller_uses_correct_tool(self, mock_config, tmp_path):
+        """Should use the configured AI tool command."""
+        from agenttree.tmux import TmuxManager
+
+        # Configure tool to use a custom command
+        tool_config = MagicMock()
+        tool_config.command = "custom-ai-tool --special-flag"
+        mock_config.get_tool_config.return_value = tool_config
+
+        manager = TmuxManager(mock_config)
+
+        with patch("agenttree.tmux.session_exists", return_value=False):
+            with patch("agenttree.tmux.create_session") as mock_create:
+                with patch("agenttree.tmux.wait_for_prompt", return_value=False):
+                    manager.start_controller(
+                        session_name="testproject-controller-000",
+                        repo_path=tmp_path,
+                        tool_name="custom",
+                    )
+
+        # Verify the AI command was used
+        mock_create.assert_called_once()
+        call_args = mock_create.call_args[0]
+        assert call_args[2] == "custom-ai-tool --special-flag"
+
+
+class TestSaveTmuxHistoryToFile:
+    """Tests for save_tmux_history_to_file function."""
+
+    def test_save_history_when_session_does_not_exist(self, tmp_path: Path) -> None:
+        """Should return False when tmux session doesn't exist."""
+        output_file = tmp_path / "history.log"
+
+        with patch("agenttree.tmux.session_exists", return_value=False):
+            result = save_tmux_history_to_file("nonexistent-session", output_file, "implement")
+
+        assert result is False
+        assert not output_file.exists()
+
+    def test_save_history_when_capture_fails(self, tmp_path: Path) -> None:
+        """Should return False when tmux capture-pane fails."""
+        output_file = tmp_path / "history.log"
+
+        with patch("agenttree.tmux.session_exists", return_value=True):
+            with patch("subprocess.run", side_effect=subprocess.CalledProcessError(1, "tmux")):
+                result = save_tmux_history_to_file("test-session", output_file, "implement")
+
+        assert result is False
+        assert not output_file.exists()
+
+    def test_save_history_when_capture_is_empty(self, tmp_path: Path) -> None:
+        """Should return False when captured history is empty."""
+        output_file = tmp_path / "history.log"
+        mock_result = MagicMock()
+        mock_result.stdout = "   \n\n  "  # Whitespace only
+
+        with patch("agenttree.tmux.session_exists", return_value=True):
+            with patch("subprocess.run", return_value=mock_result):
+                result = save_tmux_history_to_file("test-session", output_file, "implement")
+
+        assert result is False
+        assert not output_file.exists()
+
+    def test_save_history_creates_file_with_content(self, tmp_path: Path) -> None:
+        """Should create file with history content and timestamp header."""
+        output_file = tmp_path / "history.log"
+        mock_result = MagicMock()
+        mock_result.stdout = "$ echo hello\nhello\n$ agenttree next\n"
+
+        with patch("agenttree.tmux.session_exists", return_value=True):
+            with patch("subprocess.run", return_value=mock_result):
+                result = save_tmux_history_to_file("test-session", output_file, "implement")
+
+        assert result is True
+        assert output_file.exists()
+
+        content = output_file.read_text()
+        assert "Stage: implement" in content
+        assert "Captured:" in content
+        assert "$ echo hello" in content
+        assert "$ agenttree next" in content
+
+    def test_save_history_appends_to_existing_file(self, tmp_path: Path) -> None:
+        """Should append to existing file instead of overwriting."""
+        output_file = tmp_path / "history.log"
+        output_file.write_text("Previous content\n")
+
+        mock_result = MagicMock()
+        mock_result.stdout = "New history content\n"
+
+        with patch("agenttree.tmux.session_exists", return_value=True):
+            with patch("subprocess.run", return_value=mock_result):
+                result = save_tmux_history_to_file("test-session", output_file, "define")
+
+        assert result is True
+        content = output_file.read_text()
+        assert "Previous content" in content
+        assert "New history content" in content
+        assert "Stage: define" in content
+
+    def test_save_history_creates_parent_directories(self, tmp_path: Path) -> None:
+        """Should create parent directories if they don't exist."""
+        output_file = tmp_path / "nested" / "dir" / "history.log"
+        mock_result = MagicMock()
+        mock_result.stdout = "History content\n"
+
+        with patch("agenttree.tmux.session_exists", return_value=True):
+            with patch("subprocess.run", return_value=mock_result):
+                result = save_tmux_history_to_file("test-session", output_file, "plan")
+
+        assert result is True
+        assert output_file.exists()
+        assert "History content" in output_file.read_text()
+
+    def test_save_history_includes_substage_in_header(self, tmp_path: Path) -> None:
+        """Should include substage if provided in stage string."""
+        output_file = tmp_path / "history.log"
+        mock_result = MagicMock()
+        mock_result.stdout = "History content\n"
+
+        with patch("agenttree.tmux.session_exists", return_value=True):
+            with patch("subprocess.run", return_value=mock_result):
+                result = save_tmux_history_to_file("test-session", output_file, "define.refine")
+
+        assert result is True
+        content = output_file.read_text()
+        assert "Stage: define.refine" in content
+
+    def test_save_history_uses_full_scrollback_buffer(self, tmp_path: Path) -> None:
+        """Should use '-' flag to capture full scrollback buffer."""
+        output_file = tmp_path / "history.log"
+        mock_result = MagicMock()
+        mock_result.stdout = "History content\n"
+
+        with patch("agenttree.tmux.session_exists", return_value=True):
+            with patch("subprocess.run", return_value=mock_result) as mock_run:
+                save_tmux_history_to_file("test-session", output_file, "implement")
+
+        # Verify tmux capture-pane was called with -S - for full history
+        mock_run.assert_called_once()
+        call_args = mock_run.call_args[0][0]
+        assert "tmux" in call_args
+        assert "capture-pane" in call_args
+        assert "-S" in call_args
+        assert "-" in call_args  # Full scrollback

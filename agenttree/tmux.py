@@ -110,7 +110,44 @@ def send_keys(session_name: str, keys: str, submit: bool = True) -> None:
         )
 
 
-def send_message(session_name: str, message: str) -> bool:
+def is_claude_running(session_name: str) -> bool:
+    """Check if Claude CLI is running in a tmux session.
+
+    Looks for the Claude prompt character in the pane content.
+    This distinguishes between "tmux session exists" and "Claude is actually running".
+
+    Args:
+        session_name: Name of the tmux session
+
+    Returns:
+        True if Claude CLI appears to be running (prompt visible)
+    """
+    if not session_exists(session_name):
+        return False
+
+    # Check recent pane content for Claude prompt
+    pane_content = capture_pane(session_name, lines=30)
+
+    # Look for Claude prompt at end of content (recent lines)
+    # Claude CLI shows "❯" when ready for input
+    # Also check it's not at a shell prompt (➜ or $ at start of line)
+    lines = pane_content.strip().split('\n')
+
+    for line in reversed(lines[-10:]):  # Check last 10 non-empty lines
+        line = line.strip()
+        if not line:
+            continue
+        # Claude prompt
+        if line.startswith('❯') or '❯' in line:
+            return True
+        # Shell prompts indicate Claude exited
+        if line.startswith('➜') or line.startswith('$') or line.endswith('$'):
+            return False
+
+    return False
+
+
+def send_message(session_name: str, message: str, check_claude: bool = True) -> str:
     """Send a message to a tmux session if it's alive.
 
     This is the preferred way to send messages to agents - it checks
@@ -119,18 +156,25 @@ def send_message(session_name: str, message: str) -> bool:
     Args:
         session_name: Name of the tmux session
         message: Message to send
+        check_claude: If True, verify Claude CLI is running (not just tmux session)
 
     Returns:
-        True if message was sent, False if session doesn't exist
+        "sent" if message was sent successfully
+        "no_session" if tmux session doesn't exist
+        "claude_exited" if session exists but Claude CLI isn't running
+        "error" if send failed
     """
     if not session_exists(session_name):
-        return False
+        return "no_session"
+
+    if check_claude and not is_claude_running(session_name):
+        return "claude_exited"
 
     try:
         send_keys(session_name, message, submit=True)
-        return True
+        return "sent"
     except subprocess.CalledProcessError:
-        return False
+        return "error"
 
 
 def attach_session(session_name: str) -> None:
@@ -162,6 +206,58 @@ def capture_pane(session_name: str, lines: int = 50) -> str:
         return result.stdout
     except subprocess.CalledProcessError:
         return ""
+
+
+def save_tmux_history_to_file(session_name: str, output_path: Path, stage: str) -> bool:
+    """Save tmux session history to a file with timestamp header.
+
+    Captures the full scrollback buffer and appends it to the output file.
+
+    Args:
+        session_name: Name of the tmux session
+        output_path: Path to the output file (e.g., issue_dir/tmux_history.log)
+        stage: Current stage name for the header
+
+    Returns:
+        True if history was saved, False if session doesn't exist or capture failed
+    """
+    from datetime import datetime
+
+    if not session_exists(session_name):
+        return False
+
+    # Capture full scrollback buffer (use - for all history)
+    try:
+        result = subprocess.run(
+            ["tmux", "capture-pane", "-t", session_name, "-p", "-S", "-"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        history = result.stdout
+    except subprocess.CalledProcessError:
+        return False
+
+    if not history.strip():
+        return False
+
+    # Create timestamp header
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    header = f"\n{'='*60}\n"
+    header += f"Stage: {stage}\n"
+    header += f"Captured: {timestamp}\n"
+    header += f"{'='*60}\n\n"
+
+    # Ensure parent directory exists
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Append to file
+    with open(output_path, "a") as f:
+        f.write(header)
+        f.write(history)
+        f.write("\n")
+
+    return True
 
 
 def wait_for_prompt(
@@ -385,7 +481,9 @@ class TmuxManager:
         worktree_path: Path,
         tool_name: str,
         container_runtime: "ContainerRuntime",
-        model: Optional[str] = None,
+        model: str | None = None,
+        agent_host: str = "agent",
+        has_merge_conflicts: bool = False,
     ) -> None:
         """Start an issue-bound agent in a container within a tmux session.
 
@@ -396,6 +494,8 @@ class TmuxManager:
             tool_name: Name of the AI tool to use
             container_runtime: Container runtime instance
             model: Model to use (defaults to config.default_model if not specified)
+            agent_host: Agent host type for the stage (e.g., "agent", "review")
+            has_merge_conflicts: Whether there are unresolved merge conflicts
         """
         # Kill existing session if it exists
         if session_exists(session_name):
@@ -409,11 +509,23 @@ class TmuxManager:
 
         # Build container command with resolved model
         resolved_model = model or self.config.default_model
+
+        # Calculate port for dev server if serve command is configured
+        port = None
+        if self.config.commands.get("serve"):
+            try:
+                issue_num = int(issue_id)
+                port = self.config.get_port_for_agent(issue_num)
+            except (ValueError, TypeError):
+                pass  # Skip port exposure if issue_id is not a valid number
+
         container_cmd = container_runtime.build_run_command(
             worktree_path=worktree_path,
             ai_tool=tool_name,
             dangerous=True,  # Safe because we're in a container
             model=resolved_model,
+            agent_host=agent_host,
+            port=port,
         )
 
         # Join command for shell execution
@@ -425,10 +537,56 @@ class TmuxManager:
         # Wait for Claude CLI prompt before sending startup message
         if wait_for_prompt(session_name, prompt_char="❯", timeout=30.0):
             # Build issue-specific startup prompt
+            if has_merge_conflicts:
+                startup_prompt = (
+                    f"You are working on issue #{issue_id}. "
+                    f"IMPORTANT: We merged latest main and there are MERGE CONFLICTS. "
+                    f"Run 'git status' to see conflicted files and resolve them first before proceeding. "
+                    f"Then read your task: agenttree status --issue {issue_id}"
+                )
+            else:
+                startup_prompt = (
+                    f"You are working on issue #{issue_id}. "
+                    f"Read your task: cat _agenttree/issues/{issue_id}-*/problem.md && "
+                    f"agenttree status --issue {issue_id}"
+                )
+            send_keys(session_name, startup_prompt)
+
+    def start_controller(
+        self,
+        session_name: str,
+        repo_path: Path,
+        tool_name: str,
+    ) -> None:
+        """Start the controller agent on the host (not in a container).
+
+        The controller runs on the main branch and orchestrates other agents.
+
+        Args:
+            session_name: Tmux session name (typically {project}-issue-000)
+            repo_path: Path to the repository root
+            tool_name: Name of the AI tool to use
+        """
+        # Kill existing session if it exists
+        if session_exists(session_name):
+            kill_session(session_name)
+
+        # Get tool config
+        tool_config = self.config.get_tool_config(tool_name)
+
+        # Build command to run the AI tool directly (not in container)
+        # Controller runs on the host with full access
+        ai_command = tool_config.command
+
+        # Create tmux session running the AI tool
+        create_session(session_name, repo_path, ai_command)
+
+        # Wait for prompt before sending startup message
+        if wait_for_prompt(session_name, prompt_char="❯", timeout=30.0):
+            # Load controller instructions
             startup_prompt = (
-                f"You are working on issue #{issue_id}. "
-                f"Read your task: cat _agenttree/issues/{issue_id}-*/problem.md && "
-                f"agenttree status --issue {issue_id}"
+                "You are the Controller agent for this AgentTree project. "
+                "Read your instructions: cat _agenttree/skills/controller.md && agenttree status"
             )
             send_keys(session_name, startup_prompt)
 
@@ -440,14 +598,20 @@ class TmuxManager:
         """
         kill_session(session_name)
 
-    def send_message_to_issue(self, session_name: str, message: str) -> None:
+    def send_message_to_issue(self, session_name: str, message: str) -> str:
         """Send a message to an issue-bound agent.
 
         Args:
             session_name: Tmux session name
             message: Message to send
+
+        Returns:
+            "sent" if message was sent successfully
+            "no_session" if tmux session doesn't exist
+            "claude_exited" if session exists but Claude CLI isn't running
+            "error" if send failed
         """
-        send_keys(session_name, message)
+        return send_message(session_name, message, check_claude=True)
 
     def attach_to_issue(self, session_name: str) -> None:
         """Attach to an issue-bound agent's tmux session.

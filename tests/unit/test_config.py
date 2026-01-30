@@ -67,6 +67,34 @@ class TestConfig:
         with pytest.raises(ValueError, match="Agent number 5 exceeds port range"):
             config.get_port_for_agent(5)
 
+    def test_get_port_for_issue(self) -> None:
+        """Test getting port number for an issue ID."""
+        config = Config(port_range="9001-9099")
+        assert config.get_port_for_issue("001") == 9001
+        assert config.get_port_for_issue("042") == 9042
+        assert config.get_port_for_issue("99") == 9099
+
+    def test_get_port_for_issue_custom_range(self) -> None:
+        """Test port for issue uses configured port_range."""
+        config = Config(port_range="8001-8009")
+        assert config.get_port_for_issue("1") == 8001
+        assert config.get_port_for_issue("5") == 8005
+
+    def test_get_port_for_issue_out_of_range(self) -> None:
+        """Test returns None when issue ID exceeds port range."""
+        config = Config(port_range="9001-9009")
+        # Issue 10 would need port 9010, exceeds range 9001-9009
+        assert config.get_port_for_issue("10") is None
+        # Issue 100 would need port 9100, exceeds range
+        assert config.get_port_for_issue("100") is None
+
+    def test_get_port_for_issue_invalid_id(self) -> None:
+        """Test returns None for non-numeric issue IDs."""
+        config = Config(port_range="9001-9099")
+        assert config.get_port_for_issue("invalid") is None
+        assert config.get_port_for_issue("abc") is None
+        assert config.get_port_for_issue("") is None
+
     def test_get_worktree_path(self) -> None:
         """Test getting worktree path for an agent."""
         config = Config(project="myapp", worktrees_dir="/tmp/worktrees")
@@ -531,3 +559,127 @@ stages:
         assert config.model_for("research") == "haiku"
         assert config.model_for("implement") == "opus"
         assert config.model_for("implement", "code_review") == "gpt-5.2"
+
+
+class TestRedirectOnlyStages:
+    """Tests for redirect_only stage behavior."""
+
+    def test_redirect_only_stage_skipped_in_normal_progression(self) -> None:
+        """Stages with redirect_only=True should be skipped in normal stage progression."""
+        from agenttree.config import Config, StageConfig
+
+        config = Config(
+            stages=[
+                StageConfig(name="implement"),
+                StageConfig(name="independent_code_review"),
+                StageConfig(name="address_independent_review", redirect_only=True),  # Should be skipped
+                StageConfig(name="implementation_review"),
+                StageConfig(name="accepted", terminal=True),
+            ]
+        )
+
+        # From independent_code_review, should go to implementation_review, skipping address_independent_review
+        next_stage, next_substage, is_terminal = config.get_next_stage("independent_code_review")
+        assert next_stage == "implementation_review"
+        assert next_substage is None
+        assert is_terminal is False
+
+    def test_redirect_only_stage_not_included_in_normal_order(self) -> None:
+        """redirect_only stages should be accessible but skipped during normal progression."""
+        from agenttree.config import Config, StageConfig
+
+        config = Config(
+            stages=[
+                StageConfig(name="implement"),
+                StageConfig(name="review", redirect_only=True),
+                StageConfig(name="accepted", terminal=True),
+            ]
+        )
+
+        # From implement, should go directly to accepted, skipping redirect_only review
+        # Note: get_next_stage returns (stage, substage, human_review), not is_terminal
+        next_stage, next_substage, human_review = config.get_next_stage("implement")
+        assert next_stage == "accepted"
+        # accepted is terminal but human_review is False
+        assert human_review is False
+        # Verify accepted is indeed terminal
+        assert config.is_terminal("accepted") is True
+
+    def test_redirect_only_stage_can_still_be_entered_directly(self) -> None:
+        """redirect_only stages should still be retrievable and configurable."""
+        from agenttree.config import Config, StageConfig
+
+        config = Config(
+            stages=[
+                StageConfig(name="implement"),
+                StageConfig(
+                    name="address_review",
+                    redirect_only=True,
+                    host="agent",
+                    output="response.md"
+                ),
+                StageConfig(name="accepted", terminal=True),
+            ]
+        )
+
+        # Stage should exist and be retrievable
+        stage = config.get_stage("address_review")
+        assert stage is not None
+        assert stage.redirect_only is True
+        assert stage.host == "agent"
+        assert stage.output == "response.md"
+
+    def test_multiple_consecutive_redirect_only_stages_skipped(self) -> None:
+        """Multiple consecutive redirect_only stages should all be skipped."""
+        from agenttree.config import Config, StageConfig
+
+        config = Config(
+            stages=[
+                StageConfig(name="implement"),
+                StageConfig(name="address_review1", redirect_only=True),
+                StageConfig(name="address_review2", redirect_only=True),
+                StageConfig(name="final_review"),
+                StageConfig(name="accepted", terminal=True),
+            ]
+        )
+
+        # From implement, should skip both redirect_only stages
+        next_stage, next_substage, is_terminal = config.get_next_stage("implement")
+        assert next_stage == "final_review"
+
+    def test_redirect_only_defaults_to_false(self) -> None:
+        """StageConfig redirect_only should default to False."""
+        from agenttree.config import StageConfig
+
+        stage = StageConfig(name="test")
+        assert stage.redirect_only is False
+
+
+class TestSaveTmuxHistoryConfig:
+    """Tests for save_tmux_history config option."""
+
+    def test_save_tmux_history_defaults_to_false(self) -> None:
+        """save_tmux_history should default to False."""
+        config = Config()
+        assert config.save_tmux_history is False
+
+    def test_save_tmux_history_can_be_enabled(self) -> None:
+        """save_tmux_history should be configurable to True."""
+        config = Config(save_tmux_history=True)
+        assert config.save_tmux_history is True
+
+    def test_save_tmux_history_from_yaml(self, tmp_path: Path) -> None:
+        """save_tmux_history should be loadable from YAML config."""
+        config_file = tmp_path / ".agenttree.yaml"
+        config_file.write_text("save_tmux_history: true")
+
+        config = load_config(tmp_path)
+        assert config.save_tmux_history is True
+
+    def test_save_tmux_history_false_from_yaml(self, tmp_path: Path) -> None:
+        """save_tmux_history: false should be loadable from YAML config."""
+        config_file = tmp_path / ".agenttree.yaml"
+        config_file.write_text("save_tmux_history: false")
+
+        config = load_config(tmp_path)
+        assert config.save_tmux_history is False

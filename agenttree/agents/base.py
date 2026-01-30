@@ -62,7 +62,7 @@ class BaseAgent(ABC):
 class ClaudeAgent(BaseAgent):
     """Agent adapter for Claude Code."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize Claude Code agent."""
         super().__init__(
             name="claude",
@@ -263,7 +263,7 @@ class CustomAgent(BaseAgent):
         return self.startup_prompt
 
 
-def get_agent(tool_name: str, **kwargs) -> BaseAgent:
+def get_agent(tool_name: str, **kwargs: str) -> BaseAgent:
     """Get an agent instance by name.
 
     Args:
