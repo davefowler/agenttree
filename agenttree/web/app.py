@@ -759,7 +759,7 @@ async def approve_issue(
     executes enter hooks. Only works from human review stages.
     """
     from agenttree.config import load_config
-    from agenttree.hooks import execute_exit_hooks, execute_enter_hooks, ValidationError
+    from agenttree.hooks import execute_exit_hooks, execute_enter_hooks, ValidationError, StageRedirect
 
     HUMAN_REVIEW_STAGES = ["plan_review", "implementation_review", "independent_code_review"]
 
@@ -780,6 +780,10 @@ async def approve_issue(
     # Execute exit hooks (validation)
     try:
         execute_exit_hooks(issue, issue.stage, issue.substage)
+    except StageRedirect as redirect:
+        # Redirect to a different stage instead of normal next stage
+        next_stage = redirect.target_stage
+        next_substage = None
     except ValidationError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

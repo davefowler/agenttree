@@ -87,6 +87,7 @@ class StageConfig(BaseModel):
     skill: Optional[str] = None   # Override skill file path
     human_review: bool = False    # Requires human approval to exit
     terminal: bool = False        # Cannot progress from here (accepted, not_doing)
+    redirect_only: bool = False   # Only reachable via StageRedirect, skipped in normal progression
     host: str = "agent"           # Who executes this stage: "agent" (in container) or "controller" (host)
     substages: Dict[str, SubstageConfig] = Field(default_factory=dict)
     pre_completion: list[dict] = Field(default_factory=list)  # Stage-level hooks before completing
@@ -532,14 +533,18 @@ class Config(BaseModel):
             except ValueError:
                 pass  # substage not found, move to next stage
 
-        # Move to next stage
+        # Move to next stage (skip redirect_only stages)
         stage_names = self.get_stage_names()
         try:
             stage_idx = stage_names.index(current_stage)
-            if stage_idx < len(stage_names) - 1:
-                next_stage_name = stage_names[stage_idx + 1]
+            # Look for next non-redirect_only stage
+            for next_idx in range(stage_idx + 1, len(stage_names)):
+                next_stage_name = stage_names[next_idx]
                 next_stage = self.get_stage(next_stage_name)
                 if next_stage:
+                    # Skip redirect_only stages in normal progression
+                    if next_stage.redirect_only:
+                        continue
                     next_substages = next_stage.substage_order()
                     next_substage = next_substages[0] if next_substages else None
                     return next_stage_name, next_substage, next_stage.human_review

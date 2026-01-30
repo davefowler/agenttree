@@ -47,6 +47,7 @@ from agenttree.hooks import (
     execute_exit_hooks,
     execute_enter_hooks,
     ValidationError,
+    StageRedirect,
     is_running_in_container,
     get_current_agent_host,
     can_agent_operate_in_stage,
@@ -2121,11 +2122,17 @@ def stage_next(issue_id: Optional[str], reassess: bool) -> None:
         console.print(f"[yellow]Already at final stage[/yellow]")
         return
 
-    # Execute exit hooks (can block with ValidationError)
+    # Execute exit hooks (can block with ValidationError or redirect with StageRedirect)
     from_stage = issue.stage
     from_substage = issue.substage
     try:
         execute_exit_hooks(issue, from_stage, from_substage)
+    except StageRedirect as redirect:
+        # Redirect to a different stage instead of normal next stage
+        console.print(f"[yellow]Redirecting to {redirect.target_stage}: {redirect.reason}[/yellow]")
+        next_stage = redirect.target_stage
+        next_substage = None
+        is_human_review = False  # Redirect target is typically not human review
     except ValidationError as e:
         console.print(f"[red]Cannot proceed: {e}[/red]")
         sys.exit(1)
@@ -2222,6 +2229,11 @@ def approve_issue(issue_id: str, skip_approval: bool) -> None:
     from_substage = issue.substage
     try:
         execute_exit_hooks(issue, from_stage, from_substage, skip_pr_approval=skip_approval)
+    except StageRedirect as redirect:
+        # Redirect to a different stage instead of normal next stage
+        console.print(f"[yellow]Redirecting to {redirect.target_stage}: {redirect.reason}[/yellow]")
+        next_stage = redirect.target_stage
+        next_substage = None
     except ValidationError as e:
         console.print(f"[red]Cannot approve: {e}[/red]")
         sys.exit(1)

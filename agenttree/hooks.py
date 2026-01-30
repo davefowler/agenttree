@@ -985,6 +985,18 @@ def run_builtin_validator(
                     else:
                         context["latest_independent_review"] = ""
 
+                    # Add latest_independent_review_response - for re-reviews to see implementer's response
+                    versioned_responses = sorted(issue_dir.glob("independent_review_response_v*.md"))
+                    if versioned_responses:
+                        context["latest_independent_review_response"] = versioned_responses[-1].read_text()
+                    elif (issue_dir / "independent_review_response.md").exists():
+                        context["latest_independent_review_response"] = (issue_dir / "independent_review_response.md").read_text()
+                    else:
+                        context["latest_independent_review_response"] = ""
+
+                    # Count review iterations for context
+                    context["review_iteration"] = len(versioned_reviews) + 1
+
                 # Add git diff stats for review templates
                 git_stats = get_git_diff_stats()
                 context["files_changed"] = git_stats['files_changed']

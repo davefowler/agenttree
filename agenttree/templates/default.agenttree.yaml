@@ -192,7 +192,9 @@ stages:
           on_fail_stage: address_independent_review
 
   # Stage where implementing agent addresses review feedback
+  # Only reachable via StageRedirect when reviewer doesn't approve
   - name: address_independent_review
+    redirect_only: true  # Not in normal progression, only via redirect
     host: agent  # Back to the implementing agent
     output: independent_review_response.md
     skill: address_independent_review.md
@@ -207,8 +209,8 @@ stages:
     pre_completion:
       - loop_check:
           count_files: independent_review_v*.md
-          max: 3
-          error: "Review loop exceeded 3 iterations. Escalating to human review."
+          max: 5
+          error: "Review loop exceeded 5 iterations. Escalating to human review."
       - section_check:
           file: independent_review_response.md
           section: Changes Made
