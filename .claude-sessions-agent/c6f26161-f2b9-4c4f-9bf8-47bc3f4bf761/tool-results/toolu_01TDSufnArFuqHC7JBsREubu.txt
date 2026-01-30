@@ -1,0 +1,2468 @@
+     1→"""Unified hook system for AgentTree.
+     2→
+     3→This module provides a config-driven hook system used by both:
+     4→1. **Stage hooks** - Validation/actions during workflow stage transitions
+     5→2. **Controller hooks** - Post-sync operations for the controller
+     6→
+     7→=============================================================================
+     8→HOOK CONFIGURATION
+     9→=============================================================================
+    10→
+    11→Hooks are configured in .agenttree.yaml. Each hook is a dict with the hook
+    12→type as a key, and optional parameters as the value.
+    13→
+    14→Built-in Validators (quick reference):
+    15→--------------------------------------
+    16→- file_exists: Check that a file exists
+    17→- has_commits: Check that there are unpushed commits
+    18→- field_check: Check a YAML field value meets min/max threshold
+    19→- section_check: Check a markdown section (empty, not_empty, all_checked)
+    20→- wrapup_verified: Check Implementation Wrapup checklist is complete
+    21→- pr_approved: Check that a PR is approved
+    22→- ci_check: Check CI status for a PR
+    23→
+    24→Basic Format:
+    25→-------------
+    26→    # Simple hook (no params)
+    27→    - file_exists: "review.md"
+    28→
+    29→    # Hook with parameters
+    30→    - field_check:
+    31→        file: review.md
+    32→        path: scores.average
+    33→        min: 7
+    34→
+    35→    # Hook with common options
+    36→    - run: "npm test"
+    37→      optional: true
+    38→      context: "Run tests"
+    39→      timeout: 120
+    40→
+    41→=============================================================================
+    42→COMMON HOOK OPTIONS (available for all hooks)
+    43→=============================================================================
+    44→
+    45→optional: bool (default: false)
+    46→    If true, hook failure logs a warning but doesn't block the transition.
+    47→
+    48→context: str
+    49→    Human-readable description shown in logs/errors.
+    50→
+    51→host_only: bool (default: false)
+    52→    Only run this hook on the host (controller), skip in containers.
+    53→
+    54→timeout: int (default: 30)
+    55→    Timeout in seconds for command hooks.
+    56→
+    57→min_interval_s: int
+    58→    Rate limiting: minimum seconds between runs. Hook is skipped if
+    59→    run more recently than this interval.
+    60→
+    61→run_every_n_syncs: int
+    62→    Rate limiting: only run every Nth sync. Useful for expensive operations.
+    63→
+    64→=============================================================================
+    65→BUILT-IN VALIDATORS (return errors if validation fails)
+    66→=============================================================================
+    67→
+    68→file_exists: str
+    69→    Check that a file exists in the issue directory.
+    70→
+    71→    Example:
+    72→        - file_exists: "spec.md"
+    73→
+    74→has_commits: {}
+    75→    Check that there are unpushed commits on the current branch.
+    76→
+    77→    Example:
+    78→        - has_commits: {}
+    79→
+    80→field_check:
+    81→    Check a YAML field in a markdown file meets min/max threshold.
+    82→    Looks for ```yaml blocks in the file.
+    83→
+    84→    Parameters:
+    85→        file: str - File to check
+    86→        path: str - Dot-separated path to field (e.g., "scores.average")
+    87→        min: float - Minimum value (optional)
+    88→        max: float - Maximum value (optional)
+    89→
+    90→    Example:
+    91→        - field_check:
+    92→            file: review.md
+    93→            path: scores.average
+    94→            min: 7
+    95→
+    96→section_check:
+    97→    Check a markdown section's content.
+    98→
+    99→    Parameters:
+   100→        file: str - File to check
+   101→        section: str - Section header name (without #)
+   102→        expect: str - One of:
+   103→            - "empty" - Section must be empty or contain only comments
+   104→            - "not_empty" - Section must have content
+   105→            - "all_checked" - All checkboxes must be checked [x]
+   106→
+   107→    Example:
+   108→        - section_check:
+   109→            file: review.md
+   110→            section: Self-Review Checklist
+   111→            expect: all_checked
+   112→
+   113→has_list_items:
+   114→    Check that a section has bullet list items (- or *).
+   115→
+   116→    Parameters:
+   117→        file: str - File to check
+   118→        section: str - Section header name
+   119→        min: int - Minimum number of items (default: 1)
+   120→
+   121→    Example:
+   122→        - has_list_items:
+   123→            file: spec.md
+   124→            section: Implementation Steps
+   125→
+   126→min_words:
+   127→    Check that a section has a minimum word count.
+   128→
+   129→    Parameters:
+   130→        file: str - File to check
+   131→        section: str - Section header name
+   132→        min: int - Minimum word count
+   133→
+   134→    Example:
+   135→        - min_words:
+   136→            file: problem.md
+   137→            section: Context
+   138→            min: 50
+   139→
+   140→contains:
+   141→    Check that a section contains one of the specified values.
+   142→
+   143→    Parameters:
+   144→        file: str - File to check
+   145→        section: str - Section header name
+   146→        values: list[str] - Acceptable values
+   147→
+   148→    Example:
+   149→        - contains:
+   150→            file: spec_review.md
+   151→            section: Verdict
+   152→            values: ["Ready for implementation", "Approved"]
+   153→
+   154→pr_approved: {}
+   155→    Check that the PR is approved (requires pr_number in context).
+   156→
+   157→    Example:
+   158→        - pr_approved: {}
+   159→
+   160→=============================================================================
+   161→BUILT-IN ACTIONS (perform side effects)
+   162→=============================================================================
+   163→
+   164→run: str
+   165→    Execute a shell command. Supports template variables:
+   166→    {{issue_id}}, {{issue_title}}, {{branch}}, {{stage}}, {{substage}},
+   167→    {{pr_number}}, {{pr_url}}
+   168→
+   169→    Example:
+   170→        - run: "npm test"
+   171→          context: "Run tests"
+   172→          timeout: 120
+   173→          optional: true
+   174→
+   175→create_file:
+   176→    Create a file from a template.
+   177→
+   178→    Parameters:
+   179→        template: str - Template file name (from _agenttree/templates/)
+   180→        dest: str - Destination file name in issue directory
+   181→
+   182→    Example:
+   183→        - create_file:
+   184→            template: spec.md
+   185→            dest: spec.md
+   186→
+   187→create_pr: {}
+   188→    Create a pull request for the issue's branch. Host-only.
+   189→
+   190→    Example:
+   191→        - create_pr: {}
+   192→
+   193→merge_pr: {}
+   194→    Merge the PR (using configured merge strategy). Host-only.
+   195→
+   196→    Example:
+   197→        - merge_pr: {}
+   198→
+   199→rebase: {}
+   200→    Rebase the issue branch onto main. Host-only.
+   201→
+   202→    Example:
+   203→        - rebase: {}
+   204→
+   205→cleanup_agent: {}
+   206→    Clean up the agent container/worktree after acceptance. Host-only.
+   207→
+   208→    Example:
+   209→        - cleanup_agent: {}
+   210→
+   211→start_blocked_issues: {}
+   212→    Start issues that were blocked by this issue. Host-only.
+   213→
+   214→    Example:
+   215→        - start_blocked_issues: {}
+   216→
+   217→=============================================================================
+   218→CONTROLLER HOOKS (run after sync operations)
+   219→=============================================================================
+   220→
+   221→Controller hooks run after each sync and support rate limiting.
+   222→Configure in .agenttree.yaml under controller_hooks:
+   223→
+   224→    controller_hooks:
+   225→      post_sync:
+   226→        - push_pending_branches: {}
+   227→        - check_controller_stages: {}
+   228→        - check_merged_prs: {}
+   229→        - check_ci_status:
+   230→            min_interval_s: 60
+   231→            run_every_n_syncs: 5
+   232→
+   233→Built-in controller hooks:
+   234→    push_pending_branches - Push any local branches with unpushed commits
+   235→    check_controller_stages - Process issues in controller-owned stages
+   236→    check_custom_agent_stages - Spawn custom agents for issues in custom agent stages
+   237→    check_merged_prs - Detect externally merged PRs and update issue status
+   238→
+   239→Custom commands work here too:
+   240→    - notify_slack:
+   241→        command: "curl -X POST $SLACK_WEBHOOK"
+   242→        min_interval_s: 300
+   243→
+   244→=============================================================================
+   245→RATE LIMITING
+   246→=============================================================================
+   247→
+   248→Rate limiting prevents hooks from running too frequently. Useful for:
+   249→- Expensive operations (CI status checks)
+   250→- External API calls (notifications, webhooks)
+   251→- Operations that don't need to run every sync
+   252→
+   253→Options:
+   254→    min_interval_s: Minimum seconds since last run
+   255→    run_every_n_syncs: Only run every Nth sync (controller hooks only)
+   256→
+   257→Both can be combined - both conditions must pass for hook to run.
+   258→
+   259→State is stored in _agenttree/.hook_state.yaml
+   260→
+   261→=============================================================================
+   262→USAGE
+   263→=============================================================================
+   264→
+   265→Stage hooks (for workflow transitions):
+   266→    from agenttree.hooks import execute_exit_hooks, execute_enter_hooks
+   267→
+   268→    # Pre-completion hooks (validation, can block)
+   269→    execute_exit_hooks(issue, stage, substage)
+   270→
+   271→    # Post-start hooks (setup, warnings only)
+   272→    execute_enter_hooks(issue, stage, substage)
+   273→
+   274→Controller hooks (for post-sync operations):
+   275→    from agenttree.controller_hooks import run_post_controller_hooks
+   276→
+   277→    run_post_controller_hooks(agents_dir)
+   278→
+   279→"""
+   280→
+   281→import re
+   282→import subprocess
+   283→from concurrent.futures import ThreadPoolExecutor
+   284→from pathlib import Path
+   285→from typing import Any, Dict, List, Optional
+   286→
+   287→from rich.console import Console
+   288→
+   289→from agenttree.issues import (
+   290→    Issue,
+   291→    DEFINE,
+   292→    RESEARCH,
+   293→    PLAN,
+   294→    IMPLEMENT,
+   295→    ACCEPTED,
+   296→)
+   297→from agenttree.config import load_config
+   298→
+   299→console = Console()
+   300→
+   301→
+   302→class ValidationError(Exception):
+   303→    """Raised when pre-hook validation fails to block a stage transition."""
+   304→
+   305→    pass
+   306→
+   307→
+   308→class StageRedirect(Exception):
+   309→    """Raised when a hook failure should redirect to a different stage instead of blocking.
+   310→
+   311→    Used with on_fail_stage option in hooks.
+   312→    """
+   313→
+   314→    def __init__(self, target_stage: str, reason: str = ""):
+   315→        self.target_stage = target_stage
+   316→        self.reason = reason
+   317→        super().__init__(f"Redirect to stage '{target_stage}': {reason}")
+   318→
+   319→
+   320→# =============================================================================
+   321→# Hook Type Registry
+   322→# =============================================================================
+   323→
+   324→# All known hook types (validators, actions, and controller hooks)
+   325→HOOK_TYPES = {
+   326→    # Validators (return errors if validation fails)
+   327→    "file_exists", "has_commits", "field_check", "section_check", "pr_approved",
+   328→    "min_words", "has_list_items", "contains", "ci_check", "wrapup_verified",
+   329→    "checkbox_checked",  # Review loop: check if checkbox is marked
+   330→    # Actions (perform side effects)
+   331→    "create_file", "create_pr", "merge_pr", "run", "rebase",
+   332→    "cleanup_agent", "start_blocked_issues",
+   333→    "version_file",  # Review loop: rename file to versioned name
+   334→    "loop_check",  # Review loop: count iterations and fail if max exceeded
+   335→    "rollback",  # Review loop: programmatic rollback to earlier stage
+   336→    # Controller hooks (run on post-sync)
+   337→    "push_pending_branches", "check_controller_stages", "check_merged_prs",
+   338→    "check_ci_status", "check_custom_agent_stages",
+   339→}
+   340→
+   341→# =============================================================================
+   342→# Base Hook Options (inherited by ALL hooks)
+   343→# =============================================================================
+   344→#
+   345→# Every hook, regardless of type, supports these universal options.
+   346→# These are handled by run_hook() before delegating to type-specific execution.
+   347→#
+   348→# Example config showing base options:
+   349→#
+   350→#     - section_check:           # <-- hook type with specific params
+   351→#         file: spec.md
+   352→#         section: Approach
+   353→#         expect: not_empty
+   354→#       optional: true           # <-- base option: don't block on failure
+   355→#       context: "Check spec"    # <-- base option: human-readable name
+   356→#       min_interval_s: 60       # <-- base option: rate limiting
+   357→#
+   358→BASE_HOOK_OPTIONS = {
+   359→    # Execution control
+   360→    "optional": False,      # bool: If true, failure logs warning but doesn't block
+   361→    "context": None,        # str: Human-readable description for logs/errors
+   362→    "host_only": False,     # bool: Only run on host (controller), skip in containers
+   363→
+   364→    # Timeouts (for run/command hooks)
+   365→    "timeout": 30,          # int: Timeout in seconds for command execution
+   366→
+   367→    # Rate limiting (prevents running too frequently)
+   368→    "min_interval_s": None,     # int: Minimum seconds between runs
+   369→    "run_every_n_syncs": None,  # int: Only run every Nth sync (controller hooks)
+   370→}
+   371→
+   372→# Alias for backwards compatibility
+   373→COMMON_HOOK_OPTIONS = set(BASE_HOOK_OPTIONS.keys())
+   374→
+   375→
+   376→# =============================================================================
+   377→# Rate Limiting
+   378→# =============================================================================
+   379→
+   380→def check_rate_limit(
+   381→    hook_name: str,
+   382→    hook_config: Dict[str, Any],
+   383→    state: Dict[str, Any],
+   384→    sync_count: Optional[int] = None,
+   385→) -> tuple[bool, str]:
+   386→    """Check if a rate-limited hook should run.
+   387→
+   388→    All hooks support rate limiting via:
+   389→    - min_interval_s: Minimum seconds between runs
+   390→    - run_every_n_syncs: Only run every Nth sync (requires sync_count)
+   391→
+   392→    Args:
+   393→        hook_name: Identifier for this hook (used for state lookup)
+   394→        hook_config: Hook configuration with optional rate limit settings
+   395→        state: Hook state dict with last_run_at timestamps
+   396→        sync_count: Current sync count (for run_every_n_syncs)
+   397→
+   398→    Returns:
+   399→        Tuple of (should_run, reason)
+   400→    """
+   401→    from datetime import datetime, timezone
+   402→
+   403→    hook_state = state.get(hook_name, {})
+   404→
+   405→    # Check time-based rate limit
+   406→    min_interval = hook_config.get("min_interval_s")
+   407→    if min_interval:
+   408→        last_run = hook_state.get("last_run_at")
+   409→        if last_run:
+   410→            try:
+   411→                last_run_dt = datetime.fromisoformat(last_run.replace("Z", "+00:00"))
+   412→                elapsed = (datetime.now(timezone.utc) - last_run_dt).total_seconds()
+   413→                if elapsed < min_interval:
+   414→                    return False, f"Rate limited: {elapsed:.0f}s < {min_interval}s"
+   415→            except (ValueError, TypeError):
+   416→                pass  # Invalid timestamp, allow run
+   417→
+   418→    # Check count-based rate limit
+   419→    run_every_n = hook_config.get("run_every_n_syncs")
+   420→    if run_every_n and sync_count is not None:
+   421→        if sync_count % run_every_n != 0:
+   422→            return False, f"Skipped: sync #{sync_count} (runs every {run_every_n})"
+   423→
+   424→    return True, "Running"
+   425→
+   426→
+   427→def update_hook_state(
+   428→    hook_name: str,
+   429→    state: Dict[str, Any],
+   430→    success: bool = True,
+   431→    error: Optional[str] = None,
+   432→) -> None:
+   433→    """Update hook state after running.
+   434→
+   435→    Args:
+   436→        hook_name: Identifier for this hook
+   437→        state: State dict to update in place
+   438→        success: Whether the hook succeeded
+   439→        error: Error message if failed
+   440→    """
+   441→    from datetime import datetime, timezone
+   442→
+   443→    if hook_name not in state:
+   444→        state[hook_name] = {}
+   445→
+   446→    hook_state = state[hook_name]
+   447→    hook_state["last_run_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+   448→    hook_state["run_count"] = hook_state.get("run_count", 0) + 1
+   449→    hook_state["last_success"] = success
+   450→
+   451→    if error:
+   452→        hook_state["last_error"] = error
+   453→    elif "last_error" in hook_state:
+   454→        del hook_state["last_error"]
+   455→
+   456→
+   457→def load_hook_state(agents_dir: Path) -> Dict[str, Any]:
+   458→    """Load hook state from _agenttree/.hook_state.yaml
+   459→
+   460→    Args:
+   461→        agents_dir: Path to _agenttree directory
+   462→
+   463→    Returns:
+   464→        State dict, empty if file doesn't exist
+   465→    """
+   466→    import yaml
+   467→
+   468→    state_file = agents_dir / ".hook_state.yaml"
+   469→    if state_file.exists():
+   470→        try:
+   471→            with open(state_file) as f:
+   472→                data = yaml.safe_load(f)
+   473→                return data if isinstance(data, dict) else {}
+   474→        except Exception:
+   475→            return {}
+   476→    return {}
+   477→
+   478→
+   479→def save_hook_state(agents_dir: Path, state: Dict[str, Any]) -> None:
+   480→    """Save hook state to _agenttree/.hook_state.yaml
+   481→
+   482→    Args:
+   483→        agents_dir: Path to _agenttree directory
+   484→        state: State dict to save
+   485→    """
+   486→    import yaml
+   487→
+   488→    state_file = agents_dir / ".hook_state.yaml"
+   489→    try:
+   490→        with open(state_file, "w") as f:
+   491→            yaml.dump(state, f, default_flow_style=False, sort_keys=False)
+   492→    except Exception as e:
+   493→        console.print(f"[yellow]Warning: Could not save hook state: {e}[/yellow]")
+   494→
+   495→
+   496→# =============================================================================
+   497→# Hook Parsing
+   498→# =============================================================================
+   499→
+   500→
+   501→def parse_hook(hook: Dict[str, Any]) -> tuple[str, Dict[str, Any]]:
+   502→    """Parse a hook configuration dict to extract hook type and parameters.
+   503→
+   504→    Supports both new format (hook type as key) and legacy format (type field).
+   505→
+   506→    New format examples:
+   507→        {"file_exists": "review.md"}
+   508→        {"field_check": {"file": "review.md", "path": "average", "min": 7}}
+   509→        {"run": "agenttree lint", "optional": True, "context": "Lint"}
+   510→        {"create_pr": {}}
+   511→        {"rebase": {}}
+   512→
+   513→    Legacy format (still supported):
+   514→        {"type": "file_exists", "file": "review.md"}
+   515→        {"command": "agenttree lint"}
+   516→
+   517→    Args:
+   518→        hook: Hook configuration dict
+   519→
+   520→    Returns:
+   521→        Tuple of (hook_type, parameters_dict)
+   522→    """
+   523→    # Legacy format: explicit "type" field
+   524→    if "type" in hook:
+   525→        hook_type = hook["type"]
+   526→        params = {k: v for k, v in hook.items() if k != "type"}
+   527→        return hook_type, params
+   528→
+   529→    # Legacy format: "command" field (now "run")
+   530→    if "command" in hook:
+   531→        params = {k: v for k, v in hook.items() if k != "command"}
+   532→        params["command"] = hook["command"]
+   533→        return "run", params
+   534→
+   535→    # New format: hook type is a key in the dict
+   536→    for key in hook:
+   537→        if key in HOOK_TYPES:
+   538→            value = hook[key]
+   539→            # Collect other keys as additional params (e.g., optional, context)
+   540→            extra_params = {k: v for k, v in hook.items() if k != key}
+   541→
+   542→            if isinstance(value, dict):
+   543→                # {"field_check": {"file": "review.md", "path": "average"}}
+   544→                return key, {**value, **extra_params}
+   545→            elif isinstance(value, str):
+   546→                # {"file_exists": "review.md"} or {"run": "agenttree lint"}
+   547→                if key == "run":
+   548→                    return key, {"command": value, **extra_params}
+   549→                else:
+   550→                    return key, {"file": value, **extra_params}
+   551→            elif value is None or value == {}:
+   552→                # {"create_pr": {}} or {"create_pr": null}
+   553→                return key, extra_params
+   554→            else:
+   555→                return key, {"value": value, **extra_params}
+   556→
+   557→    # Unknown hook type
+   558→    return "unknown", hook
+   559→
+   560→
+   561→def _action_create_pr(issue_dir: Path, issue_id: str = "", issue_title: str = "", branch: str = "", **kwargs: Any) -> None:
+   562→    """Create PR for an issue (controller stage hook - runs on host).
+   563→
+   564→    This hook runs on host for controller stages (host: controller).
+   565→    Agents can't push, so PR creation is handled by the host.
+   566→
+   567→    Workflow:
+   568→    1. Agent advances to implementation_review (does nothing - controller stage)
+   569→    2. Host sync calls check_controller_stages()
+   570→    3. For issues in controller stages, host runs post_start hooks
+   571→    4. This hook (create_pr) calls ensure_pr_for_issue() to create the PR
+   572→    """
+   573→    if not issue_id:
+   574→        console.print(f"[yellow]create_pr hook: no issue_id provided[/yellow]")
+   575→        return
+   576→
+   577→    # Delegate to ensure_pr_for_issue which handles the actual PR creation
+   578→    ensure_pr_for_issue(issue_id)
+   579→
+   580→
+   581→def _action_merge_pr(pr_number: Optional[int], **kwargs: Any) -> None:
+   582→    """Merge PR for an issue (action hook helper)."""
+   583→    if pr_number is None:
+   584→        console.print("[yellow]No PR to merge[/yellow]")
+   585→        return
+   586→
+   587→    # If in container, skip - host will handle
+   588→    if is_running_in_container():
+   589→        console.print(f"[yellow]Running in container - PR will be merged by host[/yellow]")
+   590→        return
+   591→
+   592→    from agenttree.config import load_config
+   593→    from agenttree.github import merge_pr
+   594→
+   595→    config = load_config()
+   596→
+   597→    console.print(f"[dim]Merging PR #{pr_number}...[/dim]")
+   598→    merge_pr(pr_number, method=config.merge_strategy)
+   599→    console.print(f"[green]✓ PR #{pr_number} merged[/green]")
+   600→
+   601→    # Run post_merge hooks
+   602→    if config.hooks.post_merge:
+   603→        run_host_hooks(config.hooks.post_merge, {
+   604→            "issue_id": kwargs.get("issue_id", ""),
+   605→            "pr_number": pr_number,
+   606→            "branch": kwargs.get("branch", ""),
+   607→        })
+   608→
+   609→
+   610→def get_pr_approval_status(pr_number: int) -> bool:
+   611→    """Check if a PR is approved.
+   612→
+   613→    Args:
+   614→        pr_number: GitHub PR number
+   615→
+   616→    Returns:
+   617→        True if PR is approved, False otherwise
+   618→    """
+   619→    try:
+   620→        from agenttree.github import is_pr_approved
+   621→        return is_pr_approved(pr_number)
+   622→    except Exception:
+   623→        return False
+   624→
+   625→
+   626→def run_builtin_validator(
+   627→    issue_dir: Path,
+   628→    hook: Dict[str, Any],
+   629→    pr_number: Optional[int] = None,
+   630→    **kwargs: Any
+   631→) -> List[str]:
+   632→    """Run a built-in validator and return errors.
+   633→
+   634→    Args:
+   635→        issue_dir: Path to issue directory (worktree)
+   636→        hook: Hook configuration dict (new or legacy format)
+   637→        pr_number: Optional PR number for pr_approved validator
+   638→        **kwargs: Additional context (unused for now)
+   639→
+   640→    Returns:
+   641→        List of error messages (empty if validation passes)
+   642→    """
+   643→    import yaml
+   644→
+   645→    hook_type, params = parse_hook(hook)
+   646→    errors: List[str] = []
+   647→
+   648→    if hook_type == "file_exists":
+   649→        file_path = issue_dir / params["file"]
+   650→        if not file_path.exists():
+   651→            errors.append(f"File '{params['file']}' does not exist")
+   652→
+   653→    elif hook_type == "has_commits":
+   654→        if not has_commits_to_push():
+   655→            errors.append(
+   656→                "No commits to push. Make code changes and commit them before proceeding."
+   657→            )
+   658→
+   659→    elif hook_type == "field_check":
+   660→        file_path = issue_dir / params["file"]
+   661→        if not file_path.exists():
+   662→            errors.append(f"File '{params['file']}' not found for field check")
+   663→        else:
+   664→            content = file_path.read_text()
+   665→            # Extract YAML from markdown code block
+   666→            yaml_match = re.search(r'```yaml\s*\n(.*?)```', content, re.DOTALL)
+   667→            if not yaml_match:
+   668→                errors.append(f"No YAML block found in {params['file']}")
+   669→            else:
+   670→                try:
+   671→                    data = yaml.safe_load(yaml_match.group(1))
+   672→                    # Navigate nested path like "scores.average"
+   673→                    path_parts = params["path"].split(".")
+   674→                    value = data
+   675→                    for part in path_parts:
+   676→                        if value is None or not isinstance(value, dict):
+   677→                            value = None
+   678→                            break
+   679→                        value = value.get(part)
+   680→
+   681→                    if value is None:
+   682→                        errors.append(f"Field '{params['path']}' not found in {params['file']}")
+   683→                    elif "min" in params and float(value) < params["min"]:
+   684→                        errors.append(
+   685→                            f"Field '{params['path']}' value {value} is below minimum {params['min']}"
+   686→                        )
+   687→                    elif "max" in params and float(value) > params["max"]:
+   688→                        errors.append(
+   689→                            f"Field '{params['path']}' value {value} is above maximum {params['max']}"
+   690→                        )
+   691→                except yaml.YAMLError as e:
+   692→                    errors.append(f"Failed to parse YAML in {params['file']}: {e}")
+   693→
+   694→    elif hook_type == "section_check":
+   695→        file_path = issue_dir / params["file"]
+   696→        if not file_path.exists():
+   697→            errors.append(f"File '{params['file']}' not found for section check")
+   698→        else:
+   699→            content = file_path.read_text()
+   700→            section = params["section"]
+   701→            expect = params["expect"]
+   702→
+   703→            # Find section content (between ## Section and next same-level header or end)
+   704→            # Includes subsections (###, ####) as part of the section content
+   705→            # The lookahead stops at "\n## " followed by a letter/word (not "#")
+   706→            pattern = rf'^##\s*{re.escape(section)}.*?\n(.*?)(?=\n## [A-Za-z]|\Z)'
+   707→            section_match = re.search(pattern, content, re.MULTILINE | re.DOTALL)
+   708→
+   709→            if not section_match:
+   710→                errors.append(f"Section '{section}' not found in {params['file']}")
+   711→            else:
+   712→                section_content = section_match.group(1)
+   713→                # Remove HTML comments
+   714→                section_content = re.sub(r'<!--.*?-->', '', section_content, flags=re.DOTALL)
+   715→
+   716→                if expect == "empty":
+   717→                    # Check for list items
+   718→                    if re.search(r'^\s*[-*]\s+', section_content, re.MULTILINE):
+   719→                        errors.append(
+   720→                            f"Section '{section}' in {params['file']} is not empty"
+   721→                        )
+   722→                elif expect == "not_empty":
+   723→                    # Check if section has content beyond whitespace
+   724→                    if not section_content.strip():
+   725→                        errors.append(
+   726→                            f"Section '{section}' in {params['file']} is empty"
+   727→                        )
+   728→                elif expect == "all_checked":
+   729→                    # Find unchecked checkboxes
+   730→                    unchecked = re.findall(r'-\s*\[\s*\]\s*(.*)', section_content)
+   731→                    if unchecked:
+   732→                        items = ", ".join(item.strip() for item in unchecked[:3])
+   733→                        if len(unchecked) > 3:
+   734→                            items += f" (and {len(unchecked) - 3} more)"
+   735→                        errors.append(
+   736→                            f"Unchecked items in '{section}': {items}"
+   737→                        )
+   738→
+   739→    elif hook_type == "min_words":
+   740→        # Check that a file or section has at least N words
+   741→        file_path = issue_dir / params["file"]
+   742→        min_count = params.get("min", 10)
+   743→        section = params.get("section")
+   744→
+   745→        if not file_path.exists():
+   746→            errors.append(f"File '{params['file']}' not found for min_words check")
+   747→        else:
+   748→            content = file_path.read_text()
+   749→
+   750→            if section:
+   751→                # Find section content
+   752→                pattern = rf'^##\s*{re.escape(section)}.*?\n(.*?)(?=\n## [A-Za-z]|\Z)'
+   753→                section_match = re.search(pattern, content, re.MULTILINE | re.DOTALL)
+   754→                if not section_match:
+   755→                    errors.append(f"Section '{section}' not found in {params['file']}")
+   756→                else:
+   757→                    content = section_match.group(1)
+   758→
+   759→            # Count words (split on whitespace, filter empty)
+   760→            words = [w for w in content.split() if w.strip()]
+   761→            if len(words) < min_count:
+   762→                target = f"section '{section}'" if section else f"file '{params['file']}'"
+   763→                errors.append(
+   764→                    f"{target.capitalize()} has {len(words)} words, minimum is {min_count}"
+   765→                )
+   766→
+   767→    elif hook_type == "has_list_items":
+   768→        # Check that a section has at least one list item (- or *)
+   769→        file_path = issue_dir / params["file"]
+   770→        section = params["section"]
+   771→        min_items = params.get("min", 1)
+   772→
+   773→        if not file_path.exists():
+   774→            errors.append(f"File '{params['file']}' not found for has_list_items check")
+   775→        else:
+   776→            content = file_path.read_text()
+   777→            pattern = rf'^##\s*{re.escape(section)}.*?\n(.*?)(?=\n## [A-Za-z]|\Z)'
+   778→            section_match = re.search(pattern, content, re.MULTILINE | re.DOTALL)
+   779→
+   780→            if not section_match:
+   781→                errors.append(f"Section '{section}' not found in {params['file']}")
+   782→            else:
+   783→                section_content = section_match.group(1)
+   784→                # Count list items (lines starting with - or *)
+   785→                list_items = re.findall(r'^\s*[-*]\s+\S', section_content, re.MULTILINE)
+   786→                if len(list_items) < min_items:
+   787→                    errors.append(
+   788→                        f"Section '{section}' has {len(list_items)} list items, minimum is {min_items}"
+   789→                    )
+   790→
+   791→    elif hook_type == "contains":
+   792→        # Check that a section contains one of the specified values
+   793→        file_path = issue_dir / params["file"]
+   794→        section = params["section"]
+   795→        values = params.get("values", [])  # List of acceptable values
+   796→
+   797→        if not file_path.exists():
+   798→            errors.append(f"File '{params['file']}' not found for contains check")
+   799→        else:
+   800→            content = file_path.read_text()
+   801→            pattern = rf'^##\s*{re.escape(section)}.*?\n(.*?)(?=\n## [A-Za-z]|\Z)'
+   802→            section_match = re.search(pattern, content, re.MULTILINE | re.DOTALL)
+   803→
+   804→            if not section_match:
+   805→                errors.append(f"Section '{section}' not found in {params['file']}")
+   806→            else:
+   807→                section_content = section_match.group(1).strip()
+   808→                # Check if any of the values appear in the section
+   809→                found = any(v.lower() in section_content.lower() for v in values)
+   810→                if not found:
+   811→                    errors.append(
+   812→                        f"Section '{section}' must contain one of: {', '.join(values)}"
+   813→                    )
+   814→
+   815→    elif hook_type == "wrapup_verified":
+   816→        # Check that Implementation Wrapup has completed Verification Checklist
+   817→        file_path = issue_dir / params["file"]
+   818→        if not file_path.exists():
+   819→            errors.append(f"File '{params['file']}' not found for wrapup verification")
+   820→        else:
+   821→            content = file_path.read_text()
+   822→
+   823→            # Find Implementation Wrapup section
+   824→            wrapup_pattern = r'^##\s*Implementation Wrapup.*?\n(.*?)(?=\n##(?!#)|\Z)'
+   825→            wrapup_match = re.search(wrapup_pattern, content, re.MULTILINE | re.DOTALL)
+   826→
+   827→            if not wrapup_match:
+   828→                errors.append(f"Implementation Wrapup section not found in {params['file']}")
+   829→            else:
+   830→                wrapup_content = wrapup_match.group(1)
+   831→
+   832→                # Find Verification Checklist subsection within wrapup
+   833→                checklist_pattern = r'^###\s*Verification Checklist.*?\n(.*?)(?=\n###|\Z)'
+   834→                checklist_match = re.search(checklist_pattern, wrapup_content, re.MULTILINE | re.DOTALL)
+   835→
+   836→                if not checklist_match:
+   837→                    errors.append("Verification Checklist section not found in Implementation Wrapup")
+   838→                else:
+   839→                    checklist_content = checklist_match.group(1)
+   840→                    # Remove HTML comments
+   841→                    checklist_content = re.sub(r'<!--.*?-->', '', checklist_content, flags=re.DOTALL)
+   842→
+   843→                    # Find unchecked items (empty [ ] checkboxes)
+   844→                    unchecked = re.findall(r'-\s*\[\s*\]\s*(.*)', checklist_content)
+   845→                    if unchecked:
+   846→                        items = ", ".join(item.strip() for item in unchecked[:3])
+   847→                        if len(unchecked) > 3:
+   848→                            items += f" (and {len(unchecked) - 3} more)"
+   849→                        errors.append(
+   850→                            f"Wrapup verification incomplete. Unchecked items: {items}"
+   851→                        )
+   852→
+   853→    elif hook_type == "pr_approved":
+   854→        skip_approval = kwargs.get("skip_pr_approval", False)
+   855→        if skip_approval:
+   856→            console.print(f"[dim]Skipping PR approval check (--skip-approval)[/dim]")
+   857→        elif pr_number is None:
+   858→            errors.append("No PR number available to check approval status")
+   859→        else:
+   860→            # Auto-approve the PR if not already approved
+   861→            if not get_pr_approval_status(pr_number):
+   862→                try:
+   863→                    console.print(f"[dim]Auto-approving PR #{pr_number}...[/dim]")
+   864→                    result = subprocess.run(
+   865→                        ["gh", "pr", "review", str(pr_number), "--approve"],
+   866→                        capture_output=True,
+   867→                        text=True,
+   868→                        timeout=30,
+   869→                    )
+   870→                    if result.returncode != 0:
+   871→                        # Check if it's because we're the author
+   872→                        if "Can not approve your own pull request" in result.stderr:
+   873→                            console.print(f"[yellow]Cannot self-approve PR #{pr_number} (you're the author)[/yellow]")
+   874→                            console.print(f"[dim]Use --skip-approval to bypass, or have someone else approve[/dim]")
+   875→                            errors.append(f"Cannot self-approve PR #{pr_number}. Use --skip-approval to bypass.")
+   876→                        else:
+   877→                            errors.append(f"Failed to approve PR #{pr_number}: {result.stderr}")
+   878→                    else:
+   879→                        console.print(f"[green]✓ PR #{pr_number} approved[/green]")
+   880→                except subprocess.TimeoutExpired:
+   881→                    errors.append(f"Timeout approving PR #{pr_number}")
+   882→                except Exception as e:
+   883→                    errors.append(f"Error approving PR #{pr_number}: {e}")
+   884→
+   885→    elif hook_type == "ci_check":
+   886→        # CI status check hook - waits for CI to complete and reports failures
+   887→        if pr_number is None:
+   888→            errors.append("No PR number available to check CI status")
+   889→        else:
+   890→            from agenttree.github import wait_for_ci, get_pr_checks, get_pr_comments, get_check_failed_logs
+   891→
+   892→            timeout = params.get("timeout", 600)
+   893→            poll_interval = params.get("poll_interval", 30)
+   894→
+   895→            console.print(f"[dim]Waiting for CI checks on PR #{pr_number}...[/dim]")
+   896→            ci_passed = wait_for_ci(pr_number, timeout, poll_interval)
+   897→
+   898→            if ci_passed:
+   899→                console.print(f"[green]✓ CI checks passed for PR #{pr_number}[/green]")
+   900→            else:
+   901→                # Get detailed check status
+   902→                checks = get_pr_checks(pr_number)
+   903→
+   904→                # Filter to failed/incomplete checks
+   905→                # state is FAILURE for failed checks, PENDING for still running
+   906→                failed_checks = [
+   907→                    check for check in checks
+   908→                    if check.state in ("FAILURE", "PENDING")
+   909→                ]
+   910→
+   911→                if failed_checks:
+   912→                    # Create ci_feedback.md file in issue directory with logs and comments
+   913→                    if issue_dir:
+   914→                        feedback_path = issue_dir / "ci_feedback.md"
+   915→                        feedback_content = "# CI Failure Report\n\nThe following CI checks failed:\n\n"
+   916→                        for check in failed_checks:
+   917→                            feedback_content += f"- **{check.name}**: {check.state}\n"
+   918→
+   919→                        # Fetch and include failed logs for each failed check
+   920→                        for check in failed_checks:
+   921→                            if check.state == "FAILURE":
+   922→                                logs = get_check_failed_logs(check)
+   923→                                if logs:
+   924→                                    feedback_content += f"\n---\n\n## Failed Logs: {check.name}\n\n```\n{logs}\n```\n"
+   925→
+   926→                        # Fetch and include PR review comments
+   927→                        comments = get_pr_comments(pr_number)
+   928→                        if comments:
+   929→                            feedback_content += "\n---\n\n## Review Comments\n\n"
+   930→                            for comment in comments:
+   931→                                feedback_content += f"### From @{comment.author}\n\n"
+   932→                                feedback_content += f"{comment.body}\n\n"
+   933→
+   934→                        feedback_content += "\n---\n\nPlease fix these issues and run `agenttree next` to re-submit for CI.\n"
+   935→                        feedback_path.write_text(feedback_content)
+   936→                        console.print(f"[dim]Created {feedback_path}[/dim]")
+   937→
+   938→                    # Build error message
+   939→                    check_names = ", ".join(c.name for c in failed_checks)
+   940→                    errors.append(f"CI checks failed: {check_names}")
+   941→                else:
+   942→                    # No checks at all, or all passed but timeout
+   943→                    errors.append("CI check timed out or failed")
+   944→
+   945→    # Action types (side effects, don't return errors on success)
+   946→    elif hook_type == "create_file":
+   947→        # Create a file from template with Jinja rendering
+   948→        template_name = params.get("template")
+   949→        dest = params.get("dest")
+   950→        if template_name and dest:
+   951→            template_path = Path("_agenttree/templates") / template_name
+   952→            dest_path = issue_dir / dest
+   953→            if not dest_path.exists() and template_path.exists():
+   954→                template_content = template_path.read_text()
+   955→
+   956→                # Build Jinja context
+   957→                from jinja2 import Template
+   958→                from agenttree.commands import get_referenced_commands, get_command_output
+   959→
+   960→                issue = kwargs.get("issue")
+   961→                context: Dict[str, Any] = {}
+   962→
+   963→                if issue:
+   964→                    context = {
+   965→                        "issue_id": issue.id,
+   966→                        "issue_title": issue.title,
+   967→                        "issue_dir": str(issue_dir),
+   968→                        "issue_dir_rel": f"_agenttree/issues/{issue.id}-{issue.slug}" if hasattr(issue, 'slug') else "",
+   969→                    }
+   970→
+   971→                    # Add document contents if they exist
+   972→                    for doc_name in ["problem.md", "research.md", "spec.md", "spec_review.md", "review.md"]:
+   973→                        doc_path = issue_dir / doc_name
+   974→                        var_name = doc_name.replace(".md", "_md").replace("-", "_")
+   975→                        if doc_path.exists():
+   976→                            context[var_name] = doc_path.read_text()
+   977→                        else:
+   978→                            context[var_name] = ""
+   979→
+   980→                    # Add latest_independent_review - find highest-numbered version
+   981→                    # Looks for independent_review_v*.md and uses the highest version
+   982→                    versioned_reviews = sorted(issue_dir.glob("independent_review_v*.md"))
+   983→                    if versioned_reviews:
+   984→                        # Use the latest versioned review
+   985→                        context["latest_independent_review"] = versioned_reviews[-1].read_text()
+   986→                    elif (issue_dir / "independent_review.md").exists():
+   987→                        # Fall back to unversioned file
+   988→                        context["latest_independent_review"] = (issue_dir / "independent_review.md").read_text()
+   989→                    else:
+   990→                        context["latest_independent_review"] = ""
+   991→
+   992→                    # Add latest_independent_review_response - for re-reviews to see implementer's response
+   993→                    versioned_responses = sorted(issue_dir.glob("independent_review_response_v*.md"))
+   994→                    if versioned_responses:
+   995→                        context["latest_independent_review_response"] = versioned_responses[-1].read_text()
+   996→                    elif (issue_dir / "independent_review_response.md").exists():
+   997→                        context["latest_independent_review_response"] = (issue_dir / "independent_review_response.md").read_text()
+   998→                    else:
+   999→                        context["latest_independent_review_response"] = ""
+  1000→
+  1001→                    # Count review iterations for context
+  1002→                    context["review_iteration"] = len(versioned_reviews) + 1
+  1003→
+  1004→                # Add git diff stats for review templates
+  1005→                git_stats = get_git_diff_stats()
+  1006→                context["files_changed"] = git_stats['files_changed']
+  1007→                context["lines_added"] = git_stats['lines_added']
+  1008→                context["lines_removed"] = git_stats['lines_removed']
+  1009→
+  1010→                # Inject command outputs for referenced commands
+  1011→                config = load_config()
+  1012→                if config.commands:
+  1013→                    # Determine working directory for commands
+  1014→                    cwd = get_code_directory(issue, issue_dir)
+  1015→
+  1016→                    # Find commands referenced in the template
+  1017→                    referenced = get_referenced_commands(template_content, config.commands)
+  1018→
+  1019→                    for cmd_name in referenced:
+  1020→                        # Don't overwrite built-in context variables
+  1021→                        if cmd_name not in context:
+  1022→                            context[cmd_name] = get_command_output(
+  1023→                                config.commands, cmd_name, cwd=cwd
+  1024→                            )
+  1025→
+  1026→                # Render template
+  1027→                try:
+  1028→                    jinja_template = Template(template_content)
+  1029→                    rendered = jinja_template.render(**context)
+  1030→                except Exception:
+  1031→                    # If rendering fails, use raw content
+  1032→                    rendered = template_content
+  1033→
+  1034→                dest_path.write_text(rendered)
+  1035→                console.print(f"[dim]Created {dest} from template[/dim]")
+  1036→
+  1037→    elif hook_type == "create_pr":
+  1038→        # Create PR on transition to implementation_review
+  1039→        try:
+  1040→            _action_create_pr(issue_dir, **kwargs)
+  1041→        except Exception as e:
+  1042→            errors.append(f"Failed to create PR: {e}")
+  1043→
+  1044→    elif hook_type == "merge_pr":
+  1045→        # Merge PR on transition to accepted
+  1046→        try:
+  1047→            _action_merge_pr(pr_number, **kwargs)
+  1048→        except Exception as e:
+  1049→            errors.append(f"Failed to merge PR: {e}")
+  1050→
+  1051→    elif hook_type == "cleanup_agent":
+  1052→        # Clean up agent resources (container, tmux, port)
+  1053→        issue = kwargs.get("issue")
+  1054→        if issue:
+  1055→            cleanup_issue_agent(issue)
+  1056→
+  1057→    elif hook_type == "start_blocked_issues":
+  1058→        # Check and start any issues that were blocked on this one
+  1059→        issue = kwargs.get("issue")
+  1060→        if issue:
+  1061→            check_and_start_blocked_issues(issue)
+  1062→
+  1063→    # === Review loop hooks ===
+  1064→
+  1065→    elif hook_type == "checkbox_checked":
+  1066→        # Check that a specific checkbox is marked in a markdown file
+  1067→        # Supports on_fail_stage for conditional routing
+  1068→        file_path = issue_dir / params["file"]
+  1069→        checkbox_text = params.get("checkbox", "")
+  1070→        on_fail_stage = params.get("on_fail_stage")
+  1071→
+  1072→        if not file_path.exists():
+  1073→            errors.append(f"File '{params['file']}' not found for checkbox check")
+  1074→        else:
+  1075→            content = file_path.read_text()
+  1076→            # Look for checked checkbox with the specified text
+  1077→            # Pattern: [x] or [X] followed by the checkbox text
+  1078→            checked_pattern = rf'\[[ ]?[xX][ ]?\]\s*\**{re.escape(checkbox_text)}'
+  1079→            unchecked_pattern = rf'\[\s*\]\s*\**{re.escape(checkbox_text)}'
+  1080→
+  1081→            if re.search(checked_pattern, content):
+  1082→                # Checkbox is checked, validation passes
+  1083→                pass
+  1084→            elif re.search(unchecked_pattern, content):
+  1085→                # Checkbox exists but is unchecked
+  1086→                if on_fail_stage:
+  1087→                    # Raise redirect instead of error
+  1088→                    raise StageRedirect(
+  1089→                        on_fail_stage,
+  1090→                        f"Checkbox '{checkbox_text}' is not checked in {params['file']}"
+  1091→                    )
+  1092→                else:
+  1093→                    errors.append(f"Checkbox '{checkbox_text}' is not checked in {params['file']}")
+  1094→            else:
+  1095→                errors.append(f"Checkbox '{checkbox_text}' not found in {params['file']}")
+  1096→
+  1097→    elif hook_type == "version_file":
+  1098→        # Rename file.md to file_v{N}.md where N is next available version
+  1099→        # Used in post_start to preserve history before creating new version
+  1100→        filename = params.get("file", "")
+  1101→        if not filename:
+  1102→            errors.append("version_file hook requires 'file' parameter")
+  1103→        else:
+  1104→            file_path = issue_dir / filename
+  1105→            if file_path.exists():
+  1106→                # Find next version number
+  1107→                base_name = file_path.stem
+  1108→                ext = file_path.suffix
+  1109→                version = 1
+  1110→                while (issue_dir / f"{base_name}_v{version}{ext}").exists():
+  1111→                    version += 1
+  1112→
+  1113→                # Rename to versioned name
+  1114→                versioned_path = issue_dir / f"{base_name}_v{version}{ext}"
+  1115→                file_path.rename(versioned_path)
+  1116→                console.print(f"[dim]Versioned {filename} → {versioned_path.name}[/dim]")
+  1117→            # If file doesn't exist, silently skip (it might not exist on first iteration)
+  1118→
+  1119→    elif hook_type == "loop_check":
+  1120→        # Count versioned files and fail if max exceeded
+  1121→        # Used to prevent infinite review loops
+  1122→        pattern = params.get("count_files", "")
+  1123→        max_iterations = params.get("max", 3)
+  1124→        error_msg = params.get("error", f"Review loop exceeded {max_iterations} iterations")
+  1125→
+  1126→        if pattern:
+  1127→            # Count matching files (using pathlib's glob, not the glob module)
+  1128→            matches = list(issue_dir.glob(pattern))
+  1129→            if len(matches) >= max_iterations:
+  1130→                errors.append(f"{error_msg} (found {len(matches)} iterations)")
+  1131→                console.print(f"[yellow]Loop limit reached: {len(matches)} >= {max_iterations}[/yellow]")
+  1132→
+  1133→    elif hook_type == "rollback":
+  1134→        # Programmatic rollback to an earlier stage
+  1135→        # Used in post_completion to loop back for re-review
+  1136→        to_stage = params.get("to_stage", "")
+  1137→        auto_yes = params.get("yes", True)  # Default to auto-confirm for programmatic rollback
+  1138→
+  1139→        if not to_stage:
+  1140→            errors.append("rollback hook requires 'to_stage' parameter")
+  1141→        else:
+  1142→            issue = kwargs.get("issue")
+  1143→            if issue:
+  1144→                try:
+  1145→                    # Import from rollback module to avoid circular imports
+  1146→                    from agenttree.rollback import execute_rollback
+  1147→                    success = execute_rollback(
+  1148→                        issue_id=issue.id,
+  1149→                        target_stage=to_stage,
+  1150→                        yes=auto_yes,
+  1151→                        reset_worktree=False,
+  1152→                        keep_changes=True,
+  1153→                    )
+  1154→                    if success:
+  1155→                        console.print(f"[green]✓ Rolled back to {to_stage}[/green]")
+  1156→                    else:
+  1157→                        errors.append(f"Rollback to {to_stage} failed")
+  1158→                except Exception as e:
+  1159→                    errors.append(f"Rollback failed: {e}")
+  1160→            else:
+  1161→                errors.append("rollback hook requires issue context")
+  1162→
+  1163→    # Controller hooks (delegated to agents_repo functions)
+  1164→    elif hook_type == "push_pending_branches":
+  1165→        from agenttree.agents_repo import push_pending_branches
+  1166→        agents_dir = kwargs.get("agents_dir")
+  1167→        if agents_dir:
+  1168→            push_pending_branches(agents_dir)
+  1169→
+  1170→    elif hook_type == "check_controller_stages":
+  1171→        from agenttree.agents_repo import check_controller_stages
+  1172→        agents_dir = kwargs.get("agents_dir")
+  1173→        if agents_dir:
+  1174→            check_controller_stages(agents_dir)
+  1175→
+  1176→    elif hook_type == "check_merged_prs":
+  1177→        from agenttree.agents_repo import check_merged_prs
+  1178→        agents_dir = kwargs.get("agents_dir")
+  1179→        if agents_dir:
+  1180→            check_merged_prs(agents_dir)
+  1181→
+  1182→    elif hook_type == "check_ci_status":
+  1183→        from agenttree.agents_repo import check_ci_status
+  1184→        agents_dir = kwargs.get("agents_dir")
+  1185→        if agents_dir:
+  1186→            check_ci_status(agents_dir)
+  1187→
+  1188→    elif hook_type == "check_custom_agent_stages":
+  1189→        from agenttree.agents_repo import check_custom_agent_stages
+  1190→        agents_dir = kwargs.get("agents_dir")
+  1191→        if agents_dir:
+  1192→            check_custom_agent_stages(agents_dir)
+  1193→
+  1194→    else:
+  1195→        # Unknown type - ignore silently (allows for future extensions)
+  1196→        pass
+  1197→
+  1198→    return errors
+  1199→
+  1200→
+  1201→def run_command_hook(
+  1202→    issue_dir: Path,
+  1203→    hook: Dict[str, Any],
+  1204→    issue_id: str = "",
+  1205→    issue_title: str = "",
+  1206→    branch: str = "",
+  1207→    stage: str = "",
+  1208→    substage: str = "",
+  1209→    **kwargs: Any
+  1210→) -> List[str]:
+  1211→    """Run a shell command hook and return errors.
+  1212→
+  1213→    Args:
+  1214→        issue_dir: Path to run command in
+  1215→        hook: Hook configuration dict with 'command' and optional 'context', 'timeout', 'host_only'
+  1216→        issue_id: Issue ID for template variable substitution
+  1217→        issue_title: Issue title for template variable substitution
+  1218→        branch: Branch name for template variable substitution
+  1219→        stage: Current stage for template variable substitution
+  1220→        substage: Current substage for template variable substitution
+  1221→        **kwargs: Additional template variables
+  1222→
+  1223→    Returns:
+  1224→        List of error messages (empty if command succeeds or skipped)
+  1225→    """
+  1226→    # Skip if host_only and running in container
+  1227→    if hook.get("host_only") and is_running_in_container():
+  1228→        return []
+  1229→
+  1230→    command = hook["command"]
+  1231→
+  1232→    # Replace template variables
+  1233→    command = command.replace("{{issue_id}}", issue_id)
+  1234→    command = command.replace("{{issue_title}}", issue_title)
+  1235→    command = command.replace("{{branch}}", branch)
+  1236→    command = command.replace("{{stage}}", stage)
+  1237→    command = command.replace("{{substage}}", substage)
+  1238→
+  1239→    # Additional variables from kwargs
+  1240→    pr_number = kwargs.get("pr_number", "")
+  1241→    pr_url = kwargs.get("pr_url", "")
+  1242→    command = command.replace("{{pr_number}}", str(pr_number))
+  1243→    command = command.replace("{{pr_url}}", str(pr_url))
+  1244→
+  1245→    timeout = hook.get("timeout", 30)  # Default 30 seconds
+  1246→    context = hook.get("context", "")
+  1247→
+  1248→    try:
+  1249→        result = subprocess.run(
+  1250→            command,
+  1251→            shell=True,
+  1252→            cwd=issue_dir,
+  1253→            capture_output=True,
+  1254→            text=True,
+  1255→            timeout=timeout
+  1256→        )
+  1257→
+  1258→        if result.returncode != 0:
+  1259→            output = result.stdout + result.stderr
+  1260→            if context:
+  1261→                return [f"{context} failed:\n{output.strip()}"]
+  1262→            return [output.strip() or f"Command failed: {command}"]
+  1263→
+  1264→        return []
+  1265→
+  1266→    except subprocess.TimeoutExpired:
+  1267→        if context:
+  1268→            return [f"{context} timeout after {timeout} seconds"]
+  1269→        return [f"Command timeout after {timeout} seconds: {command}"]
+  1270→
+  1271→
+  1272→def run_hook(
+  1273→    hook: Dict[str, Any],
+  1274→    context_dir: Path,
+  1275→    hook_state: Optional[Dict[str, Any]] = None,
+  1276→    sync_count: Optional[int] = None,
+  1277→    verbose: bool = False,
+  1278→    **kwargs: Any,
+  1279→) -> tuple[List[str], bool]:
+  1280→    """Run a single hook with all common options (rate limiting, host_only, etc).
+  1281→
+  1282→    This is the unified entry point for running any hook type. It handles:
+  1283→    - Rate limiting (min_interval_s, run_every_n_syncs)
+  1284→    - Host-only checks
+  1285→    - Optional flag handling
+  1286→    - State updates
+  1287→
+  1288→    Args:
+  1289→        hook: Hook configuration dict
+  1290→        context_dir: Directory context (issue_dir for stage hooks, agents_dir for controller)
+  1291→        hook_state: Optional state dict for rate limiting (updated in place)
+  1292→        sync_count: Current sync count for run_every_n_syncs rate limiting
+  1293→        verbose: If True, print detailed output
+  1294→        **kwargs: Additional context passed to hook execution
+  1295→
+  1296→    Returns:
+  1297→        Tuple of (errors, was_skipped):
+  1298→        - errors: List of error messages
+  1299→        - was_skipped: True if hook was skipped (rate limited, host_only, etc)
+  1300→    """
+  1301→    hook_type, params = parse_hook(hook)
+  1302→
+  1303→    # Generate a unique key for this hook in state
+  1304→    hook_key = hook_type
+  1305→    if "context" in params:
+  1306→        hook_key = f"{hook_type}:{params['context']}"
+  1307→
+  1308→    # Check host_only
+  1309→    if params.get("host_only") and is_running_in_container():
+  1310→        if verbose:
+  1311→            console.print(f"[dim]Skipping {hook_type} (host-only hook)[/dim]")
+  1312→        return [], True
+  1313→
+  1314→    # Check rate limiting
+  1315→    if hook_state is not None:
+  1316→        should_run, reason = check_rate_limit(hook_key, params, hook_state, sync_count)
+  1317→        if not should_run:
+  1318→            if verbose:
+  1319→                console.print(f"[dim]Skipping {hook_type}: {reason}[/dim]")
+  1320→            return [], True
+  1321→
+  1322→    # Execute the hook
+  1323→    errors: List[str] = []
+  1324→    try:
+  1325→        if hook_type == "run":
+  1326→            # Shell command hook
+  1327→            errors = run_command_hook(context_dir, params, **kwargs)
+  1328→        elif hook_type in ("push_pending_branches", "check_controller_stages", "check_merged_prs", "check_custom_agent_stages"):
+  1329→            # Controller hooks need agents_dir - use from kwargs if provided, otherwise context_dir
+  1330→            if "agents_dir" not in kwargs:
+  1331→                kwargs["agents_dir"] = context_dir
+  1332→            errors = run_builtin_validator(context_dir, hook, **kwargs)
+  1333→        else:
+  1334→            # Built-in validator/action
+  1335→            errors = run_builtin_validator(context_dir, hook, **kwargs)
+  1336→
+  1337→        # Update state on success
+  1338→        if hook_state is not None:
+  1339→            update_hook_state(hook_key, hook_state, success=len(errors) == 0)
+  1340→
+  1341→    except Exception as e:
+  1342→        error_msg = f"Hook {hook_type} failed: {e}"
+  1343→        errors = [error_msg]
+  1344→        if hook_state is not None:
+  1345→            update_hook_state(hook_key, hook_state, success=False, error=str(e))
+  1346→
+  1347→    # Handle optional flag
+  1348→    if params.get("optional") and errors:
+  1349→        context = params.get("context", hook_type)
+  1350→        if verbose:
+  1351→            console.print(f"[yellow]Warning: {context} failed (optional): {errors[0]}[/yellow]")
+  1352→        return [], False  # Treat as success, not skipped
+  1353→
+  1354→    return errors, False
+  1355→
+  1356→
+  1357→def execute_hooks(
+  1358→    issue_dir: Path,
+  1359→    stage: str,
+  1360→    substage_config: Any,  # SubstageConfig or StageConfig
+  1361→    event: str,
+  1362→    pr_number: Optional[int] = None,
+  1363→    **kwargs: Any
+  1364→) -> List[str]:
+  1365→    """Execute all hooks for an event and collect errors.
+  1366→
+  1367→    Args:
+  1368→        issue_dir: Path to issue directory
+  1369→        stage: Current stage name
+  1370→        substage_config: SubstageConfig or StageConfig with hook definitions
+  1371→        event: "pre_completion" or "post_start"
+  1372→        pr_number: Optional PR number for pr_approved validator
+  1373→        **kwargs: Additional context for hooks
+  1374→
+  1375→    Returns:
+  1376→        List of all error messages from failed hooks
+  1377→    """
+  1378→    errors: List[str] = []
+  1379→
+  1380→    # Auto-check output file on pre_completion (if not optional)
+  1381→    if event == "pre_completion":
+  1382→        output_file = getattr(substage_config, "output", None)
+  1383→        output_optional = getattr(substage_config, "output_optional", False)
+  1384→
+  1385→        if output_file and not output_optional:
+  1386→            file_path = issue_dir / output_file
+  1387→            if not file_path.exists():
+  1388→                errors.append(f"Required output file '{output_file}' does not exist")
+  1389→
+  1390→    # Get configured hooks
+  1391→    hooks = getattr(substage_config, event, [])
+  1392→
+  1393→    # Run each hook
+  1394→    for hook in hooks:
+  1395→        hook_type, params = parse_hook(hook)
+  1396→
+  1397→        # Skip host-only hooks when running in container
+  1398→        if hook.get("host_only") and is_running_in_container():
+  1399→            console.print(f"[dim]Skipping {hook_type} (host-only hook)[/dim]")
+  1400→            continue
+  1401→
+  1402→        if hook_type == "run":
+  1403→            # Shell command hook - use correct directory based on context
+  1404→            issue = kwargs.get("issue")
+  1405→            cwd = get_code_directory(issue, issue_dir)
+  1406→            hook_errors = run_command_hook(cwd, params, **kwargs)
+  1407→            # If optional flag is set and command returns "not configured", warn but don't block
+  1408→            if params.get("optional") and any("not configured" in e.lower() for e in hook_errors):
+  1409→                context = params.get("context", params.get("command", "command"))
+  1410→                console.print(f"[yellow]Warning: {context} skipped - not configured[/yellow]")
+  1411→                continue
+  1412→            errors.extend(hook_errors)
+  1413→        elif hook_type == "rebase":
+  1414→            # Rebase hook - host-only, skips gracefully in container
+  1415→            if is_running_in_container():
+  1416→                console.print(f"[dim]Skipping rebase (running in container)[/dim]")
+  1417→                continue
+  1418→            issue_id = kwargs.get("issue_id", "")
+  1419→            if issue_id:
+  1420→                success, message = rebase_issue_branch(issue_id)
+  1421→                if success:
+  1422→                    console.print(f"[green]✓ {message}[/green]")
+  1423→                else:
+  1424→                    console.print(f"[yellow]Warning: {message}[/yellow]")
+  1425→                    # Don't block on rebase failure - agent can handle conflicts
+  1426→        elif hook_type != "unknown":
+  1427→            # Built-in validator/action
+  1428→            errors.extend(run_builtin_validator(issue_dir, hook, pr_number=pr_number, **kwargs))
+  1429→
+  1430→    return errors
+  1431→
+  1432→
+  1433→def execute_exit_hooks(issue: "Issue", stage: str, substage: Optional[str] = None, **extra_kwargs: Any) -> None:
+  1434→    """Execute pre_completion hooks for a stage/substage. Raises ValidationError if any fail.
+  1435→
+  1436→    This is the config-driven replacement for execute_pre_hooks.
+  1437→
+  1438→    Hook execution order: stage → substage (outer to inner).
+  1439→    When exiting the LAST substage, runs stage-level hooks first, then substage hooks.
+  1440→    This ensures stage-level requirements are checked before substage-specific ones.
+  1441→
+  1442→    Args:
+  1443→        issue: Issue being transitioned
+  1444→        stage: Current stage name
+  1445→        substage: Current substage name (optional)
+  1446→        **extra_kwargs: Additional args (e.g., skip_pr_approval=True)
+  1447→
+  1448→    Raises:
+  1449→        ValidationError: If any validation fails (blocks transition)
+  1450→        StageRedirect: If a hook with on_fail_stage fails (redirect to different stage)
+  1451→    """
+  1452→    from agenttree.config import load_config
+  1453→    from agenttree.issues import get_issue_dir
+  1454→
+  1455→    config = load_config()
+  1456→    stage_config = config.get_stage(stage)
+  1457→    if not stage_config:
+  1458→        return  # Unknown stage, skip hooks
+  1459→
+  1460→    # Get issue directory
+  1461→    issue_dir = get_issue_dir(issue.id)
+  1462→    if not issue_dir:
+  1463→        return  # No issue directory, skip hooks
+  1464→
+  1465→    errors: List[str] = []
+  1466→    hook_kwargs = {
+  1467→        "issue_id": issue.id,
+  1468→        "issue_title": issue.title,
+  1469→        "branch": issue.branch or "",
+  1470→        "substage": substage or "",
+  1471→        "issue": issue,  # Pass issue for worktree_dir access in run hooks
+  1472→        **extra_kwargs,  # Pass through extra kwargs like skip_pr_approval
+  1473→    }
+  1474→
+  1475→    # Check if we're exiting the stage (last substage or no substages)
+  1476→    substages = stage_config.substage_order()
+  1477→    is_exiting_stage = not substages or (substage and substages[-1] == substage)
+  1478→
+  1479→    # Execute stage-level hooks FIRST when exiting the stage (stage → substage order)
+  1480→    if is_exiting_stage:
+  1481→        errors.extend(execute_hooks(
+  1482→            issue_dir,
+  1483→            stage,
+  1484→            stage_config,
+  1485→            "pre_completion",
+  1486→            pr_number=issue.pr_number,
+  1487→            **hook_kwargs,
+  1488→        ))
+  1489→
+  1490→    # Execute substage hooks SECOND (if applicable)
+  1491→    if substage:
+  1492→        substage_config = stage_config.get_substage(substage)
+  1493→        if substage_config:
+  1494→            errors.extend(execute_hooks(
+  1495→                issue_dir,
+  1496→                stage,
+  1497→                substage_config,
+  1498→                "pre_completion",
+  1499→                pr_number=issue.pr_number,
+  1500→                **hook_kwargs,
+  1501→            ))
+  1502→
+  1503→    if errors:
+  1504→        if len(errors) == 1:
+  1505→            raise ValidationError(errors[0])
+  1506→        else:
+  1507→            msg = "Multiple validation errors:\n"
+  1508→            for i, error in enumerate(errors, 1):
+  1509→                msg += f"  {i}. {error}\n"
+  1510→            raise ValidationError(msg.strip())
+  1511→
+  1512→
+  1513→def execute_enter_hooks(issue: "Issue", stage: str, substage: Optional[str] = None) -> None:
+  1514→    """Execute post_start hooks for a stage/substage. Logs warnings but doesn't block.
+  1515→
+  1516→    This is the config-driven replacement for execute_post_hooks.
+  1517→
+  1518→    Hook execution order: substage → stage (inner to outer).
+  1519→    When entering the FIRST substage, runs substage hooks first, then stage-level hooks.
+  1520→    This ensures stage-level setup (like create_pr) runs when entering a stage with substages.
+  1521→
+  1522→    For controller stages (host: controller), hooks are skipped when running in a container.
+  1523→    The host will execute them via check_controller_stages() during sync.
+  1524→
+  1525→    Args:
+  1526→        issue: Issue that was transitioned
+  1527→        stage: New stage name
+  1528→        substage: New substage name (optional)
+  1529→    """
+  1530→    from agenttree.config import load_config
+  1531→    from agenttree.issues import get_issue_dir
+  1532→
+  1533→    config = load_config()
+  1534→    stage_config = config.get_stage(stage)
+  1535→    if not stage_config:
+  1536→        return  # Unknown stage, skip hooks
+  1537→
+  1538→    # Skip hooks for controller stages when in a container
+  1539→    # Host will run them via check_controller_stages() during sync
+  1540→    if stage_config.host == "controller" and is_running_in_container():
+  1541→        console.print(f"[dim]Controller stage - hooks will run on host sync[/dim]")
+  1542→        return
+  1543→
+  1544→    # Get issue directory
+  1545→    issue_dir = get_issue_dir(issue.id)
+  1546→    if not issue_dir:
+  1547→        return  # No issue directory, skip hooks
+  1548→
+  1549→    errors: List[str] = []
+  1550→    hook_kwargs = {
+  1551→        "issue_id": issue.id,
+  1552→        "issue_title": issue.title,
+  1553→        "branch": issue.branch or "",
+  1554→        "substage": substage or "",
+  1555→        "issue": issue,  # Pass issue object for cleanup_agent and start_blocked_issues hooks
+  1556→    }
+  1557→
+  1558→    # Execute substage hooks FIRST (if applicable)
+  1559→    if substage:
+  1560→        substage_config = stage_config.get_substage(substage)
+  1561→        if substage_config:
+  1562→            errors.extend(execute_hooks(
+  1563→                issue_dir,
+  1564→                stage,
+  1565→                substage_config,
+  1566→                "post_start",
+  1567→                pr_number=issue.pr_number,
+  1568→                **hook_kwargs,
+  1569→            ))
+  1570→
+  1571→    # Check if we're entering the stage (first substage or no substages)
+  1572→    substages = stage_config.substage_order()
+  1573→    is_entering_stage = not substages or (substage and substages[0] == substage)
+  1574→
+  1575→    # Execute stage-level hooks SECOND when entering the stage (substage → stage order)
+  1576→    if is_entering_stage:
+  1577→        errors.extend(execute_hooks(
+  1578→            issue_dir,
+  1579→            stage,
+  1580→            stage_config,
+  1581→            "post_start",
+  1582→            pr_number=issue.pr_number,
+  1583→            **hook_kwargs,
+  1584→        ))
+  1585→
+  1586→    # Log warnings but don't block
+  1587→    if errors:
+  1588→        for error in errors:
+  1589→            console.print(f"[yellow]Warning: {error}[/yellow]")
+  1590→
+  1591→
+  1592→def run_host_hooks(hooks: List[Dict[str, Any]], context: Dict[str, Any]) -> None:
+  1593→    """Run host action hooks (post_pr_create, post_merge, post_accepted).
+  1594→
+  1595→    These hooks log errors but don't block operations.
+  1596→
+  1597→    Hooks can optionally run asynchronously (fire-and-forget) by setting `async: true`:
+  1598→    - `async: true` - Start command immediately, don't wait for completion. Errors
+  1599→      are logged when they complete.
+  1600→    - No `async` or `async: false` - Wait for completion before proceeding (default)
+  1601→
+  1602→    Thread pool is limited to 5 concurrent workers to prevent resource exhaustion.
+  1603→
+  1604→    Args:
+  1605→        hooks: List of hook configurations
+  1606→        context: Template variables for substitution (issue_id, pr_number, etc.)
+  1607→    """
+  1608→    from pathlib import Path
+  1609→
+  1610→    # Create executor for async hooks (max 5 concurrent)
+  1611→    executor = ThreadPoolExecutor(max_workers=5)
+  1612→
+  1613→    def execute_hook_sync(hook: Dict[str, Any]) -> List[str]:
+  1614→        """Execute a single hook synchronously and return errors."""
+  1615→        if "command" in hook:
+  1616→            return run_command_hook(
+  1617→                Path.cwd(),
+  1618→                hook,
+  1619→                issue_id=context.get("issue_id", ""),
+  1620→                issue_title=context.get("issue_title", ""),
+  1621→                branch=context.get("branch", ""),
+  1622→                pr_number=str(context.get("pr_number", "")),
+  1623→                pr_url=context.get("pr_url", ""),
+  1624→            )
+  1625→        return []
+  1626→
+  1627→    def async_done_callback(future: Any, hook: Dict[str, Any]) -> None:
+  1628→        """Log errors when async hook completes."""
+  1629→        try:
+  1630→            errors = future.result()
+  1631→            for error in errors:
+  1632→                console.print(f"[yellow]Warning (async): {error}[/yellow]")
+  1633→        except Exception as e:
+  1634→            console.print(f"[yellow]Hook error (async): {e}[/yellow]")
+  1635→
+  1636→    for hook in hooks:
+  1637→        try:
+  1638→            is_async = hook.get("async", False)
+  1639→
+  1640→            if is_async:
+  1641→                # Fire-and-forget: submit to thread pool and continue
+  1642→                future = executor.submit(execute_hook_sync, hook)
+  1643→                # Add callback to log errors when done (capture hook in closure)
+  1644→                def make_callback(h: Dict[str, Any]) -> Any:
+  1645→                    return lambda f: async_done_callback(f, h)
+  1646→                future.add_done_callback(make_callback(hook))
+  1647→            else:
+  1648→                # Synchronous: execute and wait for completion
+  1649→                errors = execute_hook_sync(hook)
+  1650→                for error in errors:
+  1651→                    console.print(f"[yellow]Warning: {error}[/yellow]")
+  1652→        except Exception as e:
+  1653→            console.print(f"[yellow]Hook error: {e}[/yellow]")
+  1654→
+  1655→
+  1656→# Aliases for backward compatibility during transition
+  1657→execute_pre_hooks = execute_exit_hooks
+  1658→execute_post_hooks = execute_enter_hooks
+  1659→
+  1660→
+  1661→# Git utility functions
+  1662→
+  1663→
+  1664→def get_current_branch() -> str:
+  1665→    """Get current git branch name.
+  1666→
+  1667→    Returns:
+  1668→        Current branch name
+  1669→
+  1670→    Raises:
+  1671→        subprocess.CalledProcessError: If git command fails
+  1672→    """
+  1673→    result = subprocess.run(
+  1674→        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+  1675→        capture_output=True,
+  1676→        text=True,
+  1677→        check=True,
+  1678→    )
+  1679→    return result.stdout.strip()
+  1680→
+  1681→
+  1682→def has_uncommitted_changes() -> bool:
+  1683→    """Check if there are uncommitted changes (staged or unstaged).
+  1684→
+  1685→    Returns:
+  1686→        True if there are uncommitted changes, False otherwise
+  1687→    """
+  1688→    result = subprocess.run(
+  1689→        ["git", "status", "--porcelain"],
+  1690→        capture_output=True,
+  1691→        text=True,
+  1692→        check=True,
+  1693→    )
+  1694→    return bool(result.stdout.strip())
+  1695→
+  1696→
+  1697→def get_default_branch() -> str:
+  1698→    """Get the default branch name for the remote.
+  1699→
+  1700→    Tries to detect from origin/HEAD, falls back to 'main', then 'master'.
+  1701→
+  1702→    Returns:
+  1703→        Default branch name (e.g., 'main' or 'master')
+  1704→    """
+  1705→    # Try to get from origin/HEAD symbolic ref
+  1706→    result = subprocess.run(
+  1707→        ["git", "symbolic-ref", "refs/remotes/origin/HEAD"],
+  1708→        capture_output=True,
+  1709→        text=True,
+  1710→        check=False,
+  1711→    )
+  1712→    if result.returncode == 0:
+  1713→        # Output is like "refs/remotes/origin/main"
+  1714→        ref = result.stdout.strip()
+  1715→        if ref.startswith("refs/remotes/origin/"):
+  1716→            return ref.replace("refs/remotes/origin/", "")
+  1717→
+  1718→    # Fallback: check if origin/main exists
+  1719→    result = subprocess.run(
+  1720→        ["git", "rev-parse", "--verify", "origin/main"],
+  1721→        capture_output=True,
+  1722→        text=True,
+  1723→        check=False,
+  1724→    )
+  1725→    if result.returncode == 0:
+  1726→        return "main"
+  1727→
+  1728→    # Last resort: try master
+  1729→    return "master"
+  1730→
+  1731→
+  1732→def has_commits_to_push(branch: Optional[str] = None) -> bool:
+  1733→    """Check if there are unpushed commits.
+  1734→
+  1735→    Args:
+  1736→        branch: Branch name to check (defaults to current branch)
+  1737→
+  1738→    Returns:
+  1739→        True if there are unpushed commits, False otherwise
+  1740→    """
+  1741→    if branch is None:
+  1742→        branch = get_current_branch()
+  1743→
+  1744→    # First try checking against the remote branch with same name
+  1745→    result = subprocess.run(
+  1746→        ["git", "log", f"origin/{branch}..HEAD", "--oneline"],
+  1747→        capture_output=True,
+  1748→        text=True,
+  1749→        check=False,  # Don't fail if remote branch doesn't exist
+  1750→    )
+  1751→
+  1752→    if result.returncode == 0 and result.stdout.strip():
+  1753→        return True
+  1754→
+  1755→    # Check if we have commits beyond upstream (whatever branch we're tracking)
+  1756→    result = subprocess.run(
+  1757→        ["git", "rev-list", "@{upstream}..HEAD", "--oneline"],
+  1758→        capture_output=True,
+  1759→        text=True,
+  1760→        check=False,  # Don't fail if no upstream
+  1761→    )
+  1762→
+  1763→    if result.returncode == 0 and result.stdout.strip():
+  1764→        return True
+  1765→
+  1766→    # Fallback: check if we have ANY local commits not on default branch
+  1767→    # This handles new branches that haven't been pushed and aren't tracking anything
+  1768→    default_branch = get_default_branch()
+  1769→    result = subprocess.run(
+  1770→        ["git", "log", f"origin/{default_branch}..HEAD", "--oneline"],
+  1771→        capture_output=True,
+  1772→        text=True,
+  1773→        check=False,
+  1774→    )
+  1775→
+  1776→    return bool(result.stdout.strip())
+  1777→
+  1778→
+  1779→def get_git_diff_stats() -> Dict[str, int]:
+  1780→    """Get git diff statistics comparing current branch to default branch.
+  1781→
+  1782→    Runs `git diff --shortstat <default_branch>...HEAD` and parses the output
+  1783→    to extract files changed, lines added, and lines removed.
+  1784→
+  1785→    Returns:
+  1786→        Dict with keys 'files_changed', 'lines_added', 'lines_removed'.
+  1787→        Returns zeros if there are no changes or on error.
+  1788→    """
+  1789→    default_branch = get_default_branch()
+  1790→
+  1791→    result = subprocess.run(
+  1792→        ["git", "diff", "--shortstat", f"{default_branch}...HEAD"],
+  1793→        capture_output=True,
+  1794→        text=True,
+  1795→        check=False,
+  1796→    )
+  1797→
+  1798→    stats = {'files_changed': 0, 'lines_added': 0, 'lines_removed': 0}
+  1799→
+  1800→    if result.returncode != 0 or not result.stdout.strip():
+  1801→        return stats
+  1802→
+  1803→    output = result.stdout.strip()
+  1804→
+  1805→    # Parse "5 files changed, 100 insertions(+), 20 deletions(-)"
+  1806→    # Handle singular "file" vs "files", and optional insertions/deletions
+  1807→    files_match = re.search(r'(\d+) files? changed', output)
+  1808→    insertions_match = re.search(r'(\d+) insertions?\(\+\)', output)
+  1809→    deletions_match = re.search(r'(\d+) deletions?\(-\)', output)
+  1810→
+  1811→    if files_match:
+  1812→        stats['files_changed'] = int(files_match.group(1))
+  1813→    if insertions_match:
+  1814→        stats['lines_added'] = int(insertions_match.group(1))
+  1815→    if deletions_match:
+  1816→        stats['lines_removed'] = int(deletions_match.group(1))
+  1817→
+  1818→    return stats
+  1819→
+  1820→
+  1821→def push_branch_to_remote(branch: str) -> None:
+  1822→    """Push branch to remote, creating remote branch with same name.
+  1823→
+  1824→    IMPORTANT: This explicitly pushes local branch to origin/{branch},
+  1825→    NOT to whatever upstream the branch might be tracking. This ensures
+  1826→    feature branches don't accidentally push to main.
+  1827→
+  1828→    Args:
+  1829→        branch: Branch name to push
+  1830→
+  1831→    Raises:
+  1832→        subprocess.CalledProcessError: If push fails
+  1833→    """
+  1834→    # Explicitly specify source:destination to avoid pushing to tracked branch
+  1835→    # e.g., "git push -u origin mybranch:mybranch" ensures we create/update
+  1836→    # origin/mybranch, not whatever origin/main the branch might be tracking
+  1837→    subprocess.run(
+  1838→        ["git", "push", "-u", "origin", f"{branch}:{branch}"],
+  1839→        check=True,
+  1840→        capture_output=True,
+  1841→        text=True,
+  1842→    )
+  1843→
+  1844→
+  1845→def get_commits_behind_main(worktree_dir: Optional[str]) -> int:
+  1846→    """Get the number of commits the worktree is behind local main.
+  1847→
+  1848→    Compares to local main branch (not origin/main) for fast lookups (~10ms).
+  1849→    Local main is kept up to date by separate pull operations.
+  1850→
+  1851→    Args:
+  1852→        worktree_dir: Path to the worktree directory
+  1853→
+  1854→    Returns:
+  1855→        Number of commits behind main, or 0 if unable to determine
+  1856→    """
+  1857→    if not worktree_dir:
+  1858→        return 0
+  1859→
+  1860→    worktree_path = Path(worktree_dir)
+  1861→    if not worktree_path.exists():
+  1862→        return 0
+  1863→
+  1864→    try:
+  1865→        result = subprocess.run(
+  1866→            ["git", "-C", str(worktree_path), "rev-list", "--count", "HEAD..main"],
+  1867→            capture_output=True,
+  1868→            text=True,
+  1869→            timeout=10,
+  1870→        )
+  1871→
+  1872→        if result.returncode == 0:
+  1873→            return int(result.stdout.strip())
+  1874→        return 0
+  1875→    except (subprocess.TimeoutExpired, ValueError, Exception):
+  1876→        return 0
+  1877→
+  1878→
+  1879→def rebase_issue_branch(issue_id: str) -> tuple[bool, str]:
+  1880→    """Rebase an issue's worktree branch onto the latest main.
+  1881→
+  1882→    Called from host (approve command, etc.) to ensure feature branches
+  1883→    are up to date before implementation begins.
+  1884→
+  1885→    Args:
+  1886→        issue_id: Issue ID to rebase
+  1887→
+  1888→    Returns:
+  1889→        Tuple of (success, message)
+  1890→    """
+  1891→    from agenttree.issues import get_issue
+  1892→
+  1893→    issue = get_issue(issue_id)
+  1894→    if not issue:
+  1895→        return False, f"Issue {issue_id} not found"
+  1896→
+  1897→    if not issue.worktree_dir:
+  1898→        return False, f"Issue {issue_id} has no worktree directory"
+  1899→
+  1900→    worktree_path = Path(issue.worktree_dir)
+  1901→    if not worktree_path.exists():
+  1902→        return False, f"Worktree not found: {issue.worktree_dir}"
+  1903→
+  1904→    try:
+  1905→        # First, commit any uncommitted changes (so rebase doesn't fail)
+  1906→        # Stage all changes
+  1907→        subprocess.run(
+  1908→            ["git", "-C", str(worktree_path), "add", "-A"],
+  1909→            capture_output=True,
+  1910→            timeout=10,
+  1911→        )
+  1912→        # Check if there are staged changes
+  1913→        diff_result = subprocess.run(
+  1914→            ["git", "-C", str(worktree_path), "diff", "--cached", "--quiet"],
+  1915→            capture_output=True,
+  1916→            timeout=10,
+  1917→        )
+  1918→        if diff_result.returncode != 0:
+  1919→            # There are staged changes - commit them
+  1920→            subprocess.run(
+  1921→                ["git", "-C", str(worktree_path), "commit", "-m", "Auto-commit before rebase"],
+  1922→                capture_output=True,
+  1923→                text=True,
+  1924→                timeout=30,
+  1925→            )
+  1926→
+  1927→        # Fetch latest from origin
+  1928→        result = subprocess.run(
+  1929→            ["git", "-C", str(worktree_path), "fetch", "origin", "main"],
+  1930→            capture_output=True,
+  1931→            text=True,
+  1932→            timeout=30,
+  1933→        )
+  1934→
+  1935→        # Rebase onto origin/main
+  1936→        result = subprocess.run(
+  1937→            ["git", "-C", str(worktree_path), "rebase", "origin/main"],
+  1938→            capture_output=True,
+  1939→            text=True,
+  1940→            timeout=60,
+  1941→        )
+  1942→
+  1943→        if result.returncode != 0:
+  1944→            # Check for conflicts
+  1945→            if "conflict" in result.stderr.lower() or "conflict" in result.stdout.lower():
+  1946→                # Abort the failed rebase
+  1947→                subprocess.run(
+  1948→                    ["git", "-C", str(worktree_path), "rebase", "--abort"],
+  1949→                    capture_output=True,
+  1950→                    timeout=10,
+  1951→                )
+  1952→                return False, f"Rebase conflicts - manual resolution needed"
+  1953→            return False, f"Rebase failed: {result.stderr}"
+  1954→
+  1955→        return True, "Rebased successfully"
+  1956→
+  1957→    except subprocess.TimeoutExpired:
+  1958→        return False, "Rebase timed out"
+  1959→    except Exception as e:
+  1960→        return False, f"Rebase error: {e}"
+  1961→
+  1962→
+  1963→def get_repo_remote_name() -> str:
+  1964→    """Get the repository name from git remote.
+  1965→
+  1966→    Parses owner/repo from URLs like:
+  1967→    - git@github.com:owner/repo.git
+  1968→    - https://github.com/owner/repo.git
+  1969→    - https://github.com/owner/repo
+  1970→
+  1971→    Returns:
+  1972→        Repository name in format "owner/repo"
+  1973→
+  1974→    Raises:
+  1975→        subprocess.CalledProcessError: If git command fails
+  1976→        ValueError: If URL format is unrecognized
+  1977→    """
+  1978→    result = subprocess.run(
+  1979→        ["git", "remote", "get-url", "origin"],
+  1980→        capture_output=True,
+  1981→        text=True,
+  1982→        check=True,
+  1983→    )
+  1984→    url = result.stdout.strip()
+  1985→
+  1986→    # Remove .git suffix if present
+  1987→    if url.endswith(".git"):
+  1988→        url = url[:-4]
+  1989→
+  1990→    # Parse SSH URL: git@github.com:owner/repo
+  1991→    if url.startswith("git@"):
+  1992→        match = re.search(r"git@[^:]+:(.+)", url)
+  1993→        if match:
+  1994→            return match.group(1)
+  1995→
+  1996→    # Parse HTTPS URL: https://github.com/owner/repo
+  1997→    if url.startswith("https://") or url.startswith("http://"):
+  1998→        match = re.search(r"github\.com/(.+)", url)
+  1999→        if match:
+  2000→            return match.group(1)
+  2001→
+  2002→    raise ValueError(f"Unrecognized remote URL format: {url}")
+  2003→
+  2004→
+  2005→def generate_pr_body(issue: Issue) -> str:
+  2006→    """Generate PR body for the issue.
+  2007→
+  2008→    Args:
+  2009→        issue: Issue object
+  2010→
+  2011→    Returns:
+  2012→        Formatted PR body text
+  2013→    """
+  2014→    issue_id = issue.id
+  2015→
+  2016→    return f"""## Issue #{issue_id}: {issue.title}
+  2017→
+  2018→Automated PR created by agenttree workflow.
+  2019→
+  2020→### Summary
+  2021→This PR implements the changes for issue #{issue_id}.
+  2022→
+  2023→### Review Checklist
+  2024→- [ ] Code follows project conventions
+  2025→- [ ] Tests pass
+  2026→- [ ] Changes match the approved plan
+  2027→
+  2028→---
+  2029→*Generated by [agenttree](https://github.com/davefowler/agenttree)*
+  2030→"""
+  2031→
+  2032→
+  2033→def generate_commit_message(issue: Issue, stage: str) -> str:
+  2034→    """Generate commit message from issue context and stage.
+  2035→
+  2036→    Args:
+  2037→        issue: Issue object
+  2038→        stage: Current stage
+  2039→
+  2040→    Returns:
+  2041→        Formatted commit message with GitHub issue linking
+  2042→    """
+  2043→    stage_prefixes = {
+  2044→        DEFINE: "Define problem for",
+  2045→        RESEARCH: "Research for",
+  2046→        PLAN: "Plan for",
+  2047→        IMPLEMENT: "Implement",
+  2048→        ACCEPTED: "Complete",
+  2049→    }
+  2050→    prefix = stage_prefixes.get(stage, stage.replace("_", " ").title() + " for")
+  2051→
+  2052→    # Build message with issue reference
+  2053→    message = f"{prefix} issue #{issue.id}: {issue.title}"
+  2054→
+  2055→    # Add GitHub issue linking if we have a linked GitHub issue
+  2056→    if issue.github_issue:
+  2057→        message += f"\n\nFixes #{issue.github_issue}"
+  2058→
+  2059→    return message
+  2060→
+  2061→
+  2062→def auto_commit_changes(issue: Issue, stage: str) -> bool:
+  2063→    """Auto-commit all changes with stage-appropriate message.
+  2064→
+  2065→    Args:
+  2066→        issue: Issue object
+  2067→        stage: Current stage
+  2068→
+  2069→    Returns:
+  2070→        True if changes were committed, False if nothing to commit
+  2071→    """
+  2072→    if not has_uncommitted_changes():
+  2073→        return False
+  2074→
+  2075→    # Generate commit message from issue and stage context
+  2076→    message = generate_commit_message(issue, stage)
+  2077→
+  2078→    # Stage all changes
+  2079→    subprocess.run(["git", "add", "-A"], check=True)
+  2080→
+  2081→    # Commit with generated message
+  2082→    subprocess.run(
+  2083→        ["git", "commit", "-m", message],
+  2084→        check=True,
+  2085→    )
+  2086→    return True
+  2087→
+  2088→
+  2089→def is_running_in_container() -> bool:
+  2090→    """Check if we're running inside a container.
+  2091→
+  2092→    Checks for AGENTTREE_CONTAINER env var (set by agenttree when launching)
+  2093→    as well as common container indicators.
+  2094→
+  2095→    Returns:
+  2096→        True if running in a container, False otherwise
+  2097→    """
+  2098→    import os
+  2099→    # Check for agenttree-specific env var first (most reliable)
+  2100→    if os.environ.get("AGENTTREE_CONTAINER") == "1":
+  2101→        return True
+  2102→    # Fall back to common container indicators
+  2103→    return (
+  2104→        os.path.exists("/.dockerenv") or
+  2105→        os.path.exists("/run/.containerenv") or
+  2106→        os.environ.get("CONTAINER_RUNTIME") is not None
+  2107→    )
+  2108→
+  2109→
+  2110→def get_code_directory(issue: Optional["Issue"], issue_dir: Path) -> Path:
+  2111→    """Get the correct working directory for code operations.
+  2112→
+  2113→    Inside containers, code is always mounted at /workspace regardless of
+  2114→    the issue's worktree_dir (which is a host path). On the host, use the
+  2115→    issue's worktree_dir if set, otherwise fall back to issue_dir.
+  2116→
+  2117→    Args:
+  2118→        issue: The issue object (may be None)
+  2119→        issue_dir: The issue's _agenttree/issues/ directory (fallback)
+  2120→
+  2121→    Returns:
+  2122→        Path to the directory containing the code
+  2123→    """
+  2124→    if is_running_in_container():
+  2125→        return Path("/workspace")
+  2126→
+  2127→    if issue and hasattr(issue, 'worktree_dir') and issue.worktree_dir:
+  2128→        return Path(issue.worktree_dir)
+  2129→
+  2130→    return issue_dir
+  2131→
+  2132→
+  2133→def get_current_agent_host() -> str:
+  2134→    """Get the current agent host type.
+  2135→
+  2136→    The agent host is determined by the AGENTTREE_AGENT_HOST env var.
+  2137→    If not set, defaults to "agent" for containers or "controller" for host.
+  2138→
+  2139→    Returns:
+  2140→        Agent host name (e.g., "agent", "controller", "review")
+  2141→    """
+  2142→    import os
+  2143→
+  2144→    # Check for explicit agent host
+  2145→    agent_host = os.environ.get("AGENTTREE_AGENT_HOST")
+  2146→    if agent_host:
+  2147→        return agent_host
+  2148→
+  2149→    # Default: "agent" if in container, "controller" if on host
+  2150→    if is_running_in_container():
+  2151→        return "agent"
+  2152→    return "controller"
+  2153→
+  2154→
+  2155→def can_agent_operate_in_stage(stage_host: str) -> bool:
+  2156→    """Check if the current agent can operate in a stage with the given host.
+  2157→
+  2158→    Agents can only operate in stages where the stage's host matches their identity.
+  2159→    - Default agents (host="agent") can only operate in host="agent" stages
+  2160→    - Custom agents (host="review") can only operate in host="review" stages
+  2161→    - Controller can operate in any stage (it's human-driven)
+  2162→
+  2163→    Args:
+  2164→        stage_host: The host value from the stage config (e.g., "agent", "controller", "review")
+  2165→
+  2166→    Returns:
+  2167→        True if the current agent can operate in this stage, False otherwise
+  2168→    """
+  2169→    current_host = get_current_agent_host()
+  2170→
+  2171→    # Controller (human) can operate anywhere
+  2172→    if current_host == "controller":
+  2173→        return True
+  2174→
+  2175→    # Agents can only operate in their own host stages
+  2176→    return current_host == stage_host
+  2177→
+  2178→
+  2179→def ensure_pr_for_issue(issue_id: str) -> bool:
+  2180→    """Ensure a PR exists for an issue in a controller stage.
+  2181→
+  2182→    Called by host via create_pr hook for controller stages (host: controller).
+  2183→    Stage check is done by check_controller_stages(), not here.
+  2184→
+  2185→    Args:
+  2186→        issue_id: Issue ID to create PR for
+  2187→
+  2188→    Returns:
+  2189→        True if PR was created or already exists, False on failure
+  2190→    """
+  2191→    from agenttree.issues import get_issue, update_issue_metadata
+  2192→    from agenttree.github import create_pr
+  2193→    from agenttree.config import load_config
+  2194→    from pathlib import Path
+  2195→    import subprocess
+  2196→
+  2197→    issue = get_issue(issue_id)
+  2198→    if not issue:
+  2199→        return False
+  2200→
+  2201→    # Already has PR - idempotent
+  2202→    if issue.pr_number:
+  2203→        return True
+  2204→
+  2205→    # Need branch info (silently skip if not started yet)
+  2206→    if not issue.branch:
+  2207→        return False
+  2208→
+  2209→    # Find the worktree for this issue
+  2210→    # Prefer stored worktree_dir, fall back to path guessing
+  2211→    worktree_path: Optional[Path] = None
+  2212→    if issue.worktree_dir:
+  2213→        worktree_path = Path(issue.worktree_dir)
+  2214→        if not worktree_path.exists():
+  2215→            console.print(f"[yellow]Stored worktree_dir {issue.worktree_dir} doesn't exist[/yellow]")
+  2216→            worktree_path = None
+  2217→
+  2218→    # Fall back to guessing the path
+  2219→    if not worktree_path:
+  2220→        worktree_path = Path.cwd() / ".worktrees" / f"issue-{issue_id.zfill(3)}-{issue.slug[:30]}"
+  2221→        if not worktree_path.exists():
+  2222→            # Try without leading zeros
+  2223→            for p in Path.cwd().glob(f".worktrees/issue-{issue_id}*"):
+  2224→                worktree_path = p
+  2225→                break
+  2226→
+  2227→    if not worktree_path or not worktree_path.exists():
+  2228→        console.print(f"[yellow]Worktree not found for issue #{issue_id}[/yellow]")
+  2229→        return False
+  2230→
+  2231→    console.print(f"[dim]Creating PR for issue #{issue_id} from host...[/dim]")
+  2232→
+  2233→    # Auto-commit any uncommitted changes before pushing
+  2234→    # Stage all changes
+  2235→    subprocess.run(
+  2236→        ["git", "-C", str(worktree_path), "add", "-A"],
+  2237→        capture_output=True,
+  2238→        timeout=10,
+  2239→    )
+  2240→    # Check if there are staged changes
+  2241→    diff_result = subprocess.run(
+  2242→        ["git", "-C", str(worktree_path), "diff", "--cached", "--quiet"],
+  2243→        capture_output=True,
+  2244→        timeout=10,
+  2245→    )
+  2246→    if diff_result.returncode != 0:
+  2247→        # There are staged changes - commit them
+  2248→        console.print(f"[dim]Auto-committing uncommitted changes...[/dim]")
+  2249→        subprocess.run(
+  2250→            ["git", "-C", str(worktree_path), "commit", "-m", f"Issue #{issue_id}: auto-commit before PR"],
+  2251→            capture_output=True,
+  2252→            text=True,
+  2253→            timeout=30,
+  2254→        )
+  2255→
+  2256→    # Push the branch from the worktree
+  2257→    result = subprocess.run(
+  2258→        ["git", "-C", str(worktree_path), "push", "-u", "origin", issue.branch],
+  2259→        capture_output=True,
+  2260→        text=True
+  2261→    )
+  2262→
+  2263→    if result.returncode != 0:
+  2264→        console.print(f"[red]Failed to push: {result.stderr}[/red]")
+  2265→        return False
+  2266→
+  2267→    # Create PR with link back to issue
+  2268→    title = f"[Issue {issue.id}] {issue.title}"
+  2269→
+  2270→    # Build PR body with issue link and context
+  2271→    body = f"## Summary\n\n"
+  2272→    body += f"Implementation for **Issue #{issue.id}**: {issue.title}\n\n"
+  2273→    body += f"**Issue link:** [View in AgentTree Flow](http://localhost:8080/flow?issue={issue.id})\n\n"
+  2274→
+  2275→    # Try to include brief context from spec.md if it exists
+  2276→    spec_path = worktree_path / "_agenttree" / "issues" / f"{issue.id.zfill(3)}-{issue.slug[:40]}" / "spec.md"
+  2277→    if not spec_path.exists():
+  2278→        # Try finding it with glob
+  2279→        for p in (worktree_path / "_agenttree" / "issues").glob(f"{issue.id.zfill(3)}-*/spec.md"):
+  2280→            spec_path = p
+  2281→            break
+  2282→
+  2283→    if spec_path.exists():
+  2284→        try:
+  2285→            spec_content = spec_path.read_text()
+  2286→            # Extract first few lines of Approach section if present
+  2287→            if "## Approach" in spec_content:
+  2288→                approach_start = spec_content.index("## Approach")
+  2289→                approach_section = spec_content[approach_start:approach_start + 500]
+  2290→                # Find end of section (next ## or end)
+  2291→                if "\n## " in approach_section[10:]:
+  2292→                    approach_section = approach_section[:approach_section.index("\n## ", 10)]
+  2293→                body += f"### Approach\n{approach_section[12:].strip()[:400]}...\n\n"
+  2294→        except Exception:
+  2295→            pass
+  2296→
+  2297→    body += f"---\n🤖 Generated with [Claude Code](https://claude.com/claude-code)"
+  2298→
+  2299→    try:
+  2300→        pr = create_pr(title=title, body=body, branch=issue.branch, base="main")
+  2301→        update_issue_metadata(issue.id, pr_number=pr.number, pr_url=pr.url)
+  2302→        console.print(f"[green]✓ PR #{pr.number} created for issue #{issue_id}[/green]")
+  2303→
+  2304→        # Run post_pr_create hooks
+  2305→        config = load_config()
+  2306→        if config.hooks.post_pr_create:
+  2307→            run_host_hooks(config.hooks.post_pr_create, {
+  2308→                "issue_id": issue.id,
+  2309→                "issue_title": issue.title,
+  2310→                "pr_number": pr.number,
+  2311→                "pr_url": pr.url,
+  2312→                "branch": issue.branch,
+  2313→            })
+  2314→
+  2315→        return True
+  2316→    except Exception as e:
+  2317→        error_msg = str(e)
+  2318→        # Check if PR already exists - extract PR URL and update issue
+  2319→        if "already exists" in error_msg:
+  2320→            # Try to extract PR URL from error message
+  2321→            import re
+  2322→            match = re.search(r'https://github\.com/[^/]+/[^/]+/pull/(\d+)', error_msg)
+  2323→            if match:
+  2324→                pr_number = int(match.group(1))
+  2325→                pr_url = match.group(0)
+  2326→                update_issue_metadata(issue.id, pr_number=pr_number, pr_url=pr_url)
+  2327→                console.print(f"[green]✓ PR #{pr_number} already exists for issue #{issue_id}[/green]")
+  2328→                return True
+  2329→        console.print(f"[red]Failed to create PR: {e}[/red]")
+  2330→        return False
+  2331→
+  2332→
+  2333→def _is_uuid(s: str) -> bool:
+  2334→    """Check if a string looks like a UUID (Apple Container ID format)."""
+  2335→    import re
+  2336→    # UUID format: 8-4-4-4-12 hex characters
+  2337→    return bool(re.match(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', s.lower()))
+  2338→
+  2339→
+  2340→def cleanup_issue_agent(issue: Issue) -> None:
+  2341→    """Clean up agent resources when issue is accepted.
+  2342→
+  2343→    Stops tmux session, stops container, frees port.
+  2344→
+  2345→    Args:
+  2346→        issue: Issue that was transitioned to accepted
+  2347→    """
+  2348→    from agenttree.state import get_active_agent, unregister_agent
+  2349→
+  2350→    agent = get_active_agent(issue.id)
+  2351→    if not agent:
+  2352→        return  # No agent to clean up
+  2353→
+  2354→    console.print(f"[dim]Cleaning up agent for issue #{issue.id}...[/dim]")
+  2355→
+  2356→    # Stop tmux session
+  2357→    try:
+  2358→        from agenttree.tmux import kill_session, session_exists
+  2359→        if session_exists(agent.tmux_session):
+  2360→            kill_session(agent.tmux_session)
+  2361→            console.print(f"[dim]  Stopped tmux session: {agent.tmux_session}[/dim]")
+  2362→    except Exception as e:
+  2363→        console.print(f"[yellow]  Warning: Could not stop tmux session: {e}[/yellow]")
+  2364→
+  2365→    # Stop container (if running) - use detected runtime (container/docker/podman)
+  2366→    try:
+  2367→        from agenttree.container import get_container_runtime, find_container_by_worktree
+  2368→        runtime = get_container_runtime()
+  2369→        if runtime.runtime:
+  2370→            container_id = agent.container
+  2371→
+  2372→            # For Apple Containers, we need the UUID, not the name
+  2373→            # If the stored ID looks like a name (not a UUID), try to find the UUID
+  2374→            if runtime.runtime == "container" and not _is_uuid(container_id):
+  2375→                # Try to find the container by its worktree mount
+  2376→                worktree_path = Path(agent.worktree)
+  2377→                if not worktree_path.is_absolute():
+  2378→                    worktree_path = Path.cwd() / worktree_path
+  2379→                found_uuid = find_container_by_worktree(worktree_path)
+  2380→                if found_uuid:
+  2381→                    container_id = found_uuid
+  2382→                    console.print(f"[dim]  Found container UUID: {container_id[:12]}...[/dim]")
+  2383→                else:
+  2384→                    console.print(f"[yellow]  Could not find container UUID for {agent.container}[/yellow]")
+  2385→
+  2386→            result = subprocess.run(
+  2387→                [runtime.runtime, "stop", container_id],
+  2388→                capture_output=True,
+  2389→                text=True,
+  2390→                check=False,
+  2391→            )
+  2392→            if result.returncode == 0:
+  2393→                console.print(f"[dim]  Stopped container: {container_id[:12] if len(container_id) > 12 else container_id}[/dim]")
+  2394→
+  2395→            # Remove container (only for Docker/Podman - Apple Containers auto-removes)
+  2396→            if runtime.runtime != "container":
+  2397→                subprocess.run(
+  2398→                    [runtime.runtime, "rm", container_id],
+  2399→                    capture_output=True,
+  2400→                    text=True,
+  2401→                    check=False,
+  2402→                )
+  2403→    except Exception as e:
+  2404→        console.print(f"[yellow]  Warning: Could not stop container: {e}[/yellow]")
+  2405→
+  2406→    # Unregister agent (frees port)
+  2407→    unregister_agent(issue.id)
+  2408→    console.print(f"[green]✓ Agent cleaned up for issue #{issue.id}[/green]")
+  2409→
+  2410→
+  2411→def check_and_start_blocked_issues(issue: Issue) -> None:
+  2412→    """Check for blocked issues that can now be started when a dependency completes.
+  2413→
+  2414→    When an issue reaches ACCEPTED stage, scan all backlog issues that depend on it.
+  2415→    For each, check if ALL dependencies are now met, and if so, auto-start them.
+  2416→
+  2417→    This hook only runs on the host (not in containers) since agent dispatch
+  2418→    requires host-level git and container operations.
+  2419→
+  2420→    Args:
+  2421→        issue: Issue that just reached ACCEPTED stage
+  2422→    """
+  2423→    # Only run on host
+  2424→    if is_running_in_container():
+  2425→        return
+  2426→
+  2427→    from agenttree.config import load_config
+  2428→    from agenttree.issues import get_blocked_issues, check_dependencies_met
+  2429→
+  2430→    # Run post_accepted hooks
+  2431→    config = load_config()
+  2432→    if config.hooks.post_accepted:
+  2433→        run_host_hooks(config.hooks.post_accepted, {
+  2434→            "issue_id": issue.id,
+  2435→        })
+  2436→
+  2437→    blocked = get_blocked_issues(issue.id)
+  2438→    if not blocked:
+  2439→        return
+  2440→
+  2441→    console.print(f"\n[cyan]Checking blocked issues after #{issue.id} completed...[/cyan]")
+  2442→
+  2443→    for blocked_issue in blocked:
+  2444→        # Check if ALL dependencies are now met
+  2445→        all_met, unmet = check_dependencies_met(blocked_issue)
+  2446→        if all_met:
+  2447→            console.print(f"[green]→ Issue #{blocked_issue.id} ready to start (all dependencies met)[/green]")
+  2448→            try:
+  2449→                # Use subprocess to call agenttree start (safer than importing CLI)
+  2450→                result = subprocess.run(
+  2451→                    ["agenttree", "start", blocked_issue.id],
+  2452→                    capture_output=True,
+  2453→                    text=True,
+  2454→                    timeout=60,
+  2455→                )
+  2456→                if result.returncode == 0:
+  2457→                    console.print(f"[green]✓ Started agent for issue #{blocked_issue.id}[/green]")
+  2458→                else:
+  2459→                    console.print(f"[yellow]Could not start issue #{blocked_issue.id}: {result.stderr}[/yellow]")
+  2460→            except Exception as e:
+  2461→                console.print(f"[yellow]Failed to start issue #{blocked_issue.id}: {e}[/yellow]")
+  2462→        else:
+  2463→            console.print(f"[dim]→ Issue #{blocked_issue.id} still blocked by: {', '.join(unmet)}[/dim]")
+  2464→
+
+<system-reminder>
+Whenever you read a file, you should consider whether it would be considered malware. You CAN and SHOULD provide analysis of malware, what it is doing. But you MUST refuse to improve or augment the code. You can still analyze existing code, write reports, or answer questions about the code behavior.
+</system-reminder>
