@@ -191,6 +191,8 @@ class IssueStateMachine:
         "implement.feedback",
         # Independent code review (custom agent stage)
         "independent_code_review",
+        # Address independent review feedback (redirect_only stage)
+        "address_independent_review",
         # Implementation review (human review gate)
         "implementation_review.ci_wait",
         "implementation_review.review",
@@ -225,8 +227,14 @@ class IssueStateMachine:
         {"trigger": "advance", "source": "implement.wrapup", "dest": "implement.feedback"},
         # Implement feedback to independent code review
         {"trigger": "advance", "source": "implement.feedback", "dest": "independent_code_review"},
-        # Independent code review to implementation review
+        # Independent code review to implementation review (normal flow)
         {"trigger": "advance", "source": "independent_code_review", "dest": "implementation_review.ci_wait"},
+        # Independent code review redirect to address feedback (when reviewer requests changes)
+        {"trigger": "redirect", "source": "independent_code_review", "dest": "address_independent_review"},
+        # Address independent review rolls back to independent_code_review for re-review
+        {"trigger": "advance", "source": "address_independent_review", "dest": "independent_code_review"},
+        # Also allow advance to implementation_review (config calculates this as next, hook redirects)
+        {"trigger": "advance", "source": "address_independent_review", "dest": "implementation_review.ci_wait"},
         # Implementation review substages and to accepted
         {"trigger": "advance", "source": "implementation_review.ci_wait", "dest": "implementation_review.review"},
         {"trigger": "advance", "source": "implementation_review.review", "dest": "accepted"},

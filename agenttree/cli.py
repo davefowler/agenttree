@@ -3237,7 +3237,7 @@ def diagram_command(output: str | None, fmt: str) -> None:
         # Render using dot command
         output_file = output or f"workflow.{fmt}"
         try:
-            result = subprocess.run(
+            subprocess.run(
                 ["dot", f"-T{fmt}", "-o", output_file],
                 input=dot_source,
                 text=True,
