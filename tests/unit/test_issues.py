@@ -12,6 +12,7 @@ from agenttree.issues import (
     create_issue,
     list_issues,
     get_issue,
+    get_issue_context,
     get_agenttree_path,
     get_next_stage,
     update_issue_stage,
@@ -1133,4 +1134,142 @@ class TestLoadOverview:
         assert overview is not None
         assert issue.id in overview
         assert "Test Feature" in overview
+
+
+class TestGetIssueContext:
+    """Tests for get_issue_context function (DRY context builder)."""
+
+    @pytest.fixture
+    def temp_agenttrees(self, monkeypatch, tmp_path):
+        """Create a temporary _agenttree directory."""
+        agenttrees_path = tmp_path / "_agenttree"
+        agenttrees_path.mkdir()
+        (agenttrees_path / "issues").mkdir()
+        (agenttrees_path / "templates").mkdir()
+
+        # Create problem template
+        template = agenttrees_path / "templates" / "problem.md"
+        template.write_text("# Problem Statement\n\n")
+
+        # Monkeypatch get_agenttree_path to return our temp dir
+        monkeypatch.setattr(
+            "agenttree.issues.get_agenttree_path",
+            lambda: agenttrees_path
+        )
+        # Also monkeypatch sync to do nothing
+        monkeypatch.setattr(
+            "agenttree.issues.sync_agents_repo",
+            lambda *args, **kwargs: True
+        )
+
+        return agenttrees_path
+
+    def test_get_issue_context_includes_all_model_fields(self, temp_agenttrees):
+        """get_issue_context should include all Issue model fields."""
+        issue = create_issue("Test Issue", priority=Priority.HIGH)
+
+        context = get_issue_context(issue)
+
+        # Core model fields
+        assert context["id"] == "001"
+        assert context["slug"] == "test-issue"
+        assert context["title"] == "Test Issue"
+        assert context["stage"] == DEFINE
+        assert context["substage"] == "refine"
+        assert context["priority"] == "high"
+        assert "created" in context
+        assert "updated" in context
+        assert context["labels"] == []
+        assert context["dependencies"] == []
+
+    def test_get_issue_context_includes_derived_fields(self, temp_agenttrees):
+        """get_issue_context should include derived fields."""
+        issue = create_issue("Test Issue")
+
+        context = get_issue_context(issue)
+
+        # Derived fields
+        assert context["issue_id"] == "001"  # alias
+        assert context["issue_title"] == "Test Issue"  # alias
+        assert "issue_dir" in context
+        assert context["issue_dir_rel"] == "_agenttree/issues/001-test-issue"
+        assert context["stage_substage"] == "define.refine"
+
+    def test_get_issue_context_stage_substage_without_substage(self, temp_agenttrees):
+        """stage_substage should handle missing substage."""
+        from agenttree.issues import update_issue_stage
+
+        issue = create_issue("Test Issue")
+        update_issue_stage(issue.id, ACCEPTED, None)
+
+        # Reload issue to get updated data
+        issue = get_issue(issue.id)
+        context = get_issue_context(issue)
+
+        assert context["stage_substage"] == "accepted"
+
+    def test_get_issue_context_includes_documents(self, temp_agenttrees):
+        """get_issue_context should include document contents when include_docs=True."""
+        issue = create_issue("Test Issue")
+
+        # Write some document content
+        issue_dir = temp_agenttrees / "issues" / "001-test-issue"
+        (issue_dir / "research.md").write_text("Research findings here")
+
+        context = get_issue_context(issue, include_docs=True)
+
+        assert context["problem_md"] == "# Problem Statement\n\n"
+        assert context["research_md"] == "Research findings here"
+        assert context["spec_md"] == ""  # Missing file = empty string
+        assert context["spec_review_md"] == ""
+        assert context["review_md"] == ""
+
+    def test_get_issue_context_excludes_documents(self, temp_agenttrees):
+        """get_issue_context should skip documents when include_docs=False."""
+        issue = create_issue("Test Issue")
+
+        context = get_issue_context(issue, include_docs=False)
+
+        assert "problem_md" not in context
+        assert "research_md" not in context
+        assert "spec_md" not in context
+
+    def test_get_issue_context_includes_optional_fields(self, temp_agenttrees):
+        """get_issue_context should include optional fields."""
+        from agenttree.issues import update_issue_metadata
+
+        issue = create_issue("Test Issue")
+        update_issue_metadata(
+            issue.id,
+            branch="issue-001-test-issue",
+            worktree_dir="/path/to/worktree",
+            pr_number=42,
+            pr_url="https://github.com/org/repo/pull/42",
+        )
+
+        # Reload issue
+        issue = get_issue(issue.id)
+        context = get_issue_context(issue)
+
+        assert context["branch"] == "issue-001-test-issue"
+        assert context["worktree_dir"] == "/path/to/worktree"
+        assert context["pr_number"] == 42
+        assert context["pr_url"] == "https://github.com/org/repo/pull/42"
+
+    def test_get_issue_context_includes_history(self, temp_agenttrees):
+        """get_issue_context should include history as list of dicts."""
+        from agenttree.issues import update_issue_stage
+
+        issue = create_issue("Test Issue")
+        update_issue_stage(issue.id, RESEARCH, "explore", agent=1)
+
+        # Reload issue
+        issue = get_issue(issue.id)
+        context = get_issue_context(issue)
+
+        assert "history" in context
+        assert len(context["history"]) == 2
+        assert context["history"][0]["stage"] == "define"
+        assert context["history"][1]["stage"] == "research"
+        assert context["history"][1]["agent"] == 1
 

@@ -898,26 +898,13 @@ def load_skill(
     if issue is None:
         return skill_content
 
-    # Build Jinja context
-    issue_dir = get_issue_dir(issue.id)
-    context = {
-        "issue_id": issue.id,
-        "issue_title": issue.title,
-        "issue_dir": str(issue_dir) if issue_dir else "",
-        "issue_dir_rel": f"_agenttree/issues/{issue.id}-{issue.slug}" if issue_dir else "",
-        "stage": stage,
-        "substage": substage or "",
-    }
+    # Build Jinja context using unified function
+    context = get_issue_context(issue, include_docs=True)
 
-    # Load document contents if they exist
-    if issue_dir:
-        for doc_name in ["problem.md", "research.md", "spec.md", "spec_review.md", "review.md"]:
-            doc_path = issue_dir / doc_name
-            var_name = doc_name.replace(".md", "_md").replace("-", "_")
-            if doc_path.exists():
-                context[var_name] = doc_path.read_text()
-            else:
-                context[var_name] = ""
+    # Override stage/substage with what was passed to load_skill
+    # (may differ from current issue state when loading a specific stage skill)
+    context["stage"] = stage
+    context["substage"] = substage or ""
 
     # Load project-level review checklist if it exists (for project-specific patterns)
     # Look in skills directory to keep all skill-related files together
@@ -932,6 +919,7 @@ def load_skill(
     from agenttree.commands import get_referenced_commands, get_command_output
     from agenttree.hooks import get_code_directory
 
+    issue_dir = get_issue_dir(issue.id)
     if config.commands:
         # Determine working directory for commands (container-aware)
         cwd = get_code_directory(issue, issue_dir) if issue_dir else None
@@ -1242,3 +1230,51 @@ def archive_issue_files(issue_id: str, files: list[str]) -> list[str]:
             print(f"Warning: Could not archive {filename}: {e}")
 
     return archived
+
+
+def get_issue_context(issue: Issue, include_docs: bool = True) -> dict:
+    """Build a complete context dict for an issue.
+
+    This is the single source of truth for issue context, used by:
+    - CLI: `agenttree issue show --json/--field`
+    - Template rendering in hooks.py and load_skill()
+
+    Args:
+        issue: Issue object
+        include_docs: If True, load document contents (problem_md, research_md, etc.)
+
+    Returns:
+        Dict with all issue fields plus derived fields
+    """
+    from typing import Any
+
+    # Start with all Issue model fields
+    context: dict[str, Any] = issue.model_dump(mode="json")
+
+    # Get issue directory
+    issue_dir = get_issue_dir(issue.id)
+
+    # Add derived fields
+    context["issue_id"] = issue.id  # Alias for backward compat with templates
+    context["issue_title"] = issue.title  # Alias for backward compat with templates
+    context["issue_dir"] = str(issue_dir) if issue_dir else ""
+    context["issue_dir_rel"] = f"_agenttree/issues/{issue.id}-{issue.slug}" if issue_dir else ""
+
+    # Combined stage.substage
+    if issue.substage:
+        context["stage_substage"] = f"{issue.stage}.{issue.substage}"
+    else:
+        context["stage_substage"] = issue.stage
+
+    # Load document contents if requested
+    if include_docs and issue_dir:
+        doc_names = ["problem.md", "research.md", "spec.md", "spec_review.md", "review.md"]
+        for doc_name in doc_names:
+            doc_path = issue_dir / doc_name
+            var_name = doc_name.replace(".md", "_md").replace("-", "_")
+            if doc_path.exists():
+                context[var_name] = doc_path.read_text()
+            else:
+                context[var_name] = ""
+
+    return context

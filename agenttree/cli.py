@@ -23,6 +23,7 @@ from agenttree.issues import (
     list_issues as list_issues_func,
     get_issue as get_issue_func,
     get_issue_dir,
+    get_issue_context,
     get_next_stage,
     update_issue_stage,
     update_issue_metadata,
@@ -1757,20 +1758,55 @@ def issue_list(stage: Optional[str], priority: Optional[str], as_json: bool) -> 
 
 @issue.command("show")
 @click.argument("issue_id")
-def issue_show(issue_id: str) -> None:
+@click.option("--json", "as_json", is_flag=True, help="Output full issue as JSON")
+@click.option("--field", "field_name", help="Output just one field value (e.g., branch, worktree_dir, stage)")
+def issue_show(issue_id: str, as_json: bool, field_name: Optional[str]) -> None:
     """Show issue details.
 
     Examples:
         agenttree issue show 001
         agenttree issue show 1
         agenttree issue show 001-fix-login
+
+    Machine-readable output:
+        agenttree issue show 060 --json
+        agenttree issue show 060 --field branch
+        agenttree issue show 060 --field worktree_dir
+        agenttree issue show 060 --field stage
     """
+    import json
+
     issue = get_issue_func(issue_id)
 
     if not issue:
         console.print(f"[red]Issue {issue_id} not found[/red]")
         sys.exit(1)
 
+    # Machine-readable output modes
+    if as_json or field_name:
+        # Don't include docs by default for --field (faster), include for --json
+        context = get_issue_context(issue, include_docs=as_json)
+
+        if field_name:
+            # Output single field value
+            if field_name not in context:
+                console.print(f"[red]Unknown field: {field_name}[/red]")
+                console.print(f"[dim]Available fields: {', '.join(sorted(context.keys()))}[/dim]")
+                sys.exit(1)
+            value = context[field_name]
+            # Print raw value for scripting (no formatting)
+            if value is None:
+                print("")
+            elif isinstance(value, (list, dict)):
+                print(json.dumps(value))
+            else:
+                print(value)
+        else:
+            # Output full JSON
+            print(json.dumps(context, indent=2))
+        return
+
+    # Human-readable output (existing behavior)
     issue_dir = get_issue_dir(issue_id)
 
     console.print(f"\n[bold cyan]Issue {issue.id}: {issue.title}[/bold cyan]\n")

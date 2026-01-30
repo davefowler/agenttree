@@ -293,6 +293,7 @@ from agenttree.issues import (
     PLAN,
     IMPLEMENT,
     ACCEPTED,
+    get_issue_context,
 )
 from agenttree.config import load_config
 
@@ -953,7 +954,7 @@ def run_builtin_validator(
             if not dest_path.exists() and template_path.exists():
                 template_content = template_path.read_text()
 
-                # Build Jinja context
+                # Build Jinja context using unified function
                 from jinja2 import Template
                 from agenttree.commands import get_referenced_commands, get_command_output
 
@@ -961,21 +962,8 @@ def run_builtin_validator(
                 context: Dict[str, Any] = {}
 
                 if issue:
-                    context = {
-                        "issue_id": issue.id,
-                        "issue_title": issue.title,
-                        "issue_dir": str(issue_dir),
-                        "issue_dir_rel": f"_agenttree/issues/{issue.id}-{issue.slug}" if hasattr(issue, 'slug') else "",
-                    }
-
-                    # Add document contents if they exist
-                    for doc_name in ["problem.md", "research.md", "spec.md", "spec_review.md", "review.md"]:
-                        doc_path = issue_dir / doc_name
-                        var_name = doc_name.replace(".md", "_md").replace("-", "_")
-                        if doc_path.exists():
-                            context[var_name] = doc_path.read_text()
-                        else:
-                            context[var_name] = ""
+                    # Use get_issue_context for all issue fields
+                    context = get_issue_context(issue, include_docs=True)
 
                     # Add latest_independent_review - find highest-numbered version
                     # Looks for independent_review_v*.md and uses the highest version
