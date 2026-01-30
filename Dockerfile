@@ -43,7 +43,8 @@ ENV PATH="/home/agent/.local/bin:$PATH"
 WORKDIR /workspace
 
 # Pre-create Claude config to skip onboarding wizard
-RUN mkdir -p /home/agent/.claude && \
+# Also create projects/-workspace for session persistence mounts
+RUN mkdir -p /home/agent/.claude/projects/-workspace && \
     echo '{"hasCompletedOnboarding":true}' > /home/agent/.claude.json && \
     echo '{"theme":"dark"}' > /home/agent/.claude/settings.json
 

@@ -10,6 +10,7 @@ from textual.worker import Worker, get_current_worker
 
 from agenttree.hooks import (
     ValidationError,
+    StageRedirect,
     execute_exit_hooks,
     execute_enter_hooks,
 )
@@ -322,10 +323,16 @@ class TUIApp(App):  # type: ignore[type-arg]
         try:
             next_stage, next_substage, _ = get_next_stage(issue.stage, issue.substage)
 
-            # Execute pre-completion hooks (can block with ValidationError)
+            # Execute pre-completion hooks (can block with ValidationError or redirect)
             from_stage = issue.stage
             from_substage = issue.substage
-            execute_exit_hooks(issue, from_stage, from_substage)
+            try:
+                execute_exit_hooks(issue, from_stage, from_substage)
+            except StageRedirect as redirect:
+                # Redirect to a different stage
+                next_stage = redirect.target_stage
+                next_substage = None
+                status.show_message(f"Redirecting to {next_stage}: {redirect.reason}")
 
             # Update issue stage
             updated = update_issue_stage(issue.id, next_stage, next_substage)

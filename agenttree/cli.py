@@ -47,6 +47,7 @@ from agenttree.hooks import (
     execute_exit_hooks,
     execute_enter_hooks,
     ValidationError,
+    StageRedirect,
     is_running_in_container,
     get_current_agent_host,
     can_agent_operate_in_stage,
@@ -2121,11 +2122,17 @@ def stage_next(issue_id: Optional[str], reassess: bool) -> None:
         console.print(f"[yellow]Already at final stage[/yellow]")
         return
 
-    # Execute exit hooks (can block with ValidationError)
+    # Execute exit hooks (can block with ValidationError or redirect with StageRedirect)
     from_stage = issue.stage
     from_substage = issue.substage
     try:
         execute_exit_hooks(issue, from_stage, from_substage)
+    except StageRedirect as redirect:
+        # Redirect to a different stage instead of normal next stage
+        console.print(f"[yellow]Redirecting to {redirect.target_stage}: {redirect.reason}[/yellow]")
+        next_stage = redirect.target_stage
+        next_substage = None
+        is_human_review = False  # Redirect target is typically not human review
     except ValidationError as e:
         console.print(f"[red]Cannot proceed: {e}[/red]")
         sys.exit(1)
@@ -2222,6 +2229,11 @@ def approve_issue(issue_id: str, skip_approval: bool) -> None:
     from_substage = issue.substage
     try:
         execute_exit_hooks(issue, from_stage, from_substage, skip_pr_approval=skip_approval)
+    except StageRedirect as redirect:
+        # Redirect to a different stage instead of normal next stage
+        console.print(f"[yellow]Redirecting to {redirect.target_stage}: {redirect.reason}[/yellow]")
+        next_stage = redirect.target_stage
+        next_substage = None
     except ValidationError as e:
         console.print(f"[red]Cannot approve: {e}[/red]")
         sys.exit(1)
@@ -2878,6 +2890,41 @@ def hooks_check(issue_id: str, event: str) -> None:
                     show_hooks(next_stage_config.post_start, "post_start", f"{next_stage} (next)")
 
     console.print()
+
+
+def _execute_rollback(
+    issue_id: str,
+    target_stage: str,
+    yes: bool = True,
+    reset_worktree: bool = False,
+    keep_changes: bool = True,
+    skip_sync: bool = False,
+) -> bool:
+    """Execute a rollback programmatically. Used by both CLI and hooks.
+
+    This is a thin wrapper around agenttree.rollback.execute_rollback to avoid
+    circular imports between hooks.py and cli.py.
+
+    Args:
+        issue_id: Issue ID to rollback
+        target_stage: Stage to rollback to
+        yes: Auto-confirm (default True for programmatic use)
+        reset_worktree: Reset worktree to origin/main
+        keep_changes: Keep code changes (default True)
+        skip_sync: Skip syncing changes (for hook use where caller handles sync)
+
+    Returns:
+        True if rollback succeeded, False otherwise
+    """
+    from agenttree.rollback import execute_rollback
+    return execute_rollback(
+        issue_id=issue_id,
+        target_stage=target_stage,
+        yes=yes,
+        reset_worktree=reset_worktree,
+        keep_changes=keep_changes,
+        skip_sync=skip_sync,
+    )
 
 
 @main.command("rollback")

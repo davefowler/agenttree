@@ -1,7 +1,7 @@
 """Web dashboard for AgentTree using FastAPI + HTMX."""
 
 from fastapi import FastAPI, Request, Form, WebSocket, WebSocketDisconnect, Depends, HTTPException, status
-from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse, Response
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -12,7 +12,7 @@ import asyncio
 import secrets
 import os
 import re
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, AsyncIterator, Callable, Awaitable
 from datetime import datetime
 from contextlib import asynccontextmanager
 
@@ -81,7 +81,7 @@ async def background_sync_loop(interval: int = 10) -> None:
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """FastAPI lifespan context - starts/stops background sync."""
     global _sync_task
 
@@ -109,7 +109,9 @@ app = FastAPI(title="AgentTree Dashboard", lifespan=lifespan)
 class NoCacheMiddleware(BaseHTTPMiddleware):
     """Disable caching for HTML responses during development."""
 
-    async def dispatch(self, request: Request, call_next):
+    async def dispatch(
+        self, request: Request, call_next: Callable[[Request], Awaitable["Response"]]
+    ) -> "Response":
         response = await call_next(request)
         # Disable cache for HTML responses
         if response.headers.get("content-type", "").startswith("text/html"):
@@ -759,7 +761,7 @@ async def approve_issue(
     executes enter hooks. Only works from human review stages.
     """
     from agenttree.config import load_config
-    from agenttree.hooks import execute_exit_hooks, execute_enter_hooks, ValidationError
+    from agenttree.hooks import execute_exit_hooks, execute_enter_hooks, ValidationError, StageRedirect
 
     HUMAN_REVIEW_STAGES = ["plan_review", "implementation_review", "independent_code_review"]
 
@@ -780,6 +782,10 @@ async def approve_issue(
     # Execute exit hooks (validation)
     try:
         execute_exit_hooks(issue, issue.stage, issue.substage)
+    except StageRedirect as redirect:
+        # Redirect to a different stage instead of normal next stage
+        next_stage = redirect.target_stage
+        next_substage = None
     except ValidationError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

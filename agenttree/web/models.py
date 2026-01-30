@@ -17,8 +17,9 @@ class StageEnum(str, Enum):
     PLAN_REVISE = "plan_revise"
     PLAN_REVIEW = "plan_review"
     IMPLEMENT = "implement"
-    IMPLEMENTATION_REVIEW = "implementation_review"
     INDEPENDENT_CODE_REVIEW = "independent_code_review"
+    ADDRESS_INDEPENDENT_REVIEW = "address_independent_review"
+    IMPLEMENTATION_REVIEW = "implementation_review"
     ACCEPTED = "accepted"
     NOT_DOING = "not_doing"
 
