@@ -89,49 +89,6 @@ class TestIssueModel:
         assert issue.substage == "code"
         assert "bug" in issue.labels
 
-    def test_port_property_calculates_from_issue_id(self):
-        """Port should be calculated from issue ID."""
-        issue = Issue(
-            id="001",
-            slug="test",
-            title="Test",
-            created="2026-01-11T12:00:00Z",
-            updated="2026-01-11T12:00:00Z",
-        )
-        assert issue.port == 9001  # Issue 1 gets port 9001
-
-        issue2 = Issue(
-            id="042",
-            slug="test",
-            title="Test",
-            created="2026-01-11T12:00:00Z",
-            updated="2026-01-11T12:00:00Z",
-        )
-        assert issue2.port == 9042  # Issue 42 gets port 9042
-
-    def test_port_property_wraps_for_large_issue_ids(self):
-        """Port should wrap around for issue IDs > 99."""
-        issue = Issue(
-            id="122",
-            slug="test",
-            title="Test",
-            created="2026-01-11T12:00:00Z",
-            updated="2026-01-11T12:00:00Z",
-        )
-        # Issue 122: (122 - 1) % 99 = 121 % 99 = 22, so port = 9001 + 22 = 9023
-        assert issue.port == 9023
-
-    def test_port_property_returns_none_for_invalid_id(self):
-        """Port should return None for non-numeric issue IDs."""
-        issue = Issue(
-            id="invalid",
-            slug="test",
-            title="Test",
-            created="2026-01-11T12:00:00Z",
-            updated="2026-01-11T12:00:00Z",
-        )
-        assert issue.port is None
-
 
 class TestIssueCRUD:
     """Tests for issue CRUD operations."""

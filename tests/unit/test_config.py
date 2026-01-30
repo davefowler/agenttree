@@ -67,6 +67,34 @@ class TestConfig:
         with pytest.raises(ValueError, match="Agent number 5 exceeds port range"):
             config.get_port_for_agent(5)
 
+    def test_get_port_for_issue(self) -> None:
+        """Test getting port number for an issue ID."""
+        config = Config(port_range="9001-9099")
+        assert config.get_port_for_issue("001") == 9001
+        assert config.get_port_for_issue("042") == 9042
+        assert config.get_port_for_issue("99") == 9099
+
+    def test_get_port_for_issue_custom_range(self) -> None:
+        """Test port for issue uses configured port_range."""
+        config = Config(port_range="8001-8009")
+        assert config.get_port_for_issue("1") == 8001
+        assert config.get_port_for_issue("5") == 8005
+
+    def test_get_port_for_issue_out_of_range(self) -> None:
+        """Test returns None when issue ID exceeds port range."""
+        config = Config(port_range="9001-9009")
+        # Issue 10 would need port 9010, exceeds range 9001-9009
+        assert config.get_port_for_issue("10") is None
+        # Issue 100 would need port 9100, exceeds range
+        assert config.get_port_for_issue("100") is None
+
+    def test_get_port_for_issue_invalid_id(self) -> None:
+        """Test returns None for non-numeric issue IDs."""
+        config = Config(port_range="9001-9099")
+        assert config.get_port_for_issue("invalid") is None
+        assert config.get_port_for_issue("abc") is None
+        assert config.get_port_for_issue("") is None
+
     def test_get_worktree_path(self) -> None:
         """Test getting worktree path for an agent."""
         config = Config(project="myapp", worktrees_dir="/tmp/worktrees")

@@ -173,6 +173,25 @@ class Config(BaseModel):
 
         return port
 
+    def get_port_for_issue(self, issue_id: str) -> Optional[int]:
+        """Get port number for a specific issue.
+
+        Port is calculated from issue ID using the configured port_range.
+        Returns None if issue_id is not a valid integer or if the port
+        would exceed the configured range.
+
+        Args:
+            issue_id: Issue ID (string, typically numeric like "001", "042")
+
+        Returns:
+            Port number, or None if issue_id is invalid or exceeds range
+        """
+        try:
+            issue_num = int(issue_id)
+            return self.get_port_for_agent(issue_num)
+        except (ValueError, TypeError):
+            return None
+
     def get_worktree_path(self, agent_num: int) -> Path:
         """Get worktree path for a specific agent (legacy numbered agents).
 
