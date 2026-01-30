@@ -326,9 +326,13 @@ HOOK_TYPES = {
     # Validators (return errors if validation fails)
     "file_exists", "has_commits", "field_check", "section_check", "pr_approved",
     "min_words", "has_list_items", "contains", "ci_check", "wrapup_verified",
+    "checkbox_checked",  # Review loop: check if checkbox is marked
     # Actions (perform side effects)
     "create_file", "create_pr", "merge_pr", "run", "rebase",
     "cleanup_agent", "start_blocked_issues",
+    "version_file",  # Review loop: rename file to versioned name
+    "loop_check",  # Review loop: count iterations and fail if max exceeded
+    "rollback",  # Review loop: programmatic rollback to earlier stage
     # Controller hooks (run on post-sync)
     "push_pending_branches", "check_controller_stages", "check_merged_prs",
     "check_ci_status", "check_custom_agent_stages",
@@ -1124,8 +1128,7 @@ def run_builtin_validator(
         error_msg = params.get("error", f"Review loop exceeded {max_iterations} iterations")
 
         if pattern:
-            import glob
-            # Count matching files
+            # Count matching files (using pathlib's glob, not the glob module)
             matches = list(issue_dir.glob(pattern))
             if len(matches) >= max_iterations:
                 errors.append(f"{error_msg} (found {len(matches)} iterations)")
@@ -1143,9 +1146,9 @@ def run_builtin_validator(
             issue = kwargs.get("issue")
             if issue:
                 try:
-                    # Import and call rollback logic
-                    from agenttree.cli import _execute_rollback
-                    success = _execute_rollback(
+                    # Import from rollback module to avoid circular imports
+                    from agenttree.rollback import execute_rollback
+                    success = execute_rollback(
                         issue_id=issue.id,
                         target_stage=to_stage,
                         yes=auto_yes,
