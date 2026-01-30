@@ -836,6 +836,8 @@ class TestSandboxCommand:
         assert "No container runtime" in result.output
 
 
+class TestRollbackCommand:
+    """Tests for the rollback command."""
 
     def test_rollback_issue_not_found(self, cli_runner, mock_config):
         """Should error when issue not found."""
