@@ -58,7 +58,7 @@ def _get_human_review_states() -> frozenset[str]:
                     result.add(stage.name)
 
         return frozenset(result)
-    except Exception as e:
+    except (OSError, AttributeError, KeyError, TypeError) as e:
         logger.warning(f"Could not load config for human review states, using fallback: {e}")
         return _FALLBACK_HUMAN_REVIEW_STATES
 
@@ -78,7 +78,7 @@ def _get_terminal_states() -> frozenset[str]:
                 result.add(stage.name)
 
         return frozenset(result)
-    except Exception as e:
+    except (OSError, AttributeError, KeyError, TypeError) as e:
         logger.warning(f"Could not load config for terminal states, using fallback: {e}")
         return _FALLBACK_TERMINAL_STATES
 
@@ -127,7 +127,7 @@ def validate_config_sync() -> None:
                 "These may be transitional states or the config was simplified."
             )
 
-    except Exception as e:
+    except (OSError, AttributeError, KeyError, TypeError) as e:
         logger.warning(f"Could not validate config sync: {e}")
 
 
