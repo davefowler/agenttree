@@ -6,7 +6,7 @@ stalled agents and log interventions.
 
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, TypedDict
+from typing import TypedDict
 
 import yaml
 
@@ -38,18 +38,20 @@ def get_stalled_agents(
     - It has an assigned_agent (agent is running)
     - It's not in a human_review or terminal stage
     - It hasn't advanced stages for threshold_min minutes
-    - Its tmux session is still active
+
+    Note: This does not verify tmux session existence. The CLI caller
+    should verify session status if needed.
 
     Args:
         agents_dir: Path to _agenttree directory
         threshold_min: Minutes without advancement before considered stalled
 
     Returns:
-        List of dicts with stalled agent info:
+        List of StalledAgent dicts with:
         - issue_id: Issue ID
         - stage: Current stage (with substage if any)
         - minutes_stalled: How many minutes since last advancement
-        - session_name: Tmux session name
+        - title: Issue title
     """
     issues_dir = agents_dir / "issues"
     if not issues_dir.exists():
@@ -108,12 +110,7 @@ def get_stalled_agents(
             except (ValueError, TypeError):
                 continue
 
-            # Check if tmux session is still alive
             issue_id = issue_data.get("id", "")
-            # Build session name - format is {project}-issue-{id}
-            # We need to check if session exists, but we don't have project name here
-            # For now, just assume it exists if we got this far
-            # The CLI command will verify session existence
 
             # Build stage string
             stage_str = f"{stage}.{substage}" if substage else stage
@@ -125,8 +122,8 @@ def get_stalled_agents(
                 "title": issue_data.get("title", ""),
             })
 
-        except Exception:
-            # Skip issues with invalid data
+        except (OSError, yaml.YAMLError, KeyError, TypeError):
+            # Skip issues with invalid or malformed data
             continue
 
     return stalled
@@ -206,5 +203,5 @@ def get_nudge_count(agents_dir: Path, issue_id: str) -> int:
                 # Once we see a different issue, stop counting
                 break
         return count
-    except Exception:
+    except (OSError, yaml.YAMLError, KeyError, TypeError):
         return 0
