@@ -249,6 +249,73 @@ class TestValidateStateTransition:
         with pytest.raises(InvalidTransitionError):
             validate_state_transition("define", "refine", "implement", "code")
 
+    def test_address_independent_review_transitions(self) -> None:
+        """Test address_independent_review stage transitions are valid.
+
+        This is an integration-style test verifying the new stage works
+        with validation enabled.
+        """
+        # Redirect from independent_code_review to address_independent_review
+        # (uses 'redirect' trigger, but validate_state_transition checks any valid transition)
+        sm = IssueStateMachine("independent_code_review")
+        assert sm.can_transition_to("address_independent_review")
+
+        # address_independent_review can go to independent_code_review (normal rollback)
+        validate_state_transition(
+            "address_independent_review", None,
+            "independent_code_review", None
+        )
+
+        # address_independent_review can also go to implementation_review (config path)
+        validate_state_transition(
+            "address_independent_review", None,
+            "implementation_review", "ci_wait"
+        )
+
+    def test_bare_implement_transitions(self) -> None:
+        """Test bare implement state transitions are valid.
+
+        Verifies the implement state (without substage) can transition
+        to valid destinations.
+        """
+        # implement can go to implement.setup (normal entry)
+        validate_state_transition("implement", None, "implement", "setup")
+
+        # implement can go to independent_code_review (CI feedback path)
+        validate_state_transition("implement", None, "independent_code_review", None)
+
+
+class TestConfigIntegration:
+    """Tests verifying state machine integrates with config."""
+
+    def test_address_independent_review_in_config(self) -> None:
+        """Verify address_independent_review stage exists in default config."""
+        from agenttree.config import load_config
+
+        config = load_config()
+        stage_names = config.get_stage_names()
+
+        assert "address_independent_review" in stage_names, (
+            "address_independent_review stage must exist in config"
+        )
+
+    def test_all_state_machine_stages_in_config(self) -> None:
+        """Verify all state machine stages (without substages) exist in config."""
+        from agenttree.config import load_config
+
+        config = load_config()
+        config_stages = set(config.get_stage_names())
+
+        # Extract base stage names from state machine (without substages)
+        sm_base_stages = set()
+        for state in IssueStateMachine.STATES:
+            base_stage = state.split(".")[0]
+            sm_base_stages.add(base_stage)
+
+        # All state machine base stages should be in config
+        missing = sm_base_stages - config_stages
+        assert not missing, f"State machine has stages not in config: {missing}"
+
 
 class TestHelperFunctions:
     """Tests for helper functions."""
