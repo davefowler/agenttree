@@ -177,8 +177,8 @@ def execute_rollback(
                     capture_output=True,
                     check=True,
                 )
-            except subprocess.CalledProcessError:
-                pass  # Non-fatal
+            except subprocess.CalledProcessError as e:
+                console.print(f"[yellow]Warning: Git reset failed: {e}[/yellow]")
 
     # Sync changes (unless skipped)
     if not skip_sync:
