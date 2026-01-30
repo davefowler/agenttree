@@ -19,6 +19,7 @@ commands:
 tools:
   claude:
     command: claude
+    skip_permissions: true
     startup_prompt: "Read TASK.md - it has your issue ID, stage, and workflow instructions. You MUST follow the staged workflow."
   aider:
     command: aider
@@ -47,11 +48,11 @@ hosts:
 
   # Custom review agent host
   review:
-    description: "Independent code reviewer using OpenAI Codex"
+    description: "Independent code reviewer using Claude"
     container:
       image: agenttree-agent:latest
-    tool: codex
-    model: gpt-5.2
+    tool: claude
+    model: sonnet
     skill: agents/review.md
 
 stages:

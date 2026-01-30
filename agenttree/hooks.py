@@ -684,9 +684,10 @@ def run_builtin_validator(
             section = params["section"]
             expect = params["expect"]
 
-            # Find section content (between ##/### Section and next ##/### or end)
-            # Supports both h2 (##) and h3 (###) headers
-            pattern = rf'^##[#]?\s*{re.escape(section)}.*?\n(.*?)(?=\n##|\Z)'
+            # Find section content (between ## Section and next same-level header or end)
+            # Includes subsections (###, ####) as part of the section content
+            # The lookahead stops at "\n## " followed by a letter/word (not "#")
+            pattern = rf'^##\s*{re.escape(section)}.*?\n(.*?)(?=\n## [A-Za-z]|\Z)'
             section_match = re.search(pattern, content, re.MULTILINE | re.DOTALL)
 
             if not section_match:
@@ -732,7 +733,7 @@ def run_builtin_validator(
 
             if section:
                 # Find section content
-                pattern = rf'^##[#]?\s*{re.escape(section)}.*?\n(.*?)(?=\n##|\Z)'
+                pattern = rf'^##\s*{re.escape(section)}.*?\n(.*?)(?=\n## [A-Za-z]|\Z)'
                 section_match = re.search(pattern, content, re.MULTILINE | re.DOTALL)
                 if not section_match:
                     errors.append(f"Section '{section}' not found in {params['file']}")
@@ -757,7 +758,7 @@ def run_builtin_validator(
             errors.append(f"File '{params['file']}' not found for has_list_items check")
         else:
             content = file_path.read_text()
-            pattern = rf'^##[#]?\s*{re.escape(section)}.*?\n(.*?)(?=\n##|\Z)'
+            pattern = rf'^##\s*{re.escape(section)}.*?\n(.*?)(?=\n## [A-Za-z]|\Z)'
             section_match = re.search(pattern, content, re.MULTILINE | re.DOTALL)
 
             if not section_match:
@@ -781,7 +782,7 @@ def run_builtin_validator(
             errors.append(f"File '{params['file']}' not found for contains check")
         else:
             content = file_path.read_text()
-            pattern = rf'^##[#]?\s*{re.escape(section)}.*?\n(.*?)(?=\n##|\Z)'
+            pattern = rf'^##\s*{re.escape(section)}.*?\n(.*?)(?=\n## [A-Za-z]|\Z)'
             section_match = re.search(pattern, content, re.MULTILINE | re.DOTALL)
 
             if not section_match:

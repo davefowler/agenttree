@@ -247,6 +247,13 @@ class ContainerRuntime:
         if claude_config_dir.exists():
             cmd.extend(["-v", f"{claude_config_dir}:/home/agent/.claude-host:ro"])
 
+        # Mount session storage for conversation persistence across restarts
+        # Each worktree gets its own session directory, mapped to Claude's project path
+        # This allows using `claude -c` to continue previous conversations
+        sessions_dir = abs_path / ".claude-sessions"
+        sessions_dir.mkdir(exist_ok=True)
+        cmd.extend(["-v", f"{sessions_dir}:/home/agent/.claude/projects/-workspace"])
+
         # Pass through auth credentials
         # Helper to get credential from env or file
         def get_credential(env_var: str, file_key: str) -> Optional[str]:
@@ -277,6 +284,9 @@ class ContainerRuntime:
 
         cmd.append(image)
         cmd.append(ai_tool)
+
+        # Note: Don't use -c (continue) flag - it causes Claude to exit if no session exists
+        # Claude will automatically use the session storage we mounted if there's a prior session
 
         if model:
             cmd.extend(["--model", model])

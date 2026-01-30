@@ -292,6 +292,7 @@ def check_custom_agent_stages(agents_dir: Path) -> int:
 
     import yaml
     from rich.console import Console
+    from agenttree.tmux import session_exists
     console = Console()
 
     spawned = 0
@@ -312,11 +313,6 @@ def check_custom_agent_stages(agents_dir: Path) -> int:
 
             # Check if in a custom agent stage
             if stage in custom_agent_stages:
-                # Skip if custom agent already spawned for this stage
-                custom_agent_spawned_stage = data.get("custom_agent_spawned")
-                if custom_agent_spawned_stage == stage:
-                    continue
-
                 # Get the stage config to find the host name
                 stage_config = config.get_stage(stage)
                 if not stage_config:
@@ -328,10 +324,11 @@ def check_custom_agent_stages(agents_dir: Path) -> int:
                     console.print(f"[yellow]Custom agent host '{host_name}' not found in config[/yellow]")
                     continue
 
-                # Mark as spawned BEFORE spawning to prevent double-spawn
-                data["custom_agent_spawned"] = stage
-                with open(issue_yaml, "w") as f:
-                    yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
+                # Check if custom agent is already running (runtime check, not cached marker)
+                issue_id = data.get("id", "")
+                custom_agent_session = f"{config.project}-{host_name}-{issue_id}"
+                if session_exists(custom_agent_session):
+                    continue  # Agent already running
 
                 issue = Issue(**data)
                 console.print(f"[cyan]Spawning {host_name} agent for issue #{issue.id} at stage {stage}...[/cyan]")
@@ -343,10 +340,6 @@ def check_custom_agent_stages(agents_dir: Path) -> int:
                     spawned += 1
                 else:
                     console.print(f"[red]Failed to spawn {host_name} agent for issue #{issue.id}[/red]")
-                    # Clear the spawn marker so it can be retried
-                    data["custom_agent_spawned"] = None
-                    with open(issue_yaml, "w") as f:
-                        yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
 
         except Exception as e:
             from rich.console import Console
@@ -451,6 +444,14 @@ def spawn_custom_agent(
         console.print(f"[dim]Tmux session {tmux_session} already exists[/dim]")
         return True  # Already running
 
+    # Find the issue directory name in _agenttree/issues
+    issues_dir = Path.cwd() / "_agenttree" / "issues"
+    issue_dir_name = None
+    for d in issues_dir.iterdir():
+        if d.is_dir() and d.name.startswith(f"{issue.id}-"):
+            issue_dir_name = d.name
+            break
+
     # Create tmux session and run the container
     try:
         # Join command for shell execution
@@ -461,6 +462,23 @@ def spawn_custom_agent(
             check=True,
             capture_output=True,
         )
+
+        # Wait for Claude prompt and send startup instructions
+        from agenttree.tmux import wait_for_prompt, send_keys
+        if wait_for_prompt(tmux_session, prompt_char="❯", timeout=30.0):
+            # Build startup message with issue context
+            issue_dir_rel = f"_agenttree/issues/{issue_dir_name}" if issue_dir_name else f"_agenttree/issues/{issue.id}-*"
+            skill_path = f"_agenttree/skills/{stage_config.skill}" if stage_config.skill else None
+
+            startup_msg = f"You are a {agent_config.name} agent for issue #{issue.id}: {issue.title}\n"
+            startup_msg += f"Issue directory: {issue_dir_rel}\n"
+            if skill_path:
+                startup_msg += f"Your instructions: {skill_path}\n"
+            startup_msg += f"Output file: {issue_dir_rel}/{stage_config.output}\n" if stage_config.output else ""
+            startup_msg += "Start by reading your instructions and the issue files (spec.md, review.md)."
+
+            send_keys(tmux_session, startup_msg)
+
         return True
 
     except subprocess.CalledProcessError as e:
