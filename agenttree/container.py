@@ -248,9 +248,10 @@ class ContainerRuntime:
             cmd.extend(["-v", f"{claude_config_dir}:/home/agent/.claude-host:ro"])
 
         # Mount session storage for conversation persistence across restarts
-        # Each worktree gets its own session directory, mapped to Claude's project path
+        # Each host gets its own session directory to keep conversations separate
         # This allows using `claude -c` to continue previous conversations
-        sessions_dir = abs_path / ".claude-sessions"
+        # and prevents reviewer from continuing implementer's session
+        sessions_dir = abs_path / f".claude-sessions-{agent_host}"
         sessions_dir.mkdir(exist_ok=True)
         cmd.extend(["-v", f"{sessions_dir}:/home/agent/.claude/projects/-workspace"])
 

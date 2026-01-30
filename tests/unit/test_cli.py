@@ -507,8 +507,8 @@ class TestShutdownCommand:
         with patch("agenttree.cli.is_running_in_container", return_value=False):
             with patch("agenttree.cli.load_config", return_value=mock_config):
                 with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
-                    with patch("agenttree.state.get_active_agent", return_value=mock_agent):
-                        with patch("agenttree.state.unregister_agent"):
+                    with patch("agenttree.state.get_active_agents_for_issue", return_value=[mock_agent]):
+                        with patch("agenttree.state.unregister_all_agents_for_issue"):
                             with patch("agenttree.cli.TmuxManager") as mock_tm:
                                 mock_tm.return_value.stop_issue_agent = mock_stop_agent
                                 with patch("subprocess.run", side_effect=mock_subprocess_run):
@@ -1147,8 +1147,8 @@ class TestRollbackCommand:
             with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
                 with patch("agenttree.cli.get_issue_dir", return_value=issue_dir):
                     with patch("agenttree.cli.is_running_in_container", return_value=False):
-                        with patch("agenttree.state.get_active_agent", return_value=mock_agent):
-                            with patch("agenttree.state.unregister_agent") as mock_unregister:
+                        with patch("agenttree.state.get_active_agents_for_issue", return_value=[mock_agent]):
+                            with patch("agenttree.state.unregister_all_agents_for_issue") as mock_unregister:
                                 with patch("agenttree.cli.delete_session"):
                                     with patch("agenttree.agents_repo.sync_agents_repo"):
                                         with patch("agenttree.issues.get_agenttree_path", return_value=tmp_path):
@@ -1171,7 +1171,7 @@ class TestRollbackCommand:
 
         assert result.exit_code == 0
         assert "Sent message to controller" in result.output
-        mock_send.assert_called_once_with("testproject-issue-000", "hello controller")
+        mock_send.assert_called_once_with("testproject-controller-000", "hello controller")
 
     def test_send_to_controller_not_running(self, cli_runner, mock_config):
         """Should error when controller is not running."""
@@ -1196,7 +1196,7 @@ class TestRollbackCommand:
 
         assert result.exit_code == 0
         assert "Killed controller" in result.output
-        mock_kill.assert_called_once_with("testproject-issue-000")
+        mock_kill.assert_called_once_with("testproject-controller-000")
 
     def test_kill_controller_not_running(self, cli_runner, mock_config):
         """Should handle gracefully when controller not running."""
@@ -1232,4 +1232,4 @@ class TestRollbackCommand:
 
         assert result.exit_code == 0
         assert "Attaching to controller" in result.output
-        mock_attach.assert_called_once_with("testproject-issue-000")
+        mock_attach.assert_called_once_with("testproject-controller-000")

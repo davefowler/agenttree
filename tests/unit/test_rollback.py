@@ -430,8 +430,8 @@ class TestRollbackHandlesAgent:
                     with patch("agenttree.cli.get_issue_dir", return_value=temp_issue_dir):
                         with patch("agenttree.cli.delete_session"):
                             with patch("agenttree.agents_repo.sync_agents_repo"):
-                                with patch("agenttree.state.get_active_agent", return_value=mock_agent):
-                                    with patch("agenttree.state.unregister_agent", side_effect=capture_unregister):
+                                with patch("agenttree.state.get_active_agents_for_issue", return_value=[mock_agent]):
+                                    with patch("agenttree.state.unregister_all_agents_for_issue", side_effect=capture_unregister):
                                         result = cli_runner.invoke(main, ["rollback", "42", "research", "-y"])
 
         assert result.exit_code == 0
@@ -480,8 +480,8 @@ class TestRollbackWorktreeReset:
                     with patch("agenttree.cli.get_issue_dir", return_value=temp_issue_dir):
                         with patch("agenttree.cli.delete_session"):
                             with patch("agenttree.agents_repo.sync_agents_repo"):
-                                with patch("agenttree.state.get_active_agent", return_value=mock_agent):
-                                    with patch("agenttree.state.unregister_agent"):
+                                with patch("agenttree.state.get_active_agents_for_issue", return_value=[mock_agent]):
+                                    with patch("agenttree.state.unregister_all_agents_for_issue"):
                                         with patch("subprocess.run", side_effect=mock_run):
                                             result = cli_runner.invoke(
                                                 main, ["rollback", "42", "research", "-y", "--reset-worktree"]

@@ -429,6 +429,8 @@ class TmuxManager:
         worktree_path: Path,
         tool_name: str,
         container_runtime: "ContainerRuntime",
+        agent_host: str = "agent",
+        has_merge_conflicts: bool = False,
     ) -> None:
         """Start an issue-bound agent in a container within a tmux session.
 
@@ -438,6 +440,8 @@ class TmuxManager:
             worktree_path: Path to the issue's worktree
             tool_name: Name of the AI tool to use
             container_runtime: Container runtime instance
+            agent_host: Agent host type for the stage (e.g., "agent", "review")
+            has_merge_conflicts: Whether there are unresolved merge conflicts
         """
         # Kill existing session if it exists
         if session_exists(session_name):
@@ -455,6 +459,7 @@ class TmuxManager:
             ai_tool=tool_name,
             dangerous=True,  # Safe because we're in a container
             model=self.config.default_model,
+            agent_host=agent_host,
         )
 
         # Join command for shell execution
@@ -466,11 +471,19 @@ class TmuxManager:
         # Wait for Claude CLI prompt before sending startup message
         if wait_for_prompt(session_name, prompt_char="❯", timeout=30.0):
             # Build issue-specific startup prompt
-            startup_prompt = (
-                f"You are working on issue #{issue_id}. "
-                f"Read your task: cat _agenttree/issues/{issue_id}-*/problem.md && "
-                f"agenttree status --issue {issue_id}"
-            )
+            if has_merge_conflicts:
+                startup_prompt = (
+                    f"You are working on issue #{issue_id}. "
+                    f"IMPORTANT: We merged latest main and there are MERGE CONFLICTS. "
+                    f"Run 'git status' to see conflicted files and resolve them first before proceeding. "
+                    f"Then read your task: agenttree status --issue {issue_id}"
+                )
+            else:
+                startup_prompt = (
+                    f"You are working on issue #{issue_id}. "
+                    f"Read your task: cat _agenttree/issues/{issue_id}-*/problem.md && "
+                    f"agenttree status --issue {issue_id}"
+                )
             send_keys(session_name, startup_prompt)
 
     def start_controller(
