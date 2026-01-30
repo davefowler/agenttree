@@ -181,7 +181,8 @@ class IssueStateMachine:
         "plan_revise",
         # Plan review (human review gate)
         "plan_review",
-        # Implement stage with substages
+        # Implement stage - bare stage and substages
+        "implement",  # Bare stage (for rollback/CI feedback scenarios)
         "implement.setup",
         "implement.code",
         "implement.code_review",
@@ -218,6 +219,9 @@ class IssueStateMachine:
         {"trigger": "advance", "source": "plan_revise", "dest": "plan_review"},
         # Plan review to implement (human approval required)
         {"trigger": "advance", "source": "plan_review", "dest": "implement.setup"},
+        # Bare implement stage can advance to setup or skip to independent_code_review (for rollback/CI scenarios)
+        {"trigger": "advance", "source": "implement", "dest": "implement.setup"},
+        {"trigger": "advance", "source": "implement", "dest": "independent_code_review"},
         # Implement substages
         {"trigger": "advance", "source": "implement.setup", "dest": "implement.code"},
         {"trigger": "advance", "source": "implement.code", "dest": "implement.code_review"},
