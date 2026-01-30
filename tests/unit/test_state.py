@@ -71,6 +71,7 @@ class TestStateLocking:
                 port = get_port_for_issue(issue_id, base_port=9000)
                 agent = ActiveAgent(
                     issue_id=issue_id,
+                    host="agent",
                     container=f"container-{issue_id}",
                     worktree=Path(f"/tmp/worktree-{issue_id}"),
                     branch=f"branch-{issue_id}",
@@ -80,7 +81,7 @@ class TestStateLocking:
                 )
                 register_agent(agent)
                 time.sleep(0.01)  # Small delay to increase race window
-                unregister_agent(issue_id)
+                unregister_agent(issue_id, "agent")
             except Exception as e:
                 errors.append(f"{issue_id}: {str(e)}")
 

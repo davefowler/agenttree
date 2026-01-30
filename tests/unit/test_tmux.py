@@ -476,12 +476,12 @@ class TestStartController:
                 with patch("agenttree.tmux.wait_for_prompt", return_value=True):
                     with patch("agenttree.tmux.send_keys") as mock_send:
                         manager.start_controller(
-                            session_name="testproject-issue-000",
+                            session_name="testproject-controller-000",
                             repo_path=tmp_path,
                             tool_name="claude",
                         )
 
-        mock_create.assert_called_once_with("testproject-issue-000", tmp_path, "claude")
+        mock_create.assert_called_once_with("testproject-controller-000", tmp_path, "claude")
         mock_send.assert_called_once()
         # Verify the startup prompt includes controller instructions
         startup_prompt = mock_send.call_args[0][1]
@@ -498,12 +498,12 @@ class TestStartController:
                 with patch("agenttree.tmux.create_session"):
                     with patch("agenttree.tmux.wait_for_prompt", return_value=False):
                         manager.start_controller(
-                            session_name="testproject-issue-000",
+                            session_name="testproject-controller-000",
                             repo_path=tmp_path,
                             tool_name="claude",
                         )
 
-        mock_kill.assert_called_once_with("testproject-issue-000")
+        mock_kill.assert_called_once_with("testproject-controller-000")
 
     def test_start_controller_uses_correct_tool(self, mock_config, tmp_path):
         """Should use the configured AI tool command."""
@@ -520,7 +520,7 @@ class TestStartController:
             with patch("agenttree.tmux.create_session") as mock_create:
                 with patch("agenttree.tmux.wait_for_prompt", return_value=False):
                     manager.start_controller(
-                        session_name="testproject-issue-000",
+                        session_name="testproject-controller-000",
                         repo_path=tmp_path,
                         tool_name="custom",
                     )

@@ -1171,7 +1171,7 @@ class TestRollbackCommand:
 
         assert result.exit_code == 0
         assert "Sent message to controller" in result.output
-        mock_send.assert_called_once_with("testproject-issue-000", "hello controller")
+        mock_send.assert_called_once_with("testproject-controller-000", "hello controller")
 
     def test_send_to_controller_not_running(self, cli_runner, mock_config):
         """Should error when controller is not running."""
@@ -1196,7 +1196,7 @@ class TestRollbackCommand:
 
         assert result.exit_code == 0
         assert "Killed controller" in result.output
-        mock_kill.assert_called_once_with("testproject-issue-000")
+        mock_kill.assert_called_once_with("testproject-controller-000")
 
     def test_kill_controller_not_running(self, cli_runner, mock_config):
         """Should handle gracefully when controller not running."""
@@ -1232,4 +1232,4 @@ class TestRollbackCommand:
 
         assert result.exit_code == 0
         assert "Attaching to controller" in result.output
-        mock_attach.assert_called_once_with("testproject-issue-000")
+        mock_attach.assert_called_once_with("testproject-controller-000")

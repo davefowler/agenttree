@@ -327,19 +327,42 @@ def check_custom_agent_stages(agents_dir: Path) -> int:
                 # Check if custom agent is already running (runtime check, not cached marker)
                 issue_id = data.get("id", "")
                 custom_agent_session = f"{config.project}-{host_name}-{issue_id}"
+
+                from agenttree.tmux import is_claude_running, send_message
+
                 if session_exists(custom_agent_session):
-                    continue  # Agent already running
+                    # Session exists - check if Claude is still running
+                    if is_claude_running(custom_agent_session):
+                        # Ping the agent to let it know about the stage
+                        result = send_message(
+                            custom_agent_session,
+                            f"Stage is now {stage}. Run `agenttree next` for your instructions."
+                        )
+                        if result == "sent":
+                            console.print(f"[dim]Pinged {host_name} agent for issue #{issue_id}[/dim]")
+                        continue
+                    else:
+                        # Session exists but Claude exited - need to restart
+                        console.print(f"[yellow]{host_name} agent session exists but Claude exited, restarting...[/yellow]")
+                        # Fall through to spawn logic below
 
                 issue = Issue(**data)
-                console.print(f"[cyan]Spawning {host_name} agent for issue #{issue.id} at stage {stage}...[/cyan]")
+                console.print(f"[cyan]Starting {host_name} agent for issue #{issue.id} at stage {stage}...[/cyan]")
 
-                # Spawn the custom agent
-                success = spawn_custom_agent(issue, agent_config, stage_config)
-                if success:
-                    console.print(f"[green]✓ Spawned {host_name} agent for issue #{issue.id}[/green]")
+                # Use agenttree start --host to spawn the agent
+                import subprocess
+                result = subprocess.run(
+                    ["agenttree", "start", issue.id, "--host", host_name, "--skip-preflight"],
+                    capture_output=True,
+                    text=True,
+                )
+                if result.returncode == 0:
+                    console.print(f"[green]✓ Started {host_name} agent for issue #{issue.id}[/green]")
                     spawned += 1
                 else:
-                    console.print(f"[red]Failed to spawn {host_name} agent for issue #{issue.id}[/red]")
+                    console.print(f"[red]Failed to start {host_name} agent for issue #{issue.id}[/red]")
+                    if result.stderr:
+                        console.print(f"[dim]{result.stderr[:200]}[/dim]")
 
         except Exception as e:
             from rich.console import Console

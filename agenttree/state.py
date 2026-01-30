@@ -22,6 +22,7 @@ class ActiveAgent:
     """Information about an active agent for an issue."""
 
     issue_id: str
+    host: str  # Agent host type (e.g., "agent", "reviewer")
     container: str
     worktree: Path
     branch: str
@@ -29,10 +30,16 @@ class ActiveAgent:
     tmux_session: str
     started: str  # ISO format timestamp
 
+    @property
+    def state_key(self) -> str:
+        """Key for state storage: issue_id:host."""
+        return f"{self.issue_id}:{self.host}"
+
     def to_dict(self) -> dict:
         """Convert to dictionary for YAML serialization."""
         return {
             "issue_id": self.issue_id,
+            "host": self.host,
             "container": self.container,
             "worktree": str(self.worktree),
             "branch": self.branch,
@@ -46,6 +53,7 @@ class ActiveAgent:
         """Create from dictionary."""
         return cls(
             issue_id=data["issue_id"],
+            host=data.get("host", "agent"),  # Default for backwards compat during migration
             container=data["container"],
             worktree=Path(data["worktree"]),
             branch=data["branch"],
@@ -126,22 +134,44 @@ def save_state(state: dict) -> None:
         yaml.dump(state, f, default_flow_style=False, sort_keys=False)
 
 
-def get_active_agent(issue_id: str) -> Optional[ActiveAgent]:
-    """Get active agent for an issue.
+def get_active_agent(issue_id: str, host: str = "agent") -> Optional[ActiveAgent]:
+    """Get active agent for an issue and host.
 
     Args:
         issue_id: Issue ID (e.g., "023")
+        host: Agent host type (default: "agent")
 
     Returns:
         ActiveAgent or None if no active agent
     """
     state = load_state()
-    agent_data = state.get("active_agents", {}).get(issue_id)
+    state_key = f"{issue_id}:{host}"
+    agent_data = state.get("active_agents", {}).get(state_key)
 
     if agent_data:
         return ActiveAgent.from_dict(agent_data)
 
     return None
+
+
+def get_active_agents_for_issue(issue_id: str) -> list[ActiveAgent]:
+    """Get all active agents for an issue (across all hosts).
+
+    Args:
+        issue_id: Issue ID (e.g., "023")
+
+    Returns:
+        List of ActiveAgent objects for this issue
+    """
+    state = load_state()
+    agents = []
+    prefix = f"{issue_id}:"
+
+    for key, agent_data in state.get("active_agents", {}).items():
+        if key.startswith(prefix):
+            agents.append(ActiveAgent.from_dict(agent_data))
+
+    return agents
 
 
 def list_active_agents() -> list[ActiveAgent]:
@@ -173,7 +203,7 @@ def register_agent(agent: ActiveAgent) -> None:
         if "active_agents" not in state:
             state["active_agents"] = {}
 
-        state["active_agents"][agent.issue_id] = agent.to_dict()
+        state["active_agents"][agent.state_key] = agent.to_dict()
 
         # Note: Port tracking removed - ports are now deterministic from issue ID
         # via get_port_for_issue()
@@ -181,7 +211,7 @@ def register_agent(agent: ActiveAgent) -> None:
         save_state(state)
 
 
-def update_agent_container_id(issue_id: str, container_id: str) -> None:
+def update_agent_container_id(issue_id: str, container_id: str, host: str = "agent") -> None:
     """Update an agent's container ID (for Apple Containers UUID tracking).
 
     Apple Containers use UUIDs instead of names. This function updates the
@@ -191,6 +221,7 @@ def update_agent_container_id(issue_id: str, container_id: str) -> None:
     Args:
         issue_id: Issue ID
         container_id: Container UUID
+        host: Agent host type (default: "agent")
     """
     with state_lock():
         state = load_state()
@@ -198,20 +229,22 @@ def update_agent_container_id(issue_id: str, container_id: str) -> None:
         if "active_agents" not in state:
             return
 
-        if issue_id not in state["active_agents"]:
+        state_key = f"{issue_id}:{host}"
+        if state_key not in state["active_agents"]:
             return
 
-        state["active_agents"][issue_id]["container"] = container_id
+        state["active_agents"][state_key]["container"] = container_id
         save_state(state)
 
 
-def unregister_agent(issue_id: str) -> Optional[ActiveAgent]:
+def unregister_agent(issue_id: str, host: str = "agent") -> Optional[ActiveAgent]:
     """Unregister an active agent.
 
     Uses file locking to prevent race conditions during concurrent unregistrations.
 
     Args:
         issue_id: Issue ID to unregister
+        host: Agent host type (default: "agent")
 
     Returns:
         The unregistered ActiveAgent, or None if not found
@@ -219,7 +252,8 @@ def unregister_agent(issue_id: str) -> Optional[ActiveAgent]:
     with state_lock():
         state = load_state()
 
-        agent_data = state.get("active_agents", {}).pop(issue_id, None)
+        state_key = f"{issue_id}:{host}"
+        agent_data = state.get("active_agents", {}).pop(state_key, None)
 
         if agent_data:
             agent = ActiveAgent.from_dict(agent_data)
@@ -230,13 +264,39 @@ def unregister_agent(issue_id: str) -> Optional[ActiveAgent]:
         return None
 
 
-def get_issue_names(issue_id: str, slug: str, project: str = "agenttree") -> dict:
+def unregister_all_agents_for_issue(issue_id: str) -> list[ActiveAgent]:
+    """Unregister all agents for an issue (across all hosts).
+
+    Args:
+        issue_id: Issue ID to unregister
+
+    Returns:
+        List of unregistered ActiveAgent objects
+    """
+    with state_lock():
+        state = load_state()
+        unregistered = []
+        prefix = f"{issue_id}:"
+
+        keys_to_remove = [k for k in state.get("active_agents", {}).keys() if k.startswith(prefix)]
+        for key in keys_to_remove:
+            agent_data = state["active_agents"].pop(key)
+            unregistered.append(ActiveAgent.from_dict(agent_data))
+
+        if unregistered:
+            save_state(state)
+
+        return unregistered
+
+
+def get_issue_names(issue_id: str, slug: str, project: str = "agenttree", host: str = "agent") -> dict:
     """Get standardized names for issue-bound resources.
 
     Args:
         issue_id: Issue ID (e.g., "023")
         slug: Issue slug (e.g., "fix-login-bug")
         project: Project name
+        host: Agent host type (default: "agent")
 
     Returns:
         Dictionary with container, worktree, branch, tmux_session names
@@ -245,10 +305,10 @@ def get_issue_names(issue_id: str, slug: str, project: str = "agenttree") -> dic
     short_slug = slug[:30] if len(slug) > 30 else slug
 
     return {
-        "container": f"{project}-issue-{issue_id}",
+        "container": f"{project}-{host}-{issue_id}",
         "worktree": f"issue-{issue_id}-{short_slug}",
         "branch": f"issue-{issue_id}-{short_slug}",
-        "tmux_session": f"{project}-issue-{issue_id}",
+        "tmux_session": f"{project}-{host}-{issue_id}",
     }
 
 
@@ -281,6 +341,7 @@ def create_agent_for_issue(
     worktree_path: Path,
     port: int,
     project: str = "agenttree",
+    host: str = "agent",
 ) -> ActiveAgent:
     """Create and register an agent for an issue.
 
@@ -290,14 +351,16 @@ def create_agent_for_issue(
         worktree_path: Path to worktree
         port: Allocated port
         project: Project name
+        host: Agent host type (default: "agent")
 
     Returns:
         Created ActiveAgent
     """
-    names = get_issue_names(issue_id, slug, project)
+    names = get_issue_names(issue_id, slug, project, host)
 
     agent = ActiveAgent(
         issue_id=issue_id,
+        host=host,
         container=names["container"],
         worktree=worktree_path,
         branch=names["branch"],
