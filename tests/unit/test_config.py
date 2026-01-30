@@ -510,3 +510,33 @@ class TestRedirectOnlyStages:
 
         stage = StageConfig(name="test")
         assert stage.redirect_only is False
+
+
+class TestSaveTmuxHistoryConfig:
+    """Tests for save_tmux_history config option."""
+
+    def test_save_tmux_history_defaults_to_false(self) -> None:
+        """save_tmux_history should default to False."""
+        config = Config()
+        assert config.save_tmux_history is False
+
+    def test_save_tmux_history_can_be_enabled(self) -> None:
+        """save_tmux_history should be configurable to True."""
+        config = Config(save_tmux_history=True)
+        assert config.save_tmux_history is True
+
+    def test_save_tmux_history_from_yaml(self, tmp_path: Path) -> None:
+        """save_tmux_history should be loadable from YAML config."""
+        config_file = tmp_path / ".agenttree.yaml"
+        config_file.write_text("save_tmux_history: true")
+
+        config = load_config(tmp_path)
+        assert config.save_tmux_history is True
+
+    def test_save_tmux_history_false_from_yaml(self, tmp_path: Path) -> None:
+        """save_tmux_history: false should be loadable from YAML config."""
+        config_file = tmp_path / ".agenttree.yaml"
+        config_file.write_text("save_tmux_history: false")
+
+        config = load_config(tmp_path)
+        assert config.save_tmux_history is False

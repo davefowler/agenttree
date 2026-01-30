@@ -6,6 +6,12 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
+from agenttree.tmux import (
+    save_tmux_history_to_file,
+    session_exists,
+    capture_pane,
+)
+
 
 class TestSessionExists:
     """Tests for session_exists function."""
@@ -529,3 +535,124 @@ class TestStartController:
         mock_create.assert_called_once()
         call_args = mock_create.call_args[0]
         assert call_args[2] == "custom-ai-tool --special-flag"
+
+
+class TestSaveTmuxHistoryToFile:
+    """Tests for save_tmux_history_to_file function."""
+
+    def test_save_history_when_session_does_not_exist(self, tmp_path: Path) -> None:
+        """Should return False when tmux session doesn't exist."""
+        output_file = tmp_path / "history.log"
+
+        with patch("agenttree.tmux.session_exists", return_value=False):
+            result = save_tmux_history_to_file("nonexistent-session", output_file, "implement")
+
+        assert result is False
+        assert not output_file.exists()
+
+    def test_save_history_when_capture_fails(self, tmp_path: Path) -> None:
+        """Should return False when tmux capture-pane fails."""
+        output_file = tmp_path / "history.log"
+
+        with patch("agenttree.tmux.session_exists", return_value=True):
+            with patch("subprocess.run", side_effect=subprocess.CalledProcessError(1, "tmux")):
+                result = save_tmux_history_to_file("test-session", output_file, "implement")
+
+        assert result is False
+        assert not output_file.exists()
+
+    def test_save_history_when_capture_is_empty(self, tmp_path: Path) -> None:
+        """Should return False when captured history is empty."""
+        output_file = tmp_path / "history.log"
+        mock_result = MagicMock()
+        mock_result.stdout = "   \n\n  "  # Whitespace only
+
+        with patch("agenttree.tmux.session_exists", return_value=True):
+            with patch("subprocess.run", return_value=mock_result):
+                result = save_tmux_history_to_file("test-session", output_file, "implement")
+
+        assert result is False
+        assert not output_file.exists()
+
+    def test_save_history_creates_file_with_content(self, tmp_path: Path) -> None:
+        """Should create file with history content and timestamp header."""
+        output_file = tmp_path / "history.log"
+        mock_result = MagicMock()
+        mock_result.stdout = "$ echo hello\nhello\n$ agenttree next\n"
+
+        with patch("agenttree.tmux.session_exists", return_value=True):
+            with patch("subprocess.run", return_value=mock_result):
+                result = save_tmux_history_to_file("test-session", output_file, "implement")
+
+        assert result is True
+        assert output_file.exists()
+
+        content = output_file.read_text()
+        assert "Stage: implement" in content
+        assert "Captured:" in content
+        assert "$ echo hello" in content
+        assert "$ agenttree next" in content
+
+    def test_save_history_appends_to_existing_file(self, tmp_path: Path) -> None:
+        """Should append to existing file instead of overwriting."""
+        output_file = tmp_path / "history.log"
+        output_file.write_text("Previous content\n")
+
+        mock_result = MagicMock()
+        mock_result.stdout = "New history content\n"
+
+        with patch("agenttree.tmux.session_exists", return_value=True):
+            with patch("subprocess.run", return_value=mock_result):
+                result = save_tmux_history_to_file("test-session", output_file, "define")
+
+        assert result is True
+        content = output_file.read_text()
+        assert "Previous content" in content
+        assert "New history content" in content
+        assert "Stage: define" in content
+
+    def test_save_history_creates_parent_directories(self, tmp_path: Path) -> None:
+        """Should create parent directories if they don't exist."""
+        output_file = tmp_path / "nested" / "dir" / "history.log"
+        mock_result = MagicMock()
+        mock_result.stdout = "History content\n"
+
+        with patch("agenttree.tmux.session_exists", return_value=True):
+            with patch("subprocess.run", return_value=mock_result):
+                result = save_tmux_history_to_file("test-session", output_file, "plan")
+
+        assert result is True
+        assert output_file.exists()
+        assert "History content" in output_file.read_text()
+
+    def test_save_history_includes_substage_in_header(self, tmp_path: Path) -> None:
+        """Should include substage if provided in stage string."""
+        output_file = tmp_path / "history.log"
+        mock_result = MagicMock()
+        mock_result.stdout = "History content\n"
+
+        with patch("agenttree.tmux.session_exists", return_value=True):
+            with patch("subprocess.run", return_value=mock_result):
+                result = save_tmux_history_to_file("test-session", output_file, "define.refine")
+
+        assert result is True
+        content = output_file.read_text()
+        assert "Stage: define.refine" in content
+
+    def test_save_history_uses_full_scrollback_buffer(self, tmp_path: Path) -> None:
+        """Should use '-' flag to capture full scrollback buffer."""
+        output_file = tmp_path / "history.log"
+        mock_result = MagicMock()
+        mock_result.stdout = "History content\n"
+
+        with patch("agenttree.tmux.session_exists", return_value=True):
+            with patch("subprocess.run", return_value=mock_result) as mock_run:
+                save_tmux_history_to_file("test-session", output_file, "implement")
+
+        # Verify tmux capture-pane was called with -S - for full history
+        mock_run.assert_called_once()
+        call_args = mock_run.call_args[0][0]
+        assert "tmux" in call_args
+        assert "capture-pane" in call_args
+        assert "-S" in call_args
+        assert "-" in call_args  # Full scrollback

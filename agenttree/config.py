@@ -149,6 +149,7 @@ class Config(BaseModel):
     security: SecurityConfig = Field(default_factory=SecurityConfig)
     merge_strategy: str = "squash"  # squash, merge, or rebase
     hooks: HooksConfig = Field(default_factory=HooksConfig)
+    save_tmux_history: bool = False  # Save tmux session history on stage transitions
 
     def get_port_for_agent(self, agent_num: int) -> int:
         """Get port number for a specific agent.
