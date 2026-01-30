@@ -116,8 +116,16 @@ When working on web UI (HTML, CSS, templates):
 
 ## Project-Specific Notes
 
-- Issues are stored in `_agenttree/issues/` as YAML and markdown files
-- Stage instructions use Jinja2 templates in `_agenttree/skills/`
+### The `_agenttree/` Directory (Separate Repository)
+
+The `_agenttree/` directory is a **separate git repository** that stores all AI workflow documentation:
+- `issues/` - Issue tracking, state, and documents (problem.md, spec.md, review.md, etc.)
+- `skills/` - Stage instructions and agent skill files
+- `templates/` - Document templates for each stage
+
+**This is gitignored from the main repo** because it's its own repo. When you update skills or templates in `_agenttree/`, those changes are tracked there, not in the main codebase commits.
+
+### Other Notes
 - The workflow supports both local and containerized agent execution
 - Hooks can be configured in `.agenttree.yaml` for stage transitions
 
