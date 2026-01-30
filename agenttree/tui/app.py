@@ -10,6 +10,7 @@ from textual.worker import Worker, get_current_worker
 
 from agenttree.hooks import (
     ValidationError,
+    StageRedirect,
     execute_exit_hooks,
     execute_enter_hooks,
 )
@@ -58,9 +59,6 @@ class DetailPanel(Static):
             content += f".{issue.substage}"
         content += "\n"
         content += f"[dim]Priority:[/dim] {issue.priority.value}\n"
-
-        if issue.assigned_agent:
-            content += f"[dim]Agent:[/dim] {issue.assigned_agent}\n"
 
         if issue.labels:
             content += f"[dim]Labels:[/dim] {', '.join(issue.labels)}\n"
@@ -154,7 +152,6 @@ class IssueTable(DataTable):  # type: ignore[type-arg]
         self.add_column("Title", key="title")
         self.add_column("Stage", key="stage", width=22)
         self.add_column("Priority", key="priority", width=10)
-        self.add_column("Agent", key="agent", width=7)
 
     def populate(self, issues: list[Issue]) -> None:
         """Populate the table with issues."""
@@ -170,14 +167,11 @@ class IssueTable(DataTable):  # type: ignore[type-arg]
             if issue.substage:
                 stage_str += f".{issue.substage}"
 
-            agent_str = str(issue.assigned_agent) if issue.assigned_agent else "-"
-
             self.add_row(
                 issue.id,
                 issue.title[:40] + "..." if len(issue.title) > 40 else issue.title,
                 stage_str,
                 issue.priority.value,
-                agent_str,
                 key=issue.id,
             )
 
@@ -329,10 +323,16 @@ class TUIApp(App):  # type: ignore[type-arg]
         try:
             next_stage, next_substage, _ = get_next_stage(issue.stage, issue.substage)
 
-            # Execute pre-completion hooks (can block with ValidationError)
+            # Execute pre-completion hooks (can block with ValidationError or redirect)
             from_stage = issue.stage
             from_substage = issue.substage
-            execute_exit_hooks(issue, from_stage, from_substage)
+            try:
+                execute_exit_hooks(issue, from_stage, from_substage)
+            except StageRedirect as redirect:
+                # Redirect to a different stage
+                next_stage = redirect.target_stage
+                next_substage = None
+                status.show_message(f"Redirecting to {next_stage}: {redirect.reason}")
 
             # Update issue stage
             updated = update_issue_stage(issue.id, next_stage, next_substage)
@@ -403,10 +403,6 @@ class TUIApp(App):  # type: ignore[type-arg]
 
         if not issue:
             status.show_message("No issue selected")
-            return
-
-        if issue.assigned_agent:
-            status.show_message(f"Issue #{issue.id} already has agent {issue.assigned_agent}")
             return
 
         # Note: Starting an agent requires more complex logic (worktree, tmux, etc.)

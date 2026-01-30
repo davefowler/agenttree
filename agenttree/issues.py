@@ -59,7 +59,6 @@ class Issue(BaseModel):
     stage: str = DEFINE
     substage: Optional[str] = "refine"
 
-    assigned_agent: Optional[str] = None
     branch: Optional[str] = None
     worktree_dir: Optional[str] = None  # Absolute path to worktree directory
 
@@ -282,7 +281,6 @@ def create_issue(
 def list_issues(
     stage: Optional[str] = None,
     priority: Optional[Priority] = None,
-    assigned_agent: Optional[str] = None,
     sync: bool = True,
 ) -> list[Issue]:
     """List issues, optionally filtered.
@@ -290,7 +288,6 @@ def list_issues(
     Args:
         stage: Filter by stage
         priority: Filter by priority
-        assigned_agent: Filter by assigned agent
         sync: If True, sync with remote before reading (default True for CLI, False for web)
 
     Returns:
@@ -327,8 +324,6 @@ def list_issues(
         if stage and issue.stage != stage:
             continue
         if priority and issue.priority != priority:
-            continue
-        if assigned_agent is not None and issue.assigned_agent != assigned_agent:
             continue
 
         issues.append(issue)
@@ -426,6 +421,54 @@ def check_dependencies_met(issue: Issue) -> tuple[bool, list[str]]:
             unmet.append(dep_id)
 
     return len(unmet) == 0, unmet
+
+
+def remove_dependency(issue_id: str, dep_id: str) -> Optional[Issue]:
+    """Remove a dependency from an issue.
+
+    Args:
+        issue_id: Issue to remove dependency from
+        dep_id: Dependency issue ID to remove
+
+    Returns:
+        Updated Issue object or None if not found
+    """
+    # Sync before and after writing
+    agents_path = get_agenttree_path()
+    sync_agents_repo(agents_path, pull_only=True)
+
+    issue_dir = get_issue_dir(issue_id)
+    if not issue_dir:
+        return None
+
+    yaml_path = issue_dir / "issue.yaml"
+    if not yaml_path.exists():
+        return None
+
+    with open(yaml_path) as f:
+        data = yaml.safe_load(f)
+
+    issue = Issue(**data)
+
+    # Normalize dep_id to match format in dependencies list
+    dep_normalized = f"{int(dep_id.lstrip('0') or '0'):03d}"
+
+    # Remove the dependency
+    if dep_normalized in issue.dependencies:
+        issue.dependencies.remove(dep_normalized)
+    elif dep_id in issue.dependencies:
+        issue.dependencies.remove(dep_id)
+
+    # Update timestamp
+    issue.updated = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    # Write back - use mode='json' to serialize enums as strings
+    issue_data = issue.model_dump(exclude_none=True, mode='json')
+    with open(yaml_path, "w") as f:
+        yaml.dump(issue_data, f, default_flow_style=False, sort_keys=False)
+
+    sync_agents_repo(agents_path)
+    return issue
 
 
 def detect_circular_dependency(
@@ -679,49 +722,6 @@ def update_issue_stage(
     return issue
 
 
-def assign_agent(issue_id: str, agent_num: int) -> Optional[Issue]:
-    """Assign an agent to an issue.
-
-    Args:
-        issue_id: Issue ID
-        agent_num: Agent number to assign
-
-    Returns:
-        Updated Issue object or None if not found
-    """
-    # Sync before and after writing
-    agents_path = get_agenttree_path()
-    sync_agents_repo(agents_path, pull_only=True)
-
-    issue_dir = get_issue_dir(issue_id)
-    if not issue_dir:
-        return None
-
-    yaml_path = issue_dir / "issue.yaml"
-    if not yaml_path.exists():
-        return None
-
-    with open(yaml_path) as f:
-        data = yaml.safe_load(f)
-
-    issue = Issue(**data)
-
-    # Update assignment
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    issue.assigned_agent = str(agent_num)
-    issue.updated = now
-
-    # Write back
-    with open(yaml_path, "w") as f:
-        data = issue.model_dump(mode="json")
-        yaml.dump(data, f, default_flow_style=False, sort_keys=False)
-
-    # Sync after assigning agent
-    sync_agents_repo(agents_path, pull_only=False, commit_message=f"Assign agent {agent_num} to issue {issue_id}")
-
-    return issue
-
-
 def update_issue_metadata(
     issue_id: str,
     pr_number: Optional[int] = None,
@@ -730,8 +730,6 @@ def update_issue_metadata(
     github_issue: Optional[int] = None,
     relevant_url: Optional[str] = None,
     worktree_dir: Optional[str] = None,
-    assigned_agent: Optional[str] = None,
-    clear_assigned_agent: bool = False,
     clear_pr: bool = False,
 ) -> Optional[Issue]:
     """Update metadata fields on an issue.
@@ -744,8 +742,6 @@ def update_issue_metadata(
         github_issue: GitHub issue number (optional)
         relevant_url: Relevant URL (optional)
         worktree_dir: Worktree directory path (optional)
-        assigned_agent: Assigned agent number (optional)
-        clear_assigned_agent: If True, sets assigned_agent to None
         clear_pr: If True, sets pr_number and pr_url to None
 
     Returns:
@@ -782,10 +778,6 @@ def update_issue_metadata(
         issue.relevant_url = relevant_url
     if worktree_dir is not None:
         issue.worktree_dir = worktree_dir
-    if assigned_agent is not None:
-        issue.assigned_agent = assigned_agent
-    if clear_assigned_agent:
-        issue.assigned_agent = None
     if clear_pr:
         issue.pr_number = None
         issue.pr_url = None
@@ -908,26 +900,13 @@ def load_skill(
     if issue is None:
         return skill_content
 
-    # Build Jinja context
-    issue_dir = get_issue_dir(issue.id)
-    context = {
-        "issue_id": issue.id,
-        "issue_title": issue.title,
-        "issue_dir": str(issue_dir) if issue_dir else "",
-        "issue_dir_rel": f"_agenttree/issues/{issue.id}-{issue.slug}" if issue_dir else "",
-        "stage": stage,
-        "substage": substage or "",
-    }
+    # Build Jinja context using unified function
+    context = get_issue_context(issue, include_docs=True)
 
-    # Load document contents if they exist
-    if issue_dir:
-        for doc_name in ["problem.md", "research.md", "spec.md", "spec_review.md", "review.md"]:
-            doc_path = issue_dir / doc_name
-            var_name = doc_name.replace(".md", "_md").replace("-", "_")
-            if doc_path.exists():
-                context[var_name] = doc_path.read_text()
-            else:
-                context[var_name] = ""
+    # Override stage/substage with what was passed to load_skill
+    # (may differ from current issue state when loading a specific stage skill)
+    context["stage"] = stage
+    context["substage"] = substage or ""
 
     # Load project-level review checklist if it exists (for project-specific patterns)
     # Look in skills directory to keep all skill-related files together
@@ -940,14 +919,12 @@ def load_skill(
     # Inject command outputs for referenced commands
     # Commands run in worktree directory if available, otherwise issue directory
     from agenttree.commands import get_referenced_commands, get_command_output
+    from agenttree.hooks import get_code_directory
 
+    issue_dir = get_issue_dir(issue.id)
     if config.commands:
-        # Determine working directory for commands
-        cwd = None
-        if issue.worktree_dir:
-            cwd = Path(issue.worktree_dir)
-        elif issue_dir:
-            cwd = issue_dir
+        # Determine working directory for commands (container-aware)
+        cwd = get_code_directory(issue, issue_dir) if issue_dir else None
 
         # Find commands referenced in the template
         referenced = get_referenced_commands(skill_content, config.commands)
@@ -1255,3 +1232,51 @@ def archive_issue_files(issue_id: str, files: list[str]) -> list[str]:
             print(f"Warning: Could not archive {filename}: {e}")
 
     return archived
+
+
+def get_issue_context(issue: Issue, include_docs: bool = True) -> dict:
+    """Build a complete context dict for an issue.
+
+    This is the single source of truth for issue context, used by:
+    - CLI: `agenttree issue show --json/--field`
+    - Template rendering in hooks.py and load_skill()
+
+    Args:
+        issue: Issue object
+        include_docs: If True, load document contents (problem_md, research_md, etc.)
+
+    Returns:
+        Dict with all issue fields plus derived fields
+    """
+    from typing import Any
+
+    # Start with all Issue model fields
+    context: dict[str, Any] = issue.model_dump(mode="json")
+
+    # Get issue directory
+    issue_dir = get_issue_dir(issue.id)
+
+    # Add derived fields
+    context["issue_id"] = issue.id  # Alias for backward compat with templates
+    context["issue_title"] = issue.title  # Alias for backward compat with templates
+    context["issue_dir"] = str(issue_dir) if issue_dir else ""
+    context["issue_dir_rel"] = f"_agenttree/issues/{issue.id}-{issue.slug}" if issue_dir else ""
+
+    # Combined stage.substage
+    if issue.substage:
+        context["stage_substage"] = f"{issue.stage}.{issue.substage}"
+    else:
+        context["stage_substage"] = issue.stage
+
+    # Load document contents if requested
+    if include_docs and issue_dir:
+        doc_names = ["problem.md", "research.md", "spec.md", "spec_review.md", "review.md"]
+        for doc_name in doc_names:
+            doc_path = issue_dir / doc_name
+            var_name = doc_name.replace(".md", "_md").replace("-", "_")
+            if doc_path.exists():
+                context[var_name] = doc_path.read_text()
+            else:
+                context[var_name] = ""
+
+    return context

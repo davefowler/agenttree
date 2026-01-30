@@ -24,7 +24,8 @@ RUN pip install --break-system-packages \
     pydantic>=2.0.0 \
     rich>=13.0.0 \
     filelock>=3.0.0 \
-    jinja2>=3.1.0
+    jinja2>=3.1.0 \
+    transitions>=0.9.0
 
 # Create non-root user (Claude CLI refuses --dangerously-skip-permissions as root)
 RUN useradd -m -s /bin/bash agent && \
@@ -43,7 +44,8 @@ ENV PATH="/home/agent/.local/bin:$PATH"
 WORKDIR /workspace
 
 # Pre-create Claude config to skip onboarding wizard
-RUN mkdir -p /home/agent/.claude && \
+# Also create projects/-workspace for session persistence mounts
+RUN mkdir -p /home/agent/.claude/projects/-workspace && \
     echo '{"hasCompletedOnboarding":true}' > /home/agent/.claude.json && \
     echo '{"theme":"dark"}' > /home/agent/.claude/settings.json
 

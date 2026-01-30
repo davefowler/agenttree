@@ -97,7 +97,7 @@ class TestIssueTable:
 
     @pytest.mark.asyncio
     async def test_issue_table_columns(self) -> None:
-        """Verify correct columns (ID, Title, Stage, Priority, Agent)."""
+        """Verify correct columns (ID, Title, Stage, Priority)."""
         app = TUIApp()
         async with app.run_test() as pilot:
             table = app.query_one(IssueTable)
@@ -107,7 +107,6 @@ class TestIssueTable:
             assert "Title" in columns
             assert "Stage" in columns
             assert "Priority" in columns
-            assert "Agent" in columns
 
     @pytest.mark.asyncio
     async def test_issue_table_displays_issues(self, sample_issues: list[Issue]) -> None:

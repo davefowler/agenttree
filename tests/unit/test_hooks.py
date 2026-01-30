@@ -348,17 +348,20 @@ This is the approach section with content.
         issue_dir = tmp_path / "issue"
         issue_dir.mkdir()
 
-        # Create a mock issue
-        mock_issue = MagicMock()
-        mock_issue.id = "046"
-        mock_issue.title = "Test Issue"
-        mock_issue.slug = "test-issue"
-        mock_issue.worktree_dir = None
+        # Create a real Issue object (get_issue_context requires Issue.model_dump)
+        test_issue = Issue(
+            id="046",
+            slug="test-issue",
+            title="Test Issue",
+            created="2026-01-11T12:00:00Z",
+            updated="2026-01-11T12:00:00Z",
+        )
 
         hook = {"type": "create_file", "template": "review.md", "dest": "review.md"}
 
         with patch('agenttree.hooks.load_config', return_value=Config()):
-            errors = run_builtin_validator(issue_dir, hook, issue=mock_issue)
+            with patch('agenttree.issues.get_issue_dir', return_value=issue_dir):
+                errors = run_builtin_validator(issue_dir, hook, issue=test_issue)
 
         assert errors == []
         mock_git_stats.assert_called_once()
@@ -388,17 +391,20 @@ This is the approach section with content.
         issue_dir = tmp_path / "issue"
         issue_dir.mkdir()
 
-        # Create a mock issue
-        mock_issue = MagicMock()
-        mock_issue.id = "042"
-        mock_issue.title = "Test Issue"
-        mock_issue.slug = "test-issue"
-        mock_issue.worktree_dir = None
+        # Create a real Issue object (get_issue_context requires Issue.model_dump)
+        test_issue = Issue(
+            id="042",
+            slug="test-issue",
+            title="Test Issue",
+            created="2026-01-11T12:00:00Z",
+            updated="2026-01-11T12:00:00Z",
+        )
 
         # Mock load_config to return empty commands
         with patch('agenttree.hooks.load_config', return_value=Config()):
-            hook = {"type": "create_file", "template": "test_review.md", "dest": "output.md"}
-            errors = run_builtin_validator(issue_dir, hook, issue=mock_issue)
+            with patch('agenttree.issues.get_issue_dir', return_value=issue_dir):
+                hook = {"type": "create_file", "template": "test_review.md", "dest": "output.md"}
+                errors = run_builtin_validator(issue_dir, hook, issue=test_issue)
 
         assert errors == []
 
@@ -426,18 +432,22 @@ This is the approach section with content.
         issue_dir = tmp_path / "issue"
         issue_dir.mkdir()
 
-        # Create a mock issue
-        mock_issue = MagicMock()
-        mock_issue.id = "001"
-        mock_issue.title = "Test"
-        mock_issue.slug = "test"
-        mock_issue.worktree_dir = None
+        # Create a real Issue object (get_issue_context requires Issue.model_dump)
+        test_issue = Issue(
+            id="001",
+            slug="test",
+            title="Test",
+            created="2026-01-11T12:00:00Z",
+            updated="2026-01-11T12:00:00Z",
+        )
 
-        # Mock load_config to return commands
+        # Mock load_config to return commands and is_running_in_container to avoid /workspace
         mock_config = Config(commands={"git_branch": "echo 'feature-branch'"})
         with patch('agenttree.hooks.load_config', return_value=mock_config):
-            hook = {"type": "create_file", "template": "stats.md", "dest": "output.md"}
-            errors = run_builtin_validator(issue_dir, hook, issue=mock_issue)
+            with patch('agenttree.hooks.is_running_in_container', return_value=False):
+                with patch('agenttree.issues.get_issue_dir', return_value=issue_dir):
+                    hook = {"type": "create_file", "template": "stats.md", "dest": "output.md"}
+                    errors = run_builtin_validator(issue_dir, hook, issue=test_issue)
 
         assert errors == []
 
@@ -704,6 +714,112 @@ Content
         errors = run_builtin_validator(tmp_path, hook)
         assert len(errors) == 1
         assert "Section 'Missing' not found" in errors[0]
+
+    @patch('urllib.request.urlopen')
+    def test_server_running_success(self, mock_urlopen, tmp_path):
+        """Should pass when server responds with 2xx status."""
+        from agenttree.hooks import run_builtin_validator
+        import agenttree.hooks as hooks_module
+
+        # Create mock issue with ID
+        mock_issue = Mock()
+        mock_issue.id = "001"
+
+        # Mock config to return port 9001 for issue "001"
+        mock_config = Mock()
+        mock_config.get_port_for_issue.return_value = 9001
+
+        # Mock successful HTTP response
+        mock_response = Mock()
+        mock_response.status = 200
+        mock_response.__enter__ = Mock(return_value=mock_response)
+        mock_response.__exit__ = Mock(return_value=False)
+        mock_urlopen.return_value = mock_response
+
+        with patch.object(hooks_module, 'load_config', return_value=mock_config):
+            hook = {"type": "server_running"}
+            errors = run_builtin_validator(tmp_path, hook, issue=mock_issue)
+            assert errors == []
+
+    def test_server_running_no_issue(self, tmp_path):
+        """Should return error when no issue provided."""
+        from agenttree.hooks import run_builtin_validator
+
+        hook = {"type": "server_running"}
+        errors = run_builtin_validator(tmp_path, hook)
+        assert len(errors) == 1
+        assert "No issue provided" in errors[0]
+
+    def test_server_running_no_port(self, tmp_path):
+        """Should return error when issue has no valid port."""
+        from agenttree.hooks import run_builtin_validator
+        import agenttree.hooks as hooks_module
+
+        mock_issue = Mock()
+        mock_issue.id = "invalid"
+
+        # Mock config to return None for invalid issue ID
+        mock_config = Mock()
+        mock_config.get_port_for_issue.return_value = None
+
+        with patch.object(hooks_module, 'load_config', return_value=mock_config):
+            hook = {"type": "server_running"}
+            errors = run_builtin_validator(tmp_path, hook, issue=mock_issue)
+            assert len(errors) == 1
+            assert "no valid port assigned" in errors[0]
+
+    @patch('urllib.request.urlopen')
+    @patch('time.sleep')
+    def test_server_running_failure_after_retries(self, mock_sleep, mock_urlopen, tmp_path):
+        """Should return error after all retries fail."""
+        from agenttree.hooks import run_builtin_validator
+        import agenttree.hooks as hooks_module
+        import urllib.error
+
+        mock_issue = Mock()
+        mock_issue.id = "001"
+
+        # Mock config to return port 9001
+        mock_config = Mock()
+        mock_config.get_port_for_issue.return_value = 9001
+
+        # Mock connection error
+        mock_urlopen.side_effect = urllib.error.URLError("Connection refused")
+
+        with patch.object(hooks_module, 'load_config', return_value=mock_config):
+            hook = {"type": "server_running", "retries": 2}
+            errors = run_builtin_validator(tmp_path, hook, issue=mock_issue)
+            assert len(errors) == 1
+            assert "not responding" in errors[0]
+            assert "9001" in errors[0]
+
+    @patch('urllib.request.urlopen')
+    def test_server_running_custom_health_endpoint(self, mock_urlopen, tmp_path):
+        """Should use custom health endpoint when specified."""
+        from agenttree.hooks import run_builtin_validator
+        import agenttree.hooks as hooks_module
+
+        mock_issue = Mock()
+        mock_issue.id = "001"
+
+        # Mock config to return port 9001
+        mock_config = Mock()
+        mock_config.get_port_for_issue.return_value = 9001
+
+        mock_response = Mock()
+        mock_response.status = 200
+        mock_response.__enter__ = Mock(return_value=mock_response)
+        mock_response.__exit__ = Mock(return_value=False)
+        mock_urlopen.return_value = mock_response
+
+        with patch.object(hooks_module, 'load_config', return_value=mock_config):
+            hook = {"type": "server_running", "health_endpoint": "/health"}
+            errors = run_builtin_validator(tmp_path, hook, issue=mock_issue)
+
+            # Check that the request was made to the correct URL
+            call_args = mock_urlopen.call_args
+            request = call_args[0][0]
+            assert request.full_url == "http://localhost:9001/health"
 
 
 class TestCommandHooks:
@@ -2820,3 +2936,414 @@ class TestHookExecutionOrder:
 
         assert stage_hooks_called, "Stage-level post_start hooks (with create_pr) should have been called"
 
+
+class TestStageRedirect:
+    """Tests for StageRedirect exception."""
+
+    def test_stage_redirect_is_exception(self):
+        """StageRedirect should be an Exception."""
+        from agenttree.hooks import StageRedirect
+
+        assert issubclass(StageRedirect, Exception)
+
+    def test_stage_redirect_attributes(self):
+        """StageRedirect should store target_stage and reason."""
+        from agenttree.hooks import StageRedirect
+
+        redirect = StageRedirect("address_independent_review", "Checkbox not checked")
+        assert redirect.target_stage == "address_independent_review"
+        assert redirect.reason == "Checkbox not checked"
+
+    def test_stage_redirect_message(self):
+        """StageRedirect should have descriptive message."""
+        from agenttree.hooks import StageRedirect
+
+        redirect = StageRedirect("target_stage", "test reason")
+        assert "target_stage" in str(redirect)
+        assert "test reason" in str(redirect)
+
+
+class TestCheckboxCheckedHook:
+    """Tests for checkbox_checked hook validator."""
+
+    def test_checkbox_checked_success(self, tmp_path):
+        """Should pass when checkbox is checked."""
+        from agenttree.hooks import run_builtin_validator
+
+        content = """# Review
+
+## Approval
+
+- [x] **Approve** - Code is ready to merge
+- [ ] Request changes
+"""
+        (tmp_path / "review.md").write_text(content)
+        hook = {"checkbox_checked": {"file": "review.md", "checkbox": "Approve"}}
+
+        errors = run_builtin_validator(tmp_path, hook)
+        assert errors == []
+
+    def test_checkbox_checked_uppercase_x(self, tmp_path):
+        """Should pass when checkbox uses uppercase X."""
+        from agenttree.hooks import run_builtin_validator
+
+        content = """# Review
+- [X] **Approve** - Ready
+"""
+        (tmp_path / "review.md").write_text(content)
+        hook = {"checkbox_checked": {"file": "review.md", "checkbox": "Approve"}}
+
+        errors = run_builtin_validator(tmp_path, hook)
+        assert errors == []
+
+    def test_checkbox_checked_failure_unchecked(self, tmp_path):
+        """Should return error when checkbox is not checked."""
+        from agenttree.hooks import run_builtin_validator
+
+        content = """# Review
+- [ ] **Approve** - Not ready yet
+"""
+        (tmp_path / "review.md").write_text(content)
+        hook = {"checkbox_checked": {"file": "review.md", "checkbox": "Approve"}}
+
+        errors = run_builtin_validator(tmp_path, hook)
+        assert len(errors) == 1
+        assert "not checked" in errors[0]
+
+    def test_checkbox_checked_raises_redirect_on_fail_stage(self, tmp_path):
+        """Should raise StageRedirect when on_fail_stage is set and checkbox unchecked."""
+        from agenttree.hooks import run_builtin_validator, StageRedirect
+
+        content = """# Review
+- [ ] **Approve** - Code needs changes
+"""
+        (tmp_path / "review.md").write_text(content)
+        hook = {
+            "checkbox_checked": {
+                "file": "review.md",
+                "checkbox": "Approve",
+                "on_fail_stage": "address_independent_review"
+            }
+        }
+
+        with pytest.raises(StageRedirect) as exc_info:
+            run_builtin_validator(tmp_path, hook)
+
+        assert exc_info.value.target_stage == "address_independent_review"
+
+    def test_checkbox_checked_file_not_found(self, tmp_path):
+        """Should return error when file doesn't exist."""
+        from agenttree.hooks import run_builtin_validator
+
+        hook = {"checkbox_checked": {"file": "missing.md", "checkbox": "Approve"}}
+
+        errors = run_builtin_validator(tmp_path, hook)
+        assert len(errors) == 1
+        assert "not found" in errors[0]
+
+    def test_checkbox_not_found_in_file(self, tmp_path):
+        """Should return error when checkbox text not found."""
+        from agenttree.hooks import run_builtin_validator
+
+        content = """# Review
+- [ ] Something else
+"""
+        (tmp_path / "review.md").write_text(content)
+        hook = {"checkbox_checked": {"file": "review.md", "checkbox": "Approve"}}
+
+        errors = run_builtin_validator(tmp_path, hook)
+        assert len(errors) == 1
+        assert "not found" in errors[0]
+
+
+class TestVersionFileHook:
+    """Tests for version_file hook action."""
+
+    def test_version_file_first_version(self, tmp_path):
+        """Should rename file to v1 when no versions exist."""
+        from agenttree.hooks import run_builtin_validator
+
+        (tmp_path / "review.md").write_text("# Review content")
+        hook = {"version_file": {"file": "review.md"}}
+
+        errors = run_builtin_validator(tmp_path, hook)
+        assert errors == []
+        assert not (tmp_path / "review.md").exists()
+        assert (tmp_path / "review_v1.md").exists()
+        assert (tmp_path / "review_v1.md").read_text() == "# Review content"
+
+    def test_version_file_increments_version(self, tmp_path):
+        """Should increment version number when previous versions exist."""
+        from agenttree.hooks import run_builtin_validator
+
+        # Create existing versioned files
+        (tmp_path / "review_v1.md").write_text("v1 content")
+        (tmp_path / "review_v2.md").write_text("v2 content")
+        (tmp_path / "review.md").write_text("# Latest content")
+
+        hook = {"version_file": {"file": "review.md"}}
+
+        errors = run_builtin_validator(tmp_path, hook)
+        assert errors == []
+        assert not (tmp_path / "review.md").exists()
+        assert (tmp_path / "review_v3.md").exists()
+        assert (tmp_path / "review_v3.md").read_text() == "# Latest content"
+
+    def test_version_file_missing_file_silent(self, tmp_path):
+        """Should silently skip when file doesn't exist."""
+        from agenttree.hooks import run_builtin_validator
+
+        hook = {"version_file": {"file": "missing.md"}}
+
+        errors = run_builtin_validator(tmp_path, hook)
+        # No error - file not existing is OK (first iteration case)
+        assert errors == []
+
+    def test_version_file_missing_parameter(self, tmp_path):
+        """Should return error when file parameter missing."""
+        from agenttree.hooks import run_builtin_validator
+
+        hook = {"version_file": {}}
+
+        errors = run_builtin_validator(tmp_path, hook)
+        assert len(errors) == 1
+        assert "file" in errors[0].lower()
+
+
+class TestLoopCheckHook:
+    """Tests for loop_check hook validator."""
+
+    def test_loop_check_under_limit(self, tmp_path):
+        """Should pass when version count is under limit."""
+        from agenttree.hooks import run_builtin_validator
+
+        # Create 2 versioned files
+        (tmp_path / "review_v1.md").write_text("v1")
+        (tmp_path / "review_v2.md").write_text("v2")
+
+        hook = {"loop_check": {"count_files": "review_v*.md", "max": 5}}
+
+        errors = run_builtin_validator(tmp_path, hook)
+        assert errors == []
+
+    def test_loop_check_at_limit(self, tmp_path):
+        """Should fail when version count equals limit."""
+        from agenttree.hooks import run_builtin_validator
+
+        # Create 5 versioned files
+        for i in range(1, 6):
+            (tmp_path / f"review_v{i}.md").write_text(f"v{i}")
+
+        hook = {"loop_check": {"count_files": "review_v*.md", "max": 5}}
+
+        errors = run_builtin_validator(tmp_path, hook)
+        assert len(errors) == 1
+        assert "5" in errors[0]
+
+    def test_loop_check_over_limit(self, tmp_path):
+        """Should fail when version count exceeds limit."""
+        from agenttree.hooks import run_builtin_validator
+
+        # Create 6 versioned files
+        for i in range(1, 7):
+            (tmp_path / f"review_v{i}.md").write_text(f"v{i}")
+
+        hook = {"loop_check": {"count_files": "review_v*.md", "max": 5}}
+
+        errors = run_builtin_validator(tmp_path, hook)
+        assert len(errors) == 1
+        assert "6" in errors[0]
+
+    def test_loop_check_custom_error_message(self, tmp_path):
+        """Should use custom error message when provided."""
+        from agenttree.hooks import run_builtin_validator
+
+        for i in range(1, 4):
+            (tmp_path / f"review_v{i}.md").write_text(f"v{i}")
+
+        hook = {
+            "loop_check": {
+                "count_files": "review_v*.md",
+                "max": 3,
+                "error": "Too many review iterations"
+            }
+        }
+
+        errors = run_builtin_validator(tmp_path, hook)
+        assert len(errors) == 1
+        assert "Too many review iterations" in errors[0]
+
+    def test_loop_check_no_files(self, tmp_path):
+        """Should pass when no matching files exist."""
+        from agenttree.hooks import run_builtin_validator
+
+        hook = {"loop_check": {"count_files": "review_v*.md", "max": 5}}
+
+        errors = run_builtin_validator(tmp_path, hook)
+        assert errors == []
+
+
+class TestRollbackHook:
+    """Tests for rollback hook action."""
+
+    def test_rollback_hook_requires_to_stage(self, tmp_path):
+        """Should return error when to_stage not provided."""
+        from agenttree.hooks import run_builtin_validator
+        from agenttree.issues import Issue
+
+        mock_issue = Issue(
+            id="42",
+            slug="test",
+            title="Test",
+            stage="implement",
+            created="2026-01-01T00:00:00Z",
+            updated="2026-01-01T00:00:00Z",
+        )
+
+        hook = {"rollback": {}}
+
+        errors = run_builtin_validator(tmp_path, hook, issue=mock_issue)
+        assert len(errors) == 1
+        assert "to_stage" in errors[0].lower()
+
+    def test_rollback_hook_requires_issue_context(self, tmp_path):
+        """Should return error when issue not provided."""
+        from agenttree.hooks import run_builtin_validator
+
+        hook = {"rollback": {"to_stage": "research"}}
+
+        errors = run_builtin_validator(tmp_path, hook)  # No issue kwarg
+        assert len(errors) == 1
+        assert "issue" in errors[0].lower()
+
+    @patch("agenttree.rollback.execute_rollback")
+    def test_rollback_hook_calls_execute_rollback(self, mock_rollback, tmp_path):
+        """Should call execute_rollback with correct parameters."""
+        from agenttree.hooks import run_builtin_validator
+        from agenttree.issues import Issue
+
+        mock_rollback.return_value = True
+        mock_issue = Issue(
+            id="42",
+            slug="test",
+            title="Test",
+            stage="implement",
+            created="2026-01-01T00:00:00Z",
+            updated="2026-01-01T00:00:00Z",
+        )
+
+        hook = {"rollback": {"to_stage": "research"}}
+
+        errors = run_builtin_validator(tmp_path, hook, issue=mock_issue)
+
+        mock_rollback.assert_called_once_with(
+            issue_id="42",
+            target_stage="research",
+            yes=True,  # Default auto-confirm
+            reset_worktree=False,
+            keep_changes=True,
+        )
+        assert errors == []
+
+    @patch("agenttree.rollback.execute_rollback")
+    def test_rollback_hook_reports_failure(self, mock_rollback, tmp_path):
+        """Should return error when rollback fails."""
+        from agenttree.hooks import run_builtin_validator
+        from agenttree.issues import Issue
+
+        mock_rollback.return_value = False
+        mock_issue = Issue(
+            id="42",
+            slug="test",
+            title="Test",
+            stage="implement",
+            created="2026-01-01T00:00:00Z",
+            updated="2026-01-01T00:00:00Z",
+        )
+
+        hook = {"rollback": {"to_stage": "research"}}
+
+        errors = run_builtin_validator(tmp_path, hook, issue=mock_issue)
+        assert len(errors) == 1
+        assert "failed" in errors[0].lower()
+class TestGetCodeDirectory:
+    """Tests for get_code_directory() helper function."""
+
+    @patch('agenttree.hooks.is_running_in_container', return_value=True)
+    def test_returns_workspace_in_container(self, mock_in_container, tmp_path):
+        """Should return /workspace when running in container."""
+        from agenttree.hooks import get_code_directory
+
+        issue = Issue(
+            id="123",
+            slug="test-issue",
+            title="Test Issue",
+            created="2024-01-01T00:00:00Z",
+            updated="2024-01-01T00:00:00Z",
+            worktree_dir=".worktrees/issue-123-test",
+        )
+        issue_dir = tmp_path / "_agenttree" / "issues" / "123-test-issue"
+
+        result = get_code_directory(issue, issue_dir)
+
+        assert result == Path("/workspace")
+
+    @patch('agenttree.hooks.is_running_in_container', return_value=False)
+    def test_returns_worktree_dir_on_host_when_set(self, mock_in_container, tmp_path):
+        """Should return worktree_dir on host when it's set."""
+        from agenttree.hooks import get_code_directory
+
+        issue = Issue(
+            id="123",
+            slug="test-issue",
+            title="Test Issue",
+            created="2024-01-01T00:00:00Z",
+            updated="2024-01-01T00:00:00Z",
+            worktree_dir=".worktrees/issue-123-test",
+        )
+        issue_dir = tmp_path / "_agenttree" / "issues" / "123-test-issue"
+
+        result = get_code_directory(issue, issue_dir)
+
+        assert result == Path(".worktrees/issue-123-test")
+
+    @patch('agenttree.hooks.is_running_in_container', return_value=False)
+    def test_returns_issue_dir_on_host_when_worktree_none(self, mock_in_container, tmp_path):
+        """Should return issue_dir on host when worktree_dir is None."""
+        from agenttree.hooks import get_code_directory
+
+        issue = Issue(
+            id="123",
+            slug="test-issue",
+            title="Test Issue",
+            created="2024-01-01T00:00:00Z",
+            updated="2024-01-01T00:00:00Z",
+            worktree_dir=None,
+        )
+        issue_dir = tmp_path / "_agenttree" / "issues" / "123-test-issue"
+
+        result = get_code_directory(issue, issue_dir)
+
+        assert result == issue_dir
+
+    @patch('agenttree.hooks.is_running_in_container', return_value=False)
+    def test_returns_issue_dir_when_issue_none_on_host(self, mock_in_container, tmp_path):
+        """Should return issue_dir when issue is None on host."""
+        from agenttree.hooks import get_code_directory
+
+        issue_dir = tmp_path / "_agenttree" / "issues" / "123-test-issue"
+
+        result = get_code_directory(None, issue_dir)
+
+        assert result == issue_dir
+
+    @patch('agenttree.hooks.is_running_in_container', return_value=True)
+    def test_returns_workspace_when_issue_none_in_container(self, mock_in_container, tmp_path):
+        """Should return /workspace when issue is None in container."""
+        from agenttree.hooks import get_code_directory
+
+        issue_dir = tmp_path / "_agenttree" / "issues" / "123-test-issue"
+
+        result = get_code_directory(None, issue_dir)
+
+        assert result == Path("/workspace")

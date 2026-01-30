@@ -9,8 +9,13 @@ default:
 # Development
 # ============================================================================
 
-# Run the web server with hot reload
-serve:
+# Stop the web server
+serve-stop:
+    @pkill -f "uvicorn agenttree.web.app" 2>/dev/null || true
+    @echo "Web server stopped"
+
+# Run the web server with hot reload (kills existing first)
+serve: serve-stop
     uv run uvicorn agenttree.web.app:app --host 0.0.0.0 --port 8080 --reload
 
 # Run the web server (alias)

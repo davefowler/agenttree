@@ -56,3 +56,6 @@ _agenttree
 
 # AgentTree directories
 _agenttree/
+
+# Claude session persistence (per-worktree)
+.claude-sessions/

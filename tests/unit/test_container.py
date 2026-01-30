@@ -132,6 +132,45 @@ class TestGetGitWorktreeInfo:
         assert worktree_dir == worktrees_dir
 
 
+class TestPortExposure:
+    """Tests for port exposure in container commands."""
+
+    @pytest.fixture
+    def runtime(self):
+        """Create a ContainerRuntime with mocked docker detection."""
+        with patch.object(ContainerRuntime, 'detect_runtime', return_value='docker'):
+            return ContainerRuntime()
+
+    @pytest.fixture
+    def tmp_worktree(self, tmp_path: Path) -> Path:
+        """Create a temporary worktree directory."""
+        worktree = tmp_path / "test-worktree"
+        worktree.mkdir()
+        return worktree
+
+    def test_port_exposure_adds_p_flag(
+        self, runtime: ContainerRuntime, tmp_worktree: Path
+    ) -> None:
+        """Test that port parameter adds -p flag for port mapping."""
+        with patch.object(Path, 'home', return_value=tmp_worktree.parent):
+            cmd = runtime.build_run_command(tmp_worktree, port=9001)
+
+        # Check that -p flag is present with correct port mapping
+        assert '-p' in cmd
+        port_idx = cmd.index('-p')
+        assert cmd[port_idx + 1] == '9001:9001'
+
+    def test_no_port_exposure_without_port_param(
+        self, runtime: ContainerRuntime, tmp_worktree: Path
+    ) -> None:
+        """Test that -p flag is not added when port is None."""
+        with patch.object(Path, 'home', return_value=tmp_worktree.parent):
+            cmd = runtime.build_run_command(tmp_worktree, port=None)
+
+        # Check that -p flag is not present
+        assert '-p' not in cmd
+
+
 class TestContainerRuntimeDetection:
     """Tests for container runtime detection."""
 

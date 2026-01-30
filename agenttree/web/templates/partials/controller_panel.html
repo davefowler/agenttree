@@ -1,0 +1,94 @@
+<!-- Controller panel - right-side overlay for controller agent (agent 0) -->
+<div class="controller-panel" id="controller-panel">
+    <div class="controller-panel-header">
+        <h4>Controller</h4>
+        <button class="controller-panel-close" onclick="toggleControllerPanel()" title="Close panel">&times;</button>
+    </div>
+    <div class="controller-panel-content">
+        <div class="controller-status" id="controller-status">
+            <span class="status-indicator" id="controller-status-indicator"></span>
+            <span id="controller-status-text">Checking...</span>
+        </div>
+        {% set chat_id = "controller" %}
+        {% set get_url = "/agent/0/tmux" %}
+        {% set post_url = "/agent/0/send" %}
+        {% set placeholder = "Send message to controller..." %}
+        {% include "partials/tmux_chat.html" %}
+    </div>
+</div>
+<script>
+(function() {
+    // Prevent duplicate initialization
+    if (window._controllerPanelInitialized) return;
+    window._controllerPanelInitialized = true;
+
+    // Controller panel toggle with localStorage persistence
+    window.toggleControllerPanel = function() {
+        const panel = document.getElementById('controller-panel');
+        if (panel) {
+            panel.classList.toggle('collapsed');
+            const isOpen = !panel.classList.contains('collapsed');
+            localStorage.setItem('controllerPanelOpen', isOpen ? '1' : '0');
+
+            // If opening, refresh the tmux output
+            if (isOpen) {
+                htmx.trigger('#tmux-output-controller', 'load');
+                checkControllerStatus();
+            }
+        }
+    };
+
+    // Check controller status using the agent status endpoint
+    async function checkControllerStatus() {
+        try {
+            const response = await fetch('/api/issues/0/agent-status');
+            if (response.ok) {
+                const data = await response.json();
+                const indicator = document.getElementById('controller-status-indicator');
+                const text = document.getElementById('controller-status-text');
+                if (data.tmux_active) {
+                    indicator.classList.remove('inactive');
+                    indicator.classList.add('active');
+                    text.textContent = 'Controller active';
+                } else {
+                    indicator.classList.remove('active');
+                    indicator.classList.add('inactive');
+                    text.textContent = 'Controller not running';
+                }
+            }
+        } catch (e) {
+            // Endpoint may not exist yet for agent 0, show as inactive
+            const indicator = document.getElementById('controller-status-indicator');
+            const text = document.getElementById('controller-status-text');
+            if (indicator) {
+                indicator.classList.remove('active');
+                indicator.classList.add('inactive');
+            }
+            if (text) {
+                text.textContent = 'Controller not running';
+            }
+        }
+    }
+
+    // Initialize panel state from localStorage
+    const isOpen = localStorage.getItem('controllerPanelOpen') === '1';
+    const panel = document.getElementById('controller-panel');
+    if (panel) {
+        if (!isOpen) {
+            panel.classList.add('collapsed');
+        }
+        // Check status on initial load if panel is open
+        if (isOpen) {
+            checkControllerStatus();
+        }
+    }
+
+    // Poll controller status every 10 seconds when panel is open
+    setInterval(function() {
+        const panel = document.getElementById('controller-panel');
+        if (panel && !panel.classList.contains('collapsed')) {
+            checkControllerStatus();
+        }
+    }, 10000);
+})();
+</script>

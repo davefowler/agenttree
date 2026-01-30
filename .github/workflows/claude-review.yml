@@ -17,7 +17,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          fetch-depth: 0  # Full history for diff analysis
 
       - name: Run Claude Code Review
         id: claude-review
@@ -31,10 +31,37 @@ jobs:
 
             Review this pull request for the agenttree project.
 
-            Focus on:
-            1. **Critical Issues** - Security vulnerabilities, data loss risks, breaking changes
-            2. **Bugs** - Logic errors, edge cases, null/undefined handling
-            3. **Code Quality** - Following existing patterns, type safety, test coverage
+            ## PRIORITY 0: Scope Check (CHECK THIS FIRST!)
+
+            Run `gh pr diff ${{ github.event.pull_request.number }} --stat` and check:
+
+            1. **Unrelated deletions** - Are files being deleted that aren't mentioned in the PR title/description?
+               - Deleting test files, modules, or features unrelated to the stated goal is CRITICAL
+               - Example: PR titled "Add color coding" should NOT delete rollback.py
+
+            2. **Proportional changes** - Is the diff size reasonable for the stated goal?
+               - A "small feature" PR with 1000+ lines changed is suspicious
+               - A "bug fix" PR with 500+ deletions is suspicious
+
+            3. **Scope creep** - Are there changes outside the PR's stated purpose?
+               - Unrelated refactoring bundled with a feature
+               - "Drive-by" fixes that should be separate PRs
+
+            If ANY scope issues are found, mark as CRITICAL and recommend splitting the PR.
+
+            ## PRIORITY 1: Anti-Slop (see CLAUDE.md)
+
+            - Dead code - new modules/classes added but not actually used
+            - Half-finished refactors - new code alongside old code that should be deleted
+            - Repetitive functions that should be ONE parameterized function
+            - Cowardly code - try/except around our own imports, defensive checks for guaranteed fields
+            - Backwards compat cruft - aliases, duplicate fields (we are pre-launch, no BC needed)
+
+            ## PRIORITY 2: Standard Review
+
+            - **Critical Issues** - Security vulnerabilities, data loss risks, breaking changes
+            - **Bugs** - Logic errors, edge cases, null/undefined handling
+            - **Code Quality** - Following existing patterns, type safety, test coverage
 
             This is a Python project using:
             - Python 3.12+ with type hints
@@ -45,8 +72,8 @@ jobs:
             Reference CLAUDE.md in the repo for project conventions.
 
             Format your review with clear sections:
-            - Start with a brief summary
-            - List any CRITICAL issues first (these should block merge)
+            - Start with **Scope Check** results (diff stats, any concerns)
+            - List any CRITICAL issues (these block merge)
             - Then list other suggestions
             - End with a clear **Recommendation** section
 
