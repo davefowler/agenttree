@@ -258,9 +258,16 @@ Possible solutions:
 
                 if (chatInput) {
                     e.preventDefault(); // Prevent browser default (e.g., focus address bar)
-                    chatInput.value = selectedText;
+
+                    // Get file context from active tab in modal
+                    const activeTab = modal.querySelector('.file-tab.active');
+                    const filename = activeTab?.getAttribute('data-filename');
+                    const message = filename
+                        ? `In ${filename}: "${selectedText}"\n`
+                        : selectedText;
+
+                    chatInput.value = message;
                     chatInput.focus();
-                    // Optionally auto-submit - user can edit before pressing Enter
                 }
             }
         });

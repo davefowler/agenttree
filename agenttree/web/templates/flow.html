@@ -167,7 +167,15 @@
 
                 if (chatInput) {
                     e.preventDefault(); // Prevent browser default (e.g., focus address bar)
-                    chatInput.value = selectedText;
+
+                    // Get file context from active tab
+                    const activeTab = document.querySelector('.flow-main .file-tab.active');
+                    const filename = activeTab?.getAttribute('data-filename');
+                    const message = filename
+                        ? `In ${filename}: "${selectedText}"\n`
+                        : selectedText;
+
+                    chatInput.value = message;
                     chatInput.focus();
                 }
             }
