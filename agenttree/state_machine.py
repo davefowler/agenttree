@@ -15,7 +15,6 @@ if TYPE_CHECKING:
     from agenttree.config import Config
 
 from transitions import Machine
-from transitions.core import MachineError
 
 logger = logging.getLogger(__name__)
 
@@ -252,16 +251,6 @@ class IssueStateMachine:
         {"trigger": "reject", "source": "plan_revise", "dest": "not_doing"},
         {"trigger": "reject", "source": "plan_review", "dest": "not_doing"},
     ]
-
-    # States that require human review before advancing
-    HUMAN_REVIEW_STATES = {
-        "plan_review",
-        "implementation_review.ci_wait",
-        "implementation_review.review",
-    }
-
-    # Terminal states (cannot advance further)
-    TERMINAL_STATES = {"accepted", "not_doing"}
 
     def __init__(self, initial_state: str = "backlog") -> None:
         """Initialize the state machine.

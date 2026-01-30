@@ -34,6 +34,7 @@ PLAN_REVISE = "plan_revise"
 PLAN_REVIEW = "plan_review"
 IMPLEMENT = "implement"
 INDEPENDENT_CODE_REVIEW = "independent_code_review"
+ADDRESS_INDEPENDENT_REVIEW = "address_independent_review"
 IMPLEMENTATION_REVIEW = "implementation_review"
 ACCEPTED = "accepted"
 NOT_DOING = "not_doing"
@@ -618,6 +619,7 @@ STAGE_ORDER = [
     PLAN_REVIEW,
     IMPLEMENT,
     INDEPENDENT_CODE_REVIEW,
+    ADDRESS_INDEPENDENT_REVIEW,
     IMPLEMENTATION_REVIEW,
     ACCEPTED,
     NOT_DOING,
