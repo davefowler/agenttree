@@ -53,7 +53,7 @@ class ActiveAgent:
         """Create from dictionary."""
         return cls(
             issue_id=data["issue_id"],
-            host=data.get("host", "agent"),  # Default for backwards compat during migration
+            host=data.get("host", "agent"),  # Default to "agent" if not specified
             container=data["container"],
             worktree=Path(data["worktree"]),
             branch=data["branch"],

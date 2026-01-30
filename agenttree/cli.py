@@ -2428,13 +2428,15 @@ def shutdown_issue(
     config = load_config()
     repo_path = Path.cwd()
 
-    # Stop agent FIRST to avoid race conditions with worktree operations
-    agent = get_active_agent(issue_id_normalized)
-    if agent:
+    # Stop ALL agents for this issue FIRST to avoid race conditions with worktree operations
+    from agenttree.state import get_active_agents_for_issue, unregister_all_agents_for_issue
+    agents = get_active_agents_for_issue(issue_id_normalized)
+    if agents:
         tmux_manager = TmuxManager(config)
-        tmux_manager.stop_issue_agent(agent.tmux_session)
-        unregister_agent(agent.issue_id)
-        console.print(f"[dim]Stopped agent for issue #{issue.id}[/dim]")
+        for agent in agents:
+            tmux_manager.stop_issue_agent(agent.tmux_session)
+        unregister_all_agents_for_issue(issue_id_normalized)
+        console.print(f"[dim]Stopped {len(agents)} agent(s) for issue #{issue.id}[/dim]")
 
     # Get worktree path
     worktree_path = None
@@ -3057,8 +3059,10 @@ def rollback_issue(
 
     should_reset = reset_worktree or (auto_reset and not keep_changes)
 
-    # Check for active agent
-    active_agent = get_active_agent(issue_id_normalized)
+    # Check for active agents (all hosts)
+    from agenttree.state import get_active_agents_for_issue
+    active_agents = get_active_agents_for_issue(issue_id_normalized)
+    active_agent = active_agents[0] if active_agents else None  # For worktree reference
 
     # Show confirmation
     issue_dir = get_issue_dir(issue_id_normalized)
@@ -3077,8 +3081,8 @@ def rollback_issue(
             exists = " (exists)" if file_path.exists() else " (not found)"
             console.print(f"    - {f}{exists}")
 
-    if active_agent:
-        console.print(f"\n  [yellow]⚠ Active agent will be unregistered[/yellow]")
+    if active_agents:
+        console.print(f"\n  [yellow]⚠ {len(active_agents)} active agent(s) will be unregistered[/yellow]")
 
     if should_reset:
         console.print(f"\n  [yellow]⚠ Worktree will be reset to origin/main[/yellow]")
@@ -3156,10 +3160,11 @@ def rollback_issue(
     delete_session(issue_id_normalized)
     console.print("[green]✓ Cleared agent session[/green]")
 
-    # 4. Unregister active agent (if any)
-    if active_agent:
-        unregister_agent(issue_id_normalized)
-        console.print("[green]✓ Unregistered active agent[/green]")
+    # 4. Unregister all active agents (if any)
+    if active_agents:
+        from agenttree.state import unregister_all_agents_for_issue
+        unregister_all_agents_for_issue(issue_id_normalized)
+        console.print(f"[green]✓ Unregistered {len(active_agents)} active agent(s)[/green]")
 
     # 5. Reset worktree if requested
     if should_reset and active_agent:
