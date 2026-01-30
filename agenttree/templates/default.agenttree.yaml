@@ -186,6 +186,36 @@ stages:
           file: independent_review.md
           section: Review Findings
           expect: not_empty
+      - checkbox_checked:
+          file: independent_review.md
+          checkbox: Approve
+          on_fail_stage: address_independent_review
+
+  # Stage where implementing agent addresses review feedback
+  - name: address_independent_review
+    host: agent  # Back to the implementing agent
+    output: independent_review_response.md
+    skill: address_independent_review.md
+    post_start:
+      - version_file:
+          file: independent_review.md
+      - version_file:
+          file: independent_review_response.md
+      - create_file:
+          template: independent_review_response.md
+          dest: independent_review_response.md
+    pre_completion:
+      - loop_check:
+          count_files: independent_review_v*.md
+          max: 3
+          error: "Review loop exceeded 3 iterations. Escalating to human review."
+      - section_check:
+          file: independent_review_response.md
+          section: Changes Made
+          expect: not_empty
+    post_completion:
+      - rollback:
+          to_stage: independent_code_review
 
   - name: implementation_review
     human_review: true

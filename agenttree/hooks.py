@@ -305,6 +305,18 @@ class ValidationError(Exception):
     pass
 
 
+class StageRedirect(Exception):
+    """Raised when a hook failure should redirect to a different stage instead of blocking.
+
+    Used with on_fail_stage option in hooks.
+    """
+
+    def __init__(self, target_stage: str, reason: str = ""):
+        self.target_stage = target_stage
+        self.reason = reason
+        super().__init__(f"Redirect to stage '{target_stage}': {reason}")
+
+
 # =============================================================================
 # Hook Type Registry
 # =============================================================================
@@ -961,6 +973,18 @@ def run_builtin_validator(
                         else:
                             context[var_name] = ""
 
+                    # Add latest_independent_review - find highest-numbered version
+                    # Looks for independent_review_v*.md and uses the highest version
+                    versioned_reviews = sorted(issue_dir.glob("independent_review_v*.md"))
+                    if versioned_reviews:
+                        # Use the latest versioned review
+                        context["latest_independent_review"] = versioned_reviews[-1].read_text()
+                    elif (issue_dir / "independent_review.md").exists():
+                        # Fall back to unversioned file
+                        context["latest_independent_review"] = (issue_dir / "independent_review.md").read_text()
+                    else:
+                        context["latest_independent_review"] = ""
+
                 # Add git diff stats for review templates
                 git_stats = get_git_diff_stats()
                 context["files_changed"] = git_stats['files_changed']
@@ -1023,6 +1047,107 @@ def run_builtin_validator(
         issue = kwargs.get("issue")
         if issue:
             check_and_start_blocked_issues(issue)
+
+    # === Review loop hooks ===
+
+    elif hook_type == "checkbox_checked":
+        # Check that a specific checkbox is marked in a markdown file
+        # Supports on_fail_stage for conditional routing
+        file_path = issue_dir / params["file"]
+        checkbox_text = params.get("checkbox", "")
+        on_fail_stage = params.get("on_fail_stage")
+
+        if not file_path.exists():
+            errors.append(f"File '{params['file']}' not found for checkbox check")
+        else:
+            content = file_path.read_text()
+            # Look for checked checkbox with the specified text
+            # Pattern: [x] or [X] followed by the checkbox text
+            checked_pattern = rf'\[[ ]?[xX][ ]?\]\s*\**{re.escape(checkbox_text)}'
+            unchecked_pattern = rf'\[\s*\]\s*\**{re.escape(checkbox_text)}'
+
+            if re.search(checked_pattern, content):
+                # Checkbox is checked, validation passes
+                pass
+            elif re.search(unchecked_pattern, content):
+                # Checkbox exists but is unchecked
+                if on_fail_stage:
+                    # Raise redirect instead of error
+                    raise StageRedirect(
+                        on_fail_stage,
+                        f"Checkbox '{checkbox_text}' is not checked in {params['file']}"
+                    )
+                else:
+                    errors.append(f"Checkbox '{checkbox_text}' is not checked in {params['file']}")
+            else:
+                errors.append(f"Checkbox '{checkbox_text}' not found in {params['file']}")
+
+    elif hook_type == "version_file":
+        # Rename file.md to file_v{N}.md where N is next available version
+        # Used in post_start to preserve history before creating new version
+        filename = params.get("file", "")
+        if not filename:
+            errors.append("version_file hook requires 'file' parameter")
+        else:
+            file_path = issue_dir / filename
+            if file_path.exists():
+                # Find next version number
+                base_name = file_path.stem
+                ext = file_path.suffix
+                version = 1
+                while (issue_dir / f"{base_name}_v{version}{ext}").exists():
+                    version += 1
+
+                # Rename to versioned name
+                versioned_path = issue_dir / f"{base_name}_v{version}{ext}"
+                file_path.rename(versioned_path)
+                console.print(f"[dim]Versioned {filename} → {versioned_path.name}[/dim]")
+            # If file doesn't exist, silently skip (it might not exist on first iteration)
+
+    elif hook_type == "loop_check":
+        # Count versioned files and fail if max exceeded
+        # Used to prevent infinite review loops
+        pattern = params.get("count_files", "")
+        max_iterations = params.get("max", 3)
+        error_msg = params.get("error", f"Review loop exceeded {max_iterations} iterations")
+
+        if pattern:
+            import glob
+            # Count matching files
+            matches = list(issue_dir.glob(pattern))
+            if len(matches) >= max_iterations:
+                errors.append(f"{error_msg} (found {len(matches)} iterations)")
+                console.print(f"[yellow]Loop limit reached: {len(matches)} >= {max_iterations}[/yellow]")
+
+    elif hook_type == "rollback":
+        # Programmatic rollback to an earlier stage
+        # Used in post_completion to loop back for re-review
+        to_stage = params.get("to_stage", "")
+        auto_yes = params.get("yes", True)  # Default to auto-confirm for programmatic rollback
+
+        if not to_stage:
+            errors.append("rollback hook requires 'to_stage' parameter")
+        else:
+            issue = kwargs.get("issue")
+            if issue:
+                try:
+                    # Import and call rollback logic
+                    from agenttree.cli import _execute_rollback
+                    success = _execute_rollback(
+                        issue_id=issue.id,
+                        target_stage=to_stage,
+                        yes=auto_yes,
+                        reset_worktree=False,
+                        keep_changes=True,
+                    )
+                    if success:
+                        console.print(f"[green]✓ Rolled back to {to_stage}[/green]")
+                    else:
+                        errors.append(f"Rollback to {to_stage} failed")
+                except Exception as e:
+                    errors.append(f"Rollback failed: {e}")
+            else:
+                errors.append("rollback hook requires issue context")
 
     # Controller hooks (delegated to agents_repo functions)
     elif hook_type == "push_pending_branches":
@@ -1314,6 +1439,7 @@ def execute_exit_hooks(issue: "Issue", stage: str, substage: Optional[str] = Non
 
     Raises:
         ValidationError: If any validation fails (blocks transition)
+        StageRedirect: If a hook with on_fail_stage fails (redirect to different stage)
     """
     from agenttree.config import load_config
     from agenttree.issues import get_issue_dir

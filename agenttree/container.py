@@ -254,6 +254,9 @@ class ContainerRuntime:
         sessions_dir.mkdir(exist_ok=True)
         cmd.extend(["-v", f"{sessions_dir}:/home/agent/.claude/projects/-workspace"])
 
+        # Check if there are existing sessions to continue
+        has_prior_session = any(sessions_dir.glob("*.jsonl"))
+
         # Pass through auth credentials
         # Helper to get credential from env or file
         def get_credential(env_var: str, file_key: str) -> Optional[str]:
@@ -285,8 +288,10 @@ class ContainerRuntime:
         cmd.append(image)
         cmd.append(ai_tool)
 
-        # Note: Don't use -c (continue) flag - it causes Claude to exit if no session exists
-        # Claude will automatically use the session storage we mounted if there's a prior session
+        # Use -c to continue previous session if one exists
+        # Only add -c when there's a prior session (Claude exits if no session to continue)
+        if has_prior_session:
+            cmd.append("-c")
 
         if model:
             cmd.extend(["--model", model])
