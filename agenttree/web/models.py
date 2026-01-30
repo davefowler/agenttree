@@ -50,6 +50,7 @@ class Issue(IssueBase):
     url: Optional[str] = None
     pr_url: Optional[str] = None
     pr_number: Optional[int] = None
+    port: Optional[int] = None  # Dev server port for this issue
     tmux_active: bool = False
     has_worktree: bool = False
     created_at: datetime

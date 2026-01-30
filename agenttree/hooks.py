@@ -157,6 +157,22 @@ pr_approved: {}
     Example:
         - pr_approved: {}
 
+server_running:
+    Check that a dev server is running on the issue's port.
+    Useful for validating that an agent has started a dev server before
+    allowing a stage transition.
+
+    Parameters:
+        health_endpoint: str - URL path to check (default: "/")
+        timeout: int - Request timeout in seconds (default: 5)
+        retries: int - Number of retry attempts (default: 3)
+        retry_delay: int - Seconds to wait between retries (default: 2)
+
+    Example:
+        - server_running:
+            health_endpoint: /health
+            timeout: 10
+
 =============================================================================
 BUILT-IN ACTIONS (perform side effects)
 =============================================================================
@@ -293,6 +309,7 @@ from agenttree.issues import (
     PLAN,
     IMPLEMENT,
     ACCEPTED,
+    get_issue_context,
 )
 from agenttree.config import load_config
 
@@ -953,7 +970,7 @@ def run_builtin_validator(
             if not dest_path.exists() and template_path.exists():
                 template_content = template_path.read_text()
 
-                # Build Jinja context
+                # Build Jinja context using unified function
                 from jinja2 import Template
                 from agenttree.commands import get_referenced_commands, get_command_output
 
@@ -961,21 +978,8 @@ def run_builtin_validator(
                 context: Dict[str, Any] = {}
 
                 if issue:
-                    context = {
-                        "issue_id": issue.id,
-                        "issue_title": issue.title,
-                        "issue_dir": str(issue_dir),
-                        "issue_dir_rel": f"_agenttree/issues/{issue.id}-{issue.slug}" if hasattr(issue, 'slug') else "",
-                    }
-
-                    # Add document contents if they exist
-                    for doc_name in ["problem.md", "research.md", "spec.md", "spec_review.md", "review.md"]:
-                        doc_path = issue_dir / doc_name
-                        var_name = doc_name.replace(".md", "_md").replace("-", "_")
-                        if doc_path.exists():
-                            context[var_name] = doc_path.read_text()
-                        else:
-                            context[var_name] = ""
+                    # Use get_issue_context for all issue fields
+                    context = get_issue_context(issue, include_docs=True)
 
                     # Add latest_independent_review - find highest-numbered version
                     # Looks for independent_review_v*.md and uses the highest version
@@ -1190,6 +1194,51 @@ def run_builtin_validator(
         agents_dir = kwargs.get("agents_dir")
         if agents_dir:
             check_custom_agent_stages(agents_dir)
+
+    elif hook_type == "server_running":
+        # Check that a dev server is running on the issue's port
+        import urllib.request
+        import urllib.error
+        import time
+
+        issue = kwargs.get("issue")
+        if issue is None:
+            errors.append("No issue provided for server_running check")
+        else:
+            # Get port from config using issue ID
+            server_config = load_config()
+            port = server_config.get_port_for_issue(issue.id)
+
+            if port is None:
+                errors.append(
+                    f"Issue {issue.id} has no valid port assigned. "
+                    "Issue ID must be numeric and within the configured port_range."
+                )
+            else:
+                health_endpoint = params.get("health_endpoint", "/")
+                timeout = params.get("timeout", 5)
+                retries = params.get("retries", 3)
+                retry_delay = params.get("retry_delay", 2)
+
+                url = f"http://localhost:{port}{health_endpoint}"
+
+                # Try multiple times with backoff to handle race conditions
+                for attempt in range(retries):
+                    try:
+                        req = urllib.request.Request(url, method="GET")
+                        with urllib.request.urlopen(req, timeout=timeout) as response:
+                            if 200 <= response.status < 400:
+                                console.print(f"[green]✓ Dev server running at {url}[/green]")
+                                break  # Success
+                    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, OSError) as err:
+                        if attempt < retries - 1:
+                            console.print(f"[dim]Server not ready, retrying in {retry_delay}s... ({attempt + 1}/{retries})[/dim]")
+                            time.sleep(retry_delay)
+                        else:
+                            errors.append(
+                                f"Dev server not responding at {url} after {retries} attempts: {err}. "
+                                f"Make sure the server is running on port {port}."
+                            )
 
     else:
         # Unknown type - ignore silently (allows for future extensions)

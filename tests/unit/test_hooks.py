@@ -348,17 +348,20 @@ This is the approach section with content.
         issue_dir = tmp_path / "issue"
         issue_dir.mkdir()
 
-        # Create a mock issue
-        mock_issue = MagicMock()
-        mock_issue.id = "046"
-        mock_issue.title = "Test Issue"
-        mock_issue.slug = "test-issue"
-        mock_issue.worktree_dir = None
+        # Create a real Issue object (get_issue_context requires Issue.model_dump)
+        test_issue = Issue(
+            id="046",
+            slug="test-issue",
+            title="Test Issue",
+            created="2026-01-11T12:00:00Z",
+            updated="2026-01-11T12:00:00Z",
+        )
 
         hook = {"type": "create_file", "template": "review.md", "dest": "review.md"}
 
         with patch('agenttree.hooks.load_config', return_value=Config()):
-            errors = run_builtin_validator(issue_dir, hook, issue=mock_issue)
+            with patch('agenttree.issues.get_issue_dir', return_value=issue_dir):
+                errors = run_builtin_validator(issue_dir, hook, issue=test_issue)
 
         assert errors == []
         mock_git_stats.assert_called_once()
@@ -388,17 +391,20 @@ This is the approach section with content.
         issue_dir = tmp_path / "issue"
         issue_dir.mkdir()
 
-        # Create a mock issue
-        mock_issue = MagicMock()
-        mock_issue.id = "042"
-        mock_issue.title = "Test Issue"
-        mock_issue.slug = "test-issue"
-        mock_issue.worktree_dir = None
+        # Create a real Issue object (get_issue_context requires Issue.model_dump)
+        test_issue = Issue(
+            id="042",
+            slug="test-issue",
+            title="Test Issue",
+            created="2026-01-11T12:00:00Z",
+            updated="2026-01-11T12:00:00Z",
+        )
 
         # Mock load_config to return empty commands
         with patch('agenttree.hooks.load_config', return_value=Config()):
-            hook = {"type": "create_file", "template": "test_review.md", "dest": "output.md"}
-            errors = run_builtin_validator(issue_dir, hook, issue=mock_issue)
+            with patch('agenttree.issues.get_issue_dir', return_value=issue_dir):
+                hook = {"type": "create_file", "template": "test_review.md", "dest": "output.md"}
+                errors = run_builtin_validator(issue_dir, hook, issue=test_issue)
 
         assert errors == []
 
@@ -426,19 +432,22 @@ This is the approach section with content.
         issue_dir = tmp_path / "issue"
         issue_dir.mkdir()
 
-        # Create a mock issue
-        mock_issue = MagicMock()
-        mock_issue.id = "001"
-        mock_issue.title = "Test"
-        mock_issue.slug = "test"
-        mock_issue.worktree_dir = None
+        # Create a real Issue object (get_issue_context requires Issue.model_dump)
+        test_issue = Issue(
+            id="001",
+            slug="test",
+            title="Test",
+            created="2026-01-11T12:00:00Z",
+            updated="2026-01-11T12:00:00Z",
+        )
 
         # Mock load_config to return commands and is_running_in_container to avoid /workspace
         mock_config = Config(commands={"git_branch": "echo 'feature-branch'"})
         with patch('agenttree.hooks.load_config', return_value=mock_config):
             with patch('agenttree.hooks.is_running_in_container', return_value=False):
-                hook = {"type": "create_file", "template": "stats.md", "dest": "output.md"}
-                errors = run_builtin_validator(issue_dir, hook, issue=mock_issue)
+                with patch('agenttree.issues.get_issue_dir', return_value=issue_dir):
+                    hook = {"type": "create_file", "template": "stats.md", "dest": "output.md"}
+                    errors = run_builtin_validator(issue_dir, hook, issue=test_issue)
 
         assert errors == []
 
@@ -705,6 +714,112 @@ Content
         errors = run_builtin_validator(tmp_path, hook)
         assert len(errors) == 1
         assert "Section 'Missing' not found" in errors[0]
+
+    @patch('urllib.request.urlopen')
+    def test_server_running_success(self, mock_urlopen, tmp_path):
+        """Should pass when server responds with 2xx status."""
+        from agenttree.hooks import run_builtin_validator
+        import agenttree.hooks as hooks_module
+
+        # Create mock issue with ID
+        mock_issue = Mock()
+        mock_issue.id = "001"
+
+        # Mock config to return port 9001 for issue "001"
+        mock_config = Mock()
+        mock_config.get_port_for_issue.return_value = 9001
+
+        # Mock successful HTTP response
+        mock_response = Mock()
+        mock_response.status = 200
+        mock_response.__enter__ = Mock(return_value=mock_response)
+        mock_response.__exit__ = Mock(return_value=False)
+        mock_urlopen.return_value = mock_response
+
+        with patch.object(hooks_module, 'load_config', return_value=mock_config):
+            hook = {"type": "server_running"}
+            errors = run_builtin_validator(tmp_path, hook, issue=mock_issue)
+            assert errors == []
+
+    def test_server_running_no_issue(self, tmp_path):
+        """Should return error when no issue provided."""
+        from agenttree.hooks import run_builtin_validator
+
+        hook = {"type": "server_running"}
+        errors = run_builtin_validator(tmp_path, hook)
+        assert len(errors) == 1
+        assert "No issue provided" in errors[0]
+
+    def test_server_running_no_port(self, tmp_path):
+        """Should return error when issue has no valid port."""
+        from agenttree.hooks import run_builtin_validator
+        import agenttree.hooks as hooks_module
+
+        mock_issue = Mock()
+        mock_issue.id = "invalid"
+
+        # Mock config to return None for invalid issue ID
+        mock_config = Mock()
+        mock_config.get_port_for_issue.return_value = None
+
+        with patch.object(hooks_module, 'load_config', return_value=mock_config):
+            hook = {"type": "server_running"}
+            errors = run_builtin_validator(tmp_path, hook, issue=mock_issue)
+            assert len(errors) == 1
+            assert "no valid port assigned" in errors[0]
+
+    @patch('urllib.request.urlopen')
+    @patch('time.sleep')
+    def test_server_running_failure_after_retries(self, mock_sleep, mock_urlopen, tmp_path):
+        """Should return error after all retries fail."""
+        from agenttree.hooks import run_builtin_validator
+        import agenttree.hooks as hooks_module
+        import urllib.error
+
+        mock_issue = Mock()
+        mock_issue.id = "001"
+
+        # Mock config to return port 9001
+        mock_config = Mock()
+        mock_config.get_port_for_issue.return_value = 9001
+
+        # Mock connection error
+        mock_urlopen.side_effect = urllib.error.URLError("Connection refused")
+
+        with patch.object(hooks_module, 'load_config', return_value=mock_config):
+            hook = {"type": "server_running", "retries": 2}
+            errors = run_builtin_validator(tmp_path, hook, issue=mock_issue)
+            assert len(errors) == 1
+            assert "not responding" in errors[0]
+            assert "9001" in errors[0]
+
+    @patch('urllib.request.urlopen')
+    def test_server_running_custom_health_endpoint(self, mock_urlopen, tmp_path):
+        """Should use custom health endpoint when specified."""
+        from agenttree.hooks import run_builtin_validator
+        import agenttree.hooks as hooks_module
+
+        mock_issue = Mock()
+        mock_issue.id = "001"
+
+        # Mock config to return port 9001
+        mock_config = Mock()
+        mock_config.get_port_for_issue.return_value = 9001
+
+        mock_response = Mock()
+        mock_response.status = 200
+        mock_response.__enter__ = Mock(return_value=mock_response)
+        mock_response.__exit__ = Mock(return_value=False)
+        mock_urlopen.return_value = mock_response
+
+        with patch.object(hooks_module, 'load_config', return_value=mock_config):
+            hook = {"type": "server_running", "health_endpoint": "/health"}
+            errors = run_builtin_validator(tmp_path, hook, issue=mock_issue)
+
+            # Check that the request was made to the correct URL
+            call_args = mock_urlopen.call_args
+            request = call_args[0][0]
+            assert request.full_url == "http://localhost:9001/health"
 
 
 class TestCommandHooks:
