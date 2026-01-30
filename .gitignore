@@ -56,3 +56,6 @@ _agenttree
 
 # AgentTree directories
 _agenttree/
+
+# Claude session files (should not be committed)
+.claude-sessions/
