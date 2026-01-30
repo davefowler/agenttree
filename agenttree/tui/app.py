@@ -377,7 +377,12 @@ class TUIApp(App):  # type: ignore[type-arg]
             # Execute exit hooks for the current stage (consistent with web UI)
             from_stage = issue.stage
             from_substage = issue.substage
-            execute_exit_hooks(issue, from_stage, from_substage)
+            try:
+                execute_exit_hooks(issue, from_stage, from_substage)
+            except StageRedirect as redirect:
+                # Redirect to a different stage instead of rejection target
+                reject_to = redirect.target_stage
+                status.show_message(f"Redirecting to {reject_to}: {redirect.reason}")
 
             # Update issue stage
             updated = update_issue_stage(issue.id, reject_to)
