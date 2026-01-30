@@ -228,7 +228,10 @@ class AgentManager:
         self._active_sessions = None
 
     def _check_issue_tmux_session(self, issue_id: str) -> bool:
-        """Check if tmux session exists for an issue-bound agent."""
+        """Check if tmux session exists for an issue-bound agent.
+
+        Note: Controller is agent 0, so _check_issue_tmux_session("000") checks controller.
+        """
         # Session names are: {project}-issue-{issue_id}
         session_name = f"{_config.project}-issue-{issue_id}"
         return session_name in self._get_active_sessions()
@@ -630,6 +633,10 @@ async def send_to_agent(
         logger.warning(f"[SEND] Claude exited for issue={agent_num}, message went to shell")
 
     return HTMLResponse("")
+
+
+# Controller routes removed - controller is now agent 0
+# Use /agent/0/tmux, /agent/0/send, /api/issues/0/agent-status instead
 
 
 @app.post("/api/issues/{issue_id}/start")

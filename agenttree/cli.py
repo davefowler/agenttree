@@ -8,7 +8,7 @@ import click
 from rich.console import Console
 from rich.table import Table
 
-from agenttree.config import load_config
+from agenttree.config import load_config, Config
 from agenttree.worktree import WorktreeManager
 from agenttree.tmux import TmuxManager
 from agenttree.github import ensure_gh_cli
@@ -661,6 +661,48 @@ def preflight() -> None:
         sys.exit(1)
 
 
+def _start_controller(
+    tool: Optional[str],
+    force: bool,
+    config: "Config",
+    repo_path: Path,
+) -> None:
+    """Start the controller agent (agent 0).
+
+    The controller runs on the host (not in a container) and orchestrates
+    work across all issues. It uses the main branch.
+    """
+    from agenttree.tmux import session_exists
+
+    tmux_manager = TmuxManager(config)
+    session_name = f"{config.project}-issue-000"
+
+    # Check if controller already running
+    if session_exists(session_name) and not force:
+        console.print("[yellow]Controller already running[/yellow]")
+        console.print(f"\nUse --force to restart, or attach with:")
+        console.print(f"  agenttree attach 0")
+        sys.exit(1)
+
+    tool_name = tool or config.default_tool
+    console.print(f"[green]Starting controller agent...[/green]")
+    console.print(f"[dim]Tool: {tool_name}[/dim]")
+    console.print(f"[dim]Session: {session_name}[/dim]")
+
+    # Start controller on host (not in container)
+    tmux_manager.start_controller(
+        session_name=session_name,
+        repo_path=repo_path,
+        tool_name=tool_name,
+    )
+
+    console.print(f"\n[bold]Controller ready[/bold]")
+    console.print(f"\n[dim]Commands:[/dim]")
+    console.print(f"  agenttree attach 0")
+    console.print(f"  agenttree send 0 'message'")
+    console.print(f"  agenttree kill 0")
+
+
 @main.command(name="start")
 @click.argument("issue_id", type=str)
 @click.option("--tool", help="AI tool to use (default: from config)")
@@ -711,6 +753,11 @@ def start_agent(
 
     # Normalize issue ID (strip leading zeros for lookup, keep for display)
     issue_id_normalized = issue_id.lstrip("0") or "0"
+
+    # Special handling for controller (agent 0)
+    if issue_id_normalized == "0":
+        _start_controller(tool, force, config, repo_path)
+        return
 
     # Load issue from local _agenttree/issues/
     issue = get_issue_func(issue_id_normalized)
@@ -1044,15 +1091,27 @@ def sandbox(name: str, list_sandboxes: bool, kill: bool, tool: Optional[str], sh
 def attach(issue_id: str) -> None:
     """Attach to an issue's agent tmux session.
 
-    ISSUE_ID is the issue number (e.g., "23" or "023").
+    ISSUE_ID is the issue number (e.g., "23" or "023"), or "0" for controller.
     """
     from agenttree.state import get_active_agent
+    from agenttree.tmux import session_exists, attach_session
 
     config = load_config()
     tmux_manager = TmuxManager(config)
 
     # Normalize issue ID
     issue_id_normalized = issue_id.lstrip("0") or "0"
+
+    # Special handling for controller (agent 0)
+    if issue_id_normalized == "0":
+        session_name = f"{config.project}-issue-000"
+        if not session_exists(session_name):
+            console.print("[red]Error: Controller not running[/red]")
+            console.print("[yellow]Start it with: agenttree start 0[/yellow]")
+            sys.exit(1)
+        console.print("Attaching to controller (Ctrl+B, D to detach)...")
+        attach_session(session_name)
+        return
 
     # Get active agent for this issue
     agent = get_active_agent(issue_id_normalized)
@@ -1081,15 +1140,27 @@ def attach(issue_id: str) -> None:
 def send(issue_id: str, message: str) -> None:
     """Send a message to an issue's agent.
 
-    ISSUE_ID is the issue number (e.g., "23" or "023").
+    ISSUE_ID is the issue number (e.g., "23" or "023"), or "0" for controller.
     """
     from agenttree.state import get_active_agent
+    from agenttree.tmux import session_exists, send_keys
 
     config = load_config()
     tmux_manager = TmuxManager(config)
 
     # Normalize issue ID
     issue_id_normalized = issue_id.lstrip("0") or "0"
+
+    # Special handling for controller (agent 0)
+    if issue_id_normalized == "0":
+        session_name = f"{config.project}-issue-000"
+        if not session_exists(session_name):
+            console.print("[red]Error: Controller not running[/red]")
+            console.print("[yellow]Start it with: agenttree start 0[/yellow]")
+            sys.exit(1)
+        send_keys(session_name, message)
+        console.print("[green]✓ Sent message to controller[/green]")
+        return
 
     # Get active agent for this issue
     agent = get_active_agent(issue_id_normalized)
@@ -1131,15 +1202,26 @@ def send(issue_id: str, message: str) -> None:
 def kill(issue_id: str) -> None:
     """Kill an issue's agent tmux session.
 
-    ISSUE_ID is the issue number (e.g., "23" or "023").
+    ISSUE_ID is the issue number (e.g., "23" or "023"), or "0" for controller.
     """
     from agenttree.state import get_active_agent, unregister_agent
+    from agenttree.tmux import session_exists, kill_session
 
     config = load_config()
     tmux_manager = TmuxManager(config)
 
     # Normalize issue ID
     issue_id_normalized = issue_id.lstrip("0") or "0"
+
+    # Special handling for controller (agent 0)
+    if issue_id_normalized == "0":
+        session_name = f"{config.project}-issue-000"
+        if not session_exists(session_name):
+            console.print("[yellow]Controller not running[/yellow]")
+            return
+        kill_session(session_name)
+        console.print("[green]✓ Killed controller[/green]")
+        return
 
     # Get active agent for this issue
     agent = get_active_agent(issue_id_normalized)
@@ -1284,96 +1366,8 @@ def serve(host: str, port: int) -> None:
     run_server(host=host, port=port)
 
 
-@main.command(name="controller-start")
-def controller_start() -> None:
-    """Start the controller in a tmux session.
-
-    Reads the controller host's 'process' config and runs it in a
-    background tmux session. This keeps the sync server running
-    even after you close your terminal.
-
-    Example:
-        agenttree controller-start     # Starts controller in tmux
-        tmux attach -t agenttree-controller  # Attach to see output
-    """
-    import subprocess
-
-    config = load_config()
-
-    # Get controller host config
-    controller = config.get_host("controller")
-    if not controller:
-        console.print("[red]Error: No controller host defined[/red]")
-        sys.exit(1)
-
-    # Get the process to run
-    process_cmd = controller.process
-    if not process_cmd:
-        # Default to serve if no process specified
-        process_cmd = "agenttree serve"
-
-    # Build tmux session name
-    tmux_session = f"{config.project}-controller"
-
-    # Check if already running
-    check_result = subprocess.run(
-        ["tmux", "has-session", "-t", tmux_session],
-        capture_output=True,
-    )
-    if check_result.returncode == 0:
-        console.print(f"[yellow]Controller already running in tmux session '{tmux_session}'[/yellow]")
-        console.print(f"[dim]Attach with: tmux attach -t {tmux_session}[/dim]")
-        return
-
-    # Start the tmux session
-    try:
-        subprocess.run(
-            ["tmux", "new-session", "-d", "-s", tmux_session, process_cmd],
-            check=True,
-            capture_output=True,
-        )
-        console.print(f"[green]✓ Started controller in tmux session '{tmux_session}'[/green]")
-        console.print(f"[dim]Attach with: tmux attach -t {tmux_session}[/dim]")
-        console.print(f"[dim]Running: {process_cmd}[/dim]")
-    except subprocess.CalledProcessError as e:
-        console.print(f"[red]Failed to start tmux session: {e}[/red]")
-        sys.exit(1)
-    except FileNotFoundError:
-        console.print("[red]Error: tmux not found. Please install tmux.[/red]")
-        sys.exit(1)
-
-
-@main.command(name="controller-stop")
-def controller_stop() -> None:
-    """Stop the controller tmux session.
-
-    Stops the background controller process started with 'agenttree controller-start'.
-    """
-    import subprocess
-
-    config = load_config()
-    tmux_session = f"{config.project}-controller"
-
-    # Check if running
-    check_result = subprocess.run(
-        ["tmux", "has-session", "-t", tmux_session],
-        capture_output=True,
-    )
-    if check_result.returncode != 0:
-        console.print(f"[yellow]Controller is not running (no tmux session '{tmux_session}')[/yellow]")
-        return
-
-    # Kill the session
-    try:
-        subprocess.run(
-            ["tmux", "kill-session", "-t", tmux_session],
-            check=True,
-            capture_output=True,
-        )
-        console.print(f"[green]✓ Stopped controller (killed tmux session '{tmux_session}')[/green]")
-    except subprocess.CalledProcessError as e:
-        console.print(f"[red]Failed to stop controller: {e}[/red]")
-        sys.exit(1)
+# controller-start and controller-stop commands removed
+# Controller is now agent 0 - use: agenttree start 0, agenttree kill 0
 
 
 @main.command()

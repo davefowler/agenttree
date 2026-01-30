@@ -1156,3 +1156,80 @@ class TestRollbackCommand:
 
         assert result.exit_code == 0
         mock_unregister.assert_called_once_with("42")
+
+
+
+
+    def test_send_to_controller_success(self, cli_runner, mock_config):
+        """Should send message to controller when running."""
+        from agenttree.cli import main
+
+        with patch("agenttree.cli.load_config", return_value=mock_config):
+            with patch("agenttree.tmux.session_exists", return_value=True):
+                with patch("agenttree.tmux.send_keys") as mock_send:
+                    result = cli_runner.invoke(main, ["send", "0", "hello controller"])
+
+        assert result.exit_code == 0
+        assert "Sent message to controller" in result.output
+        mock_send.assert_called_once_with("testproject-issue-000", "hello controller")
+
+    def test_send_to_controller_not_running(self, cli_runner, mock_config):
+        """Should error when controller is not running."""
+        from agenttree.cli import main
+
+        with patch("agenttree.cli.load_config", return_value=mock_config):
+            with patch("agenttree.tmux.session_exists", return_value=False):
+                result = cli_runner.invoke(main, ["send", "0", "hello"])
+
+        assert result.exit_code == 1
+        assert "Controller not running" in result.output
+        assert "agenttree start 0" in result.output
+
+    def test_kill_controller_success(self, cli_runner, mock_config):
+        """Should kill controller session when running."""
+        from agenttree.cli import main
+
+        with patch("agenttree.cli.load_config", return_value=mock_config):
+            with patch("agenttree.tmux.session_exists", return_value=True):
+                with patch("agenttree.tmux.kill_session") as mock_kill:
+                    result = cli_runner.invoke(main, ["kill", "0"])
+
+        assert result.exit_code == 0
+        assert "Killed controller" in result.output
+        mock_kill.assert_called_once_with("testproject-issue-000")
+
+    def test_kill_controller_not_running(self, cli_runner, mock_config):
+        """Should handle gracefully when controller not running."""
+        from agenttree.cli import main
+
+        with patch("agenttree.cli.load_config", return_value=mock_config):
+            with patch("agenttree.tmux.session_exists", return_value=False):
+                result = cli_runner.invoke(main, ["kill", "0"])
+
+        assert result.exit_code == 0
+        assert "not running" in result.output.lower()
+
+    def test_attach_to_controller_not_running(self, cli_runner, mock_config):
+        """Should error when trying to attach to controller that's not running."""
+        from agenttree.cli import main
+
+        with patch("agenttree.cli.load_config", return_value=mock_config):
+            with patch("agenttree.tmux.session_exists", return_value=False):
+                result = cli_runner.invoke(main, ["attach", "0"])
+
+        assert result.exit_code == 1
+        assert "Controller not running" in result.output
+        assert "agenttree start 0" in result.output
+
+    def test_attach_to_controller_success(self, cli_runner, mock_config):
+        """Should attach to controller when running."""
+        from agenttree.cli import main
+
+        with patch("agenttree.cli.load_config", return_value=mock_config):
+            with patch("agenttree.tmux.session_exists", return_value=True):
+                with patch("agenttree.tmux.attach_session") as mock_attach:
+                    result = cli_runner.invoke(main, ["attach", "0"])
+
+        assert result.exit_code == 0
+        assert "Attaching to controller" in result.output
+        mock_attach.assert_called_once_with("testproject-issue-000")
