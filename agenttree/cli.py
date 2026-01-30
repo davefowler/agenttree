@@ -863,6 +863,8 @@ def start_agent(
 
     # Start agent in tmux (always in container)
     tool_name = tool or config.default_tool
+    # Resolve model from stage config (substage → stage → default)
+    model_name = config.model_for(issue.stage, issue.substage)
     runtime = get_container_runtime()
 
     if not runtime.is_available():
@@ -871,6 +873,7 @@ def start_agent(
         sys.exit(1)
 
     console.print(f"[dim]Container runtime: {runtime.get_runtime_name()}[/dim]")
+    console.print(f"[dim]Model: {model_name}[/dim]")
 
     # Use the host parameter (which was either explicitly set or defaults to "agent")
     tmux_manager.start_issue_agent_in_container(
@@ -879,6 +882,7 @@ def start_agent(
         worktree_path=worktree_path,
         tool_name=tool_name,
         container_runtime=runtime,
+        model=model_name,
         agent_host=host,
         has_merge_conflicts=has_merge_conflicts,
     )

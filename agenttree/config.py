@@ -73,6 +73,7 @@ class SubstageConfig(BaseModel):
     output: Optional[str] = None  # Document created by this substage
     output_optional: bool = False  # If True, missing output file doesn't error
     skill: Optional[str] = None   # Override skill file path
+    model: Optional[str] = None   # Model to use for this substage (overrides stage model)
     validators: list[str] = Field(default_factory=list)  # Legacy format
     pre_completion: list[dict] = Field(default_factory=list)  # Hooks before completing
     post_start: list[dict] = Field(default_factory=list)  # Hooks after starting
@@ -85,6 +86,7 @@ class StageConfig(BaseModel):
     output: Optional[str] = None  # Document created by this stage
     output_optional: bool = False  # If True, missing output file doesn't error
     skill: Optional[str] = None   # Override skill file path
+    model: Optional[str] = None   # Model to use for this stage (overrides default_model)
     human_review: bool = False    # Requires human approval to exit
     terminal: bool = False        # Cannot progress from here (accepted, not_doing)
     redirect_only: bool = False   # Only reachable via StageRedirect, skipped in normal progression
@@ -488,6 +490,38 @@ class Config(BaseModel):
 
         # Fall back to stage output
         return stage.output
+
+    def model_for(self, stage_name: str, substage: Optional[str] = None) -> str:
+        """Get the model to use for a stage/substage.
+
+        Resolution order:
+        1. Substage model (if substage specified and has model)
+        2. Stage model (if stage has model)
+        3. default_model (fallback)
+
+        Args:
+            stage_name: Name of the stage
+            substage: Optional substage name
+
+        Returns:
+            Model name (e.g., "opus", "haiku", "sonnet")
+        """
+        stage = self.get_stage(stage_name)
+        if stage is None:
+            return self.default_model
+
+        # Check substage model first
+        if substage:
+            substage_config = stage.get_substage(substage)
+            if substage_config and substage_config.model:
+                return substage_config.model
+
+        # Check stage model
+        if stage.model:
+            return stage.model
+
+        # Fall back to default model
+        return self.default_model
 
     def validators_for(self, stage_name: str, substage: Optional[str] = None) -> list[str]:
         """Get validators for a stage/substage.

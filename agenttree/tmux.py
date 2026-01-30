@@ -481,6 +481,7 @@ class TmuxManager:
         worktree_path: Path,
         tool_name: str,
         container_runtime: "ContainerRuntime",
+        model: str | None = None,
         agent_host: str = "agent",
         has_merge_conflicts: bool = False,
     ) -> None:
@@ -492,6 +493,7 @@ class TmuxManager:
             worktree_path: Path to the issue's worktree
             tool_name: Name of the AI tool to use
             container_runtime: Container runtime instance
+            model: Model to use (defaults to config.default_model if not specified)
             agent_host: Agent host type for the stage (e.g., "agent", "review")
             has_merge_conflicts: Whether there are unresolved merge conflicts
         """
@@ -505,6 +507,9 @@ class TmuxManager:
         # Ensure container system is running (Apple Container)
         container_runtime.ensure_system_running()
 
+        # Build container command with resolved model
+        resolved_model = model or self.config.default_model
+
         # Calculate port for dev server if serve command is configured
         port = None
         if self.config.commands.get("serve"):
@@ -514,12 +519,11 @@ class TmuxManager:
             except (ValueError, TypeError):
                 pass  # Skip port exposure if issue_id is not a valid number
 
-        # Build container command with model from config
         container_cmd = container_runtime.build_run_command(
             worktree_path=worktree_path,
             ai_tool=tool_name,
             dangerous=True,  # Safe because we're in a container
-            model=self.config.default_model,
+            model=resolved_model,
             agent_host=agent_host,
             port=port,
         )

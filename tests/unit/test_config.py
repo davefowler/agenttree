@@ -446,6 +446,121 @@ commands:
         assert isinstance(config.commands["lint"], list)
 
 
+class TestModelPerStageConfig:
+    """Tests for model-per-stage configuration."""
+
+    def test_stage_config_has_model_field(self) -> None:
+        """StageConfig should accept optional model field."""
+        from agenttree.config import StageConfig
+
+        stage = StageConfig(name="research", model="haiku")
+        assert stage.model == "haiku"
+
+    def test_stage_config_model_defaults_to_none(self) -> None:
+        """StageConfig model should default to None."""
+        from agenttree.config import StageConfig
+
+        stage = StageConfig(name="research")
+        assert stage.model is None
+
+    def test_substage_config_has_model_field(self) -> None:
+        """SubstageConfig should accept optional model field."""
+        from agenttree.config import SubstageConfig
+
+        substage = SubstageConfig(name="code_review", model="opus")
+        assert substage.model == "opus"
+
+    def test_substage_config_model_defaults_to_none(self) -> None:
+        """SubstageConfig model should default to None."""
+        from agenttree.config import SubstageConfig
+
+        substage = SubstageConfig(name="code")
+        assert substage.model is None
+
+    def test_model_for_returns_default_when_not_specified(self) -> None:
+        """model_for() should return default_model when stage has no model."""
+        from agenttree.config import StageConfig
+
+        config = Config(
+            default_model="opus",
+            stages=[StageConfig(name="research")]
+        )
+        assert config.model_for("research") == "opus"
+
+    def test_model_for_returns_stage_model(self) -> None:
+        """model_for() should return stage-level model when specified."""
+        from agenttree.config import StageConfig
+
+        config = Config(
+            default_model="opus",
+            stages=[StageConfig(name="research", model="haiku")]
+        )
+        assert config.model_for("research") == "haiku"
+
+    def test_model_for_returns_substage_model(self) -> None:
+        """model_for() should return substage model when specified (overrides stage)."""
+        from agenttree.config import StageConfig, SubstageConfig
+
+        config = Config(
+            default_model="opus",
+            stages=[
+                StageConfig(
+                    name="implement",
+                    model="sonnet",
+                    substages={
+                        "code_review": SubstageConfig(name="code_review", model="opus")
+                    }
+                )
+            ]
+        )
+        assert config.model_for("implement", "code_review") == "opus"
+
+    def test_model_for_substage_inherits_from_stage(self) -> None:
+        """When substage has no model but stage does, use stage model."""
+        from agenttree.config import StageConfig, SubstageConfig
+
+        config = Config(
+            default_model="opus",
+            stages=[
+                StageConfig(
+                    name="implement",
+                    model="sonnet",
+                    substages={
+                        "code": SubstageConfig(name="code")
+                    }
+                )
+            ]
+        )
+        assert config.model_for("implement", "code") == "sonnet"
+
+    def test_model_for_unknown_stage(self) -> None:
+        """model_for() should return default_model for unknown stage name."""
+        config = Config(default_model="opus", stages=[])
+        assert config.model_for("nonexistent") == "opus"
+
+    def test_model_from_yaml(self, tmp_path: Path) -> None:
+        """model config should load correctly from YAML file."""
+        config_file = tmp_path / ".agenttree.yaml"
+        config_content = """
+default_model: sonnet
+stages:
+  - name: research
+    model: haiku
+  - name: implement
+    model: opus
+    substages:
+      code_review:
+        model: gpt-5.2
+"""
+        config_file.write_text(config_content)
+
+        config = load_config(tmp_path)
+        assert config.default_model == "sonnet"
+        assert config.model_for("research") == "haiku"
+        assert config.model_for("implement") == "opus"
+        assert config.model_for("implement", "code_review") == "gpt-5.2"
+
+
 class TestRedirectOnlyStages:
     """Tests for redirect_only stage behavior."""
 
