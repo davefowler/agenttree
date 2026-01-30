@@ -278,6 +278,7 @@ def convert_issue_to_web(issue: issue_crud.Issue, load_dependents: bool = False)
         has_worktree=bool(issue.worktree_dir),
         pr_url=issue.pr_url,
         pr_number=issue.pr_number,
+        port=_config.get_port_for_issue(issue.id),  # Dev server port from config
         created_at=datetime.fromisoformat(issue.created.replace("Z", "+00:00")),
         updated_at=datetime.fromisoformat(issue.updated.replace("Z", "+00:00")),
         dependencies=dependencies,
