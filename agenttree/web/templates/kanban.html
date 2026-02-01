@@ -241,6 +241,35 @@ Possible solutions:
                     window.closeIssueModal();
                 }
             }
+
+            // Cmd+L (Mac) or Ctrl+L (Windows/Linux) to send highlighted text to agent
+            if (e.key === 'l' && (e.metaKey || e.ctrlKey)) {
+                const selectedText = window.getSelection().toString().trim();
+                if (!selectedText) return; // No text selected, let browser handle
+
+                // Find the visible agent chat input
+                const modal = document.getElementById('issue-modal');
+                let chatInput = null;
+
+                if (modal && modal.classList.contains('active')) {
+                    // Modal is open - find input in the modal
+                    chatInput = modal.querySelector('.tmux-input');
+                }
+
+                if (chatInput) {
+                    e.preventDefault(); // Prevent browser default (e.g., focus address bar)
+
+                    // Get file context from active tab in modal
+                    const activeTab = modal.querySelector('.file-tab.active');
+                    const filename = activeTab?.getAttribute('data-filename');
+                    const message = filename
+                        ? `In ${filename}: "${selectedText}"\n`
+                        : selectedText;
+
+                    chatInput.value = message;
+                    chatInput.focus();
+                }
+            }
         });
 
         // Close modal on background click
