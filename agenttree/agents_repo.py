@@ -372,18 +372,24 @@ def check_custom_agent_stages(agents_dir: Path) -> int:
     return spawned
 
 
-def _update_issue_stage_direct(yaml_path: Path, data: dict, new_stage: str) -> None:
+def _update_issue_stage_direct(yaml_path: Path, data: dict, new_stage: str, new_substage: str | None = None) -> None:
     """Update issue stage directly without triggering sync (to avoid recursion).
 
     Used by check_merged_prs to avoid infinite loop since update_issue_stage
     calls sync_agents_repo which calls check_merged_prs.
+
+    Args:
+        yaml_path: Path to issue.yaml
+        data: Issue data dict
+        new_stage: Target stage name
+        new_substage: Target substage (required for stages with substages like 'implement')
     """
     from datetime import datetime, timezone
     import yaml as yaml_module
 
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     data["stage"] = new_stage
-    data["substage"] = None
+    data["substage"] = new_substage
     data["updated"] = now
 
     # Add history entry
@@ -391,7 +397,7 @@ def _update_issue_stage_direct(yaml_path: Path, data: dict, new_stage: str) -> N
         data["history"] = []
     data["history"].append({
         "stage": new_stage,
-        "substage": None,
+        "substage": new_substage,
         "timestamp": now,
         "agent": None,
     })
@@ -620,9 +626,9 @@ def check_ci_status(agents_dir: Path) -> int:
                 except Exception as e:
                     console.print(f"[yellow]Could not notify agent: {e}[/yellow]")
 
-            # Transition issue back to implement stage
-            _update_issue_stage_direct(issue_yaml, data, "implement")
-            console.print(f"[yellow]Issue #{issue_id} moved back to implement stage for CI fix[/yellow]")
+            # Transition issue back to implement.debug stage for CI fix
+            _update_issue_stage_direct(issue_yaml, data, "implement", "debug")
+            console.print(f"[yellow]Issue #{issue_id} moved back to implement.debug stage for CI fix[/yellow]")
 
             issues_notified += 1
 
