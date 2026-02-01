@@ -156,6 +156,31 @@
             }
         };
 
+        // Cmd+L (Mac) or Ctrl+L (Windows/Linux) to send highlighted text to agent
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'l' && (e.metaKey || e.ctrlKey)) {
+                const selectedText = window.getSelection().toString().trim();
+                if (!selectedText) return; // No text selected, let browser handle
+
+                // Find the visible agent chat input in the flow main panel
+                const chatInput = document.querySelector('.flow-main .tmux-input');
+
+                if (chatInput) {
+                    e.preventDefault(); // Prevent browser default (e.g., focus address bar)
+
+                    // Get file context from active tab
+                    const activeTab = document.querySelector('.flow-main .file-tab.active');
+                    const filename = activeTab?.getAttribute('data-filename');
+                    const message = filename
+                        ? `In ${filename}: "${selectedText}"\n`
+                        : selectedText;
+
+                    chatInput.value = message;
+                    chatInput.focus();
+                }
+            }
+        });
+
         // Agent light toggle (for detail view)
         async function toggleAgentFromDetail(issueNumber, lightElement) {
             const isOn = lightElement.classList.contains('on');
