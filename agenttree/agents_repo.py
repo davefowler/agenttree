@@ -798,7 +798,11 @@ class AgentsRepository:
             )
 
     def _create_github_repo(self) -> None:
-        """Create GitHub repo for agents."""
+        """Create GitHub repo for agents from template.
+        
+        Uses davefowler/agenttree-template as the base, which includes
+        all skills, templates, scripts, and knowledge files.
+        """
         repo_name = f"{self.project_name}_agenttree"
 
         # Check if repo already exists
@@ -813,14 +817,16 @@ class AgentsRepository:
             print(f"GitHub repo {repo_name} already exists")
             return
 
-        # Create new private repo
-        print(f"Creating GitHub repo: {repo_name}")
+        # Create new private repo FROM TEMPLATE
+        print(f"Creating GitHub repo: {repo_name} (from agenttree-template)")
         subprocess.run(
             [
                 "gh",
                 "repo",
                 "create",
                 repo_name,
+                "--template",
+                "davefowler/agenttree-template",
                 "--private",
                 "--description",
                 f"AgentTree issue tracking for {self.project_name}",
@@ -829,7 +835,7 @@ class AgentsRepository:
         )
 
     def _clone_repo(self) -> None:
-        """Clone agenttree repo locally."""
+        """Clone agenttree repo locally and set up upstream for upgrades."""
         repo_name = f"{self.project_name}_agenttree"
 
         # Get current GitHub user
@@ -849,8 +855,22 @@ class AgentsRepository:
             check=True,
         )
 
-        # Initialize structure
-        self._initialize_structure()
+        # Add upstream remote pointing to template repo (for upgrades)
+        print("Setting up upstream remote for upgrades...")
+        subprocess.run(
+            ["git", "-C", str(self.agents_path), "remote", "add", "upstream", 
+             "https://github.com/davefowler/agenttree-template.git"],
+            capture_output=True,  # Don't fail if upstream already exists
+        )
+        
+        # Fetch upstream so we have the refs
+        subprocess.run(
+            ["git", "-C", str(self.agents_path), "fetch", "upstream"],
+            capture_output=True,
+        )
+
+        print("✓ _agenttree/ repository initialized from template")
+        print("  Run 'agenttree upgrade' later to pull template updates")
 
     def _initialize_structure(self) -> None:
         """Create initial folder structure and templates."""
