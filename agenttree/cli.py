@@ -3283,6 +3283,427 @@ def rollback_issue(
         console.print(f"  agenttree start {issue.id}")
 
 
+@main.command("cleanup")
+@click.option(
+    "--dry-run", "-n",
+    is_flag=True,
+    help="Show what would be cleaned up without actually doing it"
+)
+@click.option(
+    "--force", "-f",
+    is_flag=True,
+    help="Skip confirmation prompts"
+)
+@click.option(
+    "--worktrees/--no-worktrees",
+    default=True,
+    help="Clean up stale worktrees (default: yes)"
+)
+@click.option(
+    "--branches/--no-branches",
+    default=True,
+    help="Clean up merged/orphan branches (default: yes)"
+)
+@click.option(
+    "--sessions/--no-sessions",
+    default=True,
+    help="Clean up orphan tmux sessions (default: yes)"
+)
+@click.option(
+    "--containers/--no-containers",
+    default=True,
+    help="Clean up orphan containers (default: yes)"
+)
+@click.option(
+    "--ai-review",
+    is_flag=True,
+    help="Ask controller AI to review edge cases before cleanup"
+)
+def cleanup_command(
+    dry_run: bool,
+    force: bool,
+    worktrees: bool,
+    branches: bool,
+    sessions: bool,
+    containers: bool,
+    ai_review: bool,
+) -> None:
+    """Clean up dead worktrees, branches, tmux sessions, and containers.
+
+    Identifies and removes stale resources from:
+
+    \b
+    - Worktrees: For issues in terminal stages (accepted, not_doing) or
+                 backlogged with no uncommitted changes
+    - Branches: Local branches that have been merged to main or whose
+                issues are in terminal stages
+    - Sessions: Tmux sessions for issues that no longer exist or are closed
+    - Containers: Running containers for closed issues
+
+    Examples:
+        agenttree cleanup                    # Clean everything, prompt for each
+        agenttree cleanup --dry-run          # Preview what would be cleaned
+        agenttree cleanup --force            # Clean without prompts
+        agenttree cleanup --no-branches      # Skip branch cleanup
+        agenttree cleanup --ai-review        # Ask controller AI about edge cases
+    """
+    from agenttree.worktree import list_worktrees, remove_worktree
+    from agenttree.tmux import list_sessions, kill_session
+    from agenttree.state import get_active_agent
+
+    # Block if in container
+    if is_running_in_container():
+        console.print("[red]Error: 'cleanup' cannot be run from inside a container[/red]")
+        sys.exit(1)
+
+    config = load_config()
+    repo_path = Path.cwd()
+
+    # Track what we find
+    stale_worktrees: list[dict] = []
+    stale_branches: list[str] = []
+    stale_sessions: list[str] = []
+    stale_containers: list[dict] = []
+    edge_cases: list[dict] = []
+
+    # Get all issues for reference
+    all_issues = list_issues_func()
+    issue_by_id = {i.id: i for i in all_issues}
+    terminal_stages = {ACCEPTED, NOT_DOING}
+
+    console.print("[bold]Scanning for stale resources...[/bold]\n")
+
+    # 1. Find stale worktrees
+    if worktrees:
+        console.print("[dim]Checking worktrees...[/dim]")
+        git_worktrees = list_worktrees(repo_path)
+
+        for wt in git_worktrees:
+            wt_path = Path(wt["path"])
+
+            # Skip main repo
+            if wt_path == repo_path:
+                continue
+
+            # Skip non-issue worktrees
+            wt_name = wt_path.name
+            if not wt_name.startswith("issue-"):
+                continue
+
+            # Extract issue ID from worktree name (issue-XXX-slug)
+            parts = wt_name.split("-")
+            if len(parts) < 2:
+                continue
+
+            issue_id = parts[1]
+            issue = issue_by_id.get(issue_id)
+
+            # Check if worktree should be cleaned
+            reason = None
+            is_edge_case = False
+
+            if not issue:
+                reason = "issue not found"
+            elif issue.stage in terminal_stages:
+                reason = f"issue in {issue.stage} stage"
+            elif issue.stage == BACKLOG:
+                # Check for uncommitted changes
+                status_result = subprocess.run(
+                    ["git", "status", "--porcelain"],
+                    cwd=wt_path,
+                    capture_output=True,
+                    text=True,
+                )
+                if not status_result.stdout.strip():
+                    reason = "backlogged with no changes"
+                else:
+                    is_edge_case = True
+                    edge_cases.append({
+                        "type": "worktree",
+                        "path": str(wt_path),
+                        "issue_id": issue_id,
+                        "reason": "backlogged but has uncommitted changes",
+                    })
+
+            if reason:
+                stale_worktrees.append({
+                    "path": str(wt_path),
+                    "branch": wt["branch"],
+                    "issue_id": issue_id,
+                    "reason": reason,
+                })
+
+    # 2. Find stale branches
+    if branches:
+        console.print("[dim]Checking branches...[/dim]")
+
+        # Get all local branches
+        result = subprocess.run(
+            ["git", "branch", "--list"],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+        )
+        local_branches = [b.strip().lstrip("* ") for b in result.stdout.strip().split("\n") if b.strip()]
+
+        # Get merged branches
+        result = subprocess.run(
+            ["git", "branch", "--merged", "main"],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+        )
+        merged_branches = {b.strip().lstrip("* ") for b in result.stdout.strip().split("\n") if b.strip()}
+
+        for branch in local_branches:
+            # Skip main and HEAD
+            if branch in ("main", "master", "HEAD"):
+                continue
+
+            # Check if it's an issue branch
+            branch_issue_id: str | None = None
+            if branch.startswith("issue-"):
+                # issue-XXX-slug format
+                parts = branch.split("-")
+                if len(parts) >= 2:
+                    branch_issue_id = parts[1]
+
+            reason = None
+            if branch in merged_branches and branch != "main":
+                reason = "merged to main"
+            elif branch_issue_id:
+                issue = issue_by_id.get(branch_issue_id)
+                if not issue:
+                    reason = "issue not found"
+                elif issue.stage in terminal_stages:
+                    reason = f"issue in {issue.stage} stage"
+
+            if reason:
+                stale_branches.append(branch)
+
+    # 3. Find stale tmux sessions
+    if sessions:
+        console.print("[dim]Checking tmux sessions...[/dim]")
+
+        all_sessions_list = list_sessions()
+        project_prefix = f"{config.project}-issue-"
+
+        for session in all_sessions_list:
+            if not session.name.startswith(project_prefix):
+                continue
+
+            # Extract issue ID from session name
+            suffix = session.name[len(project_prefix):]
+            # Could be just ID or ID-host
+            issue_id = suffix.split("-")[0]
+
+            issue = issue_by_id.get(issue_id)
+            if not issue:
+                stale_sessions.append(session.name)
+            elif issue.stage in terminal_stages:
+                stale_sessions.append(session.name)
+            # Active agent check
+            elif not get_active_agent(issue_id):
+                # No active agent registered but session exists
+                edge_cases.append({
+                    "type": "session",
+                    "name": session.name,
+                    "issue_id": issue_id,
+                    "reason": "session exists but no active agent registered",
+                })
+
+    # 4. Find stale containers
+    if containers:
+        console.print("[dim]Checking containers...[/dim]")
+
+        runtime = get_container_runtime()
+        if runtime.runtime:
+            # List running containers
+            try:
+                if runtime.runtime == "container":
+                    result = subprocess.run(
+                        ["container", "list"],
+                        capture_output=True,
+                        text=True,
+                    )
+                else:
+                    result = subprocess.run(
+                        [runtime.runtime, "ps", "--format", "{{.Names}}"],
+                        capture_output=True,
+                        text=True,
+                    )
+
+                container_names = result.stdout.strip().split("\n") if result.stdout.strip() else []
+
+                for name in container_names:
+                    if not name:
+                        continue
+                    # Check if it's an agenttree container
+                    if config.project in name.lower() or "agenttree" in name.lower():
+                        # Try to find associated issue
+                        # Container names often include worktree path
+                        stale_containers.append({
+                            "name": name,
+                            "runtime": runtime.runtime,
+                        })
+            except subprocess.CalledProcessError:
+                pass
+
+    # Print summary
+    console.print("\n[bold]Cleanup Summary:[/bold]\n")
+
+    total_items = len(stale_worktrees) + len(stale_branches) + len(stale_sessions) + len(stale_containers)
+
+    if not total_items and not edge_cases:
+        console.print("[green]✓ Nothing to clean up![/green]")
+        return
+
+    if stale_worktrees:
+        console.print(f"[yellow]Worktrees to remove ({len(stale_worktrees)}):[/yellow]")
+        for wt in stale_worktrees:
+            console.print(f"  - {wt['path']} ({wt['reason']})")
+        console.print()
+
+    if stale_branches:
+        console.print(f"[yellow]Branches to delete ({len(stale_branches)}):[/yellow]")
+        for branch in stale_branches:
+            console.print(f"  - {branch}")
+        console.print()
+
+    if stale_sessions:
+        console.print(f"[yellow]Tmux sessions to kill ({len(stale_sessions)}):[/yellow]")
+        for session_name in stale_sessions:
+            console.print(f"  - {session_name}")
+        console.print()
+
+    if stale_containers:
+        console.print(f"[yellow]Containers to stop ({len(stale_containers)}):[/yellow]")
+        for container in stale_containers:
+            console.print(f"  - {container['name']} ({container['runtime']})")
+        console.print()
+
+    if edge_cases:
+        console.print(f"[cyan]Edge cases requiring review ({len(edge_cases)}):[/cyan]")
+        for case in edge_cases:
+            console.print(f"  - [{case['type']}] {case.get('path') or case.get('name')}: {case['reason']}")
+        console.print()
+
+    # AI review for edge cases
+    if ai_review and edge_cases:
+        console.print("[bold]Asking controller AI to review edge cases...[/bold]")
+        _cleanup_ai_review(edge_cases, config)
+
+    if dry_run:
+        console.print("[dim]Dry run - no changes made[/dim]")
+        return
+
+    # Confirm cleanup
+    if not force:
+        if not click.confirm(f"\nProceed with cleanup of {total_items} items?"):
+            console.print("[dim]Aborted[/dim]")
+            return
+
+    # Perform cleanup
+    console.print("\n[bold]Cleaning up...[/bold]\n")
+    cleaned_count = 0
+
+    # Remove worktrees
+    for wt in stale_worktrees:
+        try:
+            remove_worktree(repo_path, Path(wt["path"]))
+            console.print(f"[green]✓ Removed worktree: {wt['path']}[/green]")
+            cleaned_count += 1
+        except Exception as e:
+            console.print(f"[red]✗ Failed to remove worktree {wt['path']}: {e}[/red]")
+
+    # Delete branches
+    for branch in stale_branches:
+        try:
+            subprocess.run(
+                ["git", "branch", "-D", branch],
+                cwd=repo_path,
+                check=True,
+                capture_output=True,
+            )
+            console.print(f"[green]✓ Deleted branch: {branch}[/green]")
+            cleaned_count += 1
+        except subprocess.CalledProcessError as e:
+            console.print(f"[red]✗ Failed to delete branch {branch}: {e}[/red]")
+
+    # Kill tmux sessions
+    for session_name in stale_sessions:
+        try:
+            kill_session(session_name)
+            console.print(f"[green]✓ Killed session: {session_name}[/green]")
+            cleaned_count += 1
+        except Exception as e:
+            console.print(f"[red]✗ Failed to kill session {session_name}: {e}[/red]")
+
+    # Stop containers
+    for container in stale_containers:
+        try:
+            runtime = get_container_runtime()
+            if not runtime.runtime:
+                console.print(f"[yellow]✗ No container runtime to stop: {container['name']}[/yellow]")
+                continue
+            if runtime.runtime == "container":
+                subprocess.run(
+                    ["container", "stop", container["name"]],
+                    check=True,
+                    capture_output=True,
+                )
+            else:
+                subprocess.run(
+                    [runtime.runtime, "stop", container["name"]],
+                    check=True,
+                    capture_output=True,
+                )
+            console.print(f"[green]✓ Stopped container: {container['name']}[/green]")
+            cleaned_count += 1
+        except subprocess.CalledProcessError as e:
+            console.print(f"[red]✗ Failed to stop container {container['name']}: {e}[/red]")
+
+    console.print(f"\n[green]✓ Cleaned up {cleaned_count} items[/green]")
+
+
+def _cleanup_ai_review(edge_cases: list[dict], config: Config) -> None:
+    """Ask the controller AI to review cleanup edge cases.
+
+    Args:
+        edge_cases: List of edge case dictionaries
+        config: AgentTree configuration
+    """
+    from agenttree.tmux import session_exists, send_keys
+
+    controller_session = f"{config.project}-controller"
+
+    if not session_exists(controller_session):
+        console.print("[yellow]Controller agent not running - skipping AI review[/yellow]")
+        console.print("[dim]Start the controller with: agenttree start --controller[/dim]")
+        return
+
+    # Format the edge cases for the AI
+    edge_case_text = "\n".join([
+        f"- [{c['type']}] {c.get('path') or c.get('name')}: {c['reason']}"
+        for c in edge_cases
+    ])
+
+    prompt = f"""I'm running `agenttree cleanup` and found these edge cases that need review:
+
+{edge_case_text}
+
+For each edge case, please tell me:
+1. Should it be cleaned up? (yes/no)
+2. Why?
+3. Any risks or considerations?
+
+Be concise - just a few lines per case."""
+
+    console.print("[dim]Sending to controller for review...[/dim]")
+    send_keys(controller_session, prompt + "\n")
+    console.print(f"[cyan]Sent edge cases to controller. Check tmux session '{controller_session}' for response.[/cyan]")
+
+
 @main.command("tui")
 def tui_command() -> None:
     """Launch the Terminal User Interface for issue management.

@@ -1451,3 +1451,188 @@ class TestIssueShowCommand:
 
         assert result.exit_code == 0
         assert result.output.strip() == ""
+
+
+class TestCleanupCommand:
+    """Tests for the cleanup command."""
+
+    def test_cleanup_dry_run_nothing_to_clean(self, cli_runner, mock_config):
+        """Should report nothing to clean when no stale resources."""
+        from agenttree.cli import main
+
+        with patch("agenttree.cli.load_config", return_value=mock_config):
+            with patch("agenttree.cli.is_running_in_container", return_value=False):
+                with patch("agenttree.cli.list_issues_func", return_value=[]):
+                    with patch("agenttree.worktree.list_worktrees", return_value=[]):
+                        with patch("subprocess.run") as mock_run:
+                            # Mock git branch --list output
+                            mock_run.return_value.stdout = ""
+                            mock_run.return_value.returncode = 0
+                            with patch("agenttree.tmux.list_sessions", return_value=[]):
+                                with patch("agenttree.cli.get_container_runtime") as mock_runtime:
+                                    mock_runtime.return_value.runtime = None
+                                    result = cli_runner.invoke(main, ["cleanup", "--dry-run"])
+
+        assert result.exit_code == 0
+        assert "Nothing to clean up" in result.output
+
+    def test_cleanup_blocked_in_container(self, cli_runner, mock_config):
+        """Should error when run from inside a container."""
+        from agenttree.cli import main
+
+        with patch("agenttree.cli.load_config", return_value=mock_config):
+            with patch("agenttree.cli.is_running_in_container", return_value=True):
+                result = cli_runner.invoke(main, ["cleanup"])
+
+        assert result.exit_code == 1
+        assert "cannot be run from inside a container" in result.output
+
+    def test_cleanup_finds_stale_worktree_accepted_issue(self, cli_runner, mock_config):
+        """Should identify worktree for accepted issue as stale."""
+        from agenttree.cli import main
+        from agenttree.issues import Issue, ACCEPTED
+
+        mock_issue = Issue(
+            id="042",
+            slug="test-issue",
+            title="Test Issue",
+            created="2026-01-11T12:00:00Z",
+            updated="2026-01-11T12:00:00Z",
+            stage=ACCEPTED,
+        )
+
+        mock_worktrees = [
+            {"path": "/repo", "branch": "main"},
+            {"path": "/repo/.worktrees/issue-042-test-issue", "branch": "issue-042-test-issue"},
+        ]
+
+        with patch("agenttree.cli.load_config", return_value=mock_config):
+            with patch("agenttree.cli.is_running_in_container", return_value=False):
+                with patch("agenttree.cli.list_issues_func", return_value=[mock_issue]):
+                    with patch("agenttree.worktree.list_worktrees", return_value=mock_worktrees):
+                        with patch("subprocess.run") as mock_run:
+                            mock_run.return_value.stdout = ""
+                            mock_run.return_value.returncode = 0
+                            with patch("agenttree.tmux.list_sessions", return_value=[]):
+                                with patch("agenttree.cli.get_container_runtime") as mock_runtime:
+                                    mock_runtime.return_value.runtime = None
+                                    result = cli_runner.invoke(main, ["cleanup", "--dry-run"])
+
+        assert result.exit_code == 0
+        assert "Worktrees to remove" in result.output
+        assert "issue-042-test-issue" in result.output
+        assert "accepted stage" in result.output
+
+    def test_cleanup_finds_stale_branch_merged(self, cli_runner, mock_config):
+        """Should identify merged branch as stale."""
+        from agenttree.cli import main
+
+        with patch("agenttree.cli.load_config", return_value=mock_config):
+            with patch("agenttree.cli.is_running_in_container", return_value=False):
+                with patch("agenttree.cli.list_issues_func", return_value=[]):
+                    with patch("agenttree.worktree.list_worktrees", return_value=[{"path": "/repo", "branch": "main"}]):
+                        with patch("subprocess.run") as mock_run:
+                            # Configure different outputs for different commands
+                            def mock_subprocess(*args, **kwargs):
+                                cmd = args[0] if args else kwargs.get("args", [])
+                                result = MagicMock()
+                                result.returncode = 0
+                                if "branch" in cmd and "--list" in cmd:
+                                    result.stdout = "  main\n  feature-old\n  issue-099-old"
+                                elif "branch" in cmd and "--merged" in cmd:
+                                    result.stdout = "  main\n  feature-old"
+                                else:
+                                    result.stdout = ""
+                                return result
+
+                            mock_run.side_effect = mock_subprocess
+                            with patch("agenttree.tmux.list_sessions", return_value=[]):
+                                with patch("agenttree.cli.get_container_runtime") as mock_runtime:
+                                    mock_runtime.return_value.runtime = None
+                                    result = cli_runner.invoke(main, ["cleanup", "--dry-run"])
+
+        assert result.exit_code == 0
+        assert "Branches to delete" in result.output
+        assert "feature-old" in result.output
+
+    def test_cleanup_finds_stale_tmux_session(self, cli_runner, mock_config):
+        """Should identify tmux session for nonexistent issue as stale."""
+        from agenttree.cli import main
+        from agenttree.tmux import TmuxSession
+
+        mock_sessions = [
+            TmuxSession(name="testproject-issue-999", windows=1, attached=False),
+        ]
+
+        with patch("agenttree.cli.load_config", return_value=mock_config):
+            with patch("agenttree.cli.is_running_in_container", return_value=False):
+                with patch("agenttree.cli.list_issues_func", return_value=[]):  # Issue 999 doesn't exist
+                    with patch("agenttree.worktree.list_worktrees", return_value=[{"path": "/repo", "branch": "main"}]):
+                        with patch("subprocess.run") as mock_run:
+                            mock_run.return_value.stdout = ""
+                            mock_run.return_value.returncode = 0
+                            with patch("agenttree.tmux.list_sessions", return_value=mock_sessions):
+                                with patch("agenttree.cli.get_container_runtime") as mock_runtime:
+                                    mock_runtime.return_value.runtime = None
+                                    result = cli_runner.invoke(main, ["cleanup", "--dry-run"])
+
+        assert result.exit_code == 0
+        assert "Tmux sessions to kill" in result.output
+        assert "testproject-issue-999" in result.output
+
+    def test_cleanup_force_no_prompt(self, cli_runner, mock_config):
+        """Should skip confirmation with --force."""
+        from agenttree.cli import main
+        from agenttree.issues import Issue, ACCEPTED
+
+        mock_issue = Issue(
+            id="042",
+            slug="test-issue",
+            title="Test Issue",
+            created="2026-01-11T12:00:00Z",
+            updated="2026-01-11T12:00:00Z",
+            stage=ACCEPTED,
+        )
+
+        mock_worktrees = [
+            {"path": "/repo", "branch": "main"},
+            {"path": "/repo/.worktrees/issue-042-test-issue", "branch": "issue-042-test-issue"},
+        ]
+
+        with patch("agenttree.cli.load_config", return_value=mock_config):
+            with patch("agenttree.cli.is_running_in_container", return_value=False):
+                with patch("agenttree.cli.list_issues_func", return_value=[mock_issue]):
+                    with patch("agenttree.worktree.list_worktrees", return_value=mock_worktrees):
+                        with patch("subprocess.run") as mock_run:
+                            mock_run.return_value.stdout = ""
+                            mock_run.return_value.returncode = 0
+                            with patch("agenttree.tmux.list_sessions", return_value=[]):
+                                with patch("agenttree.cli.get_container_runtime") as mock_runtime:
+                                    mock_runtime.return_value.runtime = None
+                                    with patch("agenttree.worktree.remove_worktree") as mock_remove:
+                                        result = cli_runner.invoke(main, ["cleanup", "--force"])
+
+        assert result.exit_code == 0
+        # With --force, it should proceed without prompting
+        mock_remove.assert_called_once()
+
+    def test_cleanup_selective_categories(self, cli_runner, mock_config):
+        """Should allow selective cleanup of categories."""
+        from agenttree.cli import main
+
+        with patch("agenttree.cli.load_config", return_value=mock_config):
+            with patch("agenttree.cli.is_running_in_container", return_value=False):
+                with patch("agenttree.cli.list_issues_func", return_value=[]):
+                    with patch("agenttree.worktree.list_worktrees", return_value=[{"path": "/repo", "branch": "main"}]):
+                        with patch("agenttree.tmux.list_sessions", return_value=[]):
+                            with patch("agenttree.cli.get_container_runtime") as mock_runtime:
+                                mock_runtime.return_value.runtime = None
+                                # Only check worktrees, skip branches/sessions/containers
+                                result = cli_runner.invoke(main, [
+                                    "cleanup", "--dry-run",
+                                    "--no-branches", "--no-sessions", "--no-containers"
+                                ])
+
+        assert result.exit_code == 0
+        # subprocess.run should not be called for git branch commands
+        assert "Checking worktrees" in result.output or "Nothing to clean up" in result.output
