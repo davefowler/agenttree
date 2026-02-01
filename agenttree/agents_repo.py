@@ -478,7 +478,7 @@ def check_merged_prs(agents_dir: Path) -> int:
             if state == "MERGED" or merged_at:
                 # PR was merged externally - advance to accepted
                 console.print(f"[green]PR #{pr_number} was merged externally, advancing issue #{issue_id} to accepted[/green]")
-                _update_issue_stage_direct(issue_yaml, data, "accepted")
+                _update_issue_stage_direct(issue_yaml, data, "accepted", new_substage=None)
                 issues_advanced += 1
                 # Clean up the agent since we bypassed normal hooks
                 from agenttree.hooks import cleanup_issue_agent
@@ -487,7 +487,7 @@ def check_merged_prs(agents_dir: Path) -> int:
             elif state == "CLOSED":
                 # PR was closed without merging - advance to not_doing
                 console.print(f"[yellow]PR #{pr_number} was closed without merge, advancing issue #{issue_id} to not_doing[/yellow]")
-                _update_issue_stage_direct(issue_yaml, data, "not_doing")
+                _update_issue_stage_direct(issue_yaml, data, "not_doing", new_substage=None)
                 issues_advanced += 1
                 # Clean up the agent since we bypassed normal hooks
                 from agenttree.hooks import cleanup_issue_agent

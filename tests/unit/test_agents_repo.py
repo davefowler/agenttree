@@ -609,10 +609,11 @@ class TestCheckCiStatus:
                 ]
                 check_ci_status(agents_dir)
 
-                # Verify stage was changed to implement
+                # Verify stage was changed to implement with debug substage
                 with open(issue_dir / "issue.yaml") as f:
                     data = yaml.safe_load(f)
                 assert data["stage"] == "implement"
+                assert data["substage"] == "debug"
 
     @patch("agenttree.hooks.is_running_in_container", return_value=False)
     def test_check_ci_status_on_ci_failure_sends_tmux_message(self, mock_container, agents_dir, issue_at_implementation_review):
