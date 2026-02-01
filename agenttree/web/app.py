@@ -517,9 +517,53 @@ def get_issue_diff(issue_id: str) -> dict:
 _STAGE_LIST = list(StageEnum)
 
 
-def _sort_flow_issues(issues: list[WebIssue]) -> list[WebIssue]:
-    """Sort issues for flow view: review stages first, higher stage order, then number."""
-    return sorted(issues, key=lambda x: (not x.is_review, -_STAGE_LIST.index(x.stage), x.number))
+def _sort_flow_issues(issues: list[WebIssue], sort_by: Optional[str] = None) -> list[WebIssue]:
+    """Sort issues for flow view based on sort parameter.
+
+    Args:
+        issues: List of WebIssue objects to sort
+        sort_by: Sort method - 'stage' (default), 'updated', 'created', 'number'
+
+    Returns:
+        Sorted list of issues
+    """
+    if sort_by == "updated":
+        # Newest updated first
+        return sorted(issues, key=lambda x: x.updated_at, reverse=True)
+    elif sort_by == "created":
+        # Newest created first
+        return sorted(issues, key=lambda x: x.created_at, reverse=True)
+    elif sort_by == "number":
+        # Issue number ascending
+        return sorted(issues, key=lambda x: x.number)
+    else:
+        # Default: stage order with review stages first
+        return sorted(issues, key=lambda x: (not x.is_review, -_STAGE_LIST.index(x.stage), x.number))
+
+
+def _filter_flow_issues(issues: list[WebIssue], filter_by: Optional[str] = None) -> list[WebIssue]:
+    """Filter issues for flow view based on filter parameter.
+
+    Args:
+        issues: List of WebIssue objects to filter
+        filter_by: Filter method - 'all' (default), 'review', 'running', 'open'
+
+    Returns:
+        Filtered list of issues
+    """
+    if filter_by == "review":
+        # Only review stages
+        return [i for i in issues if i.is_review]
+    elif filter_by == "running":
+        # Only issues with active agents
+        return [i for i in issues if i.tmux_active]
+    elif filter_by == "open":
+        # Hide accepted and not_doing
+        closed_stages = {StageEnum.ACCEPTED, StageEnum.NOT_DOING}
+        return [i for i in issues if i.stage not in closed_stages]
+    else:
+        # Default: show all
+        return issues
 
 
 @app.get("/flow", response_class=HTMLResponse)
@@ -527,13 +571,19 @@ async def flow(
     request: Request,
     issue: Optional[str] = None,
     chat: Optional[str] = None,
+    sort: Optional[str] = None,
+    filter: Optional[str] = None,
     search: Optional[str] = None,
     user: Optional[str] = Depends(get_current_user)
 ) -> HTMLResponse:
     """Flow view page."""
     agent_manager.clear_session_cache()  # Fresh session data per request
     issues = issue_crud.list_issues(sync=False)  # Skip sync for fast web reads
-    web_issues = _sort_flow_issues([convert_issue_to_web(i) for i in issues])
+    web_issues = [convert_issue_to_web(i) for i in issues]
+
+    # Apply filter first, then sort
+    web_issues = _filter_flow_issues(web_issues, filter)
+    web_issues = _sort_flow_issues(web_issues, sort)
 
     # Apply search filter if provided
     if search:
@@ -580,6 +630,8 @@ async def flow(
             "commits_behind": commits_behind,
             "active_page": "flow",
             "chat_open": chat == "1",
+            "current_sort": sort or "stage",
+            "current_filter": filter or "all",
             "search": search or "",
         }
     )

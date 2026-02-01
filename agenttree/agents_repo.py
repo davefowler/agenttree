@@ -351,18 +351,18 @@ def check_custom_agent_stages(agents_dir: Path) -> int:
 
                 # Use agenttree start --host to spawn the agent
                 import subprocess
-                result = subprocess.run(
+                proc = subprocess.run(
                     ["agenttree", "start", issue.id, "--host", host_name, "--skip-preflight"],
                     capture_output=True,
                     text=True,
                 )
-                if result.returncode == 0:
+                if proc.returncode == 0:
                     console.print(f"[green]✓ Started {host_name} agent for issue #{issue.id}[/green]")
                     spawned += 1
                 else:
                     console.print(f"[red]Failed to start {host_name} agent for issue #{issue.id}[/red]")
-                    if result.stderr:
-                        console.print(f"[dim]{result.stderr[:200]}[/dim]")
+                    if proc.stderr:
+                        console.print(f"[dim]{proc.stderr[:200]}[/dim]")
 
         except Exception as e:
             from rich.console import Console
