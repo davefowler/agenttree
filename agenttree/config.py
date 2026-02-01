@@ -121,6 +121,15 @@ class StageConfig(BaseModel):
         return getattr(self, event, [])
 
 
+class ControllerConfig(BaseModel):
+    """Configuration for the controller agent's stall monitoring.
+
+    These settings control how the controller detects and handles stalled agents.
+    """
+
+    stall_threshold_min: int = 20  # Minutes before agent considered stalled
+
+
 class SecurityConfig(BaseModel):
     """Security configuration for agents.
 
@@ -151,6 +160,7 @@ class Config(BaseModel):
     security: SecurityConfig = Field(default_factory=SecurityConfig)
     merge_strategy: str = "squash"  # squash, merge, or rebase
     hooks: HooksConfig = Field(default_factory=HooksConfig)
+    controller: ControllerConfig = Field(default_factory=ControllerConfig)
     save_tmux_history: bool = False  # Save tmux session history on stage transitions
 
     def get_port_for_agent(self, agent_num: int) -> int:
