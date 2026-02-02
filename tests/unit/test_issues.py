@@ -29,7 +29,6 @@ from agenttree.issues import (
     PLAN_REVISE,
     PLAN_REVIEW,
     IMPLEMENT,
-    INDEPENDENT_CODE_REVIEW,
     IMPLEMENTATION_REVIEW,
     ACCEPTED,
     NOT_DOING,
@@ -294,17 +293,9 @@ class TestStageTransitions:
         assert next_substage == "feedback"
         assert is_review is False
 
-    def test_get_next_stage_feedback_to_independent_review(self):
-        """implement.feedback -> independent_code_review (review agent stage)"""
+    def test_get_next_stage_feedback_to_implementation_review(self):
+        """implement.feedback -> implementation_review (human review)"""
         next_stage, next_substage, is_review = get_next_stage(IMPLEMENT, "feedback")
-        assert next_stage == INDEPENDENT_CODE_REVIEW
-        assert next_substage is None
-        # Not human review - it's a custom agent stage
-        assert is_review is False
-
-    def test_get_next_stage_independent_review_to_implementation_review(self):
-        """independent_code_review -> implementation_review.ci_wait (human review)"""
-        next_stage, next_substage, is_review = get_next_stage(INDEPENDENT_CODE_REVIEW, None)
         assert next_stage == IMPLEMENTATION_REVIEW
         assert next_substage == "ci_wait"  # First substage of implementation_review
         assert is_review is True

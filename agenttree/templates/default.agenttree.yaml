@@ -5,13 +5,16 @@
 default_tool: claude
 default_model: opus
 port_range: 9001-9099
-project: "agenttree"
+project: "{{PROJECT_NAME}}"
 worktrees_dir: .worktrees
 
+# Commands are optional. Define project-specific commands here.
+# These can be referenced in hooks using {{commands.test}}, etc.
 commands:
-  test: uv run pytest
-  lint: "uv run mypy agenttree || echo 'Lint warnings (optional)'"
-  # serve: "uv run uvicorn app:app --port $PORT"  # Dev server (port auto-assigned per issue)
+  # test: npm test                    # Example: Node.js
+  # test: pytest                      # Example: Python
+  # lint: eslint .                    # Example: JavaScript
+  # serve: npm run dev --port $PORT   # Dev server (port auto-assigned per issue)
   git_branch: git branch --show-current
   files_changed: "git diff --stat main...HEAD | grep -c '|' || echo 0"
   lines_added: "git diff --stat main...HEAD | tail -1 | awk '{print $4}' || echo 0"
@@ -21,7 +24,7 @@ tools:
   claude:
     command: claude
     skip_permissions: true
-    startup_prompt: "Read TASK.md - it has your issue ID, stage, and workflow instructions. You MUST follow the staged workflow."
+    startup_prompt: "Read TASK.md - it has your issue ID, stage, and workflow instructions. Follow the staged workflow."
   aider:
     command: aider
     startup_prompt: /read TASK.md
@@ -43,19 +46,12 @@ hosts:
   agent:
     description: "Default AI agent"
     container:
-      image: agenttree-agent:latest
+      image: "{{PROJECT_NAME}}-agent:latest"  # Build your container image with this name
     tool: claude
     model: opus
 
-  # Custom review agent host
-  review:
-    description: "Independent code reviewer using Claude"
-    container:
-      image: agenttree-agent:latest
-    tool: claude
-    model: sonnet
-    skill: agents/review.md
-
+# Workflow stages
+# Customize the stages below based on your workflow needs.
 stages:
   - name: backlog
 
@@ -152,12 +148,10 @@ stages:
               template: review.md
               dest: review.md
         pre_completion:
-          - run:
-              command: uv run pytest tests/unit -q
-              must_pass: true
-          - run:
-              command: uv run mypy agenttree || echo "mypy warnings (pre-existing errors in codebase - see issue for cleanup)"
-              must_pass: true
+          # Add your test/lint commands here. Example:
+          # - run:
+          #     command: npm test
+          #     must_pass: true
           - section_check:
               file: review.md
               section: Self-Review Checklist
@@ -175,50 +169,6 @@ stages:
               file: review.md
               section: Critical Issues
               expect: empty
-
-  # Independent code review by a specialized review agent (not the implementing agent)
-  - name: independent_code_review
-    host: review  # Custom agent host - spawned by controller
-    output: independent_review.md
-    skill: agents/review.md  # Custom skill file for this stage
-    pre_completion:
-      - file_exists: independent_review.md
-      - section_check:
-          file: independent_review.md
-          section: Review Findings
-          expect: not_empty
-      - checkbox_checked:
-          file: independent_review.md
-          checkbox: Approve
-          on_fail_stage: address_independent_review
-
-  # Stage where implementing agent addresses review feedback
-  # Only reachable via StageRedirect when reviewer doesn't approve
-  - name: address_independent_review
-    redirect_only: true  # Not in normal progression, only via redirect
-    host: agent  # Back to the implementing agent
-    output: independent_review_response.md
-    skill: address_independent_review.md
-    post_start:
-      - version_file:
-          file: independent_review.md
-      - version_file:
-          file: independent_review_response.md
-      - create_file:
-          template: independent_review_response.md
-          dest: independent_review_response.md
-    pre_completion:
-      - loop_check:
-          count_files: independent_review_v*.md
-          max: 5
-          error: "Review loop exceeded 5 iterations. Escalating to human review."
-      - section_check:
-          file: independent_review_response.md
-          section: Changes Made
-          expect: not_empty
-    post_completion:
-      - rollback:
-          to_stage: independent_code_review
 
   - name: implementation_review
     human_review: true

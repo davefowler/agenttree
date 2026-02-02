@@ -684,3 +684,76 @@ class TestSaveTmuxHistoryConfig:
 
         config = load_config(tmp_path)
         assert config.save_tmux_history is False
+
+
+class TestDefaultTemplateGeneric:
+    """Tests for generic default template (issue #134)."""
+
+    def test_default_template_has_project_placeholder(self) -> None:
+        """Default template should use {{PROJECT_NAME}} for project field."""
+        import importlib.resources
+
+        template_path = importlib.resources.files("agenttree.templates").joinpath(
+            "default.agenttree.yaml"
+        )
+        content = template_path.read_text()
+
+        # Should have {{PROJECT_NAME}} placeholder, not hardcoded "agenttree"
+        assert 'project: "{{PROJECT_NAME}}"' in content
+        # Should NOT have hardcoded agenttree as project name
+        assert 'project: "agenttree"' not in content
+
+    def test_default_template_has_container_image_placeholder(self) -> None:
+        """Default template should use {{PROJECT_NAME}}-agent:latest for container image."""
+        import importlib.resources
+
+        template_path = importlib.resources.files("agenttree.templates").joinpath(
+            "default.agenttree.yaml"
+        )
+        content = template_path.read_text()
+
+        # Should have {{PROJECT_NAME}}-agent:latest placeholder
+        assert "{{PROJECT_NAME}}-agent:latest" in content
+        # Should NOT have hardcoded agenttree-agent:latest
+        assert "agenttree-agent:latest" not in content
+
+    def test_default_template_no_hardcoded_test_commands(self) -> None:
+        """Default template should not have hardcoded agenttree-specific commands."""
+        import importlib.resources
+
+        template_path = importlib.resources.files("agenttree.templates").joinpath(
+            "default.agenttree.yaml"
+        )
+        content = template_path.read_text()
+
+        # Should NOT have hardcoded agenttree-specific test commands
+        assert "uv run pytest tests/unit" not in content
+        assert "uv run mypy agenttree" not in content
+
+    def test_container_config_default_image(self) -> None:
+        """ContainerConfig should have generic default image."""
+        from agenttree.config import ContainerConfig
+
+        container = ContainerConfig()
+        # Should be generic, not agenttree-specific
+        assert container.image == "agent:latest"
+        assert "agenttree" not in container.image
+
+    def test_minimal_config_loads(self, tmp_path: Path) -> None:
+        """A minimal config with just project and stages should load successfully."""
+        config_file = tmp_path / ".agenttree.yaml"
+        minimal_config = """
+project: myproject
+stages:
+  - name: backlog
+  - name: implement
+  - name: accepted
+    terminal: true
+"""
+        config_file.write_text(minimal_config)
+
+        config = load_config(tmp_path)
+        assert config.project == "myproject"
+        assert len(config.stages) == 3
+        assert config.stages[0].name == "backlog"
+        assert config.stages[2].terminal is True

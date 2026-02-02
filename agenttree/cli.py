@@ -3220,8 +3220,8 @@ def cleanup_command(
                 for name in container_names:
                     if not name:
                         continue
-                    # Check if it's an agenttree container
-                    if config.project in name.lower() or "agenttree" in name.lower():
+                    # Check if it's a container for this project
+                    if config.project in name.lower():
                         # Try to find associated issue
                         # Container names often include worktree path
                         stale_containers.append({
