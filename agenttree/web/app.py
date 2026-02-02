@@ -744,7 +744,7 @@ async def agent_tmux(
     for name in session_names:
         try:
             result = subprocess.run(
-                ["tmux", "capture-pane", "-t", name, "-p"],
+                ["tmux", "capture-pane", "-t", name, "-p", "-S", "-100"],
                 capture_output=True,
                 text=True,
                 timeout=2
@@ -1133,7 +1133,7 @@ async def tmux_websocket(websocket: WebSocket, agent_num: int) -> None:
             # Capture tmux output every second
             try:
                 result = subprocess.run(
-                    ["tmux", "capture-pane", "-t", f"agent-{agent_num}", "-p"],
+                    ["tmux", "capture-pane", "-t", f"agent-{agent_num}", "-p", "-S", "-100"],
                     capture_output=True,
                     text=True,
                     timeout=1

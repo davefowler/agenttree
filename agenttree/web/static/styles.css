@@ -1027,6 +1027,7 @@ button[disabled] {
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    min-height: 0;  /* Required for nested flex scroll */
 }
 
 /* Tmux chat wrapper - fills parent and arranges output/input */
