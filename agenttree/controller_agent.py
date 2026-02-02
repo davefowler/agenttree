@@ -20,7 +20,6 @@ class StalledAgent(TypedDict):
     title: str
 
 
-
 # Human review stages that should be excluded from stall detection
 HUMAN_REVIEW_STAGES = {"plan_review", "implementation_review"}
 
