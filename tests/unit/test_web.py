@@ -648,11 +648,13 @@ class TestAgentTmuxEndpoint:
 class TestSendToAgentEndpoint:
     """Tests for send message to agent endpoint."""
 
+    @patch("agenttree.tmux.session_exists")
     @patch("agenttree.tmux.send_message")
     @patch("agenttree.web.app.load_config")
-    def test_send_to_agent(self, mock_config, mock_send, client):
+    def test_send_to_agent(self, mock_config, mock_send, mock_session_exists, client):
         """Test sending message to agent."""
         mock_config.return_value.project = "test"
+        mock_session_exists.return_value = False  # No active session
 
         response = client.post(
             "/agent/001/send",

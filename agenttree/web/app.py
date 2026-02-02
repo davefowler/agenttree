@@ -539,7 +539,7 @@ def get_issue_diff(issue_id: str) -> dict:
 _STAGE_LIST = list(StageEnum)
 
 
-def _sort_flow_issues(issues: list[WebIssue], sort_by: Optional[str] = None) -> list[WebIssue]:
+def _sort_flow_issues(issues: list[WebIssue], sort_by: str | None = None) -> list[WebIssue]:
     """Sort issues for flow view based on sort parameter.
 
     Args:
@@ -563,7 +563,7 @@ def _sort_flow_issues(issues: list[WebIssue], sort_by: Optional[str] = None) -> 
         return sorted(issues, key=lambda x: (not x.is_review, -_STAGE_LIST.index(x.stage), x.number))
 
 
-def _filter_flow_issues(issues: list[WebIssue], filter_by: Optional[str] = None) -> list[WebIssue]:
+def _filter_flow_issues(issues: list[WebIssue], filter_by: str | None = None) -> list[WebIssue]:
     """Filter issues for flow view based on filter parameter.
 
     Args:
@@ -594,8 +594,8 @@ async def flow(
     issue: Optional[str] = None,
     chat: Optional[str] = None,
     search: Optional[str] = None,
-    sort: Optional[str] = None,
-    filter: Optional[str] = None,
+    sort: str | None = None,
+    filter: str | None = None,
     user: Optional[str] = Depends(get_current_user)
 ) -> HTMLResponse:
     """Flow view page."""
