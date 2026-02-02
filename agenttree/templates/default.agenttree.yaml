@@ -237,18 +237,17 @@ stages:
     pre_completion:
       - pr_approved:
 
+  - name: knowledge_base
+    host: agent
+    skill: knowledge_base.md
+
   - name: accepted
-    host: controller  # Host handles merge (agents can't push)
+    terminal: true
+    host: controller  # Host handles merge/cleanup (agents can't push)
     post_start:
       - merge_pr:
-      - start_blocked_issues:
-
-  - name: knowledge_update
-    terminal: true
-    host: agent
-    skill: knowledge_update.md
-    post_completion:
       - cleanup_agent:
+      - start_blocked_issues:
 
   - name: not_doing
     terminal: true

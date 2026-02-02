@@ -33,7 +33,7 @@ from agenttree.issues import (
     INDEPENDENT_CODE_REVIEW,
     IMPLEMENTATION_REVIEW,
     ACCEPTED,
-    KNOWLEDGE_UPDATE,
+    KNOWLEDGE_BASE,
     NOT_DOING,
 )
 
@@ -311,24 +311,24 @@ class TestStageTransitions:
         assert next_substage == "ci_wait"  # First substage of implementation_review
         assert is_review is True
 
-    def test_get_next_stage_to_accepted(self):
-        """implementation_review -> accepted"""
+    def test_get_next_stage_to_knowledge_base(self):
+        """implementation_review -> knowledge_base"""
         next_stage, next_substage, is_review = get_next_stage(IMPLEMENTATION_REVIEW, None)
+        assert next_stage == KNOWLEDGE_BASE
+        assert next_substage is None
+        assert is_review is False
+
+    def test_get_next_stage_at_knowledge_base(self):
+        """knowledge_base -> accepted"""
+        next_stage, next_substage, is_review = get_next_stage(KNOWLEDGE_BASE, None)
         assert next_stage == ACCEPTED
         assert next_substage is None
         assert is_review is False
 
     def test_get_next_stage_at_accepted(self):
-        """accepted -> knowledge_update"""
+        """accepted -> stays at accepted (terminal)"""
         next_stage, next_substage, is_review = get_next_stage(ACCEPTED, None)
-        assert next_stage == KNOWLEDGE_UPDATE
-        assert next_substage is None
-        assert is_review is False
-
-    def test_get_next_stage_at_knowledge_update(self):
-        """knowledge_update -> stays at knowledge_update (terminal)"""
-        next_stage, next_substage, is_review = get_next_stage(KNOWLEDGE_UPDATE, None)
-        assert next_stage == KNOWLEDGE_UPDATE
+        assert next_stage == ACCEPTED
         assert next_substage is None
         assert is_review is False
 
