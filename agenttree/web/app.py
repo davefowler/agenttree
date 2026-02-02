@@ -1,5 +1,10 @@
 """Web dashboard for AgentTree using FastAPI + HTMX."""
 
+# Force standard asyncio event loop instead of uvloop to avoid fork crashes
+# uvloop's signal handlers aren't fork-safe, causing crashes when subprocess.run() forks
+import asyncio
+asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
+
 from fastapi import FastAPI, Request, Form, WebSocket, WebSocketDisconnect, Depends, HTTPException, status
 from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse, Response
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
@@ -8,7 +13,6 @@ from fastapi.templating import Jinja2Templates
 from starlette.middleware.base import BaseHTTPMiddleware
 from pathlib import Path
 import subprocess
-import asyncio
 import secrets
 import os
 import re
@@ -1190,7 +1194,8 @@ def run_server(
     import uvicorn
     # Use multiple workers for better concurrency
     # Workers > 1 requires passing app as import string
-    uvicorn.run("agenttree.web.app:app", host=host, port=port, workers=4)
+    # loop="asyncio" avoids uvloop fork crashes on macOS
+    uvicorn.run("agenttree.web.app:app", host=host, port=port, workers=4, loop="asyncio")
 
 
 if __name__ == "__main__":
