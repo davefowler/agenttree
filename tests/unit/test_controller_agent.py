@@ -4,13 +4,11 @@ Tests the stall detection functionality including:
 - Detecting stalled agents based on last_advanced_at
 - Skipping human review stages
 - Respecting configurable thresholds
-- Logging stall interventions
 """
 
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from unittest.mock import patch, MagicMock
-import pytest
+from unittest.mock import patch
 import yaml
 
 
@@ -170,39 +168,6 @@ class TestGetStalledAgents:
         # With 10 min threshold, should be stalled
         stalled_10 = get_stalled_agents(tmp_path, threshold_min=10)
         assert len(stalled_10) == 1
-
-
-class TestLogStall:
-    """Test stall logging functionality."""
-
-    def test_logs_stall_to_yaml(self, tmp_path: Path):
-        """Stall should be recorded in controller_logs/stalls.yaml."""
-        from agenttree.controller_agent import log_stall
-
-        log_stall(
-            agents_dir=tmp_path,
-            issue_id="042",
-            stage="implement.code",
-            nudge_message="You seem stuck. Try running agenttree next.",
-            escalated=False,
-        )
-
-        # Check log file was created
-        log_file = tmp_path / "controller_logs" / "stalls.yaml"
-        assert log_file.exists()
-
-        # Check content
-        with open(log_file) as f:
-            data = yaml.safe_load(f)
-
-        assert "stalls" in data
-        assert len(data["stalls"]) == 1
-        stall = data["stalls"][0]
-        assert stall["issue_id"] == "042"
-        assert stall["stage"] == "implement.code"
-        assert stall["nudge_sent"] == "You seem stuck. Try running agenttree next."
-        assert stall["escalation_needed"] is False
-        assert "detected_at" in stall
 
 
 class TestStallsCommand:

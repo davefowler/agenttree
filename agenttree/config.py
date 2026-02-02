@@ -128,8 +128,6 @@ class ControllerConfig(BaseModel):
     """
 
     stall_threshold_min: int = 20  # Minutes before agent considered stalled
-    nudge_cooldown_min: int = 30  # Minutes between nudges for same agent
-    max_nudges_before_escalate: int = 3  # Escalate after N failed nudges
 
 
 class SecurityConfig(BaseModel):
