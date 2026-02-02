@@ -547,11 +547,7 @@ class TmuxManager:
                     f"Then read your task: agenttree status --issue {issue_id}"
                 )
             else:
-                startup_prompt = (
-                    f"You are working on issue #{issue_id}. "
-                    f"Read your task: cat _agenttree/issues/{issue_id}-*/problem.md && "
-                    f"agenttree status --issue {issue_id}"
-                )
+                startup_prompt = "Run 'agenttree next' to see your workflow instructions and current stage."
             send_keys(session_name, startup_prompt)
 
     def start_controller(

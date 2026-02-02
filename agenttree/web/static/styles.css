@@ -74,7 +74,11 @@ header {
 .header-row {
     display: flex;
     align-items: center;
-    gap: 30px;
+    gap: 12px;
+}
+
+.header-spacer {
+    flex: 1;
 }
 
 header h1 {
@@ -111,49 +115,11 @@ header h1 {
     border-bottom-color: var(--text-accent);
 }
 
-.stage-toggle {
-    margin-left: auto;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.toggle-btn {
-    padding: 6px 12px;
-    background: var(--btn-bg);
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    color: var(--text-primary);
-    font-size: 13px;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.toggle-btn:hover {
-    background: var(--btn-bg-hover);
-}
-
-.toggle-btn.active {
-    background: var(--btn-bg-active);
-    border-color: var(--text-accent);
-}
-
-.flow-controls {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-left: auto;
-}
-
-.flow-control-label {
-    font-size: 13px;
-    color: var(--text-secondary);
-}
-
-.flow-select {
+/* Header select dropdown - minimal style */
+.header-select {
     padding: 6px 10px;
-    background: var(--btn-bg);
-    border: 1px solid var(--border-color);
+    background: transparent;
+    border: 1px solid transparent;
     border-radius: 4px;
     color: var(--text-primary);
     font-size: 13px;
@@ -161,79 +127,94 @@ header h1 {
     transition: all 0.2s;
 }
 
-.flow-select:hover {
+.header-select:hover {
     background: var(--btn-bg-hover);
+    border-color: var(--border-color);
 }
 
-.flow-select:focus {
+.header-select:focus {
     outline: none;
+    background: var(--btn-bg-hover);
     border-color: var(--text-accent);
 }
 
-.theme-toggle {
-    margin-left: auto;
-    background: var(--btn-bg);
-    border: 1px solid var(--border-color);
+/* Header buttons - minimal style */
+.header-btn {
+    padding: 6px 12px;
+    background: transparent;
+    border: 1px solid transparent;
     border-radius: 4px;
-    padding: 6px 10px;
-    cursor: pointer;
-    transition: all 0.2s;
-    font-size: 16px;
-    line-height: 1;
-}
-
-.theme-toggle:hover {
-    background: var(--btn-bg-hover);
-}
-
-.btn-new-issue {
-    margin-left: 15px;
-    padding: 6px 14px;
-    background: #5d8a6b;
-    border: 1px solid #4a7359;
-    border-radius: 4px;
-    color: #f8f6f0;
+    color: var(--text-primary);
     font-size: 13px;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.2s;
 }
 
-.btn-new-issue:hover {
-    background: #4a7359;
-    border-color: #3d6149;
+.header-btn:hover {
+    background: var(--btn-bg-hover);
+    border-color: var(--border-color);
 }
 
-[data-theme="dark"] .btn-new-issue {
-    background: #3d6b5a;
-    border-color: #2d5a4a;
+.btn-new {
+    color: var(--text-accent);
+    font-weight: 600;
 }
 
-[data-theme="dark"] .btn-new-issue:hover {
-    background: #4a7d68;
-}
-
-/* Search Input */
-.search-container {
+/* Header icon buttons - no bg/border unless hovered */
+.header-icon-btn {
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    padding: 6px 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    color: var(--text-secondary);
     display: flex;
     align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    line-height: 1;
 }
 
+.header-icon-btn:hover {
+    background: var(--btn-bg-hover);
+    border-color: var(--border-color);
+    color: var(--text-accent);
+}
+
+.header-icon-btn svg {
+    display: block;
+}
+
+/* Search Input - minimal style */
 .search-input {
     padding: 6px 12px;
-    background: var(--bg-card);
-    border: 1px solid var(--border-color);
+    background: transparent;
+    border: 1px solid transparent;
     border-radius: 4px;
     color: var(--text-primary);
     font-size: 13px;
-    width: 200px;
+    width: 120px;
     transition: all 0.2s;
+}
+
+.search-input:hover {
+    background: var(--btn-bg-hover);
+    border-color: var(--border-color);
 }
 
 .search-input:focus {
     outline: none;
+    background: var(--bg-card);
     border-color: var(--text-accent);
-    box-shadow: 0 0 0 2px rgba(45, 90, 74, 0.2);
+    width: 180px;
+}
+
+.search-input:not(:placeholder-shown) {
+    background: var(--bg-card);
+    border-color: var(--border-color);
+    width: 180px;
 }
 
 .search-input::placeholder {
@@ -677,6 +658,7 @@ button[disabled] {
     margin-top: 10px;
     padding-top: 10px;
     border-top: 1px solid var(--border-light);
+}
     color: var(--text-muted);
     font-size: 12px;
 }
@@ -1946,30 +1928,8 @@ button[disabled] {
 }
 
 /* ==============================================
-   Controller Toggle Button
+   Controller Toggle Button (legacy - now uses header-icon-btn)
    ============================================== */
-
-.controller-toggle {
-    background: var(--btn-bg);
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    padding: 6px 8px;
-    cursor: pointer;
-    transition: all 0.2s;
-    color: var(--text-secondary);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.controller-toggle:hover {
-    background: var(--btn-bg-hover);
-    color: var(--text-accent);
-}
-
-.controller-toggle svg {
-    display: block;
-}
 
 /* ==============================================
    Controller Panel
@@ -2132,6 +2092,8 @@ button[disabled] {
 
 .controller-panel .send-form.htmx-request .btn-loading {
     display: inline;
+}
+
 /* ============================================
    MOBILE VIEW STYLES
    ============================================ */
@@ -2191,6 +2153,7 @@ button[disabled] {
 .mobile-panel-issues {
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
+    padding-bottom: calc(56px + env(safe-area-inset-bottom, 0));
 }
 
 .mobile-issues-list {
@@ -2233,25 +2196,107 @@ button[disabled] {
     font-size: 15px;
 }
 
-/* Detail panel */
+/* Detail panel - whole page scrolls */
 .mobile-panel-detail {
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
+    padding-bottom: calc(56px + env(safe-area-inset-bottom, 0));
 }
 
 .mobile-container .issue-detail-wrapper {
-    height: 100%;
-    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
 }
 
 .mobile-container .issue-detail-main {
-    padding: 16px;
+    padding: 12px;
+}
+
+/* Mobile: Truncate long titles */
+.mobile-container .detail-title {
+    font-size: 16px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: calc(100vw - 100px);
+}
+
+/* Mobile: Compact header layout */
+.mobile-container .detail-header {
+    margin-bottom: 8px;
+}
+
+.mobile-container .detail-title-row {
+    margin-bottom: 8px;
+}
+
+.mobile-container .detail-meta-row {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.mobile-container .detail-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    font-size: 13px;
+    align-items: center;
+}
+
+.mobile-container .detail-meta > span {
+    background: var(--bg-tertiary);
+    padding: 4px 8px;
+    border-radius: 4px;
+}
+
+.mobile-container .detail-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.mobile-container .detail-actions .btn {
+    flex: 1;
+    min-width: 80px;
+    text-align: center;
+}
+
+/* Mobile: File tabs connected to content */
+.mobile-container .file-tabs {
+    margin: 0;
+    padding: 8px 12px;
+    gap: 6px;
+    background: var(--bg-secondary);
+    border-bottom: none;
+}
+
+.mobile-container .file-tab {
+    padding: 8px 12px;
+    font-size: 13px;
+    min-height: 36px;
+}
+
+/* Mobile: Document content - no nested scroll */
+.mobile-container .file-content-container {
+    flex: 1;
+    overflow: visible;
+}
+
+.mobile-container .file-content-item {
+    padding: 12px;
+}
+
+.mobile-container .markdown-content {
+    font-size: 14px;
+    line-height: 1.5;
 }
 
 /* Chat panel - full width */
 .mobile-panel-chat {
     display: none;
     flex-direction: column;
+    padding-bottom: calc(56px + env(safe-area-inset-bottom, 0));
 }
 
 .mobile-panel-chat.active {
@@ -2266,6 +2311,11 @@ button[disabled] {
     position: relative;
     display: flex;
     flex-direction: column;
+}
+
+/* Hide chat panel embedded in detail view - use dedicated Chat tab instead */
+.mobile-panel-detail .agent-chat-panel {
+    display: none;
 }
 
 .mobile-container .agent-chat-panel.collapsed {
@@ -2315,6 +2365,10 @@ button[disabled] {
 
 /* Bottom Navigation */
 .mobile-bottom-nav {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
     display: flex;
     justify-content: space-around;
     align-items: center;
@@ -2322,7 +2376,7 @@ button[disabled] {
     padding-bottom: env(safe-area-inset-bottom, 0);
     background: var(--bg-secondary);
     border-top: 1px solid var(--border-color);
-    flex-shrink: 0;
+    z-index: 100;
 }
 
 .mobile-tab-btn {

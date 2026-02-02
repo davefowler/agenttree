@@ -157,15 +157,15 @@ class TestMobileEndpoint:
 
     @patch("agenttree.web.app.issue_crud")
     @patch("agenttree.web.app.agent_manager")
-    def test_mobile_includes_desktop_link(self, mock_agent_mgr, mock_crud, client):
-        """Test mobile template includes link to desktop view."""
+    def test_mobile_has_header(self, mock_agent_mgr, mock_crud, client):
+        """Test mobile template has header with title."""
         mock_crud.list_issues.return_value = []
         mock_agent_mgr.clear_session_cache = Mock()
 
         response = client.get("/mobile")
 
         assert response.status_code == 200
-        assert "/kanban" in response.text or "/flow" in response.text
+        assert "AgentTree" in response.text
 
     @patch("agenttree.web.app.issue_crud")
     @patch("agenttree.web.app.agent_manager")

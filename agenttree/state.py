@@ -289,6 +289,117 @@ def unregister_all_agents_for_issue(issue_id: str) -> list[ActiveAgent]:
         return unregistered
 
 
+def stop_agent(issue_id: str, host: str = "agent", quiet: bool = False) -> bool:
+    """Stop an active agent - kills tmux, stops container, unregisters from state.
+
+    This is the canonical way to stop an agent. Used by:
+    - CLI: agenttree stop <id>
+    - Web API: POST /api/issues/{id}/stop
+    - Hooks: cleanup_agent
+
+    Args:
+        issue_id: Issue ID to stop
+        host: Agent host type (default: "agent")
+        quiet: If True, suppress output messages
+
+    Returns:
+        True if agent was stopped, False if no agent was found
+    """
+    import subprocess
+    from pathlib import Path
+
+    agent = get_active_agent(issue_id, host)
+    if not agent:
+        return False
+
+    if not quiet:
+        from rich.console import Console
+        console = Console()
+        console.print(f"[dim]Stopping agent for issue #{issue_id}...[/dim]")
+
+    # 1. Kill tmux session
+    try:
+        from agenttree.tmux import kill_session, session_exists
+        if session_exists(agent.tmux_session):
+            kill_session(agent.tmux_session)
+            if not quiet:
+                console.print(f"[dim]  Stopped tmux session: {agent.tmux_session}[/dim]")
+    except Exception as e:
+        if not quiet:
+            console.print(f"[yellow]  Warning: Could not stop tmux session: {e}[/yellow]")
+
+    # 2. Stop container (if running)
+    try:
+        from agenttree.container import get_container_runtime, find_container_by_worktree
+        runtime = get_container_runtime()
+        if runtime.runtime and agent.container:
+            container_id = agent.container
+
+            # For Apple Containers, we need the UUID, not the name
+            # If the stored ID looks like a name (not a UUID), try to find the UUID
+            if runtime.runtime == "container" and not _is_uuid(container_id):
+                worktree_path = Path(agent.worktree)
+                if not worktree_path.is_absolute():
+                    worktree_path = Path.cwd() / worktree_path
+                found_uuid = find_container_by_worktree(worktree_path)
+                if found_uuid:
+                    container_id = found_uuid
+
+            result = subprocess.run(
+                [runtime.runtime, "stop", container_id],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if result.returncode == 0 and not quiet:
+                short_id = container_id[:12] if len(container_id) > 12 else container_id
+                console.print(f"[dim]  Stopped container: {short_id}[/dim]")
+
+            # Remove container (only for Docker/Podman - Apple Containers auto-removes)
+            if runtime.runtime != "container":
+                subprocess.run(
+                    [runtime.runtime, "rm", container_id],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+    except Exception as e:
+        if not quiet:
+            console.print(f"[yellow]  Warning: Could not stop container: {e}[/yellow]")
+
+    # 3. Unregister from state
+    unregister_agent(issue_id, host)
+
+    if not quiet:
+        console.print(f"[green]✓ Agent stopped for issue #{issue_id}[/green]")
+
+    return True
+
+
+def stop_all_agents_for_issue(issue_id: str, quiet: bool = False) -> int:
+    """Stop all agents for an issue (across all hosts).
+
+    Args:
+        issue_id: Issue ID
+        quiet: If True, suppress output messages
+
+    Returns:
+        Number of agents stopped
+    """
+    agents = get_active_agents_for_issue(issue_id)
+    count = 0
+    for agent in agents:
+        if stop_agent(issue_id, agent.host, quiet):
+            count += 1
+    return count
+
+
+def _is_uuid(s: str) -> bool:
+    """Check if string looks like a UUID."""
+    import re
+    return bool(re.match(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', s, re.I))
+
+
 def get_issue_names(issue_id: str, slug: str, project: str = "agenttree", host: str = "agent") -> dict:
     """Get standardized names for issue-bound resources.
 

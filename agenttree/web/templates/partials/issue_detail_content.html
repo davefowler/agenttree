@@ -167,29 +167,21 @@ function afterAction() {
 }
 
 // Action handlers for this issue detail
-async function approveIssue(issueNumber, btn) {
+function approveIssue(issueNumber, btn) {
     btn.disabled = true;
-    btn.textContent = 'Approving...';
+    btn.textContent = 'Approved!';
 
-    try {
-        const response = await fetch(`/api/issues/${issueNumber}/approve`, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'}
-        });
+    // Fire request in background
+    fetch(`/api/issues/${issueNumber}/approve`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'}
+    });
 
-        if (response.ok) {
-            btn.textContent = 'Approved!';
-            setTimeout(afterAction, 500);
-        } else {
-            const data = await response.json();
-            alert(`Cannot approve: ${data.detail || 'Unknown error'}`);
-            btn.disabled = false;
-            btn.textContent = 'Approve';
-        }
-    } catch (error) {
-        console.error('Error approving:', error);
-        btn.disabled = false;
-        btn.textContent = 'Approve';
+    // Move to next issue or reload immediately
+    if (typeof goToNextIssue === 'function') {
+        goToNextIssue();
+    } else {
+        location.reload();
     }
 }
 

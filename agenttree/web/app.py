@@ -351,6 +351,7 @@ async def kanban(
     issue: Optional[str] = None,
     chat: Optional[str] = None,
     search: Optional[str] = None,
+    view: Optional[str] = None,
     user: Optional[str] = Depends(get_current_user)
 ) -> HTMLResponse:
     """Kanban board page."""
@@ -384,6 +385,7 @@ async def kanban(
             "commits_behind": commits_behind,
             "chat_open": chat == "1",
             "search": search or "",
+            "current_view": view or "nonempty",
         }
     )
 
@@ -824,17 +826,17 @@ async def stop_issue(
     issue_id: str,
     user: Optional[str] = Depends(get_current_user)
 ) -> dict:
-    """Stop an agent working on an issue (kills the tmux session)."""
-    from agenttree.tmux import kill_session
-    from agenttree.state import unregister_agent
+    """Stop an agent working on an issue (kills tmux, stops container, cleans up state)."""
+    from agenttree.state import stop_all_agents_for_issue
 
     try:
         padded_id = issue_id.zfill(3)
-        session_name = f"{_config.project}-issue-{padded_id}"
-        kill_session(session_name)
-        # Also unregister from state
-        unregister_agent(padded_id)
-        return {"ok": True, "status": f"Stopped agent for issue #{issue_id}"}
+        # Stop all agents for this issue (handles tmux, container, and state cleanup)
+        count = stop_all_agents_for_issue(padded_id, quiet=True)
+        if count > 0:
+            return {"ok": True, "status": f"Stopped {count} agent(s) for issue #{issue_id}"}
+        else:
+            return {"ok": True, "status": f"No active agents for issue #{issue_id}"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1009,20 +1011,9 @@ async def create_issue_api(
     if not description:
         raise HTTPException(status_code=400, detail="Please provide a description")
 
-    # Auto-generate title from description if not provided
+    # Use placeholder if no title - agent will fill it in during define stage
     if not title:
-        # Take first line or first 60 chars of description
-        first_line = description.split('\n')[0].strip()
-        # Remove "Problem:" prefix if present
-        if first_line.lower().startswith('problem:'):
-            first_line = first_line[8:].strip()
-        # Truncate and clean up
-        title = first_line[:60].strip()
-        if len(first_line) > 60:
-            title = title.rsplit(' ', 1)[0] + '...'
-        # Fallback if still empty
-        if not title or len(title) < 5:
-            title = f"Issue from web UI"
+        title = "(untitled)"
 
     try:
         issue = issue_crud.create_issue(
@@ -1030,6 +1021,16 @@ async def create_issue_api(
             priority=Priority.MEDIUM,
             problem=description,
         )
+
+        # Auto-start agent for the new issue
+        subprocess.Popen(
+            ["uv", "run", "agenttree", "start", issue.id],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            cwd=Path.cwd(),
+            start_new_session=True  # Detach from parent process
+        )
+
         return {"ok": True, "issue_id": issue.id, "title": issue.title}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

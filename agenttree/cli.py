@@ -649,7 +649,7 @@ def agents_status() -> None:
     console.print(f"\n[dim]Commands (use ID from table above, add --host if not 'agent'):[/dim]")
     console.print(f"  agenttree attach <id> [--host <host>]")
     console.print(f"  agenttree send <id> [--host <host>] 'message'")
-    console.print(f"  agenttree kill <id> [--host <host>]")
+    console.print(f"  agenttree stop <id> [--host <host>]")
 
 
 @main.command()
@@ -915,16 +915,21 @@ def send(issue_id: str, message: str, host: str) -> None:
 @main.command()
 @click.argument("issue_id", type=str)
 @click.option("--host", default="agent", help="Agent host type (default: agent)")
-def kill(issue_id: str, host: str) -> None:
-    """Kill an issue's agent tmux session.
+@click.option("--all", "all_hosts", is_flag=True, help="Stop all agents for this issue (all hosts)")
+def stop(issue_id: str, host: str, all_hosts: bool) -> None:
+    """Stop an issue's agent (kills tmux, stops container, cleans up state).
 
     ISSUE_ID is the issue number (e.g., "23" or "023"), or "0" for controller.
+
+    Examples:
+        agenttree stop 23              # Stop the default agent for issue 23
+        agenttree stop 23 --host review  # Stop the review agent
+        agenttree stop 23 --all        # Stop all agents for issue 23
     """
-    from agenttree.state import get_active_agent, unregister_agent
+    from agenttree.state import stop_agent, stop_all_agents_for_issue, get_active_agent
     from agenttree.tmux import session_exists, kill_session
 
     config = load_config()
-    tmux_manager = TmuxManager(config)
 
     # Normalize issue ID
     issue_id_normalized = issue_id.lstrip("0") or "0"
@@ -936,26 +941,62 @@ def kill(issue_id: str, host: str) -> None:
             console.print("[yellow]Controller not running[/yellow]")
             return
         kill_session(session_name)
-        console.print("[green]✓ Killed controller[/green]")
+        console.print("[green]✓ Stopped controller[/green]")
         return
 
-    # Get active agent for this issue and host
-    agent = get_active_agent(issue_id_normalized, host)
-    if not agent:
-        issue = get_issue_func(issue_id_normalized)
-        if issue:
-            agent = get_active_agent(issue.id, host)
+    # Stop all agents for this issue if --all flag
+    if all_hosts:
+        count = stop_all_agents_for_issue(issue_id_normalized)
+        if count == 0:
+            console.print(f"[yellow]No active agents for issue #{issue_id}[/yellow]")
+        return
 
+    # Try with normalized ID first, then try getting the issue
+    issue = get_issue_func(issue_id_normalized)
+    actual_id = issue.id if issue else issue_id_normalized
+
+    # Check if agent exists
+    agent = get_active_agent(actual_id, host)
     if not agent:
         host_label = f" ({host})" if host != "agent" else ""
         console.print(f"[red]Error: No active{host_label} agent for issue #{issue_id}[/red]")
         sys.exit(1)
 
-    tmux_manager.stop_issue_agent(agent.tmux_session)
-    unregister_agent(agent.issue_id, agent.host)
+    # Use consolidated stop_agent function
+    stop_agent(actual_id, host)
 
-    host_label = f" ({agent.host})" if agent.host != "agent" else ""
-    console.print(f"[green]✓ Killed agent{host_label} for issue #{agent.issue_id}[/green]")
+
+# Alias for backwards compatibility
+@main.command(name="kill", hidden=True)
+@click.argument("issue_id", type=str)
+@click.option("--host", default="agent", help="Agent host type (default: agent)")
+def kill_alias(issue_id: str, host: str) -> None:
+    """Alias for 'stop' command (deprecated)."""
+    from agenttree.state import stop_agent, get_active_agent
+    from agenttree.tmux import session_exists, kill_session
+
+    config = load_config()
+    issue_id_normalized = issue_id.lstrip("0") or "0"
+
+    if issue_id_normalized == "0":
+        session_name = f"{config.project}-controller-000"
+        if not session_exists(session_name):
+            console.print("[yellow]Controller not running[/yellow]")
+            return
+        kill_session(session_name)
+        console.print("[green]✓ Stopped controller[/green]")
+        return
+
+    issue = get_issue_func(issue_id_normalized)
+    actual_id = issue.id if issue else issue_id_normalized
+
+    agent = get_active_agent(actual_id, host)
+    if not agent:
+        host_label = f" ({host})" if host != "agent" else ""
+        console.print(f"[red]Error: No active{host_label} agent for issue #{issue_id}[/red]")
+        sys.exit(1)
+
+    stop_agent(actual_id, host)
 
 
 @main.group()

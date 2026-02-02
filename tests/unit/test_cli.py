@@ -80,42 +80,56 @@ class TestSendCommand:
         mock_tm.send_message_to_issue.assert_called_once_with("agent-42", "hello")
 
 
-class TestKillCommand:
-    """Tests for the kill command."""
+class TestStopCommand:
+    """Tests for the stop command (and kill alias)."""
 
-    def test_kill_no_active_agent(self, cli_runner, mock_config):
+    def test_stop_no_active_agent(self, cli_runner, mock_config):
         """Should error when no active agent for issue."""
         from agenttree.cli import main
 
         with patch("agenttree.cli.load_config", return_value=mock_config):
             with patch("agenttree.state.get_active_agent", return_value=None):
                 with patch("agenttree.cli.get_issue_func", return_value=None):
-                    result = cli_runner.invoke(main, ["kill", "42"])
+                    result = cli_runner.invoke(main, ["stop", "42"])
 
         assert result.exit_code == 1
         assert "No active agent" in result.output
 
-    def test_kill_success(self, cli_runner, mock_config):
-        """Should kill agent session successfully."""
+    def test_stop_success(self, cli_runner, mock_config):
+        """Should stop agent session successfully using consolidated stop_agent."""
         from agenttree.cli import main
 
         mock_agent = MagicMock()
         mock_agent.tmux_session = "agent-42"
         mock_agent.issue_id = "42"
+        mock_agent.host = "agent"
 
         with patch("agenttree.cli.load_config", return_value=mock_config):
             with patch("agenttree.state.get_active_agent", return_value=mock_agent):
-                with patch("agenttree.state.unregister_agent") as mock_unregister:
-                    with patch("agenttree.cli.TmuxManager") as mock_tm_class:
-                        mock_tm = MagicMock()
-                        mock_tm_class.return_value = mock_tm
+                with patch("agenttree.state.stop_agent", return_value=True) as mock_stop:
+                    with patch("agenttree.cli.get_issue_func", return_value=None):
+                        result = cli_runner.invoke(main, ["stop", "42"])
 
+        assert result.exit_code == 0
+        mock_stop.assert_called_once_with("42", "agent")
+
+    def test_kill_alias_works(self, cli_runner, mock_config):
+        """kill command should work as an alias for stop."""
+        from agenttree.cli import main
+
+        mock_agent = MagicMock()
+        mock_agent.tmux_session = "agent-42"
+        mock_agent.issue_id = "42"
+        mock_agent.host = "agent"
+
+        with patch("agenttree.cli.load_config", return_value=mock_config):
+            with patch("agenttree.state.get_active_agent", return_value=mock_agent):
+                with patch("agenttree.state.stop_agent", return_value=True) as mock_stop:
+                    with patch("agenttree.cli.get_issue_func", return_value=None):
                         result = cli_runner.invoke(main, ["kill", "42"])
 
         assert result.exit_code == 0
-        assert "Killed" in result.output or "killed" in result.output.lower()
-        mock_tm.stop_issue_agent.assert_called_once_with("agent-42")
-        mock_unregister.assert_called_once()
+        mock_stop.assert_called_once_with("42", "agent")
 
 
 class TestAttachCommand:
@@ -1185,26 +1199,26 @@ class TestRollbackCommand:
         assert "Controller not running" in result.output
         assert "agenttree start 0" in result.output
 
-    def test_kill_controller_success(self, cli_runner, mock_config):
-        """Should kill controller session when running."""
+    def test_stop_controller_success(self, cli_runner, mock_config):
+        """Should stop controller session when running."""
         from agenttree.cli import main
 
         with patch("agenttree.cli.load_config", return_value=mock_config):
             with patch("agenttree.tmux.session_exists", return_value=True):
                 with patch("agenttree.tmux.kill_session") as mock_kill:
-                    result = cli_runner.invoke(main, ["kill", "0"])
+                    result = cli_runner.invoke(main, ["stop", "0"])
 
         assert result.exit_code == 0
-        assert "Killed controller" in result.output
+        assert "Stopped controller" in result.output
         mock_kill.assert_called_once_with("testproject-controller-000")
 
-    def test_kill_controller_not_running(self, cli_runner, mock_config):
+    def test_stop_controller_not_running(self, cli_runner, mock_config):
         """Should handle gracefully when controller not running."""
         from agenttree.cli import main
 
         with patch("agenttree.cli.load_config", return_value=mock_config):
             with patch("agenttree.tmux.session_exists", return_value=False):
-                result = cli_runner.invoke(main, ["kill", "0"])
+                result = cli_runner.invoke(main, ["stop", "0"])
 
         assert result.exit_code == 0
         assert "not running" in result.output.lower()
