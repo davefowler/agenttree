@@ -170,7 +170,8 @@ def get_active_agents_for_issue(issue_id: str) -> list[ActiveAgent]:
     prefix = f"{issue_id}:"
 
     for key, agent_data in state.get("active_agents", {}).items():
-        if key.startswith(prefix):
+        # Match both new format (062:agent) and old format (062)
+        if key.startswith(prefix) or key == issue_id:
             agents.append(ActiveAgent.from_dict(agent_data))
 
     return agents
