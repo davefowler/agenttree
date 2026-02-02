@@ -850,6 +850,8 @@ def send(issue_id: str, message: str, host: str) -> None:
     """Send a message to an issue's agent.
 
     ISSUE_ID is the issue number (e.g., "23" or "023"), or "0" for controller.
+
+    If the agent is not running, it will be automatically started.
     """
     from agenttree.state import get_active_agent
     from agenttree.tmux import session_exists, send_keys
@@ -871,44 +873,72 @@ def send(issue_id: str, message: str, host: str) -> None:
         console.print("[green]✓ Sent message to controller[/green]")
         return
 
-    # Get active agent for this issue and host
+    # Get issue to validate it exists
+    issue = get_issue_func(issue_id_normalized)
+    if not issue:
+        console.print(f"[red]Error: Issue #{issue_id} not found[/red]")
+        sys.exit(1)
+
+    # Use the canonical issue ID
+    issue_id_normalized = issue.id
+
+    # Helper to start agent if needed
+    def ensure_agent_running() -> bool:
+        """Start agent if not running. Returns True if agent is now running."""
+        agent = get_active_agent(issue_id_normalized, host)
+        if agent and tmux_manager.is_issue_running(agent.tmux_session):
+            return True
+
+        # Agent not running - start it
+        host_label = f" ({host})" if host != "agent" else ""
+        console.print(f"[dim]Agent{host_label} not running, starting...[/dim]")
+
+        host_flag = f" --host {host}" if host != "agent" else ""
+        result = subprocess.run(
+            ["agenttree", "start", issue_id_normalized] + (["--host", host] if host != "agent" else []) + ["--skip-preflight"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            console.print(f"[red]Error: Could not start agent: {result.stderr}[/red]")
+            return False
+
+        console.print(f"[green]✓ Started agent{host_label}[/green]")
+        return True
+
+    # Ensure agent is running
+    if not ensure_agent_running():
+        sys.exit(1)
+
+    # Re-fetch agent after potential start
     agent = get_active_agent(issue_id_normalized, host)
     if not agent:
-        issue = get_issue_func(issue_id_normalized)
-        if issue:
-            agent = get_active_agent(issue.id, host)
-
-    if not agent:
-        host_label = f" ({host})" if host != "agent" else ""
-        console.print(f"[red]Error: No active{host_label} agent for issue #{issue_id}[/red]")
-        host_flag = f" --host {host}" if host != "agent" else ""
-        console.print(f"[yellow]Start one with: agenttree start {issue_id}{host_flag}[/yellow]")
+        console.print(f"[red]Error: Agent started but not found in state[/red]")
         sys.exit(1)
 
-    if not tmux_manager.is_issue_running(agent.tmux_session):
-        host_label = f" ({host})" if host != "agent" else ""
-        host_flag = f" --host {host}" if host != "agent" else ""
-        console.print(f"[red]Error: Agent{host_label} for issue #{issue_id} is not running[/red]")
-        console.print(f"[yellow]Restart with: agenttree start {issue_id}{host_flag}[/yellow]")
-        sys.exit(1)
-
+    # Send the message
     result = tmux_manager.send_message_to_issue(agent.tmux_session, message)
 
     host_label = f" ({agent.host})" if agent.host != "agent" else ""
-    host_flag = f" --host {agent.host}" if agent.host != "agent" else ""
     if result == "sent":
         console.print(f"[green]✓ Sent message to issue #{agent.issue_id}{host_label}[/green]")
     elif result == "claude_exited":
-        console.print(f"[red]Error: Claude CLI has exited in issue #{agent.issue_id}{host_label}'s session[/red]")
-        console.print(f"[dim]The tmux session is running but Claude is not responding.[/dim]")
-        console.print(f"[yellow]Restart with: agenttree start {issue_id}{host_flag}[/yellow]")
+        # Claude exited - restart and try again
+        console.print(f"[yellow]Claude CLI exited, restarting agent...[/yellow]")
+        if ensure_agent_running():
+            agent = get_active_agent(issue_id_normalized, host)
+            if agent:
+                result = tmux_manager.send_message_to_issue(agent.tmux_session, message)
+                if result == "sent":
+                    console.print(f"[green]✓ Sent message to issue #{agent.issue_id}{host_label}[/green]")
+                    return
+        console.print(f"[red]Error: Could not send message after restart[/red]")
         sys.exit(1)
     elif result == "no_session":
-        console.print(f"[red]Error: Tmux session not found for issue #{agent.issue_id}{host_label}[/red]")
-        console.print(f"[yellow]Restart with: agenttree start {issue_id}{host_flag}[/yellow]")
+        console.print(f"[red]Error: Tmux session not found[/red]")
         sys.exit(1)
     else:
-        console.print(f"[red]Error: Failed to send message to issue #{agent.issue_id}{host_label}[/red]")
+        console.print(f"[red]Error: Failed to send message[/red]")
         sys.exit(1)
 
 

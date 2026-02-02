@@ -25,55 +25,76 @@ def mock_config():
 class TestSendCommand:
     """Tests for the send command."""
 
-    def test_send_no_active_agent(self, cli_runner, mock_config):
-        """Should error when no active agent for issue."""
+    def test_send_issue_not_found(self, cli_runner, mock_config):
+        """Should error when issue doesn't exist."""
         from agenttree.cli import main
 
         with patch("agenttree.cli.load_config", return_value=mock_config):
-            with patch("agenttree.state.get_active_agent", return_value=None):
-                with patch("agenttree.cli.get_issue_func", return_value=None):
-                    result = cli_runner.invoke(main, ["send", "42", "hello"])
+            with patch("agenttree.cli.get_issue_func", return_value=None):
+                result = cli_runner.invoke(main, ["send", "42", "hello"])
 
         assert result.exit_code == 1
-        assert "No active agent" in result.output
+        assert "not found" in result.output
 
-    def test_send_agent_not_running(self, cli_runner, mock_config):
-        """Should error when agent tmux session not running."""
+    def test_send_auto_starts_agent(self, cli_runner, mock_config):
+        """Should auto-start agent if not running."""
         from agenttree.cli import main
+
+        mock_issue = MagicMock()
+        mock_issue.id = "42"
 
         mock_agent = MagicMock()
         mock_agent.tmux_session = "agent-42"
         mock_agent.issue_id = "42"
+        mock_agent.host = "agent"
+
+        # First call returns None (no agent), second call returns agent (after start)
+        agent_call_count = [0]
+        def mock_get_agent(issue_id, host="agent"):
+            agent_call_count[0] += 1
+            if agent_call_count[0] == 1:
+                return None  # First check: not running
+            return mock_agent  # After start: running
 
         with patch("agenttree.cli.load_config", return_value=mock_config):
-            with patch("agenttree.state.get_active_agent", return_value=mock_agent):
-                with patch("agenttree.cli.TmuxManager") as mock_tm_class:
-                    mock_tm = MagicMock()
-                    mock_tm.is_issue_running.return_value = False
-                    mock_tm_class.return_value = mock_tm
+            with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
+                with patch("agenttree.state.get_active_agent", side_effect=mock_get_agent):
+                    with patch("agenttree.cli.TmuxManager") as mock_tm_class:
+                        mock_tm = MagicMock()
+                        mock_tm.is_issue_running.return_value = True
+                        mock_tm.send_message_to_issue.return_value = "sent"
+                        mock_tm_class.return_value = mock_tm
 
-                    result = cli_runner.invoke(main, ["send", "42", "hello"])
+                        with patch("agenttree.cli.subprocess.run") as mock_run:
+                            mock_run.return_value = MagicMock(returncode=0, stderr="")
+                            result = cli_runner.invoke(main, ["send", "42", "hello"])
 
-        assert result.exit_code == 1
-        assert "not running" in result.output
+        assert result.exit_code == 0
+        assert "Started agent" in result.output
+        assert "Sent message" in result.output
 
     def test_send_success(self, cli_runner, mock_config):
-        """Should send message successfully."""
+        """Should send message successfully when agent already running."""
         from agenttree.cli import main
+
+        mock_issue = MagicMock()
+        mock_issue.id = "42"
 
         mock_agent = MagicMock()
         mock_agent.tmux_session = "agent-42"
         mock_agent.issue_id = "42"
+        mock_agent.host = "agent"
 
         with patch("agenttree.cli.load_config", return_value=mock_config):
-            with patch("agenttree.state.get_active_agent", return_value=mock_agent):
-                with patch("agenttree.cli.TmuxManager") as mock_tm_class:
-                    mock_tm = MagicMock()
-                    mock_tm.is_issue_running.return_value = True
-                    mock_tm.send_message_to_issue.return_value = "sent"
-                    mock_tm_class.return_value = mock_tm
+            with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
+                with patch("agenttree.state.get_active_agent", return_value=mock_agent):
+                    with patch("agenttree.cli.TmuxManager") as mock_tm_class:
+                        mock_tm = MagicMock()
+                        mock_tm.is_issue_running.return_value = True
+                        mock_tm.send_message_to_issue.return_value = "sent"
+                        mock_tm_class.return_value = mock_tm
 
-                    result = cli_runner.invoke(main, ["send", "42", "hello"])
+                        result = cli_runner.invoke(main, ["send", "42", "hello"])
 
         assert result.exit_code == 0
         assert "Sent message" in result.output
