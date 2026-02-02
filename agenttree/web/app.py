@@ -1188,7 +1188,9 @@ def run_server(
         print("  Run 'agenttree init' to create a config file")
 
     import uvicorn
-    uvicorn.run(app, host=host, port=port)
+    # Use multiple workers for better concurrency
+    # Workers > 1 requires passing app as import string
+    uvicorn.run("agenttree.web.app:app", host=host, port=port, workers=4)
 
 
 if __name__ == "__main__":
