@@ -16,6 +16,7 @@ from agenttree.issues import (
     get_agenttree_path,
     get_next_stage,
     update_issue_stage,
+    update_issue_priority,
     load_skill,
     STAGE_ORDER,
     STAGE_SUBSTAGES,
@@ -1272,4 +1273,82 @@ class TestGetIssueContext:
         assert context["history"][0]["stage"] == "define"
         assert context["history"][1]["stage"] == "research"
         assert context["history"][1]["agent"] == 1
+
+
+class TestUpdateIssuePriority:
+    """Tests for update_issue_priority function."""
+
+    @pytest.fixture
+    def temp_agenttrees(self, monkeypatch, tmp_path):
+        """Create a temporary _agenttree directory."""
+        agenttrees_path = tmp_path / "_agenttree"
+        agenttrees_path.mkdir()
+        (agenttrees_path / "issues").mkdir()
+        (agenttrees_path / "templates").mkdir()
+
+        # Create problem template
+        template = agenttrees_path / "templates" / "problem.md"
+        template.write_text("# Problem Statement\n\n")
+
+        # Monkeypatch get_agenttree_path to return our temp dir
+        monkeypatch.setattr(
+            "agenttree.issues.get_agenttree_path",
+            lambda: agenttrees_path
+        )
+        # Also monkeypatch sync to do nothing
+        monkeypatch.setattr(
+            "agenttree.issues.sync_agents_repo",
+            lambda *args, **kwargs: True
+        )
+
+        return agenttrees_path
+
+    def test_update_priority_from_medium_to_high(self, temp_agenttrees):
+        """Update issue priority from medium to high."""
+        issue = create_issue("Test Issue")
+        assert issue.priority == Priority.MEDIUM
+
+        updated = update_issue_priority("001", Priority.HIGH)
+
+        assert updated is not None
+        assert updated.priority == Priority.HIGH
+
+        # Verify persisted to disk
+        reloaded = get_issue("001")
+        assert reloaded.priority == Priority.HIGH
+
+    def test_update_priority_to_critical(self, temp_agenttrees):
+        """Update issue priority to critical."""
+        issue = create_issue("Test Issue")
+
+        updated = update_issue_priority(issue.id, Priority.CRITICAL)
+
+        assert updated is not None
+        assert updated.priority == Priority.CRITICAL
+
+    def test_update_priority_to_low(self, temp_agenttrees):
+        """Update issue priority to low."""
+        issue = create_issue("Test Issue", priority=Priority.HIGH)
+        assert issue.priority == Priority.HIGH
+
+        updated = update_issue_priority(issue.id, Priority.LOW)
+
+        assert updated is not None
+        assert updated.priority == Priority.LOW
+
+    def test_update_priority_nonexistent_issue(self, temp_agenttrees):
+        """Return None for non-existent issue."""
+        result = update_issue_priority("999", Priority.HIGH)
+        assert result is None
+
+    def test_update_priority_updates_timestamp(self, temp_agenttrees):
+        """Updating priority should set the updated timestamp."""
+        issue = create_issue("Test Issue")
+
+        updated = update_issue_priority(issue.id, Priority.HIGH)
+
+        assert updated is not None
+        # Verify the updated timestamp is set (not empty)
+        assert updated.updated is not None
+        assert len(updated.updated) > 0
 

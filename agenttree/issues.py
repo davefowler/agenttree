@@ -794,6 +794,49 @@ def update_issue_metadata(
     return issue
 
 
+def update_issue_priority(issue_id: str, priority: Priority) -> Optional[Issue]:
+    """Update an issue's priority.
+
+    Args:
+        issue_id: Issue ID
+        priority: New priority level
+
+    Returns:
+        Updated Issue object or None if not found
+    """
+    # Sync before and after writing
+    agents_path = get_agenttree_path()
+    sync_agents_repo(agents_path, pull_only=True)
+
+    issue_dir = get_issue_dir(issue_id)
+    if not issue_dir:
+        return None
+
+    yaml_path = issue_dir / "issue.yaml"
+    if not yaml_path.exists():
+        return None
+
+    with open(yaml_path) as f:
+        data = yaml.safe_load(f)
+
+    issue = Issue(**data)
+
+    # Update priority and timestamp
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    issue.priority = priority
+    issue.updated = now
+
+    # Write back
+    with open(yaml_path, "w") as f:
+        data = issue.model_dump(mode="json")
+        yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+
+    # Sync after updating priority
+    sync_agents_repo(agents_path, pull_only=False, commit_message=f"Update issue {issue_id} priority to {priority.value}")
+
+    return issue
+
+
 def get_issue_from_branch() -> Optional[str]:
     """Get issue ID from current git branch name.
 

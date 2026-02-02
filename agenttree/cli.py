@@ -1635,6 +1635,38 @@ def issue_show(issue_id: str, as_json: bool, field_name: Optional[str]) -> None:
     console.print(f"\n[dim]Directory: {issue_dir}[/dim]")
 
 
+@issue.command("set-priority")
+@click.argument("issue_id")
+@click.argument("priority", type=click.Choice([p.value for p in Priority]))
+def issue_set_priority(issue_id: str, priority: str) -> None:
+    """Set the priority of an issue.
+
+    Examples:
+        agenttree issue set-priority 001 high
+        agenttree issue set-priority 42 critical
+    """
+    from agenttree.issues import update_issue_priority
+
+    issue = get_issue_func(issue_id)
+    if not issue:
+        console.print(f"[red]Issue {issue_id} not found[/red]")
+        sys.exit(1)
+
+    updated = update_issue_priority(issue.id, Priority(priority))
+    if not updated:
+        console.print(f"[red]Failed to update priority[/red]")
+        sys.exit(1)
+
+    priority_style = {
+        "critical": "red",
+        "high": "yellow",
+        "medium": "cyan",
+        "low": "green",
+    }.get(priority, "white")
+
+    console.print(f"[green]✓[/green] Priority set to [{priority_style}]{priority}[/{priority_style}] for issue #{issue.id}")
+
+
 @issue.command("doc")
 @click.argument("doc_type", type=click.Choice(["problem", "plan", "review", "research"]))
 @click.option("--issue", "-i", "issue_id", required=True, help="Issue ID")
