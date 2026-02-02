@@ -7,6 +7,8 @@ Uses file locking to prevent race conditions when multiple processes access
 the state file concurrently (e.g., starting multiple agents simultaneously).
 """
 
+import re
+import subprocess
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -305,9 +307,6 @@ def stop_agent(issue_id: str, host: str = "agent", quiet: bool = False) -> bool:
     Returns:
         True if agent was stopped, False if no agent was found
     """
-    import subprocess
-    from pathlib import Path
-
     agent = get_active_agent(issue_id, host)
     if not agent:
         return False
@@ -396,7 +395,6 @@ def stop_all_agents_for_issue(issue_id: str, quiet: bool = False) -> int:
 
 def _is_uuid(s: str) -> bool:
     """Check if string looks like a UUID."""
-    import re
     return bool(re.match(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', s, re.I))
 
 

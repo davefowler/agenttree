@@ -523,12 +523,9 @@ class TestShutdownCommand:
         worktree_path = tmp_path / "worktree"
         worktree_path.mkdir()
 
-        mock_agent = MagicMock()
-        mock_agent.tmux_session = "agent-42"
-        mock_agent.issue_id = "42"
-
-        def mock_stop_agent(*args, **kwargs):
+        def mock_stop_all_agents(*args, **kwargs):
             operations.append("stop_agent")
+            return 1  # Return count of stopped agents
 
         def mock_subprocess_run(cmd, **kwargs):
             if "status" in cmd:
@@ -542,16 +539,13 @@ class TestShutdownCommand:
         with patch("agenttree.cli.is_running_in_container", return_value=False):
             with patch("agenttree.cli.load_config", return_value=mock_config):
                 with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
-                    with patch("agenttree.state.get_active_agents_for_issue", return_value=[mock_agent]):
-                        with patch("agenttree.state.unregister_all_agents_for_issue"):
-                            with patch("agenttree.cli.TmuxManager") as mock_tm:
-                                mock_tm.return_value.stop_issue_agent = mock_stop_agent
-                                with patch("subprocess.run", side_effect=mock_subprocess_run):
-                                    with patch("agenttree.cli.update_issue_stage", return_value=mock_issue):
-                                        with patch("agenttree.cli.delete_session"):
-                                            with patch("agenttree.cli.update_issue_metadata"):
-                                                with patch("agenttree.worktree.remove_worktree"):
-                                                    result = cli_runner.invoke(main, ["shutdown", "42", "not_doing", "-f"])
+                    with patch("agenttree.state.stop_all_agents_for_issue", side_effect=mock_stop_all_agents):
+                        with patch("subprocess.run", side_effect=mock_subprocess_run):
+                            with patch("agenttree.cli.update_issue_stage", return_value=mock_issue):
+                                with patch("agenttree.cli.delete_session"):
+                                    with patch("agenttree.cli.update_issue_metadata"):
+                                        with patch("agenttree.worktree.remove_worktree"):
+                                            result = cli_runner.invoke(main, ["shutdown", "42", "not_doing", "-f"])
 
         # Agent should be stopped before any git operations
         assert operations.index("stop_agent") < operations.index("git_status")

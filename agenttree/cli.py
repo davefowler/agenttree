@@ -996,37 +996,14 @@ def stop(issue_id: str, host: str, all_hosts: bool) -> None:
     stop_agent(actual_id, host)
 
 
-# Alias for backwards compatibility
+# Alias for backwards compatibility - just invokes stop
 @main.command(name="kill", hidden=True)
 @click.argument("issue_id", type=str)
 @click.option("--host", default="agent", help="Agent host type (default: agent)")
-def kill_alias(issue_id: str, host: str) -> None:
-    """Alias for 'stop' command (deprecated)."""
-    from agenttree.state import stop_agent, get_active_agent
-    from agenttree.tmux import session_exists, kill_session
-
-    config = load_config()
-    issue_id_normalized = issue_id.lstrip("0") or "0"
-
-    if issue_id_normalized == "0":
-        session_name = f"{config.project}-controller-000"
-        if not session_exists(session_name):
-            console.print("[yellow]Controller not running[/yellow]")
-            return
-        kill_session(session_name)
-        console.print("[green]✓ Stopped controller[/green]")
-        return
-
-    issue = get_issue_func(issue_id_normalized)
-    actual_id = issue.id if issue else issue_id_normalized
-
-    agent = get_active_agent(actual_id, host)
-    if not agent:
-        host_label = f" ({host})" if host != "agent" else ""
-        console.print(f"[red]Error: No active{host_label} agent for issue #{issue_id}[/red]")
-        sys.exit(1)
-
-    stop_agent(actual_id, host)
+@click.pass_context
+def kill_alias(ctx: click.Context, issue_id: str, host: str) -> None:
+    """Alias for 'stop' command (use 'agenttree stop' instead)."""
+    ctx.invoke(stop, issue_id=issue_id, host=host, all_hosts=False)
 
 
 @main.group()
@@ -2272,14 +2249,10 @@ def shutdown_issue(
     repo_path = Path.cwd()
 
     # Stop ALL agents for this issue FIRST to avoid race conditions with worktree operations
-    from agenttree.state import get_active_agents_for_issue, unregister_all_agents_for_issue
-    agents = get_active_agents_for_issue(issue_id_normalized)
-    if agents:
-        tmux_manager = TmuxManager(config)
-        for agent in agents:
-            tmux_manager.stop_issue_agent(agent.tmux_session)
-        unregister_all_agents_for_issue(issue_id_normalized)
-        console.print(f"[dim]Stopped {len(agents)} agent(s) for issue #{issue.id}[/dim]")
+    from agenttree.state import stop_all_agents_for_issue
+    count = stop_all_agents_for_issue(issue_id_normalized, quiet=True)
+    if count > 0:
+        console.print(f"[dim]Stopped {count} agent(s) for issue #{issue.id}[/dim]")
 
     # Get worktree path
     worktree_path = None
