@@ -1,5 +1,6 @@
 <!-- Shared agent chat panel - used by both flow view and kanban modal -->
 <div class="agent-chat-panel" id="agent-chat-panel-{{ issue.number }}">
+    <div class="resize-handle"></div>
     <div class="agent-chat-header">
         <h4>Agent Chat</h4>
     </div>
@@ -54,23 +55,76 @@ window.restartAgent = async function(issueNumber) {
     }
 };
 
+// Panel resize functionality
+function initPanelResize(panel, storageKey, defaultWidth) {
+    const handle = panel.querySelector('.resize-handle');
+    if (!handle) return;
+
+    const minWidth = 250;
+    const maxWidth = 800;
+    let isDragging = false;
+
+    // Restore saved width on load
+    const savedWidth = localStorage.getItem(storageKey);
+    if (savedWidth) {
+        const width = Math.min(Math.max(parseInt(savedWidth, 10), minWidth), Math.min(maxWidth, window.innerWidth * 0.6));
+        panel.style.width = width + 'px';
+    }
+
+    handle.addEventListener('mousedown', function(e) {
+        e.preventDefault();
+        isDragging = true;
+        handle.classList.add('dragging');
+        panel.style.transition = 'none';
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+    });
+
+    document.addEventListener('mousemove', function(e) {
+        if (!isDragging) return;
+        const maxAllowed = Math.min(maxWidth, window.innerWidth * 0.6);
+        const newWidth = Math.min(Math.max(window.innerWidth - e.clientX, minWidth), maxAllowed);
+        panel.style.width = newWidth + 'px';
+    });
+
+    document.addEventListener('mouseup', function() {
+        if (!isDragging) return;
+        isDragging = false;
+        handle.classList.remove('dragging');
+        panel.style.transition = '';
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        localStorage.setItem(storageKey, parseInt(panel.style.width, 10));
+    });
+}
+
 // Chat panel toggle with localStorage persistence
 function toggleChatPanel(issueNumber) {
     const panel = document.getElementById('agent-chat-panel-' + issueNumber);
     if (panel) {
+        const wasCollapsed = panel.classList.contains('collapsed');
         panel.classList.toggle('collapsed');
         const isOpen = !panel.classList.contains('collapsed');
         localStorage.setItem('chatPanelOpen', isOpen ? '1' : '0');
+
+        // Restore saved width when expanding
+        if (wasCollapsed && isOpen) {
+            const savedWidth = localStorage.getItem('chatPanelWidth');
+            if (savedWidth) {
+                panel.style.width = savedWidth + 'px';
+            }
+        }
     }
 }
 
 // Initialize chat panel state from localStorage
 (function() {
     const chatOpen = localStorage.getItem('chatPanelOpen') !== '0';
-    if (!chatOpen) {
-        document.querySelectorAll('.agent-chat-panel').forEach(function(panel) {
+    document.querySelectorAll('.agent-chat-panel').forEach(function(panel) {
+        if (!chatOpen) {
             panel.classList.add('collapsed');
-        });
-    }
+        }
+        initPanelResize(panel, 'chatPanelWidth', 350);
+    });
 })();
 </script>
