@@ -6,51 +6,25 @@
             <a href="/flow" class="tab {{ 'active' if active_page == 'flow' else '' }}">Flow</a>
             <a href="/mobile" class="tab {{ 'active' if active_page == 'mobile' else '' }}">Mobile</a>
         </nav>
-        <div class="search-container">
-            <input type="search"
-                   id="search-input"
-                   name="search"
-                   class="search-input"
-                   placeholder="Search issues..."
-                   value="{{ search }}"
-                   hx-get="/{{ active_page }}"
-                   hx-trigger="input changed delay:300ms, search"
-                   hx-target="body"
-                   hx-swap="outerHTML"
-                   hx-push-url="true"
-                   hx-preserve="true"
-                   hx-include=".search-preserve">
-            {% if request.query_params.get('view') %}
-            <input type="hidden" name="view" value="{{ request.query_params.get('view') }}" class="search-preserve">
-            {% endif %}
-            {% if request.query_params.get('issue') %}
-            <input type="hidden" name="issue" value="{{ request.query_params.get('issue') }}" class="search-preserve">
-            {% endif %}
-        </div>
         {% if active_page == 'kanban' %}
-        <div class="stage-toggle">
-            <button class="toggle-btn active" onclick="setStageView('review')" id="toggle-review">Review Stages</button>
-            <button class="toggle-btn" onclick="setStageView('nonempty')" id="toggle-nonempty">Non-Empty</button>
-            <button class="toggle-btn" onclick="setStageView('all')" id="toggle-all">All Stages</button>
-        </div>
-        <button class="btn btn-new-issue" onclick="openNewIssueModal()">+ New Issue</button>
+        <select class="header-select" onchange="setStageView(this.value)" id="stage-view-select">
+            <option value="review" {{ 'selected' if current_view == 'review' else '' }}>Review Stages</option>
+            <option value="nonempty" {{ 'selected' if current_view == 'nonempty' else '' }}>Non-Empty</option>
+            <option value="all" {{ 'selected' if current_view == 'all' else '' }}>All Stages</option>
+        </select>
         {% elif active_page == 'flow' %}
-        <div class="flow-controls">
-            <label class="flow-control-label">Sort:</label>
-            <select class="flow-select" onchange="updateFlowParams('sort', this.value)">
-                <option value="stage" {{ 'selected' if current_sort == 'stage' else '' }}>Stage</option>
-                <option value="updated" {{ 'selected' if current_sort == 'updated' else '' }}>Updated</option>
-                <option value="created" {{ 'selected' if current_sort == 'created' else '' }}>Created</option>
-                <option value="number" {{ 'selected' if current_sort == 'number' else '' }}>Number</option>
-            </select>
-            <label class="flow-control-label">Filter:</label>
-            <select class="flow-select" onchange="updateFlowParams('filter', this.value)">
-                <option value="all" {{ 'selected' if current_filter == 'all' else '' }}>All</option>
-                <option value="review" {{ 'selected' if current_filter == 'review' else '' }}>Review</option>
-                <option value="running" {{ 'selected' if current_filter == 'running' else '' }}>Running</option>
-                <option value="open" {{ 'selected' if current_filter == 'open' else '' }}>Open</option>
-            </select>
-        </div>
+        <select class="header-select" onchange="updateFlowParams('sort', this.value)">
+            <option value="stage" {{ 'selected' if current_sort == 'stage' else '' }}>Sort: Stage</option>
+            <option value="updated" {{ 'selected' if current_sort == 'updated' else '' }}>Sort: Updated</option>
+            <option value="created" {{ 'selected' if current_sort == 'created' else '' }}>Sort: Created</option>
+            <option value="number" {{ 'selected' if current_sort == 'number' else '' }}>Sort: Number</option>
+        </select>
+        <select class="header-select" onchange="updateFlowParams('filter', this.value)">
+            <option value="all" {{ 'selected' if current_filter == 'all' else '' }}>Filter: All</option>
+            <option value="review" {{ 'selected' if current_filter == 'review' else '' }}>Filter: Review</option>
+            <option value="running" {{ 'selected' if current_filter == 'running' else '' }}>Filter: Running</option>
+            <option value="open" {{ 'selected' if current_filter == 'open' else '' }}>Filter: Open</option>
+        </select>
         <script>
             function updateFlowParams(param, value) {
                 const url = new URL(window.location);
@@ -65,14 +39,34 @@
             }
         </script>
         {% endif %}
-        <button class="controller-toggle" onclick="toggleControllerPanel()" title="Toggle controller panel">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-                <line x1="15" y1="3" x2="15" y2="21"></line>
-            </svg>
-        </button>
-        <button class="theme-toggle" onclick="toggleTheme()" title="Toggle light/dark theme">
+        <button class="header-btn btn-new" onclick="openNewIssueModal()">+ New</button>
+        <div class="header-spacer"></div>
+        <input type="search"
+               id="search-input"
+               name="search"
+               class="search-input"
+               placeholder="Search..."
+               value="{{ search }}"
+               hx-get="/{{ active_page }}"
+               hx-trigger="input changed delay:300ms, search"
+               hx-target="body"
+               hx-swap="outerHTML"
+               hx-push-url="true"
+               hx-preserve="true"
+               hx-include=".search-preserve">
+        {% if request.query_params.get('view') %}
+        <input type="hidden" name="view" value="{{ request.query_params.get('view') }}" class="search-preserve">
+        {% endif %}
+        {% if request.query_params.get('issue') %}
+        <input type="hidden" name="issue" value="{{ request.query_params.get('issue') }}" class="search-preserve">
+        {% endif %}
+        <button class="header-icon-btn" onclick="toggleTheme()" title="Toggle light/dark theme">
             <span class="theme-icon">🌙</span>
+        </button>
+        <button class="header-icon-btn" onclick="toggleControllerPanel()" title="Toggle controller panel">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+            </svg>
         </button>
     </div>
 </header>

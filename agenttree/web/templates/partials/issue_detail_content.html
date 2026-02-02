@@ -79,7 +79,7 @@
             </div>
         </div>
 
-        <!-- File tabs -->
+        <!-- File tabs (desktop) -->
         <div class="file-tabs-container">
             <div class="file-tabs" id="file-tabs-{{ issue.number }}">
                 {% for file in files %}
@@ -99,6 +99,15 @@
                 </button>
                 {% endif %}
             </div>
+            <!-- Mobile file selector dropdown -->
+            <select class="mobile-file-select" onchange="selectFileFromDropdown(this, '{{ issue.number }}')">
+                {% for file in files %}
+                <option value="{{ file.name }}"{% if loop.last and not issue.has_worktree %} selected{% endif %}>{{ file.display_name }}</option>
+                {% endfor %}
+                {% if issue.has_worktree %}
+                <option value="changes"{% if files|length == 0 %} selected{% endif %}>Changes</option>
+                {% endif %}
+            </select>
         </div>
 
         <!-- File content - all files loaded upfront, CSS toggles visibility -->
@@ -167,29 +176,21 @@ function afterAction() {
 }
 
 // Action handlers for this issue detail
-async function approveIssue(issueNumber, btn) {
+function approveIssue(issueNumber, btn) {
     btn.disabled = true;
-    btn.textContent = 'Approving...';
+    btn.textContent = 'Approved!';
 
-    try {
-        const response = await fetch(`/api/issues/${issueNumber}/approve`, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'}
-        });
+    // Fire request in background
+    fetch(`/api/issues/${issueNumber}/approve`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'}
+    });
 
-        if (response.ok) {
-            btn.textContent = 'Approved!';
-            setTimeout(afterAction, 500);
-        } else {
-            const data = await response.json();
-            alert(`Cannot approve: ${data.detail || 'Unknown error'}`);
-            btn.disabled = false;
-            btn.textContent = 'Approve';
-        }
-    } catch (error) {
-        console.error('Error approving:', error);
-        btn.disabled = false;
-        btn.textContent = 'Approve';
+    // Move to next issue or reload immediately
+    if (typeof goToNextIssue === 'function') {
+        goToNextIssue();
+    } else {
+        location.reload();
     }
 }
 

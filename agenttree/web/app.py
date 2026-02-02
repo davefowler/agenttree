@@ -1,5 +1,10 @@
 """Web dashboard for AgentTree using FastAPI + HTMX."""
 
+# Force standard asyncio event loop instead of uvloop to avoid fork crashes
+# uvloop's signal handlers aren't fork-safe, causing crashes when subprocess.run() forks
+import asyncio
+asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
+
 from fastapi import FastAPI, Request, Form, WebSocket, WebSocketDisconnect, Depends, HTTPException, status
 from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse, Response
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
@@ -8,7 +13,6 @@ from fastapi.templating import Jinja2Templates
 from starlette.middleware.base import BaseHTTPMiddleware
 from pathlib import Path
 import subprocess
-import asyncio
 import secrets
 import os
 import re
@@ -82,7 +86,7 @@ async def background_sync_loop(interval: int = 10) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """FastAPI lifespan context - starts/stops background sync."""
+    """FastAPI lifespan context - starts/stops background sync and controller."""
     global _sync_task
 
     # Start background sync task
@@ -90,6 +94,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     interval = config.refresh_interval if hasattr(config, 'refresh_interval') else 10
     _sync_task = asyncio.create_task(background_sync_loop(interval))
     print(f"✓ Started background sync (every {interval}s)")
+
+    # Auto-start controller if not running
+    from agenttree.tmux import session_exists
+    controller_session = f"{config.project}-controller-000"
+    if not session_exists(controller_session):
+        subprocess.Popen(
+            ["uv", "run", "agenttree", "start", "0"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            cwd=Path.cwd(),
+            start_new_session=True
+        )
+        print("✓ Started controller agent")
+    else:
+        print("✓ Controller already running")
 
     yield  # Server runs here
 
@@ -233,10 +252,11 @@ class AgentManager:
         Note: Controller is agent 0, so _check_issue_tmux_session("000") checks controller.
         """
         active = self._get_active_sessions()
-        # Check both naming patterns: {project}-issue-{id} and {project}-agent-{id}
+        # Check all naming patterns: issue, agent, and controller (for agent 0)
         issue_name = f"{_config.project}-issue-{issue_id}"
         agent_name = f"{_config.project}-agent-{issue_id}"
-        return issue_name in active or agent_name in active
+        controller_name = f"{_config.project}-controller-{issue_id}"
+        return issue_name in active or agent_name in active or controller_name in active
 
 
 # Global agent manager - will be initialized in startup
@@ -351,6 +371,7 @@ async def kanban(
     issue: Optional[str] = None,
     chat: Optional[str] = None,
     search: Optional[str] = None,
+    view: Optional[str] = None,
     user: Optional[str] = Depends(get_current_user)
 ) -> HTMLResponse:
     """Kanban board page."""
@@ -384,6 +405,7 @@ async def kanban(
             "commits_behind": commits_behind,
             "chat_open": chat == "1",
             "search": search or "",
+            "current_view": view or "nonempty",
         }
     )
 
@@ -712,10 +734,11 @@ async def agent_tmux(
     config = load_config()
     # Pad issue number to 3 digits to match tmux session naming
     padded_num = agent_num.zfill(3)
-    # Try both session naming patterns: -issue- and -agent-
+    # Try all session naming patterns: -issue-, -agent-, and -controller- (for agent 0)
     session_names = [
         f"{config.project}-issue-{padded_num}",
         f"{config.project}-agent-{padded_num}",
+        f"{config.project}-controller-{padded_num}",
     ]
 
     # Capture tmux output - try both session name patterns
@@ -725,7 +748,7 @@ async def agent_tmux(
     for name in session_names:
         try:
             result = subprocess.run(
-                ["tmux", "capture-pane", "-t", name, "-p"],
+                ["tmux", "capture-pane", "-t", name, "-p", "-S", "-100"],
                 capture_output=True,
                 text=True,
                 timeout=2
@@ -783,7 +806,15 @@ async def send_to_agent(
     config = load_config()
     # Pad issue number to 3 digits to match tmux session naming
     padded_num = agent_num.zfill(3)
-    session_name = f"{config.project}-issue-{padded_num}"
+
+    # Try all session naming patterns to find the active one
+    from agenttree.tmux import session_exists
+    session_names = [
+        f"{config.project}-controller-{padded_num}",  # Controller first (for agent 0)
+        f"{config.project}-issue-{padded_num}",
+        f"{config.project}-agent-{padded_num}",
+    ]
+    session_name = next((n for n in session_names if session_exists(n)), session_names[1])
 
     # Send message - result will appear in tmux output on next poll
     result = send_message(session_name, message)
@@ -824,17 +855,18 @@ async def stop_issue(
     issue_id: str,
     user: Optional[str] = Depends(get_current_user)
 ) -> dict:
-    """Stop an agent working on an issue (kills the tmux session)."""
-    from agenttree.tmux import kill_session
-    from agenttree.state import unregister_agent
+    """Stop an agent working on an issue (kills tmux, stops container, cleans up state)."""
+    import asyncio
+    from agenttree.state import stop_all_agents_for_issue
 
     try:
         padded_id = issue_id.zfill(3)
-        session_name = f"{_config.project}-issue-{padded_id}"
-        kill_session(session_name)
-        # Also unregister from state
-        unregister_agent(padded_id)
-        return {"ok": True, "status": f"Stopped agent for issue #{issue_id}"}
+        # Run in thread to avoid blocking event loop
+        count = await asyncio.to_thread(stop_all_agents_for_issue, padded_id, quiet=True)
+        if count > 0:
+            return {"ok": True, "status": f"Stopped {count} agent(s) for issue #{issue_id}"}
+        else:
+            return {"ok": True, "status": f"No active agents for issue #{issue_id}"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -911,8 +943,10 @@ async def move_issue(
     # backlog = pause work (stop agent, keep worktree for later)
     # not_doing = abandon work (stop agent, worktree can be cleaned up)
     if move_request.stage.value in ["backlog", "not_doing"]:
+        import asyncio
         from agenttree.hooks import cleanup_issue_agent
-        cleanup_issue_agent(updated_issue)
+        # Run cleanup in thread to avoid blocking event loop
+        await asyncio.to_thread(cleanup_issue_agent, updated_issue)
 
     return {"success": True, "stage": move_request.stage.value}
 
@@ -1009,20 +1043,9 @@ async def create_issue_api(
     if not description:
         raise HTTPException(status_code=400, detail="Please provide a description")
 
-    # Auto-generate title from description if not provided
+    # Use placeholder if no title - agent will fill it in during define stage
     if not title:
-        # Take first line or first 60 chars of description
-        first_line = description.split('\n')[0].strip()
-        # Remove "Problem:" prefix if present
-        if first_line.lower().startswith('problem:'):
-            first_line = first_line[8:].strip()
-        # Truncate and clean up
-        title = first_line[:60].strip()
-        if len(first_line) > 60:
-            title = title.rsplit(' ', 1)[0] + '...'
-        # Fallback if still empty
-        if not title or len(title) < 5:
-            title = f"Issue from web UI"
+        title = "(untitled)"
 
     try:
         issue = issue_crud.create_issue(
@@ -1030,6 +1053,16 @@ async def create_issue_api(
             priority=Priority.MEDIUM,
             problem=description,
         )
+
+        # Auto-start agent for the new issue
+        subprocess.Popen(
+            ["uv", "run", "agenttree", "start", issue.id],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            cwd=Path.cwd(),
+            start_new_session=True  # Detach from parent process
+        )
+
         return {"ok": True, "issue_id": issue.id, "title": issue.title}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -1107,7 +1140,7 @@ async def tmux_websocket(websocket: WebSocket, agent_num: int) -> None:
             # Capture tmux output every second
             try:
                 result = subprocess.run(
-                    ["tmux", "capture-pane", "-t", f"agent-{agent_num}", "-p"],
+                    ["tmux", "capture-pane", "-t", f"agent-{agent_num}", "-p", "-S", "-100"],
                     capture_output=True,
                     text=True,
                     timeout=1
@@ -1159,7 +1192,10 @@ def run_server(
         print("  Run 'agenttree init' to create a config file")
 
     import uvicorn
-    uvicorn.run(app, host=host, port=port)
+    # Use multiple workers for better concurrency
+    # Workers > 1 requires passing app as import string
+    # loop="asyncio" avoids uvloop fork crashes on macOS
+    uvicorn.run("agenttree.web.app:app", host=host, port=port, workers=4, loop="asyncio")
 
 
 if __name__ == "__main__":
