@@ -91,6 +91,7 @@ class StageConfig(BaseModel):
     terminal: bool = False        # Cannot progress from here (accepted, not_doing)
     redirect_only: bool = False   # Only reachable via StageRedirect, skipped in normal progression
     host: str = "agent"           # Who executes this stage: "agent" (in container) or "controller" (host)
+    review_doc: Optional[str] = None  # Document to show by default when viewing issue in this stage
     substages: Dict[str, SubstageConfig] = Field(default_factory=dict)
     pre_completion: list[dict] = Field(default_factory=list)  # Stage-level hooks before completing
     post_start: list[dict] = Field(default_factory=list)  # Stage-level hooks after starting

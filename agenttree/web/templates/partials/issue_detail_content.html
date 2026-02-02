@@ -80,10 +80,22 @@
         </div>
 
         <!-- File tabs -->
+        {# Determine which file should be active: use default_doc if exists, else last file #}
+        {% set active_file = namespace(name=None) %}
+        {% if default_doc %}
+            {% for file in files %}
+                {% if file.name == default_doc %}
+                    {% set active_file.name = default_doc %}
+                {% endif %}
+            {% endfor %}
+        {% endif %}
+        {% if not active_file.name and files %}
+            {% set active_file.name = files[-1].name %}
+        {% endif %}
         <div class="file-tabs-container">
             <div class="file-tabs" id="file-tabs-{{ issue.number }}">
                 {% for file in files %}
-                <button class="file-tab{% if loop.last and not issue.has_worktree %} active{% endif %}"
+                <button class="file-tab{% if file.name == active_file.name and not issue.has_worktree %} active{% endif %}"
                         onclick="selectFileTab(event, '{{ issue.number }}', '{{ file.name }}')"
                         data-filename="{{ file.name }}">
                     {{ file.display_name }}
@@ -106,7 +118,7 @@
             {% for file in files %}
             <div class="file-content-item"
                  data-filename="{{ file.name }}"
-                 style="display: {% if loop.last %}block{% else %}none{% endif %};">
+                 style="display: {% if file.name == active_file.name %}block{% else %}none{% endif %};">
                 {% if file.content %}
                 <div class="markdown-rendered" id="markdown-{{ issue.number }}-{{ loop.index }}"></div>
                 <script type="text/template" id="source-{{ issue.number }}-{{ loop.index }}">{{ file.content }}</script>
