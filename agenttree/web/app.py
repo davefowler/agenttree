@@ -981,9 +981,9 @@ async def approve_issue(
     config = load_config()
     next_stage, next_substage, _ = config.get_next_stage(issue.stage, issue.substage)
 
-    # Execute exit hooks (validation)
+    # Execute exit hooks (validation) - run in thread to avoid blocking
     try:
-        execute_exit_hooks(issue, issue.stage, issue.substage)
+        await asyncio.to_thread(execute_exit_hooks, issue, issue.stage, issue.substage)
     except StageRedirect as redirect:
         # Redirect to a different stage instead of normal next stage
         next_stage = redirect.target_stage
@@ -1001,24 +1001,28 @@ async def approve_issue(
     # When the agent runs `next`, is_restart() will detect session.last_stage != issue.stage
     # and show them the current stage instructions instead of advancing.
 
-    # Execute enter hooks
-    try:
-        execute_enter_hooks(updated, next_stage, next_substage)
-    except Exception:
-        pass  # Enter hooks shouldn't block
+    # Execute enter hooks in background - don't wait for them
+    async def run_enter_hooks_and_notify():
+        try:
+            await asyncio.to_thread(execute_enter_hooks, updated, next_stage, next_substage)
+        except Exception:
+            pass  # Enter hooks shouldn't block
 
-    # Notify agent to continue (if active)
-    try:
-        from agenttree.state import get_active_agent
-        from agenttree.tmux import send_message, session_exists
+        # Notify agent to continue (if active)
+        try:
+            from agenttree.state import get_active_agent
+            from agenttree.tmux import send_message, session_exists
 
-        agent = get_active_agent(issue_id_normalized)
-        if agent and agent.tmux_session:
-            if session_exists(agent.tmux_session):
-                message = "Your work was approved! Run `agenttree next` for instructions."
-                send_message(agent.tmux_session, message)
-    except Exception:
-        pass  # Agent notification is best-effort
+            agent = get_active_agent(issue_id_normalized)
+            if agent and agent.tmux_session:
+                if session_exists(agent.tmux_session):
+                    message = "Your work was approved! Run `agenttree next` for instructions."
+                    await asyncio.to_thread(send_message, agent.tmux_session, message)
+        except Exception:
+            pass  # Agent notification is best-effort
+
+    # Fire and forget - don't wait for hooks/notification
+    asyncio.create_task(run_enter_hooks_and_notify())
 
     return {"ok": True}
 
