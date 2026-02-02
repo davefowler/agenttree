@@ -731,6 +731,8 @@ def update_issue_metadata(
     relevant_url: Optional[str] = None,
     worktree_dir: Optional[str] = None,
     clear_pr: bool = False,
+    priority: Optional[Priority] = None,
+    commit_message: Optional[str] = None,
 ) -> Optional[Issue]:
     """Update metadata fields on an issue.
 
@@ -743,6 +745,8 @@ def update_issue_metadata(
         relevant_url: Relevant URL (optional)
         worktree_dir: Worktree directory path (optional)
         clear_pr: If True, sets pr_number and pr_url to None
+        priority: Priority level (optional)
+        commit_message: Custom commit message (optional, defaults to generic)
 
     Returns:
         Updated Issue object or None if not found
@@ -781,6 +785,8 @@ def update_issue_metadata(
     if clear_pr:
         issue.pr_number = None
         issue.pr_url = None
+    if priority is not None:
+        issue.priority = priority
     issue.updated = now
 
     # Write back
@@ -789,7 +795,8 @@ def update_issue_metadata(
         yaml.dump(data, f, default_flow_style=False, sort_keys=False)
 
     # Sync after updating metadata
-    sync_agents_repo(agents_path, pull_only=False, commit_message=f"Update issue {issue_id} metadata")
+    msg = commit_message or f"Update issue {issue_id} metadata"
+    sync_agents_repo(agents_path, pull_only=False, commit_message=msg)
 
     return issue
 
@@ -804,37 +811,11 @@ def update_issue_priority(issue_id: str, priority: Priority) -> Optional[Issue]:
     Returns:
         Updated Issue object or None if not found
     """
-    # Sync before and after writing
-    agents_path = get_agenttree_path()
-    sync_agents_repo(agents_path, pull_only=True)
-
-    issue_dir = get_issue_dir(issue_id)
-    if not issue_dir:
-        return None
-
-    yaml_path = issue_dir / "issue.yaml"
-    if not yaml_path.exists():
-        return None
-
-    with open(yaml_path) as f:
-        data = yaml.safe_load(f)
-
-    issue = Issue(**data)
-
-    # Update priority and timestamp
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    issue.priority = priority
-    issue.updated = now
-
-    # Write back
-    with open(yaml_path, "w") as f:
-        data = issue.model_dump(mode="json")
-        yaml.dump(data, f, default_flow_style=False, sort_keys=False)
-
-    # Sync after updating priority
-    sync_agents_repo(agents_path, pull_only=False, commit_message=f"Update issue {issue_id} priority to {priority.value}")
-
-    return issue
+    return update_issue_metadata(
+        issue_id,
+        priority=priority,
+        commit_message=f"Update issue {issue_id} priority to {priority.value}"
+    )
 
 
 def get_issue_from_branch() -> Optional[str]:
