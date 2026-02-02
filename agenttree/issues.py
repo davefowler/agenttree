@@ -58,6 +58,7 @@ class Issue(BaseModel):
 
     stage: str = DEFINE
     substage: Optional[str] = "refine"
+    flow: str = "default"  # Which workflow flow this issue follows
 
     branch: Optional[str] = None
     worktree_dir: Optional[str] = None  # Absolute path to worktree directory
@@ -152,6 +153,7 @@ def create_issue(
     labels: Optional[list[str]] = None,
     stage: str = DEFINE,
     substage: Optional[str] = None,
+    flow: str = "default",
     problem: Optional[str] = None,
     context: Optional[str] = None,
     solutions: Optional[str] = None,
@@ -165,6 +167,7 @@ def create_issue(
         labels: Optional list of labels
         stage: Starting stage for the issue (default: DEFINE)
         substage: Starting substage (default: "refine" for define stage)
+        flow: Workflow flow for this issue (default: "default")
         problem: Problem statement text (fills problem.md)
         context: Context/background text (fills problem.md)
         solutions: Possible solutions text (fills problem.md)
@@ -217,6 +220,7 @@ def create_issue(
         updated=now,
         stage=stage,
         substage=substage,
+        flow=flow,
         priority=priority,
         labels=labels or [],
         dependencies=normalized_deps,
@@ -640,6 +644,7 @@ HUMAN_REVIEW_STAGES = {
 def get_next_stage(
     current_stage: str,
     current_substage: Optional[str] = None,
+    flow: str = "default",
 ) -> tuple[str, Optional[str], bool]:
     """Calculate the next stage/substage.
 
@@ -648,6 +653,7 @@ def get_next_stage(
     Args:
         current_stage: Current stage name (string)
         current_substage: Current substage (if any)
+        flow: Workflow flow to use for stage progression (default: "default")
 
     Returns:
         Tuple of (next_stage, next_substage, is_human_review)
@@ -656,7 +662,7 @@ def get_next_stage(
     from agenttree.config import load_config
 
     config = load_config()
-    return config.get_next_stage(current_stage, current_substage)
+    return config.get_next_stage(current_stage, current_substage, flow)
 
 
 def update_issue_stage(

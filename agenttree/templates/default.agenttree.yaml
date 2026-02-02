@@ -247,3 +247,35 @@ stages:
 
   - name: not_doing
     terminal: true
+
+# Workflow flows
+# Each flow defines an ordered subset of stages that issues can follow.
+# The "default" flow is used if no flow is specified when creating an issue.
+flows:
+  default:
+    stages:
+      - backlog
+      - define
+      - research
+      - plan
+      - plan_assess
+      - plan_revise
+      - plan_review
+      - implement
+      - independent_code_review
+      - address_independent_review
+      - implementation_review
+      - accepted
+      - not_doing
+
+  # Quick flow for small issues that skip research and planning stages
+  quick:
+    stages:
+      - backlog
+      - define
+      - implement
+      - implementation_review
+      - accepted
+      - not_doing
+
+default_flow: default

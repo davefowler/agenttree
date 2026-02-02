@@ -121,6 +121,18 @@ class StageConfig(BaseModel):
         return getattr(self, event, [])
 
 
+class FlowConfig(BaseModel):
+    """Configuration for a workflow flow.
+
+    A flow defines an ordered list of stage names that issues following
+    this flow will progress through. Stage definitions are shared across
+    flows - this just controls the order and which stages are included.
+    """
+
+    name: str  # Flow name (e.g., "default", "quick")
+    stages: list[str] = Field(default_factory=list)  # Ordered list of stage names
+
+
 class ControllerConfig(BaseModel):
     """Configuration for the controller agent's stall monitoring.
 
@@ -159,6 +171,8 @@ class Config(BaseModel):
     hosts: Dict[str, HostConfig] = Field(default_factory=dict)  # Host configurations
     commands: Dict[str, Union[str, list[str]]] = Field(default_factory=dict)  # Named shell commands
     stages: list[StageConfig] = Field(default_factory=list)  # Must be defined in .agenttree.yaml
+    flows: Dict[str, FlowConfig] = Field(default_factory=dict)  # Named workflow flows
+    default_flow: str = "default"  # Which flow to use when not specified
     security: SecurityConfig = Field(default_factory=SecurityConfig)
     merge_strategy: str = "squash"  # squash, merge, or rebase
     hooks: HooksConfig = Field(default_factory=HooksConfig)
@@ -569,16 +583,52 @@ class Config(BaseModel):
         stage = self.get_stage(stage_name)
         return stage.terminal if stage else False
 
+    def get_flow(self, flow_name: str) -> Optional[FlowConfig]:
+        """Get configuration for a flow.
+
+        Args:
+            flow_name: Name of the flow
+
+        Returns:
+            FlowConfig or None if not found
+        """
+        return self.flows.get(flow_name)
+
+    def get_flow_stage_names(self, flow_name: str = "default") -> list[str]:
+        """Get ordered list of stage names for a flow.
+
+        For backward compatibility, if no flows are defined or the requested
+        flow doesn't exist but is "default", returns all stage names in order.
+
+        Args:
+            flow_name: Name of the flow (default: "default")
+
+        Returns:
+            List of stage names in flow order
+        """
+        flow = self.get_flow(flow_name)
+        if flow:
+            return flow.stages
+
+        # Backward compatibility: if no flows defined, use stages list
+        if flow_name == "default" and not self.flows:
+            return self.get_stage_names()
+
+        # Flow doesn't exist
+        return []
+
     def get_next_stage(
         self,
         current_stage: str,
         current_substage: Optional[str] = None,
+        flow: str = "default",
     ) -> tuple[str, Optional[str], bool]:
         """Calculate the next stage/substage.
 
         Args:
             current_stage: Current stage name
             current_substage: Current substage (if any)
+            flow: Flow name to use for stage progression (default: "default")
 
         Returns:
             Tuple of (next_stage, next_substage, is_human_review)
@@ -601,7 +651,8 @@ class Config(BaseModel):
                 pass  # substage not found, move to next stage
 
         # Move to next stage (skip redirect_only stages)
-        stage_names = self.get_stage_names()
+        # Use the flow's stage order instead of global stages
+        stage_names = self.get_flow_stage_names(flow)
         try:
             stage_idx = stage_names.index(current_stage)
             # Look for next non-redirect_only stage
@@ -722,5 +773,46 @@ def load_config(path: Optional[Path] = None) -> Config:
                     host_config["container"] = {"enabled": True}
                 elif "container" in host_config and host_config["container"] is False:
                     host_config["container"] = None
+
+    # Auto-populate 'name' field for flows from the key
+    if "flows" in data and isinstance(data["flows"], dict):
+        for flow_name, flow_config in data["flows"].items():
+            if flow_config is None:
+                data["flows"][flow_name] = {"name": flow_name, "stages": []}
+            elif isinstance(flow_config, dict):
+                if "name" not in flow_config:
+                    flow_config["name"] = flow_name
+
+    # Get stage names for validation
+    stage_names = set()
+    if "stages" in data:
+        for stage in data["stages"]:
+            if isinstance(stage, dict) and "name" in stage:
+                stage_names.add(stage["name"])
+
+    # Create implicit default flow if no flows defined
+    if "flows" not in data or not data["flows"]:
+        if stage_names:
+            data["flows"] = {
+                "default": {
+                    "name": "default",
+                    "stages": [s["name"] for s in data.get("stages", []) if isinstance(s, dict) and "name" in s]
+                }
+            }
+
+    # Validate flow stage references
+    if "flows" in data and isinstance(data["flows"], dict):
+        for flow_name, flow_config in data["flows"].items():
+            if flow_config and isinstance(flow_config, dict):
+                flow_stages = flow_config.get("stages", [])
+                # Validate empty flows
+                if not flow_stages:
+                    raise ValueError(f"Flow '{flow_name}' has no stages defined")
+                # Validate stage references
+                for stage_name in flow_stages:
+                    if stage_name not in stage_names:
+                        raise ValueError(
+                            f"Flow '{flow_name}' references unknown stage '{stage_name}'"
+                        )
 
     return Config(**data)
