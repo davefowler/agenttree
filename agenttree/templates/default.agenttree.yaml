@@ -238,12 +238,17 @@ stages:
       - pr_approved:
 
   - name: accepted
-    terminal: true
-    host: controller  # Host handles merge/cleanup (agents can't push)
+    host: controller  # Host handles merge (agents can't push)
     post_start:
       - merge_pr:
-      - cleanup_agent:
       - start_blocked_issues:
+
+  - name: knowledge_update
+    terminal: true
+    host: agent
+    skill: knowledge_update.md
+    post_completion:
+      - cleanup_agent:
 
   - name: not_doing
     terminal: true

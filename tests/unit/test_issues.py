@@ -33,6 +33,7 @@ from agenttree.issues import (
     INDEPENDENT_CODE_REVIEW,
     IMPLEMENTATION_REVIEW,
     ACCEPTED,
+    KNOWLEDGE_UPDATE,
     NOT_DOING,
 )
 
@@ -318,9 +319,16 @@ class TestStageTransitions:
         assert is_review is False
 
     def test_get_next_stage_at_accepted(self):
-        """accepted -> stays at accepted"""
+        """accepted -> knowledge_update"""
         next_stage, next_substage, is_review = get_next_stage(ACCEPTED, None)
-        assert next_stage == ACCEPTED
+        assert next_stage == KNOWLEDGE_UPDATE
+        assert next_substage is None
+        assert is_review is False
+
+    def test_get_next_stage_at_knowledge_update(self):
+        """knowledge_update -> stays at knowledge_update (terminal)"""
+        next_stage, next_substage, is_review = get_next_stage(KNOWLEDGE_UPDATE, None)
+        assert next_stage == KNOWLEDGE_UPDATE
         assert next_substage is None
         assert is_review is False
 
