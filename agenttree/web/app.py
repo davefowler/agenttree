@@ -82,7 +82,7 @@ async def background_sync_loop(interval: int = 10) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """FastAPI lifespan context - starts/stops background sync."""
+    """FastAPI lifespan context - starts/stops background sync and controller."""
     global _sync_task
 
     # Start background sync task
@@ -90,6 +90,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     interval = config.refresh_interval if hasattr(config, 'refresh_interval') else 10
     _sync_task = asyncio.create_task(background_sync_loop(interval))
     print(f"✓ Started background sync (every {interval}s)")
+
+    # Auto-start controller if not running
+    from agenttree.tmux import session_exists
+    controller_session = f"{config.project}-controller-000"
+    if not session_exists(controller_session):
+        subprocess.Popen(
+            ["uv", "run", "agenttree", "start", "0"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            cwd=Path.cwd(),
+            start_new_session=True
+        )
+        print("✓ Started controller agent")
+    else:
+        print("✓ Controller already running")
 
     yield  # Server runs here
 
@@ -233,10 +248,11 @@ class AgentManager:
         Note: Controller is agent 0, so _check_issue_tmux_session("000") checks controller.
         """
         active = self._get_active_sessions()
-        # Check both naming patterns: {project}-issue-{id} and {project}-agent-{id}
+        # Check all naming patterns: issue, agent, and controller (for agent 0)
         issue_name = f"{_config.project}-issue-{issue_id}"
         agent_name = f"{_config.project}-agent-{issue_id}"
-        return issue_name in active or agent_name in active
+        controller_name = f"{_config.project}-controller-{issue_id}"
+        return issue_name in active or agent_name in active or controller_name in active
 
 
 # Global agent manager - will be initialized in startup
@@ -714,10 +730,11 @@ async def agent_tmux(
     config = load_config()
     # Pad issue number to 3 digits to match tmux session naming
     padded_num = agent_num.zfill(3)
-    # Try both session naming patterns: -issue- and -agent-
+    # Try all session naming patterns: -issue-, -agent-, and -controller- (for agent 0)
     session_names = [
         f"{config.project}-issue-{padded_num}",
         f"{config.project}-agent-{padded_num}",
+        f"{config.project}-controller-{padded_num}",
     ]
 
     # Capture tmux output - try both session name patterns
@@ -785,7 +802,15 @@ async def send_to_agent(
     config = load_config()
     # Pad issue number to 3 digits to match tmux session naming
     padded_num = agent_num.zfill(3)
-    session_name = f"{config.project}-issue-{padded_num}"
+
+    # Try all session naming patterns to find the active one
+    from agenttree.tmux import session_exists
+    session_names = [
+        f"{config.project}-controller-{padded_num}",  # Controller first (for agent 0)
+        f"{config.project}-issue-{padded_num}",
+        f"{config.project}-agent-{padded_num}",
+    ]
+    session_name = next((n for n in session_names if session_exists(n)), session_names[1])
 
     # Send message - result will appear in tmux output on next poll
     result = send_message(session_name, message)

@@ -226,12 +226,12 @@ header h1 {
    ============================================== */
 
 .btn {
-    padding: 8px 16px;
+    padding: 6px 12px;
     border: 1px solid var(--border-color);
     background: var(--btn-bg);
     color: var(--text-primary);
-    border-radius: 6px;
-    font-size: 14px;
+    border-radius: 4px;
+    font-size: 13px;
     cursor: pointer;
     transition: all 0.2s;
     text-decoration: none;
@@ -317,6 +317,11 @@ button[disabled] {
 .file-tabs-container {
     background: transparent;
     padding: 0;
+}
+
+/* Hide mobile file selector on desktop */
+.mobile-file-select {
+    display: none;
 }
 
 .file-tabs {
@@ -658,7 +663,6 @@ button[disabled] {
     margin-top: 10px;
     padding-top: 10px;
     border-top: 1px solid var(--border-light);
-}
     color: var(--text-muted);
     font-size: 12px;
 }
@@ -979,7 +983,7 @@ button[disabled] {
     flex-direction: column;
     overflow: hidden;
     transition: width 0.3s ease, opacity 0.3s ease, margin 0.3s ease;
-    height: 100%;
+    align-self: stretch;
     margin-left: 20px;
 }
 
@@ -1023,6 +1027,14 @@ button[disabled] {
     display: flex;
     flex-direction: column;
     overflow: hidden;
+}
+
+/* Tmux chat wrapper - fills parent and arranges output/input */
+.tmux-chat-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
 }
 
 .agent-chat-panel .agent-status {
@@ -2234,25 +2246,34 @@ button[disabled] {
     display: flex;
     flex-direction: column;
     gap: 8px;
+    align-items: flex-start;
 }
 
 .mobile-container .detail-meta {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
-    font-size: 13px;
+    gap: 6px;
+    font-size: 12px;
     align-items: center;
+}
+
+/* Stage label styling */
+.mobile-container .detail-meta > span:first-child {
+    font-weight: 600;
+    color: var(--text-accent);
+    background: none;
+    padding: 0;
 }
 
 .mobile-container .detail-meta > span {
     background: var(--bg-tertiary);
-    padding: 4px 8px;
-    border-radius: 4px;
+    padding: 2px 6px;
+    border-radius: 3px;
 }
 
 .mobile-container .detail-actions {
     display: flex;
-    gap: 8px;
+    gap: 6px;
     flex-wrap: wrap;
 }
 
@@ -2262,24 +2283,36 @@ button[disabled] {
     text-align: center;
 }
 
-/* Mobile: File tabs connected to content */
+/* Mobile: Hide file tabs, use select dropdown instead */
 .mobile-container .file-tabs {
+    display: none;
+}
+
+/* Mobile file selector dropdown */
+.mobile-file-select {
+    display: block;
+    width: 100%;
+    padding: 10px 12px;
     margin: 0;
-    padding: 8px 12px;
-    gap: 6px;
+    font-size: 14px;
     background: var(--bg-secondary);
-    border-bottom: none;
+    border: none;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-primary);
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23666' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    cursor: pointer;
 }
 
-.mobile-container .file-tab {
-    padding: 8px 12px;
-    font-size: 13px;
-    min-height: 36px;
+.mobile-file-select:focus {
+    outline: none;
+    background-color: var(--bg-tertiary);
 }
 
-/* Mobile: Document content - no nested scroll */
+/* Mobile: Document content - full height, no nested scroll */
 .mobile-container .file-content-container {
-    flex: 1;
     overflow: visible;
 }
 
