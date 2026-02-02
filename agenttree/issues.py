@@ -27,13 +27,16 @@ class Priority(str, Enum):
 # Full stage configuration is loaded from .agenttree.yaml via config.py
 BACKLOG = "backlog"
 DEFINE = "define"
+# Stage name constants - these can be used in custom .agenttree.yaml configs.
+# Not all stages are in the default template; some (like INDEPENDENT_CODE_REVIEW)
+# are optional and can be added for advanced workflows.
 RESEARCH = "research"
 PLAN = "plan"
 PLAN_ASSESS = "plan_assess"
 PLAN_REVISE = "plan_revise"
 PLAN_REVIEW = "plan_review"
 IMPLEMENT = "implement"
-INDEPENDENT_CODE_REVIEW = "independent_code_review"
+INDEPENDENT_CODE_REVIEW = "independent_code_review"  # Optional: for AI-driven code review
 IMPLEMENTATION_REVIEW = "implementation_review"
 ACCEPTED = "accepted"
 NOT_DOING = "not_doing"

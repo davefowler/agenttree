@@ -170,6 +170,9 @@ stages:
               section: Critical Issues
               expect: empty
 
+  # Optional: Add independent_code_review stage here for AI-driven code review
+  # before human review. See agenttree documentation for advanced stage configs.
+
   - name: implementation_review
     human_review: true
     host: controller  # Host handles PR creation (agents can't push)
