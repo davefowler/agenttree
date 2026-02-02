@@ -2709,3 +2709,52 @@ button[disabled] {
     flex: 1;
     min-width: calc(50% - 4px);
 }
+
+/* Stage indicators for hidden stages in review mode */
+.stage-indicator {
+    flex: 0 0 44px;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    padding-top: 8px;
+    background: var(--bg-secondary);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: opacity 0.2s, background 0.2s;
+    max-height: calc(100vh - 90px);
+}
+
+.stage-indicator:hover {
+    background: var(--border-color);
+}
+
+.stage-indicator.visible {
+    display: flex;
+}
+
+#indicator-pre-review {
+    order: 6;
+}
+
+#indicator-pre-impl {
+    order: 8;
+}
+
+.indicator-count {
+    background: var(--badge-bg);
+    color: var(--text-muted);
+    padding: 4px 8px;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+/* Dark theme support for stage indicators */
+[data-theme="dark"] .stage-indicator {
+    background: var(--bg-secondary);
+}
+
+[data-theme="dark"] .stage-indicator:hover {
+    background: var(--border-color);
+}
