@@ -613,22 +613,46 @@ def check_ci_status(agents_dir: Path) -> int:
 
             console.print(f"[yellow]CI failed for PR #{pr_number}, notifying issue #{issue_id}[/yellow]")
 
-            # Try to send tmux message to agent
-            agent = get_active_agent(issue_id)
-            if agent:
-                try:
-                    config = load_config()
-                    tmux_manager = TmuxManager(config)
-                    if tmux_manager.is_issue_running(agent.tmux_session):
-                        message = f"CI failed for PR #{pr_number}. See ci_feedback.md for details. Run `agenttree next` after fixing."
-                        tmux_manager.send_message_to_issue(agent.tmux_session, message)
-                        console.print(f"[green]✓ Notified agent for issue #{issue_id}[/green]")
-                except Exception as e:
-                    console.print(f"[yellow]Could not notify agent: {e}[/yellow]")
-
             # Transition issue back to implement.debug stage for CI fix
             _update_issue_stage_direct(issue_yaml, data, "implement", "debug")
             console.print(f"[yellow]Issue #{issue_id} moved back to implement.debug stage for CI fix[/yellow]")
+
+            # Ensure agent is running and notify it
+            config = load_config()
+            tmux_manager = TmuxManager(config)
+            agent = get_active_agent(issue_id)
+
+            agent_running = agent and tmux_manager.is_issue_running(agent.tmux_session)
+
+            if not agent_running:
+                # Start the agent
+                console.print(f"[dim]Agent not running, starting agent for issue #{issue_id}...[/dim]")
+                try:
+                    import subprocess
+                    result = subprocess.run(
+                        ["agenttree", "start", issue_id, "--skip-preflight"],
+                        capture_output=True,
+                        text=True,
+                        timeout=60,
+                    )
+                    if result.returncode == 0:
+                        console.print(f"[green]✓ Started agent for issue #{issue_id}[/green]")
+                        # Re-fetch agent after starting
+                        agent = get_active_agent(issue_id)
+                        agent_running = agent and tmux_manager.is_issue_running(agent.tmux_session)
+                    else:
+                        console.print(f"[yellow]Could not start agent: {result.stderr}[/yellow]")
+                except Exception as e:
+                    console.print(f"[yellow]Could not start agent: {e}[/yellow]")
+
+            # Send notification to running agent
+            if agent_running and agent:
+                try:
+                    message = f"CI failed for PR #{pr_number}. See ci_feedback.md for details. Run `agenttree next` after fixing."
+                    tmux_manager.send_message_to_issue(agent.tmux_session, message)
+                    console.print(f"[green]✓ Notified agent for issue #{issue_id}[/green]")
+                except Exception as e:
+                    console.print(f"[yellow]Could not notify agent: {e}[/yellow]")
 
             issues_notified += 1
 
