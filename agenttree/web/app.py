@@ -852,12 +852,13 @@ async def stop_issue(
     user: Optional[str] = Depends(get_current_user)
 ) -> dict:
     """Stop an agent working on an issue (kills tmux, stops container, cleans up state)."""
+    import asyncio
     from agenttree.state import stop_all_agents_for_issue
 
     try:
         padded_id = issue_id.zfill(3)
-        # Stop all agents for this issue (handles tmux, container, and state cleanup)
-        count = stop_all_agents_for_issue(padded_id, quiet=True)
+        # Run in thread to avoid blocking event loop
+        count = await asyncio.to_thread(stop_all_agents_for_issue, padded_id, quiet=True)
         if count > 0:
             return {"ok": True, "status": f"Stopped {count} agent(s) for issue #{issue_id}"}
         else:
@@ -938,8 +939,10 @@ async def move_issue(
     # backlog = pause work (stop agent, keep worktree for later)
     # not_doing = abandon work (stop agent, worktree can be cleaned up)
     if move_request.stage.value in ["backlog", "not_doing"]:
+        import asyncio
         from agenttree.hooks import cleanup_issue_agent
-        cleanup_issue_agent(updated_issue)
+        # Run cleanup in thread to avoid blocking event loop
+        await asyncio.to_thread(cleanup_issue_agent, updated_issue)
 
     return {"success": True, "stage": move_request.stage.value}
 
