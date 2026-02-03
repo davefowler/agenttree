@@ -19,6 +19,8 @@ def mock_config():
     config = MagicMock()
     config.project = "testproject"
     config.get_tmux_session_name.return_value = "agent-42"
+    # Add flows dict for flow validation in issue create
+    config.flows = {"default": MagicMock()}
     return config
 
 
@@ -928,21 +930,23 @@ class TestRollbackCommand:
         mock_issue.id = "42"
         mock_issue.stage = "implement"
 
+        # not_doing is positioned before implement so we can test the redirect_only check
+        # (position check must pass before redirect_only check is reached)
         mock_config.get_stage_names.return_value = [
-            "backlog", "define", "research", "plan", "implement", "accepted"
+            "backlog", "not_doing", "define", "research", "plan", "implement", "accepted"
         ]
         mock_stage_config = MagicMock()
-        mock_stage_config.terminal = True
+        mock_stage_config.redirect_only = True
         mock_config.get_stage.return_value = mock_stage_config
 
         with patch("agenttree.cli.load_config", return_value=mock_config):
             with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
                 with patch("agenttree.cli.is_running_in_container", return_value=False):
-                    # Note: "accepted" is normally at the end, this tests terminal check
-                    result = cli_runner.invoke(main, ["rollback", "42", "backlog"])
+                    # Note: "not_doing" is redirect_only, this tests that check
+                    result = cli_runner.invoke(main, ["rollback", "42", "not_doing"])
 
         assert result.exit_code == 1
-        assert "terminal stage" in result.output.lower()
+        assert "redirect-only stage" in result.output.lower()
 
     def test_rollback_blocked_in_container(self, cli_runner, mock_config):
         """Should error when run inside a container."""
@@ -969,7 +973,7 @@ class TestRollbackCommand:
             "backlog", "define", "research", "plan", "implement", "accepted"
         ]
         mock_stage_config = MagicMock()
-        mock_stage_config.terminal = False
+        mock_stage_config.redirect_only = False
         mock_stage_config.substage_order.return_value = []
         mock_stage_config.output = None
         mock_stage_config.substages = {}
@@ -1002,7 +1006,7 @@ class TestRollbackCommand:
             "backlog", "define", "research", "plan", "implement", "accepted"
         ]
         mock_stage_config = MagicMock()
-        mock_stage_config.terminal = False
+        mock_stage_config.redirect_only = False
         mock_stage_config.substage_order.return_value = ["explore", "document"]
         mock_stage_config.output = "research.md"
         mock_stage_config.substages = {}
@@ -1067,7 +1071,7 @@ class TestRollbackCommand:
         # Set up stage configs with output files
         def get_stage_side_effect(name):
             stage_config = MagicMock()
-            stage_config.terminal = False
+            stage_config.redirect_only = False
             stage_config.substage_order.return_value = []
             stage_config.substages = {}
             if name == "plan":
@@ -1148,7 +1152,7 @@ class TestRollbackCommand:
             "backlog", "define", "research", "plan", "implement", "accepted"
         ]
         mock_stage_config = MagicMock()
-        mock_stage_config.terminal = False
+        mock_stage_config.redirect_only = False
         mock_stage_config.substage_order.return_value = []
         mock_stage_config.output = None
         mock_stage_config.substages = {}

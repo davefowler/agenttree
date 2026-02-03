@@ -353,17 +353,17 @@ class TestTerminalStates:
             config = load_config()
             stage = config.get_stage("accepted")
 
-            assert stage.terminal is True
+            assert stage.is_parking_lot is True
 
-    def test_cannot_advance_from_not_doing(self, workflow_repo: Path, mock_sync: MagicMock):
-        """Test that not_doing is a terminal state."""
+    def test_not_doing_is_parking_lot(self, workflow_repo: Path, mock_sync: MagicMock):
+        """Test that not_doing is a parking lot stage."""
         from agenttree.config import load_config
 
         with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
             config = load_config()
             stage = config.get_stage("not_doing")
 
-            assert stage.terminal is True
+            assert stage.is_parking_lot is True
 
 
 class TestFullWorkflowHappyPath:
