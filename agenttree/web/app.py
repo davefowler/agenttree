@@ -1020,7 +1020,7 @@ async def approve_issue(
 
     # Calculate next stage
     config = load_config()
-    next_stage, next_substage, _ = config.get_next_stage(issue.stage, issue.substage)
+    next_stage, next_substage, _ = config.get_next_stage(issue.stage, issue.substage, issue.flow)
 
     # Execute exit hooks (validation)
     try:

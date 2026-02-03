@@ -71,10 +71,10 @@ def execute_rollback(
         console.print(f"[red]Cannot rollback: target stage '{target_stage}' is not before current stage '{issue.stage}'[/red]")
         return False
 
-    # Cannot rollback to terminal stages
+    # Cannot rollback to redirect_only stages (they're not in normal progression)
     target_stage_config = config.get_stage(target_stage)
-    if target_stage_config and target_stage_config.terminal:
-        console.print(f"[red]Cannot rollback to terminal stage '{target_stage}'[/red]")
+    if target_stage_config and target_stage_config.redirect_only:
+        console.print(f"[red]Cannot rollback to redirect-only stage '{target_stage}'[/red]")
         return False
 
     # Determine first substage of target stage

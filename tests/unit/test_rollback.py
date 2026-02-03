@@ -48,8 +48,8 @@ def mock_config():
                 },
             ),
             StageConfig(name="implementation_review", human_review=True),
-            StageConfig(name="accepted", terminal=True),
-            StageConfig(name="not_doing", terminal=True),
+            StageConfig(name="accepted", is_parking_lot=True),
+            StageConfig(name="not_doing", is_parking_lot=True, redirect_only=True),
         ],
     )
     return config
