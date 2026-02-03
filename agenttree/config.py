@@ -164,6 +164,7 @@ class Config(BaseModel):
     hooks: HooksConfig = Field(default_factory=HooksConfig)
     save_tmux_history: bool = False  # Save tmux session history on stage transitions
     controller: ControllerConfig = Field(default_factory=ControllerConfig)
+    show_issue_yaml: bool = True  # Show issue.yaml in web UI file tabs
 
     def get_port_for_agent(self, agent_num: int) -> int:
         """Get port number for a specific agent.
