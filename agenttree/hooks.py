@@ -717,10 +717,10 @@ def run_builtin_validator(
             section = params["section"]
             expect = params["expect"]
 
-            # Find section content (between ## Section and next same-level header or end)
-            # Includes subsections (###, ####) as part of the section content
-            # The lookahead stops at "\n## " followed by a letter/word (not "#")
-            pattern = rf'^##\s*{re.escape(section)}.*?\n(.*?)(?=\n## [A-Za-z]|\Z)'
+            # Find section content (between ## or ### Section and next same-level or higher header or end)
+            # Accepts both H2 (##) and H3 (###) section headers
+            # The lookahead stops at "\n## " or "\n### " followed by a letter/word (not "#")
+            pattern = rf'^##[#]?\s*{re.escape(section)}.*?\n(.*?)(?=\n##[#]? [A-Za-z]|\Z)'
             section_match = re.search(pattern, content, re.MULTILINE | re.DOTALL)
 
             if not section_match:

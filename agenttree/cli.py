@@ -1336,6 +1336,11 @@ def issue() -> None:
     help="Starting stage for the issue (default: define)"
 )
 @click.option(
+    "--flow", "-f",
+    default="default",
+    help="Workflow flow for this issue (default: 'default')"
+)
+@click.option(
     "--problem",
     required=True,
     help="Problem statement (fills problem.md) - required, min 50 chars"
@@ -1365,6 +1370,7 @@ def issue_create(
     priority: str,
     label: tuple,
     stage: str,
+    flow: str,
     problem: str,
     context: Optional[str],
     solutions: Optional[str],
@@ -1405,6 +1411,15 @@ def issue_create(
         console.print("[dim]Provide enough context for an agent to understand the issue.[/dim]")
         sys.exit(1)
 
+    # Validate flow exists in config
+    config = load_config()
+    if flow not in config.flows:
+        available_flows = list(config.flows.keys())
+        console.print(f"[red]Error: Flow '{flow}' not found in configuration[/red]")
+        if available_flows:
+            console.print(f"[dim]Available flows: {', '.join(available_flows)}[/dim]")
+        sys.exit(1)
+
     dependencies = list(depends_on) if depends_on else None
 
     # If dependencies are specified, check if they're all met
@@ -1439,6 +1454,7 @@ def issue_create(
             priority=Priority(priority),
             labels=list(label) if label else None,
             stage=effective_stage,
+            flow=flow,
             problem=problem,
             context=context,
             solutions=solutions,
@@ -1446,7 +1462,7 @@ def issue_create(
         )
         console.print(f"[green]✓ Created issue {issue.id}: {issue.title}[/green]")
         console.print(f"[dim]  _agenttree/issues/{issue.id}-{issue.slug}/[/dim]")
-        console.print(f"[dim]  Stage: {issue.stage}[/dim]")
+        console.print(f"[dim]  Stage: {issue.stage} | Flow: {issue.flow}[/dim]")
         if issue.dependencies:
             console.print(f"[dim]  Dependencies: {', '.join(issue.dependencies)}[/dim]")
 
@@ -1985,7 +2001,7 @@ def stage_next(issue_id: Optional[str], reassess: bool) -> None:
     else:
         # Calculate next stage
         next_stage, next_substage, is_human_review = get_next_stage(
-            issue.stage, issue.substage
+            issue.stage, issue.substage, issue.flow
         )
 
     # Check if we're already at the next stage (no change)
@@ -2106,7 +2122,7 @@ def approve_issue(issue_id: str, skip_approval: bool) -> None:
         sys.exit(1)
 
     # Calculate next stage
-    next_stage, next_substage, _ = get_next_stage(issue.stage, issue.substage)
+    next_stage, next_substage, _ = get_next_stage(issue.stage, issue.substage, issue.flow)
 
     # Execute exit hooks
     from_stage = issue.stage
@@ -2760,7 +2776,7 @@ def hooks_check(issue_id: str, event: str) -> None:
 
     if event in ("post_start", "both"):
         # For post_start, show what would run on NEXT stage
-        next_stage, next_substage, _ = get_next_stage(issue.stage, issue.substage)
+        next_stage, next_substage, _ = get_next_stage(issue.stage, issue.substage, issue.flow)
         if next_stage:
             next_stage_config = config.get_stage(next_stage)
             if next_stage_config:
