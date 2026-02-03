@@ -60,8 +60,12 @@ class TestConfigFlows:
         config = Config()
         assert config.get_flow_stage_names("nonexistent") == []
 
-    def test_get_flow_stage_names_default_fallback(self):
-        """Test get_flow_stage_names falls back to stages list for default."""
+    def test_get_flow_stage_names_no_flows_defined(self):
+        """Test get_flow_stage_names returns empty list when no flows defined.
+
+        Note: In practice, load_config() always creates an implicit default flow,
+        so this case only happens when Config is instantiated directly in tests.
+        """
         stages = [
             StageConfig(name="backlog"),
             StageConfig(name="define"),
@@ -69,8 +73,8 @@ class TestConfigFlows:
         ]
         config = Config(stages=stages)  # No flows defined
 
-        # Should fall back to stages list order
-        assert config.get_flow_stage_names("default") == ["backlog", "define", "accepted"]
+        # Returns empty list - no cowardly fallback
+        assert config.get_flow_stage_names("default") == []
 
 
 class TestGetNextStageWithFlows:

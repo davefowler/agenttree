@@ -1402,6 +1402,15 @@ def issue_create(
         console.print("[dim]Provide enough context for an agent to understand the issue.[/dim]")
         sys.exit(1)
 
+    # Validate flow exists in config
+    config = load_config()
+    if flow not in config.flows:
+        available_flows = list(config.flows.keys())
+        console.print(f"[red]Error: Flow '{flow}' not found in configuration[/red]")
+        if available_flows:
+            console.print(f"[dim]Available flows: {', '.join(available_flows)}[/dim]")
+        sys.exit(1)
+
     dependencies = list(depends_on) if depends_on else None
 
     # If dependencies are specified, check if they're all met

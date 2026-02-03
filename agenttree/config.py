@@ -171,7 +171,7 @@ class Config(BaseModel):
     hosts: Dict[str, HostConfig] = Field(default_factory=dict)  # Host configurations
     commands: Dict[str, Union[str, list[str]]] = Field(default_factory=dict)  # Named shell commands
     stages: list[StageConfig] = Field(default_factory=list)  # Must be defined in .agenttree.yaml
-    flows: Dict[str, FlowConfig] = Field(default_factory=dict)  # Named workflow flows
+    flows: dict[str, FlowConfig] = Field(default_factory=dict)  # Named workflow flows
     default_flow: str = "default"  # Which flow to use when not specified
     security: SecurityConfig = Field(default_factory=SecurityConfig)
     merge_strategy: str = "squash"  # squash, merge, or rebase
@@ -597,24 +597,15 @@ class Config(BaseModel):
     def get_flow_stage_names(self, flow_name: str = "default") -> list[str]:
         """Get ordered list of stage names for a flow.
 
-        For backward compatibility, if no flows are defined or the requested
-        flow doesn't exist but is "default", returns all stage names in order.
-
         Args:
             flow_name: Name of the flow (default: "default")
 
         Returns:
-            List of stage names in flow order
+            List of stage names in flow order, or empty list if flow not found
         """
         flow = self.get_flow(flow_name)
         if flow:
             return flow.stages
-
-        # Backward compatibility: if no flows defined, use stages list
-        if flow_name == "default" and not self.flows:
-            return self.get_stage_names()
-
-        # Flow doesn't exist
         return []
 
     def get_next_stage(
