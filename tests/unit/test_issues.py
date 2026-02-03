@@ -17,6 +17,8 @@ from agenttree.issues import (
     get_next_stage,
     update_issue_stage,
     load_skill,
+    set_processing,
+    clear_processing,
     STAGE_ORDER,
     STAGE_SUBSTAGES,
     HUMAN_REVIEW_STAGES,
@@ -88,6 +90,111 @@ class TestIssueModel:
         assert issue.stage == IMPLEMENT
         assert issue.substage == "code"
         assert "bug" in issue.labels
+
+    def test_processing_field_defaults_to_none(self):
+        """Processing field should default to None."""
+        issue = Issue(
+            id="001",
+            slug="test-issue",
+            title="Test Issue",
+            created="2026-01-11T12:00:00Z",
+            updated="2026-01-11T12:00:00Z",
+        )
+        assert issue.processing is None
+
+    def test_processing_field_can_be_set(self):
+        """Processing field can be set to a string value."""
+        issue = Issue(
+            id="001",
+            slug="test-issue",
+            title="Test Issue",
+            created="2026-01-11T12:00:00Z",
+            updated="2026-01-11T12:00:00Z",
+            processing="exit",
+        )
+        assert issue.processing == "exit"
+
+
+class TestProcessingHelpers:
+    """Tests for set_processing and clear_processing helper functions."""
+
+    @pytest.fixture
+    def temp_agenttrees_with_issue(self, monkeypatch, tmp_path):
+        """Create a temporary _agenttree directory with an issue."""
+        import yaml
+
+        agenttrees_path = tmp_path / "_agenttree"
+        agenttrees_path.mkdir()
+        (agenttrees_path / "issues").mkdir()
+
+        # Create an issue directory and issue.yaml
+        issue_dir = agenttrees_path / "issues" / "001-test-issue"
+        issue_dir.mkdir()
+
+        issue_data = {
+            "id": "001",
+            "slug": "test-issue",
+            "title": "Test Issue",
+            "created": "2026-01-11T12:00:00Z",
+            "updated": "2026-01-11T12:00:00Z",
+            "stage": "define",
+            "substage": "refine",
+            "labels": [],
+            "priority": "medium",
+            "dependencies": [],
+            "history": [],
+        }
+
+        with open(issue_dir / "issue.yaml", "w") as f:
+            yaml.dump(issue_data, f, default_flow_style=False, sort_keys=False)
+
+        # Monkeypatch get_agenttree_path to return our temp dir
+        monkeypatch.setattr(
+            "agenttree.issues.get_agenttree_path",
+            lambda: agenttrees_path
+        )
+
+        return agenttrees_path
+
+    def test_set_processing_sets_state(self, temp_agenttrees_with_issue):
+        """set_processing should set the processing field in issue.yaml."""
+        import yaml
+
+        result = set_processing("001", "exit")
+        assert result is True
+
+        # Verify it was written to issue.yaml
+        issue_yaml = temp_agenttrees_with_issue / "issues" / "001-test-issue" / "issue.yaml"
+        with open(issue_yaml) as f:
+            data = yaml.safe_load(f)
+        assert data["processing"] == "exit"
+
+    def test_set_processing_returns_false_for_missing_issue(self, temp_agenttrees_with_issue):
+        """set_processing should return False for nonexistent issue."""
+        result = set_processing("999", "exit")
+        assert result is False
+
+    def test_clear_processing_clears_state(self, temp_agenttrees_with_issue):
+        """clear_processing should set processing to None."""
+        import yaml
+
+        # First set processing
+        set_processing("001", "exit")
+
+        # Then clear it
+        result = clear_processing("001")
+        assert result is True
+
+        # Verify it was cleared in issue.yaml
+        issue_yaml = temp_agenttrees_with_issue / "issues" / "001-test-issue" / "issue.yaml"
+        with open(issue_yaml) as f:
+            data = yaml.safe_load(f)
+        assert data["processing"] is None
+
+    def test_clear_processing_returns_false_for_missing_issue(self, temp_agenttrees_with_issue):
+        """clear_processing should return False for nonexistent issue."""
+        result = clear_processing("999")
+        assert result is False
 
 
 class TestIssueCRUD:

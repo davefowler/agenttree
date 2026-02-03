@@ -57,6 +57,7 @@ class Issue(IssueBase):
     updated_at: datetime
     dependencies: List[int] = Field(default_factory=list)
     dependents: List[int] = Field(default_factory=list)
+    processing: Optional[str] = None  # "exit", "enter", or None (not processing)
 
     @property
     def is_review(self) -> bool:

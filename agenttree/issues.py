@@ -77,6 +77,9 @@ class Issue(BaseModel):
 
     custom_agent_spawned: Optional[str] = None  # Stage name where custom agent was spawned
 
+    # Processing state: "exit", "enter", or None (not processing)
+    processing: Optional[str] = None
+
 
 def slugify(text: str) -> str:
     """Convert text to a URL-friendly slug."""
@@ -792,6 +795,69 @@ def update_issue_metadata(
     sync_agents_repo(agents_path, pull_only=False, commit_message=f"Update issue {issue_id} metadata")
 
     return issue
+
+
+def set_processing(issue_id: str, processing_state: str) -> bool:
+    """Set the processing state for an issue.
+
+    This is used to indicate that hooks are currently running on an issue.
+    Does NOT sync to remote - processing state is transient and local only.
+
+    Args:
+        issue_id: Issue ID
+        processing_state: Processing state to set (e.g., "exit", "enter")
+
+    Returns:
+        True if successful, False if issue not found
+    """
+    issue_dir = get_issue_dir(issue_id)
+    if not issue_dir:
+        return False
+
+    yaml_path = issue_dir / "issue.yaml"
+    if not yaml_path.exists():
+        return False
+
+    with open(yaml_path) as f:
+        data = yaml.safe_load(f)
+
+    data["processing"] = processing_state
+
+    with open(yaml_path, "w") as f:
+        yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+
+    return True
+
+
+def clear_processing(issue_id: str) -> bool:
+    """Clear the processing state for an issue.
+
+    This should be called after hooks complete (success or failure).
+    Does NOT sync to remote - processing state is transient and local only.
+
+    Args:
+        issue_id: Issue ID
+
+    Returns:
+        True if successful, False if issue not found
+    """
+    issue_dir = get_issue_dir(issue_id)
+    if not issue_dir:
+        return False
+
+    yaml_path = issue_dir / "issue.yaml"
+    if not yaml_path.exists():
+        return False
+
+    with open(yaml_path) as f:
+        data = yaml.safe_load(f)
+
+    data["processing"] = None
+
+    with open(yaml_path, "w") as f:
+        yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+
+    return True
 
 
 def get_issue_from_branch() -> Optional[str]:

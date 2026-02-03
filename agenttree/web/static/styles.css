@@ -721,6 +721,13 @@ button[disabled] {
     animation: blink 0.3s ease-in-out infinite;
 }
 
+.agent-light.processing {
+    background: #fb923c;
+    border: 2px solid #f97316;
+    box-shadow: 0 0 8px rgba(251, 146, 60, 0.6);
+    animation: pulse 1s ease-in-out infinite;
+}
+
 .agent-light.stalled {
     background: #f97316;
     border: 2px solid #ea580c;
@@ -779,9 +786,29 @@ button[disabled] {
     animation: blink 0.3s ease-in-out infinite;
 }
 
+.agent-light-large.processing {
+    background: #fb923c;
+    border: 2px solid #f97316;
+    box-shadow: 0 0 10px rgba(251, 146, 60, 0.6);
+    animation: pulse 1s ease-in-out infinite;
+}
+
 @keyframes blink {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.5; }
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+        transform: scale(1);
+        box-shadow: 0 0 8px rgba(251, 146, 60, 0.6);
+    }
+    50% {
+        opacity: 0.8;
+        transform: scale(1.1);
+        box-shadow: 0 0 16px rgba(251, 146, 60, 0.8);
+    }
 }
 
 /* ==============================================

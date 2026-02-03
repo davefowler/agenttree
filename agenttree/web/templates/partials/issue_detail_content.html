@@ -8,9 +8,9 @@
                     #{{ issue.number }}: {{ issue.title }}
                 </div>
                 <div class="detail-title-actions">
-                    <div class="agent-light-large {% if issue.tmux_active %}on{% else %}off{% endif %}"
+                    <div class="agent-light-large {% if issue.processing %}processing{% elif issue.tmux_active %}on{% else %}off{% endif %}"
                          onclick="toggleAgentFromDetail('{{ issue.number }}', this)"
-                         title="{% if issue.tmux_active %}Agent running{% else %}Click to start agent{% endif %}">
+                         title="{% if issue.processing %}Processing hooks...{% elif issue.tmux_active %}Agent running{% else %}Click to start agent{% endif %}">
                     </div>
                     <button class="chat-toggle-icon"
                             onclick="toggleChatPanel('{{ issue.number }}')"
@@ -71,8 +71,9 @@
                     {% endif %}
                     {% if issue.is_review %}
                     <button class="btn btn-approve"
-                            onclick="approveIssue('{{ issue.number }}', this)">
-                        Approve
+                            onclick="approveIssue('{{ issue.number }}', this)"
+                            {% if issue.processing %}disabled{% endif %}>
+                        {% if issue.processing %}Processing...{% else %}Approve{% endif %}
                     </button>
                     {% endif %}
                 </div>
@@ -176,21 +177,58 @@ function afterAction() {
 }
 
 // Action handlers for this issue detail
-function approveIssue(issueNumber, btn) {
+async function approveIssue(issueNumber, btn) {
+    // Immediately show processing state
     btn.disabled = true;
-    btn.textContent = 'Approved!';
+    btn.textContent = 'Processing...';
 
-    // Fire request in background
-    fetch(`/api/issues/${issueNumber}/approve`, {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'}
-    });
+    // Find and update agent light to show processing
+    const wrapper = btn.closest('.issue-detail-wrapper');
+    const agentLight = wrapper ? wrapper.querySelector('.agent-light-large') : null;
+    if (agentLight) {
+        agentLight.classList.remove('on', 'off');
+        agentLight.classList.add('processing');
+        agentLight.title = 'Processing hooks...';
+    }
 
-    // Move to next issue or reload immediately
-    if (typeof goToNextIssue === 'function') {
-        goToNextIssue();
-    } else {
-        location.reload();
+    try {
+        // Wait for the approve request to complete (hooks run synchronously)
+        const response = await fetch(`/api/issues/${issueNumber}/approve`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'}
+        });
+
+        if (response.ok) {
+            btn.textContent = 'Approved!';
+            // Move to next issue or reload
+            if (typeof goToNextIssue === 'function') {
+                goToNextIssue();
+            } else {
+                setTimeout(afterAction, 500);
+            }
+        } else {
+            const data = await response.json();
+            alert(`Cannot approve: ${data.detail || 'Unknown error'}`);
+            // Re-enable button and restore state
+            btn.disabled = false;
+            btn.textContent = 'Approve';
+            if (agentLight) {
+                agentLight.classList.remove('processing');
+                agentLight.classList.add('off');
+                agentLight.title = 'Click to start agent';
+            }
+        }
+    } catch (error) {
+        console.error('Error approving:', error);
+        alert('Error approving issue');
+        // Re-enable button and restore state
+        btn.disabled = false;
+        btn.textContent = 'Approve';
+        if (agentLight) {
+            agentLight.classList.remove('processing');
+            agentLight.classList.add('off');
+            agentLight.title = 'Click to start agent';
+        }
     }
 }
 
