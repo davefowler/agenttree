@@ -310,6 +310,52 @@ button[disabled] {
     color: var(--text-primary);
 }
 
+/* Priority badges */
+.priority-badge {
+    padding: 2px 6px;
+    border-radius: 8px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.priority-critical {
+    background: #dc2626;
+    color: #fff;
+}
+
+.priority-high {
+    background: #f59e0b;
+    color: #1a1a1a;
+}
+
+.priority-medium {
+    background: #06b6d4;
+    color: #1a1a1a;
+}
+
+.priority-low {
+    background: #22c55e;
+    color: #1a1a1a;
+}
+
+/* Priority dropdown in detail view */
+.priority-select {
+    padding: 4px 8px;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-card);
+    color: var(--text-primary);
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.priority-select:focus {
+    outline: none;
+    border-color: var(--text-accent);
+}
+
 /* ==============================================
    File Tabs
    ============================================== */
