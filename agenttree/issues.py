@@ -651,6 +651,7 @@ def get_next_stage(
     current_stage: str,
     current_substage: Optional[str] = None,
     flow: str = "default",
+    issue_context: Optional[dict] = None,
 ) -> tuple[str, Optional[str], bool]:
     """Calculate the next stage/substage.
 
@@ -660,6 +661,7 @@ def get_next_stage(
         current_stage: Current stage name (string)
         current_substage: Current substage (if any)
         flow: Workflow flow to use for stage progression (default: "default")
+        issue_context: Optional dict of issue context for condition evaluation
 
     Returns:
         Tuple of (next_stage, next_substage, is_human_review)
@@ -668,7 +670,7 @@ def get_next_stage(
     from agenttree.config import load_config
 
     config = load_config()
-    return config.get_next_stage(current_stage, current_substage, flow)
+    return config.get_next_stage(current_stage, current_substage, flow, issue_context)
 
 
 def update_issue_stage(
@@ -745,6 +747,7 @@ def update_issue_metadata(
     clear_pr: bool = False,
     priority: Optional[Priority] = None,
     commit_message: Optional[str] = None,
+    needs_ui_review: Optional[bool] = None,
 ) -> Optional[Issue]:
     """Update metadata fields on an issue.
 
@@ -759,6 +762,7 @@ def update_issue_metadata(
         clear_pr: If True, sets pr_number and pr_url to None
         priority: Priority level (optional)
         commit_message: Custom commit message (optional, defaults to generic)
+        needs_ui_review: If True, ui_review stage will run (optional)
 
     Returns:
         Updated Issue object or None if not found
@@ -799,6 +803,8 @@ def update_issue_metadata(
         issue.pr_url = None
     if priority is not None:
         issue.priority = priority
+    if needs_ui_review is not None:
+        issue.needs_ui_review = needs_ui_review
     issue.updated = now
 
     # Write back
