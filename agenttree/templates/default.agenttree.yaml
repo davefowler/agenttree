@@ -54,7 +54,7 @@ hosts:
       image: agenttree-agent:latest
     tool: claude
     model: sonnet
-    skill: agents/reviewer/independent_review.md
+    skill: independent_review.md
 
 stages:
   - name: backlog
@@ -183,7 +183,7 @@ stages:
   - name: independent_code_review
     host: review  # Custom agent host - spawned by controller
     output: independent_review.md
-    skill: agents/reviewer/independent_review.md
+    skill: independent_review.md
     pre_completion:
       - file_exists: independent_review.md
       - section_check:

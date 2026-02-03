@@ -672,9 +672,25 @@ class TestLoadSkill:
         assert skill == "# Test Substage Skill"
 
     def test_load_skill_not_found(self, temp_agenttrees_with_skills):
-        """Return None when skill not found."""
+        """Return None when skill not found (convention-based)."""
         skill = load_skill(ACCEPTED)
         assert skill is None
+
+    def test_load_skill_explicit_not_found_raises(self, temp_agenttrees_with_skills, monkeypatch):
+        """Raise FileNotFoundError when explicitly configured skill doesn't exist."""
+        from agenttree.config import Config, StageConfig
+
+        # Create a config that explicitly references a non-existent skill file
+        mock_config = Config(
+            stages=[StageConfig(name="test_stage", skill="nonexistent/skill.md")]
+        )
+        monkeypatch.setattr("agenttree.config.load_config", lambda *args, **kwargs: mock_config)
+
+        with pytest.raises(FileNotFoundError) as exc_info:
+            load_skill("test_stage")
+
+        assert "nonexistent/skill.md" in str(exc_info.value)
+        assert "does not exist" in str(exc_info.value)
 
     def test_load_skill_with_command_variable(self, temp_agenttrees_with_skills, monkeypatch):
         """Command outputs should be injected into templates."""
@@ -1352,3 +1368,72 @@ class TestUpdateIssuePriority:
         assert updated.updated is not None
         assert len(updated.updated) > 0
 
+
+class TestConfigValidation:
+    """Tests that validate config references exist."""
+
+    def test_all_explicit_skills_exist(self):
+        """Every skill explicitly referenced in config should exist."""
+        from agenttree.config import load_config
+        from pathlib import Path
+
+        # Skip if _agenttree doesn't exist (CI environment)
+        agenttree_path = Path("_agenttree")
+        if not agenttree_path.exists():
+            pytest.skip("_agenttree directory not present")
+
+        config = load_config()
+        missing_skills = []
+
+        for stage in config.stages:
+            # Check stage-level explicit skill
+            if stage.skill:
+                skill_path = agenttree_path / "skills" / stage.skill
+                if not skill_path.exists():
+                    missing_skills.append(f"{stage.name}: {stage.skill}")
+
+            # Check substage-level explicit skills
+            if stage.substages:
+                for substage_name, substage in stage.substages.items():
+                    if substage and substage.skill:
+                        skill_path = agenttree_path / "skills" / substage.skill
+                        if not skill_path.exists():
+                            missing_skills.append(f"{stage.name}.{substage_name}: {substage.skill}")
+
+        assert not missing_skills, f"Missing skill files: {missing_skills}"
+
+    def test_all_templates_exist(self):
+        """Every template referenced in create_file hooks should exist."""
+        from agenttree.config import load_config
+        from pathlib import Path
+
+        # Skip if _agenttree doesn't exist (CI environment)
+        agenttree_path = Path("_agenttree")
+        if not agenttree_path.exists():
+            pytest.skip("_agenttree directory not present")
+
+        config = load_config()
+        missing_templates = []
+
+        def check_hooks(hooks: list, context: str):
+            for hook in hooks:
+                if isinstance(hook, dict) and "create_file" in hook:
+                    template_name = hook["create_file"].get("template")
+                    if template_name:
+                        template_path = agenttree_path / "templates" / template_name
+                        if not template_path.exists():
+                            missing_templates.append(f"{context}: {template_name}")
+
+        for stage in config.stages:
+            # Check stage-level hooks
+            check_hooks(stage.post_start, f"{stage.name}.post_start")
+            check_hooks(stage.pre_completion, f"{stage.name}.pre_completion")
+
+            # Check substage-level hooks
+            if stage.substages:
+                for substage_name, substage in stage.substages.items():
+                    if substage:
+                        check_hooks(substage.post_start, f"{stage.name}.{substage_name}.post_start")
+                        check_hooks(substage.pre_completion, f"{stage.name}.{substage_name}.pre_completion")
+
+        assert not missing_templates, f"Missing template files: {missing_templates}"

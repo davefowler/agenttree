@@ -967,7 +967,10 @@ def run_builtin_validator(
         if template_name and dest:
             template_path = Path("_agenttree/templates") / template_name
             dest_path = issue_dir / dest
-            if not dest_path.exists() and template_path.exists():
+            # Template MUST exist - fail loudly if not
+            if not template_path.exists():
+                errors.append(f"Template '{template_name}' not found at {template_path}")
+            elif not dest_path.exists():
                 template_content = template_path.read_text()
 
                 # Build Jinja context using unified function
