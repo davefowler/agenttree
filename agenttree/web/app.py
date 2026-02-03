@@ -28,7 +28,7 @@ from agenttree.worktree import WorktreeManager
 _config: Config = load_config()
 from agenttree import issues as issue_crud
 from agenttree.agents_repo import sync_agents_repo
-from agenttree.web.models import StageEnum, KanbanBoard, Issue as WebIssue, IssueMoveRequest
+from agenttree.web.models import StageEnum, KanbanBoard, Issue as WebIssue, IssueMoveRequest, PriorityUpdateRequest
 
 # Pattern to match Claude Code's input prompt separator line
 # The separator is a line of U+2500 (BOX DRAWINGS LIGHT HORIZONTAL) characters: ─
@@ -296,6 +296,7 @@ def convert_issue_to_web(issue: issue_crud.Issue, load_dependents: bool = False)
         assignees=[],
         stage=stage,
         substage=issue.substage,
+        priority=issue.priority.value,
         tmux_active=tmux_active,
         has_worktree=bool(issue.worktree_dir),
         pr_url=issue.pr_url,
@@ -1087,6 +1088,36 @@ async def remove_dependency(
         return {"ok": True, "issue_id": issue.id, "dependencies": issue.dependencies}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/issues/{issue_id}/priority")
+async def update_issue_priority(
+    issue_id: str,
+    request: PriorityUpdateRequest,
+    user: Optional[str] = Depends(get_current_user)
+) -> dict:
+    """Update an issue's priority."""
+    from agenttree.issues import update_issue_priority as do_update_priority, Priority
+
+    # Validate priority value
+    valid_priorities = [p.value for p in Priority]
+    if request.priority not in valid_priorities:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid priority '{request.priority}'. Must be one of: {', '.join(valid_priorities)}"
+        )
+
+    # Get and update issue
+    issue_id_normalized = issue_id.lstrip("0") or "0"
+    issue = issue_crud.get_issue(issue_id_normalized, sync=False)
+    if not issue:
+        raise HTTPException(status_code=404, detail=f"Issue {issue_id} not found")
+
+    updated = do_update_priority(issue.id, Priority(request.priority))
+    if not updated:
+        raise HTTPException(status_code=500, detail="Failed to update priority")
+
+    return {"ok": True, "priority": request.priority}
 
 
 @app.post("/api/issues/{issue_id}/rebase")

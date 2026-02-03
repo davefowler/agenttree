@@ -261,6 +261,39 @@ def get_pr_comments(pr_number: int) -> List[PRComment]:
         return []
 
 
+def extract_failing_tests(logs: str) -> list[str]:
+    """Extract failing test names from pytest output.
+
+    Parses pytest output to find FAILED test lines.
+
+    Args:
+        logs: Raw log output from pytest
+
+    Returns:
+        List of failing test names (e.g., "tests/unit/test_foo.py::test_bar")
+    """
+    import re
+
+    failing = []
+    # Match pytest FAILED lines like:
+    # FAILED tests/unit/test_foo.py::test_bar - AssertionError
+    # Also handle lines without the trailing error message
+    for line in logs.split('\n'):
+        # Look for FAILED marker
+        if 'FAILED' in line:
+            # Extract the test path
+            match = re.search(r'FAILED\s+(\S+::\S+)', line)
+            if match:
+                failing.append(match.group(1))
+                continue
+            # Also try simpler pattern for shorter FAILED lines
+            match = re.search(r'FAILED\s+(\S+\.py::\S+)', line)
+            if match:
+                failing.append(match.group(1))
+
+    return failing
+
+
 def get_check_failed_logs(check: CheckStatus, max_lines: int = 200) -> Optional[str]:
     """Get the failed logs for a CI check.
 
