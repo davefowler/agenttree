@@ -597,15 +597,23 @@ class Config(BaseModel):
     def get_flow_stage_names(self, flow_name: str = "default") -> list[str]:
         """Get ordered list of stage names for a flow.
 
+        When no flows are defined (e.g., direct Config instantiation in tests
+        or legacy configs), falls back to using all stages in definition order.
+
         Args:
             flow_name: Name of the flow (default: "default")
 
         Returns:
-            List of stage names in flow order, or empty list if flow not found
+            List of stage names in flow order
         """
         flow = self.get_flow(flow_name)
         if flow:
             return flow.stages
+
+        # Fallback for configs without flows defined (tests, legacy configs)
+        if flow_name == "default" and not self.flows:
+            return self.get_stage_names()
+
         return []
 
     def get_next_stage(
