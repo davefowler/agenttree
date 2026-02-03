@@ -164,7 +164,7 @@ def agenttree_config() -> dict[str, Any]:
             },
             {
                 "name": "accepted",
-                "terminal": True,
+                "is_parking_lot": True,
                 "host": "controller",
                 "post_start": [
                     {"merge_pr": {}},
@@ -172,7 +172,7 @@ def agenttree_config() -> dict[str, Any]:
                     {"start_blocked_issues": {}}
                 ]
             },
-            {"name": "not_doing", "terminal": True}
+            {"name": "not_doing", "is_parking_lot": True, "redirect_only": True}
         ]
     }
 
