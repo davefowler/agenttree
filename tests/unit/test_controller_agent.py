@@ -17,9 +17,13 @@ import yaml
 class TestGetStalledAgents:
     """Test stall detection logic."""
 
-    def test_detects_stalled_agent(self, tmp_path: Path):
+    @patch("agenttree.state.get_active_agent")
+    def test_detects_stalled_agent(self, mock_get_active_agent, tmp_path: Path):
         """Agent in implement.code with last_advanced_at 25 min ago should be detected."""
         from agenttree.controller_agent import get_stalled_agents
+
+        # Mock get_active_agent to return a truthy value (indicating agent is running)
+        mock_get_active_agent.return_value = MagicMock()
 
         # Set up issue directory
         issues_dir = tmp_path / "issues"
@@ -33,7 +37,6 @@ class TestGetStalledAgents:
             "title": "Test Issue",
             "stage": "implement",
             "substage": "code",
-            "assigned_agent": "agent-1",
         }))
 
         # Create session file with last_advanced_at 25 min ago
@@ -56,9 +59,13 @@ class TestGetStalledAgents:
         assert stalled[0]["issue_id"] == "042"
         assert stalled[0]["stage"] == "implement.code"
 
-    def test_skips_recent_agent(self, tmp_path: Path):
+    @patch("agenttree.state.get_active_agent")
+    def test_skips_recent_agent(self, mock_get_active_agent, tmp_path: Path):
         """Agent with last_advanced_at 10 min ago should NOT be detected."""
         from agenttree.controller_agent import get_stalled_agents
+
+        # Mock get_active_agent to return a truthy value (indicating agent is running)
+        mock_get_active_agent.return_value = MagicMock()
 
         # Set up issue directory
         issues_dir = tmp_path / "issues"
@@ -72,7 +79,6 @@ class TestGetStalledAgents:
             "title": "Test Issue",
             "stage": "implement",
             "substage": "code",
-            "assigned_agent": "agent-1",
         }))
 
         # Create session file with last_advanced_at 10 min ago (not stalled)
@@ -93,9 +99,13 @@ class TestGetStalledAgents:
 
         assert len(stalled) == 0
 
-    def test_skips_human_review_stages(self, tmp_path: Path):
+    @patch("agenttree.state.get_active_agent")
+    def test_skips_human_review_stages(self, mock_get_active_agent, tmp_path: Path):
         """Agent at plan_review stage (even if 2 hours old) should NOT be detected."""
         from agenttree.controller_agent import get_stalled_agents
+
+        # Mock get_active_agent to return a truthy value (indicating agent is running)
+        mock_get_active_agent.return_value = MagicMock()
 
         # Set up issue directory
         issues_dir = tmp_path / "issues"
@@ -108,7 +118,6 @@ class TestGetStalledAgents:
             "id": "042",
             "title": "Test Issue",
             "stage": "plan_review",
-            "assigned_agent": "agent-1",
         }))
 
         # Create session file with last_advanced_at 2 hours ago
@@ -130,9 +139,13 @@ class TestGetStalledAgents:
         # Should not be detected because plan_review is a human review stage
         assert len(stalled) == 0
 
-    def test_configurable_threshold(self, tmp_path: Path):
+    @patch("agenttree.state.get_active_agent")
+    def test_configurable_threshold(self, mock_get_active_agent, tmp_path: Path):
         """Threshold from config should be respected."""
         from agenttree.controller_agent import get_stalled_agents
+
+        # Mock get_active_agent to return a truthy value (indicating agent is running)
+        mock_get_active_agent.return_value = MagicMock()
 
         # Set up issue directory
         issues_dir = tmp_path / "issues"
@@ -146,7 +159,6 @@ class TestGetStalledAgents:
             "title": "Test Issue",
             "stage": "implement",
             "substage": "code",
-            "assigned_agent": "agent-1",
         }))
 
         # Create session file with last_advanced_at 15 min ago

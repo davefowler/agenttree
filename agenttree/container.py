@@ -485,3 +485,51 @@ def stop_container_by_id(container_id: str) -> bool:
         return result.returncode == 0
     except Exception:
         return False
+
+
+def list_running_containers() -> list[str]:
+    """List all running agenttree containers.
+
+    Returns:
+        List of container IDs for running agenttree containers
+    """
+    runtime = get_container_runtime()
+    if not runtime.runtime:
+        return []
+
+    try:
+        import json
+
+        if runtime.runtime == "container":
+            # Apple Container
+            result = subprocess.run(
+                ["container", "list", "--format", "json"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.returncode != 0:
+                return []
+
+            containers = json.loads(result.stdout) if result.stdout.strip() else []
+            running = []
+            for c in containers:
+                if c.get("status") == "running":
+                    container_id = c.get("id")
+                    if container_id:
+                        running.append(container_id)
+            return running
+        else:
+            # Docker/Podman - filter by name pattern
+            result = subprocess.run(
+                [runtime.runtime, "ps", "-q", "--filter", "name=agenttree-agent"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if result.returncode != 0:
+                return []
+            return [c.strip() for c in result.stdout.splitlines() if c.strip()]
+
+    except (subprocess.TimeoutExpired, subprocess.SubprocessError, json.JSONDecodeError):
+        return []
