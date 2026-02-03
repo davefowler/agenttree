@@ -115,6 +115,7 @@ class TestAgentStateEdgeCases:
         with patch("agenttree.state.get_state_path", return_value=workflow_repo / "_agenttree" / "state.yaml"):
             agent = ActiveAgent(
                 issue_id="001",
+                host="agent",
                 container="agenttree-issue-001",
                 worktree=workflow_repo / ".worktrees" / "test",
                 branch="issue-001-test",
@@ -124,13 +125,13 @@ class TestAgentStateEdgeCases:
             )
             register_agent(agent)
 
-            found = get_active_agent("001")
+            found = get_active_agent("001", host="agent")
             assert found is not None
             assert found.issue_id == "001"
             assert found.port == 9001
 
-            unregister_agent("001")
-            found = get_active_agent("001")
+            unregister_agent("001", host="agent")
+            found = get_active_agent("001", host="agent")
             assert found is None
 
 
