@@ -16,6 +16,7 @@ from agenttree.issues import (
     get_agenttree_path,
     get_next_stage,
     update_issue_stage,
+    update_issue_priority,
     load_skill,
     STAGE_ORDER,
     STAGE_SUBSTAGES,
@@ -32,6 +33,7 @@ from agenttree.issues import (
     INDEPENDENT_CODE_REVIEW,
     IMPLEMENTATION_REVIEW,
     ACCEPTED,
+    KNOWLEDGE_BASE,
     NOT_DOING,
 )
 
@@ -309,15 +311,22 @@ class TestStageTransitions:
         assert next_substage == "ci_wait"  # First substage of implementation_review
         assert is_review is True
 
-    def test_get_next_stage_to_accepted(self):
-        """implementation_review -> accepted"""
+    def test_get_next_stage_to_knowledge_base(self):
+        """implementation_review -> knowledge_base"""
         next_stage, next_substage, is_review = get_next_stage(IMPLEMENTATION_REVIEW, None)
+        assert next_stage == KNOWLEDGE_BASE
+        assert next_substage is None
+        assert is_review is False
+
+    def test_get_next_stage_at_knowledge_base(self):
+        """knowledge_base -> accepted"""
+        next_stage, next_substage, is_review = get_next_stage(KNOWLEDGE_BASE, None)
         assert next_stage == ACCEPTED
         assert next_substage is None
         assert is_review is False
 
     def test_get_next_stage_at_accepted(self):
-        """accepted -> stays at accepted"""
+        """accepted -> stays at accepted (terminal)"""
         next_stage, next_substage, is_review = get_next_stage(ACCEPTED, None)
         assert next_stage == ACCEPTED
         assert next_substage is None
@@ -671,9 +680,25 @@ class TestLoadSkill:
         assert skill == "# Test Substage Skill"
 
     def test_load_skill_not_found(self, temp_agenttrees_with_skills):
-        """Return None when skill not found."""
+        """Return None when skill not found (convention-based)."""
         skill = load_skill(ACCEPTED)
         assert skill is None
+
+    def test_load_skill_explicit_not_found_raises(self, temp_agenttrees_with_skills, monkeypatch):
+        """Raise FileNotFoundError when explicitly configured skill doesn't exist."""
+        from agenttree.config import Config, StageConfig
+
+        # Create a config that explicitly references a non-existent skill file
+        mock_config = Config(
+            stages=[StageConfig(name="test_stage", skill="nonexistent/skill.md")]
+        )
+        monkeypatch.setattr("agenttree.config.load_config", lambda *args, **kwargs: mock_config)
+
+        with pytest.raises(FileNotFoundError) as exc_info:
+            load_skill("test_stage")
+
+        assert "nonexistent/skill.md" in str(exc_info.value)
+        assert "does not exist" in str(exc_info.value)
 
     def test_load_skill_with_command_variable(self, temp_agenttrees_with_skills, monkeypatch):
         """Command outputs should be injected into templates."""
@@ -996,26 +1021,27 @@ class TestSessionManagement:
         assert get_session(issue.id) is None
 
 
-class TestLoadOverview:
-    """Tests for load_overview function (shows overview on restart/takeover)."""
+class TestLoadPersona:
+    """Tests for load_persona function (shows persona on restart/takeover)."""
 
     @pytest.fixture
-    def temp_agenttrees_with_overview(self, monkeypatch, tmp_path):
-        """Create a temporary _agenttree directory with an overview.md."""
+    def temp_agenttrees_with_persona(self, monkeypatch, tmp_path):
+        """Create a temporary _agenttree directory with a persona file."""
         agenttrees_path = tmp_path / "_agenttree"
         agenttrees_path.mkdir()
         (agenttrees_path / "issues").mkdir()
         (agenttrees_path / "templates").mkdir()
         (agenttrees_path / "skills").mkdir()
+        (agenttrees_path / "skills" / "personas").mkdir()
 
         # Create problem template
         template = agenttrees_path / "templates" / "problem.md"
         template.write_text("# Problem Statement\n\n")
 
-        # Create overview.md with Jinja variables
-        overview = agenttrees_path / "skills" / "overview.md"
-        overview.write_text(
-            "# AgentTree Overview\n\n"
+        # Create personas/developer.md with Jinja variables
+        persona = agenttrees_path / "skills" / "personas" / "developer.md"
+        persona.write_text(
+            "# Developer Persona\n\n"
             "Stage: {{ current_stage }}\n"
             "Is takeover: {{ is_takeover }}\n"
             "Completed stages: {{ completed_stages|join(', ') }}\n"
@@ -1034,74 +1060,75 @@ class TestLoadOverview:
 
         return agenttrees_path
 
-    def test_load_overview_returns_content(self, temp_agenttrees_with_overview):
-        """load_overview returns overview content."""
-        from agenttree.issues import load_overview
+    def test_load_persona_returns_content(self, temp_agenttrees_with_persona):
+        """load_persona returns persona content."""
+        from agenttree.issues import load_persona
 
-        overview = load_overview()
-        assert overview is not None
-        assert "AgentTree Overview" in overview
+        persona = load_persona()
+        assert persona is not None
+        assert "Developer Persona" in persona
 
-    def test_load_overview_with_stage_context(self, temp_agenttrees_with_overview):
-        """load_overview renders stage context variables."""
-        from agenttree.issues import load_overview
+    def test_load_persona_with_stage_context(self, temp_agenttrees_with_persona):
+        """load_persona renders stage context variables."""
+        from agenttree.issues import load_persona
 
-        overview = load_overview(
+        persona = load_persona(
             current_stage="implement",
             current_substage="code",
             is_takeover=False,
         )
-        assert overview is not None
-        assert "Stage: implement" in overview
-        assert "Is takeover: False" in overview
+        assert persona is not None
+        assert "Stage: implement" in persona
+        assert "Is takeover: False" in persona
 
-    def test_load_overview_calculates_completed_stages(self, temp_agenttrees_with_overview):
-        """load_overview calculates completed stages before current stage."""
-        from agenttree.issues import load_overview
+    def test_load_persona_calculates_completed_stages(self, temp_agenttrees_with_persona):
+        """load_persona calculates completed stages before current stage."""
+        from agenttree.issues import load_persona
 
-        overview = load_overview(
+        persona = load_persona(
             current_stage="implement",
             is_takeover=True,
         )
-        assert overview is not None
+        assert persona is not None
         # Should include stages before implement (define, research, plan, plan_assess, plan_revise, plan_review)
-        assert "define" in overview
-        assert "research" in overview
-        assert "plan" in overview
-        assert "plan_review" in overview
+        assert "define" in persona
+        assert "research" in persona
+        assert "plan" in persona
+        assert "plan_review" in persona
         # Should not include backlog or accepted
-        assert "backlog" not in overview.lower().replace("agenttree overview", "")
+        assert "backlog" not in persona.lower().replace("developer persona", "")
 
-    def test_load_overview_takeover_true_mid_workflow(self, temp_agenttrees_with_overview):
+    def test_load_persona_takeover_true_mid_workflow(self, temp_agenttrees_with_persona):
         """is_takeover should be True when starting mid-workflow."""
-        from agenttree.issues import load_overview
+        from agenttree.issues import load_persona
 
-        overview = load_overview(
+        persona = load_persona(
             current_stage="implement",
             is_takeover=True,
         )
-        assert overview is not None
-        assert "Is takeover: True" in overview
+        assert persona is not None
+        assert "Is takeover: True" in persona
 
-    def test_load_overview_takeover_false_for_early_stages(self, temp_agenttrees_with_overview):
+    def test_load_persona_takeover_false_for_early_stages(self, temp_agenttrees_with_persona):
         """is_takeover should be False when starting from beginning stages."""
-        from agenttree.issues import load_overview
+        from agenttree.issues import load_persona
 
-        overview = load_overview(
+        persona = load_persona(
             current_stage="define",
             is_takeover=False,
         )
-        assert overview is not None
-        assert "Is takeover: False" in overview
+        assert persona is not None
+        assert "Is takeover: False" in persona
 
-    def test_load_overview_returns_none_if_missing(self, monkeypatch, tmp_path):
-        """load_overview returns None if overview.md doesn't exist."""
-        from agenttree.issues import load_overview
+    def test_load_persona_returns_none_if_missing(self, monkeypatch, tmp_path):
+        """load_persona returns None if persona file doesn't exist."""
+        from agenttree.issues import load_persona
 
         agenttrees_path = tmp_path / "_agenttree"
         agenttrees_path.mkdir()
         (agenttrees_path / "skills").mkdir()
-        # Don't create overview.md
+        (agenttrees_path / "skills" / "personas").mkdir()
+        # Don't create developer.md
 
         monkeypatch.setattr(
             "agenttree.issues.get_agenttree_path",
@@ -1112,28 +1139,44 @@ class TestLoadOverview:
             lambda *args, **kwargs: True
         )
 
-        overview = load_overview()
-        assert overview is None
+        persona = load_persona()
+        assert persona is None
 
-    def test_load_overview_with_issue_context(self, temp_agenttrees_with_overview):
-        """load_overview includes issue context when issue is provided."""
-        from agenttree.issues import load_overview, create_issue
+    def test_load_persona_with_issue_context(self, temp_agenttrees_with_persona):
+        """load_persona includes issue context when issue is provided."""
+        from agenttree.issues import load_persona, create_issue
 
-        # Update overview template to include issue vars
-        overview_path = temp_agenttrees_with_overview / "skills" / "overview.md"
-        overview_path.write_text(
+        # Update persona template to include issue vars
+        persona_path = temp_agenttrees_with_persona / "skills" / "personas" / "developer.md"
+        persona_path.write_text(
             "Issue: {{ issue_id }} - {{ issue_title }}\n"
             "Stage: {{ current_stage }}\n"
         )
 
         issue = create_issue("Test Feature")
-        overview = load_overview(
+        persona = load_persona(
             issue=issue,
             current_stage="plan",
         )
-        assert overview is not None
-        assert issue.id in overview
-        assert "Test Feature" in overview
+        assert persona is not None
+        assert issue.id in persona
+        assert "Test Feature" in persona
+
+    def test_load_persona_loads_different_agent_types(self, temp_agenttrees_with_persona):
+        """load_persona loads correct file based on agent_type."""
+        from agenttree.issues import load_persona
+
+        # Create a reviewer persona
+        reviewer_path = temp_agenttrees_with_persona / "skills" / "personas" / "reviewer.md"
+        reviewer_path.write_text("# Reviewer Persona\n\nYou are a code reviewer.\n")
+
+        # Load developer (default)
+        dev_persona = load_persona(agent_type="developer")
+        assert "Developer Persona" in dev_persona
+
+        # Load reviewer
+        reviewer_persona = load_persona(agent_type="reviewer")
+        assert "Reviewer Persona" in reviewer_persona
 
 
 class TestGetIssueContext:
@@ -1273,3 +1316,150 @@ class TestGetIssueContext:
         assert context["history"][1]["stage"] == "research"
         assert context["history"][1]["agent"] == 1
 
+
+class TestUpdateIssuePriority:
+    """Tests for update_issue_priority function."""
+
+    @pytest.fixture
+    def temp_agenttrees(self, monkeypatch, tmp_path):
+        """Create a temporary _agenttree directory."""
+        agenttrees_path = tmp_path / "_agenttree"
+        agenttrees_path.mkdir()
+        (agenttrees_path / "issues").mkdir()
+        (agenttrees_path / "templates").mkdir()
+
+        # Create problem template
+        template = agenttrees_path / "templates" / "problem.md"
+        template.write_text("# Problem Statement\n\n")
+
+        # Monkeypatch get_agenttree_path to return our temp dir
+        monkeypatch.setattr(
+            "agenttree.issues.get_agenttree_path",
+            lambda: agenttrees_path
+        )
+        # Also monkeypatch sync to do nothing
+        monkeypatch.setattr(
+            "agenttree.issues.sync_agents_repo",
+            lambda *args, **kwargs: True
+        )
+
+        return agenttrees_path
+
+    def test_update_priority_from_medium_to_high(self, temp_agenttrees):
+        """Update issue priority from medium to high."""
+        issue = create_issue("Test Issue")
+        assert issue.priority == Priority.MEDIUM
+
+        updated = update_issue_priority("001", Priority.HIGH)
+
+        assert updated is not None
+        assert updated.priority == Priority.HIGH
+
+        # Verify persisted to disk
+        reloaded = get_issue("001")
+        assert reloaded.priority == Priority.HIGH
+
+    def test_update_priority_to_critical(self, temp_agenttrees):
+        """Update issue priority to critical."""
+        issue = create_issue("Test Issue")
+
+        updated = update_issue_priority(issue.id, Priority.CRITICAL)
+
+        assert updated is not None
+        assert updated.priority == Priority.CRITICAL
+
+    def test_update_priority_to_low(self, temp_agenttrees):
+        """Update issue priority to low."""
+        issue = create_issue("Test Issue", priority=Priority.HIGH)
+        assert issue.priority == Priority.HIGH
+
+        updated = update_issue_priority(issue.id, Priority.LOW)
+
+        assert updated is not None
+        assert updated.priority == Priority.LOW
+
+    def test_update_priority_nonexistent_issue(self, temp_agenttrees):
+        """Return None for non-existent issue."""
+        result = update_issue_priority("999", Priority.HIGH)
+        assert result is None
+
+    def test_update_priority_updates_timestamp(self, temp_agenttrees):
+        """Updating priority should set the updated timestamp."""
+        issue = create_issue("Test Issue")
+
+        updated = update_issue_priority(issue.id, Priority.HIGH)
+
+        assert updated is not None
+        # Verify the updated timestamp is set (not empty)
+        assert updated.updated is not None
+        assert len(updated.updated) > 0
+
+
+class TestConfigValidation:
+    """Tests that validate config references exist."""
+
+    def test_all_explicit_skills_exist(self):
+        """Every skill explicitly referenced in config should exist."""
+        from agenttree.config import load_config
+        from pathlib import Path
+
+        # Skip if _agenttree doesn't exist (CI environment)
+        agenttree_path = Path("_agenttree")
+        if not agenttree_path.exists():
+            pytest.skip("_agenttree directory not present")
+
+        config = load_config()
+        missing_skills = []
+
+        for stage in config.stages:
+            # Check stage-level explicit skill
+            if stage.skill:
+                skill_path = agenttree_path / "skills" / stage.skill
+                if not skill_path.exists():
+                    missing_skills.append(f"{stage.name}: {stage.skill}")
+
+            # Check substage-level explicit skills
+            if stage.substages:
+                for substage_name, substage in stage.substages.items():
+                    if substage and substage.skill:
+                        skill_path = agenttree_path / "skills" / substage.skill
+                        if not skill_path.exists():
+                            missing_skills.append(f"{stage.name}.{substage_name}: {substage.skill}")
+
+        assert not missing_skills, f"Missing skill files: {missing_skills}"
+
+    def test_all_templates_exist(self):
+        """Every template referenced in create_file hooks should exist."""
+        from agenttree.config import load_config
+        from pathlib import Path
+
+        # Skip if _agenttree doesn't exist (CI environment)
+        agenttree_path = Path("_agenttree")
+        if not agenttree_path.exists():
+            pytest.skip("_agenttree directory not present")
+
+        config = load_config()
+        missing_templates = []
+
+        def check_hooks(hooks: list, context: str):
+            for hook in hooks:
+                if isinstance(hook, dict) and "create_file" in hook:
+                    template_name = hook["create_file"].get("template")
+                    if template_name:
+                        template_path = agenttree_path / "templates" / template_name
+                        if not template_path.exists():
+                            missing_templates.append(f"{context}: {template_name}")
+
+        for stage in config.stages:
+            # Check stage-level hooks
+            check_hooks(stage.post_start, f"{stage.name}.post_start")
+            check_hooks(stage.pre_completion, f"{stage.name}.pre_completion")
+
+            # Check substage-level hooks
+            if stage.substages:
+                for substage_name, substage in stage.substages.items():
+                    if substage:
+                        check_hooks(substage.post_start, f"{stage.name}.{substage_name}.post_start")
+                        check_hooks(substage.pre_completion, f"{stage.name}.{substage_name}.pre_completion")
+
+        assert not missing_templates, f"Missing template files: {missing_templates}"
