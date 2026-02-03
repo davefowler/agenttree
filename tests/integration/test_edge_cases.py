@@ -109,29 +109,33 @@ class TestAgentStateEdgeCases:
         assert get_port_for_issue("1001", base_port=9000) == 9001
 
     def test_agent_registration(self, workflow_repo: Path):
-        """Test agent registration and lookup."""
-        from agenttree.state import register_agent, get_active_agent, unregister_agent, ActiveAgent
+        """Test agent lookup from tmux sessions."""
+        from agenttree.state import get_active_agent, ActiveAgent
 
-        with patch("agenttree.state.get_state_path", return_value=workflow_repo / "_agenttree" / "state.yaml"):
-            agent = ActiveAgent(
-                issue_id="001",
-                host="agent",
-                container="agenttree-issue-001",
-                worktree=workflow_repo / ".worktrees" / "test",
-                branch="issue-001-test",
-                port=9001,
-                tmux_session="test-session",
-                started="2026-01-16T00:00:00Z"
-            )
-            register_agent(agent)
+        # With dynamic state, agents are "registered" by creating a tmux session.
+        # Mock tmux sessions to simulate an active agent.
+        with patch("agenttree.state._get_tmux_sessions") as mock_sessions, \
+             patch("agenttree.state.load_config") as mock_config, \
+             patch("agenttree.issues.get_issue") as mock_get_issue:
 
-            found = get_active_agent("001")
+            mock_config.return_value = MagicMock(project="agenttree")
+            mock_issue = MagicMock()
+            mock_issue.worktree_dir = str(workflow_repo / ".worktrees" / "test")
+            mock_issue.branch = "issue-001-test"
+            mock_get_issue.return_value = mock_issue
+
+            # Simulate tmux session for agent
+            mock_sessions.return_value = [("agenttree-agent-001", "1704067200")]
+
+            found = get_active_agent("001", "agent")
             assert found is not None
             assert found.issue_id == "001"
+            assert found.host == "agent"
             assert found.port == 9001
 
-            unregister_agent("001")
-            found = get_active_agent("001")
+            # Simulate tmux session removed (agent stopped)
+            mock_sessions.return_value = []
+            found = get_active_agent("001", "agent")
             assert found is None
 
 
