@@ -273,6 +273,7 @@ flows:
       - independent_code_review
       - address_independent_review
       - implementation_review
+      - knowledge_base
       - accepted
       - not_doing
 
