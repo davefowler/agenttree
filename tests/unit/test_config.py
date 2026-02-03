@@ -684,3 +684,180 @@ class TestSaveTmuxHistoryConfig:
 
         config = load_config(tmp_path)
         assert config.save_tmux_history is False
+
+
+class TestConditionalStages:
+    """Tests for conditional stage execution."""
+
+    def test_stage_config_has_condition_field(self) -> None:
+        """StageConfig should accept optional condition field."""
+        from agenttree.config import StageConfig
+
+        stage = StageConfig(name="ui_review", condition="{{ needs_ui_review }}")
+        assert stage.condition == "{{ needs_ui_review }}"
+
+    def test_stage_config_condition_defaults_to_none(self) -> None:
+        """StageConfig condition should default to None."""
+        from agenttree.config import StageConfig
+
+        stage = StageConfig(name="research")
+        assert stage.condition is None
+
+    def test_get_next_stage_skips_false_condition(self) -> None:
+        """Stage with condition evaluating to false should be skipped."""
+        from agenttree.config import Config, StageConfig
+
+        config = Config(
+            stages=[
+                StageConfig(name="implement"),
+                StageConfig(name="ui_review", condition="{{ needs_ui_review }}"),
+                StageConfig(name="final_review"),
+                StageConfig(name="accepted", terminal=True),
+            ]
+        )
+
+        # Context where needs_ui_review is False
+        context = {"needs_ui_review": False}
+
+        # From implement, should skip ui_review (condition is false) and go to final_review
+        next_stage, next_substage, is_human_review = config.get_next_stage(
+            "implement", issue_context=context
+        )
+        assert next_stage == "final_review"
+
+    def test_get_next_stage_runs_true_condition(self) -> None:
+        """Stage with condition evaluating to true should be entered."""
+        from agenttree.config import Config, StageConfig
+
+        config = Config(
+            stages=[
+                StageConfig(name="implement"),
+                StageConfig(name="ui_review", condition="{{ needs_ui_review }}"),
+                StageConfig(name="final_review"),
+                StageConfig(name="accepted", terminal=True),
+            ]
+        )
+
+        # Context where needs_ui_review is True
+        context = {"needs_ui_review": True}
+
+        # From implement, should go to ui_review (condition is true)
+        next_stage, next_substage, is_human_review = config.get_next_stage(
+            "implement", issue_context=context
+        )
+        assert next_stage == "ui_review"
+
+    def test_get_next_stage_no_condition_runs(self) -> None:
+        """Stage without condition field should always run (backward compatible)."""
+        from agenttree.config import Config, StageConfig
+
+        config = Config(
+            stages=[
+                StageConfig(name="implement"),
+                StageConfig(name="review"),  # No condition - should always run
+                StageConfig(name="accepted", terminal=True),
+            ]
+        )
+
+        # Even with empty context, stage without condition should run
+        next_stage, next_substage, is_human_review = config.get_next_stage(
+            "implement", issue_context={}
+        )
+        assert next_stage == "review"
+
+    def test_get_next_stage_no_context_skips_condition(self) -> None:
+        """Stage with condition should be skipped when no context provided."""
+        from agenttree.config import Config, StageConfig
+
+        config = Config(
+            stages=[
+                StageConfig(name="implement"),
+                StageConfig(name="ui_review", condition="{{ needs_ui_review }}"),
+                StageConfig(name="final_review"),
+                StageConfig(name="accepted", terminal=True),
+            ]
+        )
+
+        # No context provided - condition should evaluate to falsy, stage skipped
+        next_stage, next_substage, is_human_review = config.get_next_stage(
+            "implement"
+        )
+        assert next_stage == "final_review"
+
+    def test_get_next_stage_missing_context_var_skips(self) -> None:
+        """Condition referencing undefined variable should evaluate to falsy."""
+        from agenttree.config import Config, StageConfig
+
+        config = Config(
+            stages=[
+                StageConfig(name="implement"),
+                StageConfig(name="ui_review", condition="{{ some_undefined_var }}"),
+                StageConfig(name="final_review"),
+                StageConfig(name="accepted", terminal=True),
+            ]
+        )
+
+        # Context without the variable referenced in condition
+        context = {"other_var": True}
+
+        # Missing variable should evaluate to falsy, stage skipped
+        next_stage, next_substage, is_human_review = config.get_next_stage(
+            "implement", issue_context=context
+        )
+        assert next_stage == "final_review"
+
+    def test_get_next_stage_invalid_condition_runs(self) -> None:
+        """Invalid Jinja in condition should log warning but stage runs (fail-open)."""
+        from agenttree.config import Config, StageConfig
+
+        config = Config(
+            stages=[
+                StageConfig(name="implement"),
+                StageConfig(name="ui_review", condition="{{ invalid {{ syntax }}"),
+                StageConfig(name="final_review"),
+                StageConfig(name="accepted", terminal=True),
+            ]
+        )
+
+        # Invalid Jinja should fail-open (run the stage)
+        next_stage, next_substage, is_human_review = config.get_next_stage(
+            "implement", issue_context={}
+        )
+        assert next_stage == "ui_review"
+
+    def test_condition_and_redirect_only_combined(self) -> None:
+        """redirect_only should take precedence over condition in normal progression."""
+        from agenttree.config import Config, StageConfig
+
+        config = Config(
+            stages=[
+                StageConfig(name="implement"),
+                StageConfig(name="address_review", redirect_only=True, condition="{{ True }}"),
+                StageConfig(name="final_review"),
+                StageConfig(name="accepted", terminal=True),
+            ]
+        )
+
+        # redirect_only stages are always skipped in normal progression, regardless of condition
+        next_stage, next_substage, is_human_review = config.get_next_stage(
+            "implement", issue_context={"something": True}
+        )
+        assert next_stage == "final_review"
+
+    def test_condition_from_yaml(self, tmp_path: Path) -> None:
+        """condition config should load correctly from YAML file."""
+        config_file = tmp_path / ".agenttree.yaml"
+        config_content = """
+stages:
+  - name: implement
+  - name: ui_review
+    condition: "{{ needs_ui_review }}"
+  - name: accepted
+    terminal: true
+"""
+        config_file.write_text(config_content)
+
+        config = load_config(tmp_path)
+        ui_review = config.get_stage("ui_review")
+        assert ui_review is not None
+        assert ui_review.condition == "{{ needs_ui_review }}"

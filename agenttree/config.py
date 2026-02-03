@@ -1,9 +1,13 @@
 """Configuration management for AgentTree."""
 
+import logging
 from pathlib import Path
 from typing import Dict, Optional, Union
 import yaml
+from jinja2 import Template, UndefinedError
 from pydantic import BaseModel, ConfigDict, Field
+
+logger = logging.getLogger(__name__)
 
 
 class ToolConfig(BaseModel):
@@ -90,6 +94,7 @@ class StageConfig(BaseModel):
     human_review: bool = False    # Requires human approval to exit
     terminal: bool = False        # Cannot progress from here (accepted, not_doing)
     redirect_only: bool = False   # Only reachable via StageRedirect, skipped in normal progression
+    condition: Optional[str] = None  # Jinja expression - skip stage when false
     host: str = "agent"           # Who executes this stage: "agent" (in container) or "controller" (host)
     substages: Dict[str, SubstageConfig] = Field(default_factory=dict)
     pre_completion: list[dict] = Field(default_factory=list)  # Stage-level hooks before completing
@@ -141,6 +146,35 @@ class SecurityConfig(BaseModel):
 
     # Reserved for future security settings
     # Containers are always required - this is not configurable
+
+
+def evaluate_condition(condition: str, context: dict) -> bool:
+    """Evaluate a Jinja condition expression.
+
+    Args:
+        condition: Jinja template string (e.g., "{{ needs_ui_review }}")
+        context: Dictionary of context variables for template rendering
+
+    Returns:
+        True if condition evaluates to truthy value, False otherwise.
+        Invalid templates fail-open (return True) to avoid blocking workflow.
+    """
+    try:
+        template = Template(condition)
+        result = template.render(**context)
+        # Jinja renders to string, so check for truthy string values
+        # Empty string, "False", "false", "None", "none", "0" are falsy
+        result = result.strip().lower()
+        if result in ("", "false", "none", "0"):
+            return False
+        return bool(result)
+    except UndefinedError:
+        # Missing context variable - treat as falsy (skip the stage)
+        return False
+    except Exception as e:
+        # Invalid Jinja syntax or other error - fail-open (run the stage)
+        logger.warning(f"Error evaluating condition '{condition}': {e}")
+        return True
 
 
 class Config(BaseModel):
@@ -573,12 +607,14 @@ class Config(BaseModel):
         self,
         current_stage: str,
         current_substage: Optional[str] = None,
+        issue_context: Optional[dict] = None,
     ) -> tuple[str, Optional[str], bool]:
         """Calculate the next stage/substage.
 
         Args:
             current_stage: Current stage name
             current_substage: Current substage (if any)
+            issue_context: Optional dict of issue context for condition evaluation
 
         Returns:
             Tuple of (next_stage, next_substage, is_human_review)
@@ -600,8 +636,9 @@ class Config(BaseModel):
             except ValueError:
                 pass  # substage not found, move to next stage
 
-        # Move to next stage (skip redirect_only stages)
+        # Move to next stage (skip redirect_only stages and stages with false conditions)
         stage_names = self.get_stage_names()
+        context = issue_context or {}
         try:
             stage_idx = stage_names.index(current_stage)
             # Look for next non-redirect_only stage
@@ -612,6 +649,10 @@ class Config(BaseModel):
                     # Skip redirect_only stages in normal progression
                     if next_stage.redirect_only:
                         continue
+                    # Skip stages with condition that evaluates to false
+                    if next_stage.condition:
+                        if not evaluate_condition(next_stage.condition, context):
+                            continue
                     next_substages = next_stage.substage_order()
                     next_substage = next_substages[0] if next_substages else None
                     return next_stage_name, next_substage, next_stage.human_review

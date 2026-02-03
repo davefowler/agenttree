@@ -76,6 +76,7 @@ class Issue(BaseModel):
     history: list[HistoryEntry] = Field(default_factory=list)
 
     custom_agent_spawned: Optional[str] = None  # Stage name where custom agent was spawned
+    needs_ui_review: bool = False  # If True, ui_review stage will run
 
 
 def slugify(text: str) -> str:
@@ -156,6 +157,7 @@ def create_issue(
     context: Optional[str] = None,
     solutions: Optional[str] = None,
     dependencies: Optional[list[str]] = None,
+    needs_ui_review: bool = False,
 ) -> Issue:
     """Create a new issue.
 
@@ -169,6 +171,7 @@ def create_issue(
         context: Context/background text (fills problem.md)
         solutions: Possible solutions text (fills problem.md)
         dependencies: Optional list of issue IDs that must be completed first
+        needs_ui_review: If True, ui_review stage will run for this issue
 
     Returns:
         The created Issue object
@@ -220,6 +223,7 @@ def create_issue(
         priority=priority,
         labels=labels or [],
         dependencies=normalized_deps,
+        needs_ui_review=needs_ui_review,
         history=[
             HistoryEntry(stage=stage, substage=substage, timestamp=now)
         ]
