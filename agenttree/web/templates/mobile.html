@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>AgentTree Mobile</title>
-    <link rel="stylesheet" href="/static/styles.css">
+    <link rel="stylesheet" href="/static/styles.css?v=8">
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
@@ -13,7 +13,6 @@
         <!-- Mobile Header -->
         <header class="mobile-header">
             <h1 class="mobile-title">AgentTree</h1>
-            <a href="/kanban" class="mobile-desktop-link">Desktop View</a>
         </header>
 
         <!-- Issues List Panel -->
@@ -271,6 +270,19 @@
             contentContainer.querySelectorAll('.file-content-item').forEach(item => {
                 item.style.display = item.dataset.filename === filename ? 'block' : 'none';
             });
+        }
+
+        // Handle mobile file selector dropdown
+        function selectFileFromDropdown(select, issueId) {
+            const filename = select.value;
+            const contentContainer = document.getElementById('file-content-' + issueId);
+            contentContainer.querySelectorAll('.file-content-item').forEach(item => {
+                item.style.display = item.dataset.filename === filename ? 'block' : 'none';
+            });
+            // Load diff if changes tab selected
+            if (filename === 'changes' && typeof loadDiff === 'function') {
+                loadDiff(issueId);
+            }
         }
 
         // Toggle agent chat panel (for compatibility with partial)

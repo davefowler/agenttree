@@ -62,6 +62,7 @@ stages:
   - name: define
     output: problem.md
     pre_completion:
+      - title_set:  # Ensure issue has a real title, not "(untitled)"
       - section_check:
           file: problem.md
           section: Context

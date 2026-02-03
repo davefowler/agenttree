@@ -1240,6 +1240,19 @@ def run_builtin_validator(
                                 f"Make sure the server is running on port {port}."
                             )
 
+    elif hook_type == "title_set":
+        # Check that the issue title is not "(untitled)" or other placeholder
+        issue = kwargs.get("issue")
+        if issue is None:
+            errors.append("No issue provided for title_set check")
+        else:
+            placeholder_titles = ["(untitled)", "untitled", ""]
+            if issue.title.lower().strip() in placeholder_titles:
+                errors.append(
+                    f"Issue title is '{issue.title}'. Please set a descriptive title in issue.yaml "
+                    f"(edit the 'title:' field in {issue.id}-{issue.slug}/issue.yaml)"
+                )
+
     else:
         # Unknown type - ignore silently (allows for future extensions)
         pass
@@ -2379,82 +2392,21 @@ def ensure_pr_for_issue(issue_id: str) -> bool:
         return False
 
 
-def _is_uuid(s: str) -> bool:
-    """Check if a string looks like a UUID (Apple Container ID format)."""
-    import re
-    # UUID format: 8-4-4-4-12 hex characters
-    return bool(re.match(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', s.lower()))
-
-
 def cleanup_issue_agent(issue: Issue) -> None:
     """Clean up agent resources when issue is accepted.
 
     Stops tmux session, stops container, frees port.
+    Uses the consolidated stop_agent function from state.py.
 
     Args:
         issue: Issue that was transitioned to accepted
     """
-    from agenttree.state import get_active_agent, unregister_agent
+    from agenttree.state import stop_all_agents_for_issue
 
-    agent = get_active_agent(issue.id)
-    if not agent:
-        return  # No agent to clean up
-
-    console.print(f"[dim]Cleaning up agent for issue #{issue.id}...[/dim]")
-
-    # Stop tmux session
-    try:
-        from agenttree.tmux import kill_session, session_exists
-        if session_exists(agent.tmux_session):
-            kill_session(agent.tmux_session)
-            console.print(f"[dim]  Stopped tmux session: {agent.tmux_session}[/dim]")
-    except Exception as e:
-        console.print(f"[yellow]  Warning: Could not stop tmux session: {e}[/yellow]")
-
-    # Stop container (if running) - use detected runtime (container/docker/podman)
-    try:
-        from agenttree.container import get_container_runtime, find_container_by_worktree
-        runtime = get_container_runtime()
-        if runtime.runtime:
-            container_id = agent.container
-
-            # For Apple Containers, we need the UUID, not the name
-            # If the stored ID looks like a name (not a UUID), try to find the UUID
-            if runtime.runtime == "container" and not _is_uuid(container_id):
-                # Try to find the container by its worktree mount
-                worktree_path = Path(agent.worktree)
-                if not worktree_path.is_absolute():
-                    worktree_path = Path.cwd() / worktree_path
-                found_uuid = find_container_by_worktree(worktree_path)
-                if found_uuid:
-                    container_id = found_uuid
-                    console.print(f"[dim]  Found container UUID: {container_id[:12]}...[/dim]")
-                else:
-                    console.print(f"[yellow]  Could not find container UUID for {agent.container}[/yellow]")
-
-            result = subprocess.run(
-                [runtime.runtime, "stop", container_id],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            if result.returncode == 0:
-                console.print(f"[dim]  Stopped container: {container_id[:12] if len(container_id) > 12 else container_id}[/dim]")
-
-            # Remove container (only for Docker/Podman - Apple Containers auto-removes)
-            if runtime.runtime != "container":
-                subprocess.run(
-                    [runtime.runtime, "rm", container_id],
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                )
-    except Exception as e:
-        console.print(f"[yellow]  Warning: Could not stop container: {e}[/yellow]")
-
-    # Unregister agent (frees port)
-    unregister_agent(issue.id)
-    console.print(f"[green]✓ Agent cleaned up for issue #{issue.id}[/green]")
+    # Stop all agents for this issue (handles tmux, container, and state cleanup)
+    count = stop_all_agents_for_issue(issue.id)
+    if count == 0:
+        console.print(f"[dim]No active agents to clean up for issue #{issue.id}[/dim]")
 
 
 def check_and_start_blocked_issues(issue: Issue) -> None:

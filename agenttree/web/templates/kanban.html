@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Kanban - AgentTree</title>
-    <link rel="stylesheet" href="/static/styles.css">
+    <link rel="stylesheet" href="/static/styles.css?v=8">
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <!-- diff2html for code diff rendering -->
@@ -304,39 +304,22 @@ Possible solutions:
             document.getElementById('new-issue-error').textContent = '';
         };
 
-        window.submitNewIssue = async function(event) {
+        window.submitNewIssue = function(event) {
             event.preventDefault();
             const form = document.getElementById('new-issue-form');
             const formData = new FormData(form);
-            const errorDiv = document.getElementById('new-issue-error');
-            const submitBtn = document.getElementById('create-issue-btn');
 
-            // Disable button while submitting
-            submitBtn.disabled = true;
-            submitBtn.textContent = 'Creating...';
-            errorDiv.textContent = '';
+            // Close modal immediately
+            window.closeNewIssueModal();
 
-            try {
-                const response = await fetch('/api/issues', {
-                    method: 'POST',
-                    body: formData
-                });
+            // Fire request in background
+            fetch('/api/issues', {
+                method: 'POST',
+                body: formData
+            });
 
-                const data = await response.json();
-
-                if (response.ok) {
-                    // Success - reload the page to show new issue
-                    location.reload();
-                } else {
-                    errorDiv.textContent = data.detail || 'Failed to create issue';
-                    submitBtn.disabled = false;
-                    submitBtn.textContent = 'Create Issue';
-                }
-            } catch (error) {
-                errorDiv.textContent = 'Error creating issue: ' + error.message;
-                submitBtn.disabled = false;
-                submitBtn.textContent = 'Create Issue';
-            }
+            // Reload after short delay to show new issue
+            setTimeout(() => location.reload(), 1000);
         };
 
         // Stage toggle functionality
@@ -379,17 +362,14 @@ Possible solutions:
         // Stage view toggle
         window.setStageView = function(view) {
             const columns = document.querySelectorAll('.kanban-column');
-            const toggleReview = document.getElementById('toggle-review');
-            const toggleNonempty = document.getElementById('toggle-nonempty');
-            const toggleAll = document.getElementById('toggle-all');
+            const selectEl = document.getElementById('stage-view-select');
 
-            // Clear all active states
-            toggleReview.classList.remove('active');
-            toggleNonempty.classList.remove('active');
-            toggleAll.classList.remove('active');
+            // Update select dropdown to match current view
+            if (selectEl) {
+                selectEl.value = view;
+            }
 
             if (view === 'review') {
-                toggleReview.classList.add('active');
                 columns.forEach(col => {
                     const stage = col.dataset.stage;
                     if (reviewStages.includes(stage)) {
@@ -399,7 +379,6 @@ Possible solutions:
                     }
                 });
             } else if (view === 'nonempty') {
-                toggleNonempty.classList.add('active');
                 columns.forEach(col => {
                     const cardCount = col.querySelectorAll('.issue-item').length;
                     if (cardCount > 0) {
@@ -409,7 +388,6 @@ Possible solutions:
                     }
                 });
             } else {
-                toggleAll.classList.add('active');
                 columns.forEach(col => col.classList.remove('hidden'));
             }
 
