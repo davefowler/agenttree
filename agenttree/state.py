@@ -179,19 +179,12 @@ def get_active_agents_for_issue(issue_id: str) -> list[ActiveAgent]:
     except (FileNotFoundError, KeyError, AttributeError):
         project = "agenttree"
 
-<<<<<<< HEAD
-    for key, agent_data in state.get("active_agents", {}).items():
-        # Match both new format (062:agent) and old format (062)
-        if key.startswith(prefix) or key == issue_id:
-            agents.append(ActiveAgent.from_dict(agent_data))
-=======
     agents = []
     for session_name, created in _get_tmux_sessions():
         parsed = _parse_tmux_session_name(session_name, project)
         if parsed and parsed[0] == issue_id:
             sid, host = parsed
             agents.append(_build_agent_from_session(sid, host, session_name, created, project))
->>>>>>> origin/main
 
     return agents
 
