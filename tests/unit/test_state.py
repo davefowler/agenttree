@@ -1,8 +1,11 @@
-"""Tests for agenttree.state module with file locking."""
+"""Tests for agenttree.state module.
 
-import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+Note: State is now derived dynamically from tmux sessions.
+register_agent(), unregister_agent(), save_state() are no-ops.
+"""
+
 from pathlib import Path
+from unittest.mock import patch, MagicMock
 
 import pytest
 
@@ -12,7 +15,10 @@ from agenttree.state import (
     get_port_for_issue,
     register_agent,
     unregister_agent,
+    get_active_agent,
+    list_active_agents,
     ActiveAgent,
+    _parse_tmux_session_name,
 )
 
 
@@ -51,98 +57,122 @@ class TestDeterministicPorts:
             assert get_port_for_issue("042", base_port=9000) == 9042
 
 
-class TestStateLocking:
-    """Tests for state file locking to prevent race conditions."""
+class TestDynamicState:
+    """Tests for dynamic state derived from tmux sessions."""
 
-    def test_concurrent_register_unregister_agents(self, tmp_path, monkeypatch):
-        """Concurrent agent registration and unregistration should not corrupt state."""
-        state_file = tmp_path / "_agenttree" / "state.yaml"
-        monkeypatch.setattr("agenttree.state.get_state_path", lambda: state_file)
+    def test_parse_tmux_session_name_valid(self):
+        """Should parse valid session names."""
+        result = _parse_tmux_session_name("agenttree-agent-042", "agenttree")
+        assert result == ("042", "agent")
 
-        lock_file = tmp_path / "_agenttree" / "state.yaml.lock"
-        if hasattr(__import__("agenttree.state", fromlist=["get_state_lock_path"]), "get_state_lock_path"):
-            monkeypatch.setattr("agenttree.state.get_state_lock_path", lambda: lock_file)
+        result = _parse_tmux_session_name("agenttree-review-123", "agenttree")
+        assert result == ("123", "review")
 
-        errors = []
+        result = _parse_tmux_session_name("myproject-agent-001", "myproject")
+        assert result == ("001", "agent")
 
-        def register_and_unregister(issue_id: str):
-            try:
-                # Use deterministic port from issue ID
-                port = get_port_for_issue(issue_id, base_port=9000)
-                agent = ActiveAgent(
-                    issue_id=issue_id,
-                    host="agent",
-                    container=f"container-{issue_id}",
-                    worktree=Path(f"/tmp/worktree-{issue_id}"),
-                    branch=f"branch-{issue_id}",
-                    port=port,
-                    tmux_session=f"session-{issue_id}",
-                    started="2024-01-01T00:00:00Z",
-                )
-                register_agent(agent)
-                time.sleep(0.01)  # Small delay to increase race window
-                unregister_agent(issue_id, "agent")
-            except Exception as e:
-                errors.append(f"{issue_id}: {str(e)}")
+    def test_parse_tmux_session_name_invalid(self):
+        """Should return None for non-matching session names."""
+        # Wrong project
+        assert _parse_tmux_session_name("other-agent-042", "agenttree") is None
 
-        # Run operations concurrently
-        num_agents = 5
-        with ThreadPoolExecutor(max_workers=num_agents) as executor:
-            futures = [executor.submit(register_and_unregister, f"{i:03d}") for i in range(1, num_agents + 1)]
-            for future in as_completed(futures):
-                future.result()
+        # No issue ID
+        assert _parse_tmux_session_name("agenttree-agent", "agenttree") is None
 
-        assert len(errors) == 0, f"Errors occurred: {errors}"
+        # Random session
+        assert _parse_tmux_session_name("random-session", "agenttree") is None
 
-        # Verify state is clean (all agents unregistered)
+    def test_register_agent_is_noop(self):
+        """register_agent should be a no-op (tmux creation is registration)."""
+        agent = ActiveAgent(
+            issue_id="042",
+            host="agent",
+            container="test-container",
+            worktree=Path("/tmp/worktree"),
+            branch="test-branch",
+            port=9042,
+            tmux_session="test-session",
+            started="2024-01-01T00:00:00Z",
+        )
+        # Should not raise
+        register_agent(agent)
+
+    def test_save_state_is_noop(self):
+        """save_state should be a no-op."""
+        # Should not raise
+        save_state({"active_agents": {"test": "data"}})
+
+    def test_load_state_returns_empty_default(self):
+        """load_state should return empty default state."""
         state = load_state()
-        assert state.get("active_agents", {}) == {}, f"Expected no active agents, got {state.get('active_agents')}"
-
-    def test_save_state_creates_parent_directory(self, tmp_path, monkeypatch):
-        """save_state should create parent directories if they don't exist."""
-        state_file = tmp_path / "nested" / "dir" / "state.yaml"
-        monkeypatch.setattr("agenttree.state.get_state_path", lambda: state_file)
-
-        lock_file = tmp_path / "nested" / "dir" / "state.yaml.lock"
-        if hasattr(__import__("agenttree.state", fromlist=["get_state_lock_path"]), "get_state_lock_path"):
-            monkeypatch.setattr("agenttree.state.get_state_lock_path", lambda: lock_file)
-
-        test_state = {"active_agents": {}}
-        save_state(test_state)
-
-        assert state_file.exists()
-        loaded = load_state()
-        assert loaded == test_state
-
-    def test_load_state_returns_default_when_file_missing(self, tmp_path, monkeypatch):
-        """load_state should return default state when file doesn't exist."""
-        state_file = tmp_path / "_agenttree" / "state.yaml"
-        monkeypatch.setattr("agenttree.state.get_state_path", lambda: state_file)
-
-        state = load_state()
-
         assert "active_agents" in state
         assert state["active_agents"] == {}
 
+    @patch("agenttree.issues.get_issue")
+    @patch("agenttree.state._get_tmux_sessions")
+    @patch("agenttree.state.load_config")
+    def test_get_active_agent_finds_session(self, mock_config, mock_sessions, mock_get_issue):
+        """get_active_agent should find matching tmux session."""
+        mock_config.return_value = MagicMock(project="agenttree")
+        mock_sessions.return_value = [
+            ("agenttree-agent-042", "1704067200"),  # Unix timestamp
+        ]
+        mock_issue = MagicMock()
+        mock_issue.worktree_dir = "/tmp/worktree"
+        mock_issue.branch = "issue-042"
+        mock_get_issue.return_value = mock_issue
 
-class TestStateLockPath:
-    """Tests for lock file path function."""
+        agent = get_active_agent("042", "agent")
 
-    def test_get_state_lock_path_exists(self):
-        """get_state_lock_path function should exist after implementation."""
-        try:
-            from agenttree.state import get_state_lock_path
-            lock_path = get_state_lock_path()
-            assert lock_path.name == "state.yaml.lock"
-        except ImportError:
-            pytest.skip("get_state_lock_path not yet implemented")
+        assert agent is not None
+        assert agent.issue_id == "042"
+        assert agent.host == "agent"
+        assert agent.tmux_session == "agenttree-agent-042"
 
-    def test_lock_path_is_sibling_of_state_path(self):
-        """Lock file should be in same directory as state file."""
-        try:
-            from agenttree.state import get_state_lock_path, get_state_path
-            lock_path = get_state_lock_path()
-            state_path = get_state_path()
-            assert lock_path.parent == state_path.parent
-        except ImportError:
-            pytest.skip("get_state_lock_path not yet implemented")
+    @patch("agenttree.state._get_tmux_sessions")
+    @patch("agenttree.state.load_config")
+    def test_get_active_agent_returns_none_when_no_session(self, mock_config, mock_sessions):
+        """get_active_agent should return None when no matching session."""
+        mock_config.return_value = MagicMock(project="agenttree")
+        mock_sessions.return_value = [
+            ("agenttree-agent-001", "1704067200"),
+        ]
+
+        agent = get_active_agent("042", "agent")
+
+        assert agent is None
+
+    @patch("agenttree.issues.get_issue")
+    @patch("agenttree.state._get_tmux_sessions")
+    @patch("agenttree.state.load_config")
+    def test_list_active_agents(self, mock_config, mock_sessions, mock_get_issue):
+        """list_active_agents should return all agents from tmux sessions."""
+        mock_config.return_value = MagicMock(project="agenttree")
+        mock_sessions.return_value = [
+            ("agenttree-agent-042", "1704067200"),
+            ("agenttree-review-042", "1704067300"),
+            ("agenttree-agent-043", "1704067400"),
+            ("other-session", "1704067500"),  # Not matching
+        ]
+        mock_issue = MagicMock()
+        mock_issue.worktree_dir = "/tmp/worktree"
+        mock_issue.branch = "issue-042"
+        mock_get_issue.return_value = mock_issue
+
+        agents = list_active_agents()
+
+        assert len(agents) == 3
+        issue_ids = {a.issue_id for a in agents}
+        assert "042" in issue_ids
+        assert "043" in issue_ids
+
+
+class TestLegacyStatePath:
+    """Tests for legacy state path function."""
+
+    def test_get_state_path_returns_path(self):
+        """get_state_path should return a Path object."""
+        from agenttree.state import get_state_path
+        path = get_state_path()
+        assert isinstance(path, Path)
+        assert path.name == "state.yaml"
