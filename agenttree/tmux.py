@@ -486,7 +486,7 @@ class TmuxManager:
         model: str | None = None,
         agent_host: str = "agent",
         has_merge_conflicts: bool = False,
-    ) -> None:
+    ) -> bool:
         """Start an issue-bound agent in a container within a tmux session.
 
         Args:
@@ -498,6 +498,9 @@ class TmuxManager:
             model: Model to use (defaults to config.default_model if not specified)
             agent_host: Agent host type for the stage (e.g., "agent", "review")
             has_merge_conflicts: Whether there are unresolved merge conflicts
+
+        Returns:
+            True if agent started successfully, False if startup failed
         """
         # Kill existing session if it exists
         if session_exists(session_name):
@@ -549,6 +552,13 @@ class TmuxManager:
             else:
                 startup_prompt = "Run 'agenttree next' to see your workflow instructions and current stage."
             send_keys(session_name, startup_prompt)
+            return True
+        else:
+            # Startup failed - session may have crashed or container didn't start
+            # Clean up the tmux session if it exists
+            if session_exists(session_name):
+                kill_session(session_name)
+            return False
 
     def start_controller(
         self,
