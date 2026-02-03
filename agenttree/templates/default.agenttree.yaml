@@ -54,7 +54,7 @@ hosts:
       image: agenttree-agent:latest
     tool: claude
     model: sonnet
-    skill: agents/review.md
+    skill: agents/reviewer/independent_review.md
 
 stages:
   - name: backlog
@@ -181,7 +181,7 @@ stages:
   - name: independent_code_review
     host: review  # Custom agent host - spawned by controller
     output: independent_review.md
-    skill: agents/review.md  # Custom skill file for this stage
+    skill: agents/reviewer/independent_review.md
     pre_completion:
       - file_exists: independent_review.md
       - section_check:
@@ -247,3 +247,12 @@ stages:
 
   - name: not_doing
     terminal: true
+
+# Controller hooks for dogfooding - track cleanup frequency to identify workflow issues
+# This is project-specific logging to help us find broken workflow steps
+controller_hooks:
+  post_sync:
+    # Run periodic cleanup and log what was cleaned
+    # High cleanup frequency indicates broken workflow steps that need fixing
+    - cleanup_resources:
+        log_file: _agenttree/logs/cleanup.log

@@ -72,8 +72,13 @@ def get_stalled_agents(
             with open(issue_yaml) as f:
                 issue_data = yaml.safe_load(f)
 
-            # Skip if no agent assigned
-            if not issue_data.get("assigned_agent"):
+            # Skip if no active agent running for this issue
+            from agenttree.state import get_active_agent
+            issue_id = issue_data.get("id", "")
+            if not issue_id:
+                continue
+            active_agent = get_active_agent(issue_id)
+            if not active_agent:
                 continue
 
             # Get stage info
@@ -109,8 +114,6 @@ def get_stalled_agents(
                     continue  # Not stalled yet
             except (ValueError, TypeError):
                 continue
-
-            issue_id = issue_data.get("id", "")
 
             # Build stage string
             stage_str = f"{stage}.{substage}" if substage else stage
