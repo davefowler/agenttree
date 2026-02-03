@@ -352,7 +352,7 @@ HOOK_TYPES = {
     "rollback",  # Review loop: programmatic rollback to earlier stage
     # Controller hooks (run on post-sync)
     "push_pending_branches", "check_controller_stages", "check_merged_prs",
-    "check_ci_status", "check_custom_agent_stages",
+    "check_ci_status", "check_custom_agent_stages", "check_stalled_agents",
 }
 
 # =============================================================================
@@ -1194,6 +1194,36 @@ def run_builtin_validator(
         agents_dir = kwargs.get("agents_dir")
         if agents_dir:
             check_custom_agent_stages(agents_dir)
+
+    elif hook_type == "check_stalled_agents":
+        from agenttree.controller_agent import get_stalled_agents
+
+        agents_dir = kwargs.get("agents_dir")
+        if agents_dir:
+            threshold = params.get("threshold_min", 20)
+            stalled = get_stalled_agents(agents_dir, threshold_min=threshold)
+
+            for agent_info in stalled:
+                issue_id = agent_info["issue_id"]
+                minutes = agent_info["minutes_stalled"]
+
+                # Send nudge via agenttree send - handles agent restart if needed
+                message = f"You've been in the same stage for {minutes} minutes. Run `agenttree next` to check your progress and continue."
+                try:
+                    result = subprocess.run(
+                        ["agenttree", "send", issue_id, message],
+                        capture_output=True,
+                        text=True,
+                        timeout=30,
+                    )
+                    if result.returncode == 0:
+                        console.print(f"[yellow]Nudged stalled agent #{issue_id} ({minutes}m)[/yellow]")
+                    else:
+                        console.print(f"[red]Failed to nudge #{issue_id}: {result.stderr}[/red]")
+                except subprocess.TimeoutExpired:
+                    console.print(f"[red]Nudge timed out for #{issue_id}[/red]")
+                except Exception as e:
+                    console.print(f"[red]Failed to nudge #{issue_id}: {e}[/red]")
 
     elif hook_type == "server_running":
         # Check that a dev server is running on the issue's port
