@@ -46,11 +46,11 @@ class TestSendCommand:
         mock_agent = MagicMock()
         mock_agent.tmux_session = "agent-42"
         mock_agent.issue_id = "42"
-        mock_agent.host = "agent"
+        mock_agent.role = "agent"
 
         # First call returns None (no agent), second call returns agent (after start)
         agent_call_count = [0]
-        def mock_get_agent(issue_id, host="agent"):
+        def mock_get_agent(issue_id, role="developer"):
             agent_call_count[0] += 1
             if agent_call_count[0] == 1:
                 return None  # First check: not running
@@ -83,7 +83,7 @@ class TestSendCommand:
         mock_agent = MagicMock()
         mock_agent.tmux_session = "agent-42"
         mock_agent.issue_id = "42"
-        mock_agent.host = "agent"
+        mock_agent.role = "agent"
 
         with patch("agenttree.cli.load_config", return_value=mock_config):
             with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
@@ -123,7 +123,7 @@ class TestStopCommand:
         mock_agent = MagicMock()
         mock_agent.tmux_session = "agent-42"
         mock_agent.issue_id = "42"
-        mock_agent.host = "agent"
+        mock_agent.role = "agent"
 
         with patch("agenttree.cli.load_config", return_value=mock_config):
             with patch("agenttree.state.get_active_agent", return_value=mock_agent):
@@ -132,7 +132,7 @@ class TestStopCommand:
                         result = cli_runner.invoke(main, ["stop", "42"])
 
         assert result.exit_code == 0
-        mock_stop.assert_called_once_with("42", "agent")
+        mock_stop.assert_called_once_with("42", "developer")
 
     def test_kill_alias_works(self, cli_runner, mock_config):
         """kill command should work as an alias for stop."""
@@ -141,7 +141,7 @@ class TestStopCommand:
         mock_agent = MagicMock()
         mock_agent.tmux_session = "agent-42"
         mock_agent.issue_id = "42"
-        mock_agent.host = "agent"
+        mock_agent.role = "agent"
 
         with patch("agenttree.cli.load_config", return_value=mock_config):
             with patch("agenttree.state.get_active_agent", return_value=mock_agent):
@@ -150,7 +150,7 @@ class TestStopCommand:
                         result = cli_runner.invoke(main, ["kill", "42"])
 
         assert result.exit_code == 0
-        mock_stop.assert_called_once_with("42", "agent")
+        mock_stop.assert_called_once_with("42", "developer")
 
 
 class TestAttachCommand:
@@ -236,7 +236,7 @@ class TestApproveCommand:
         mock_issue.is_review = False
 
         # Mock stage config to indicate not a review stage
-        mock_config.get_stage.return_value = MagicMock(human_review=False, host="agent")
+        mock_config.get_stage.return_value = MagicMock(human_review=False, role="developer")
         mock_config.get_human_review_stages.return_value = ["plan_review", "implementation_review"]
 
         with patch("agenttree.cli.load_config", return_value=mock_config):

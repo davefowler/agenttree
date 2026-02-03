@@ -1,17 +1,17 @@
-"""Controller hooks - configurable post-sync hooks for the agenttree controller.
+"""Manager hooks - configurable post-sync hooks for the agenttree manager.
 
-This module provides the entry point for running controller hooks after sync.
+This module provides the entry point for running manager hooks after sync.
 It uses the unified hook system from agenttree.hooks.
 
-Controller hooks are configured in .agenttree.yaml under `controller_hooks.post_sync`.
+Manager hooks are configured in .agenttree.yaml under `manager_hooks.post_sync`.
 See agenttree/hooks.py for full documentation on hook configuration, base options,
 and available hook types.
 
 Quick example:
-    controller_hooks:
+    manager_hooks:
       post_sync:
         - push_pending_branches: {}
-        - check_controller_stages: {}
+        - check_manager_stages: {}
         - check_custom_agent_stages: {}
         - check_merged_prs: {}
         - check_ci_status:
@@ -40,7 +40,7 @@ console = Console()
 # Default hooks if not configured in .agenttree.yaml
 DEFAULT_POST_SYNC_HOOKS: list[dict[str, Any]] = [
     {"push_pending_branches": {}},
-    {"check_controller_stages": {}},
+    {"check_manager_stages": {}},
     {"check_custom_agent_stages": {}},
     {"check_ci_status": {}},
     {"check_merged_prs": {}},
@@ -48,7 +48,7 @@ DEFAULT_POST_SYNC_HOOKS: list[dict[str, Any]] = [
 ]
 
 
-def run_post_controller_hooks(agents_dir: Path, verbose: bool = False) -> None:
+def run_post_manager_hooks(agents_dir: Path, verbose: bool = False) -> None:
     """Run all configured post-sync hooks.
 
     Reads hook config from .agenttree.yaml and executes each hook using
@@ -65,7 +65,7 @@ def run_post_controller_hooks(agents_dir: Path, verbose: bool = False) -> None:
     try:
         config = load_config()
         raw_config = config.model_dump() if hasattr(config, "model_dump") else {}
-        hooks = raw_config.get("controller_hooks", {}).get("post_sync", None)
+        hooks = raw_config.get("manager_hooks", {}).get("post_sync", None)
     except Exception:
         hooks = None
 
@@ -95,11 +95,11 @@ def run_post_controller_hooks(agents_dir: Path, verbose: bool = False) -> None:
             hook_state=state,
             sync_count=sync_count,
             verbose=verbose,
-            # Pass agents_dir for controller hooks that need it
+            # Pass agents_dir for manager hooks that need it
             agents_dir=agents_dir,
         )
 
-        # Log errors (but don't raise - controller hooks shouldn't crash sync)
+        # Log errors (but don't raise - manager hooks shouldn't crash sync)
         if errors:
             for error in errors:
                 console.print(f"[yellow]Warning: {error}[/yellow]")

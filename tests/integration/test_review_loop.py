@@ -28,7 +28,7 @@ def review_loop_config() -> dict:
         "project": "test-project",
         "worktrees_dir": ".worktrees",
         "hosts": {
-            "controller": {"description": "Human controller"},
+            "manager": {"description": "Human controller"},
             "agent": {"description": "Default agent"},
             "review": {"description": "Review agent", "skill": "agents/review.md"},
         },
@@ -65,7 +65,7 @@ def review_loop_config() -> dict:
             {
                 "name": "implementation_review",
                 "human_review": True,
-                "host": "controller",
+                "host": "manager",
             },
             {"name": "accepted", "terminal": True},
         ],

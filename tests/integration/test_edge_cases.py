@@ -130,7 +130,7 @@ class TestAgentStateEdgeCases:
             found = get_active_agent("001", "agent")
             assert found is not None
             assert found.issue_id == "001"
-            assert found.host == "agent"
+            assert found.role == "agent"
             assert found.port == 9001
 
             # Simulate tmux session removed (agent stopped)

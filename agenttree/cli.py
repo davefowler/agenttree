@@ -50,7 +50,7 @@ from agenttree.hooks import (
     ValidationError,
     StageRedirect,
     is_running_in_container,
-    get_current_agent_host,
+    get_current_role,
     can_agent_operate_in_stage,
 )
 from agenttree.preflight import run_preflight
@@ -344,42 +344,42 @@ def preflight() -> None:
         sys.exit(1)
 
 
-def _start_controller(
+def _start_manager(
     tool: Optional[str],
     force: bool,
     config: "Config",
     repo_path: Path,
 ) -> None:
-    """Start the controller agent (agent 0).
+    """Start the manager agent (agent 0).
 
-    The controller runs on the host (not in a container) and orchestrates
+    The manager runs on the host (not in a container) and orchestrates
     work across all issues. It uses the main branch.
     """
     from agenttree.tmux import session_exists
 
     tmux_manager = TmuxManager(config)
-    session_name = f"{config.project}-controller-000"
+    session_name = f"{config.project}-manager-000"
 
-    # Check if controller already running
+    # Check if manager already running
     if session_exists(session_name) and not force:
-        console.print("[yellow]Controller already running[/yellow]")
+        console.print("[yellow]Manager already running[/yellow]")
         console.print(f"\nUse --force to restart, or attach with:")
         console.print(f"  agenttree attach 0")
         sys.exit(1)
 
     tool_name = tool or config.default_tool
-    console.print(f"[green]Starting controller agent...[/green]")
+    console.print(f"[green]Starting manager agent...[/green]")
     console.print(f"[dim]Tool: {tool_name}[/dim]")
     console.print(f"[dim]Session: {session_name}[/dim]")
 
-    # Start controller on host (not in container)
-    tmux_manager.start_controller(
+    # Start manager on host (not in container)
+    tmux_manager.start_manager(
         session_name=session_name,
         repo_path=repo_path,
         tool_name=tool_name,
     )
 
-    console.print(f"\n[bold]Controller ready[/bold]")
+    console.print(f"\n[bold]Manager ready[/bold]")
     console.print(f"\n[dim]Commands:[/dim]")
     console.print(f"  agenttree attach 0")
     console.print(f"  agenttree send 0 'message'")
@@ -389,13 +389,13 @@ def _start_controller(
 @main.command(name="start")
 @click.argument("issue_id", type=str)
 @click.option("--tool", help="AI tool to use (default: from config)")
-@click.option("--host", default="agent", help="Agent host type (default: agent)")
+@click.option("--role", default="developer", help="Agent role (default: developer)")
 @click.option("--force", is_flag=True, help="Force start even if agent already exists")
 @click.option("--skip-preflight", is_flag=True, help="Skip preflight environment checks")
 def start_agent(
     issue_id: str,
     tool: Optional[str],
-    host: str,
+    role: str,
     force: bool,
     skip_preflight: bool,
 ) -> None:
@@ -405,12 +405,12 @@ def start_agent(
 
     This creates a dedicated agent for the issue with:
     - A new worktree (issue-023-slug/)
-    - A new container (agenttree-{host}-023)
+    - A new container (agenttree-{role}-023)
     - A tmux session for interaction
 
     The agent is automatically cleaned up when the issue is accepted.
 
-    Use --host to start a non-default agent (e.g., --host reviewer for code review).
+    Use --role to start a non-default agent (e.g., --role reviewer for code review).
     """
     from agenttree.state import (
         get_active_agent,
@@ -443,7 +443,7 @@ def start_agent(
 
     # Special handling for controller (agent 0)
     if issue_id_normalized == "0":
-        _start_controller(tool, force, config, repo_path)
+        _start_manager(tool, force, config, repo_path)
         return
 
     # Load issue from local _agenttree/issues/
@@ -461,13 +461,13 @@ def start_agent(
         issue.stage = "define"  # Update local reference
 
     # Check if issue already has an active agent for this host
-    existing_agent = get_active_agent(issue.id, host)
+    existing_agent = get_active_agent(issue.id, role)
     if existing_agent and not force:
-        console.print(f"[yellow]Issue #{issue.id} already has an active {host} agent[/yellow]")
+        console.print(f"[yellow]Issue #{issue.id} already has an active {role} agent[/yellow]")
         console.print(f"  Container: {existing_agent.container}")
         console.print(f"  Port: {existing_agent.port}")
         console.print(f"\nUse --force to replace it, or attach with:")
-        console.print(f"  agenttree attach {issue.id}" + (f" --host {host}" if host != "agent" else ""))
+        console.print(f"  agenttree attach {issue.id}" + (f" --role {role}" if role != "developer" else ""))
         sys.exit(1)
 
     # Initialize managers
@@ -478,7 +478,7 @@ def start_agent(
     agents_repo.ensure_repo()
 
     # Get names for this issue and host
-    names = get_issue_names(issue.id, issue.slug, config.project, host)
+    names = get_issue_names(issue.id, issue.slug, config.project, role)
 
     # Create worktree for issue
     worktree_path = config.get_issue_worktree_path(issue.id, issue.slug)
@@ -531,14 +531,14 @@ def start_agent(
         worktree_path=worktree_path,
         port=port,
         project=config.project,
-        host=host,
+        role=role,
     )
 
     # Save branch and worktree info to issue metadata
     update_issue_metadata(issue.id, branch=names["branch"], worktree_dir=str(worktree_path))
 
-    host_label = f" ({host})" if host != "agent" else ""
-    console.print(f"[green]✓ Starting agent{host_label} for issue #{issue.id}: {issue.title}[/green]")
+    role_label = f" ({role})" if role != "developer" else ""
+    console.print(f"[green]✓ Starting agent{role_label} for issue #{issue.id}: {issue.title}[/green]")
 
     # Create session for restart detection
     create_session(issue.id)
@@ -565,14 +565,14 @@ def start_agent(
         tool_name=tool_name,
         container_runtime=runtime,
         model=model_name,
-        agent_host=host,
+        role=role,
         has_merge_conflicts=has_merge_conflicts,
     )
 
     if not start_success:
         # Startup failed - clean up state and exit
         from agenttree.state import unregister_agent
-        unregister_agent(issue.id, host)
+        unregister_agent(issue.id, role)
         console.print(f"[red]Error: Agent failed to start (Claude prompt not detected within timeout)[/red]")
         console.print(f"[dim]State has been cleaned up. Try running 'agenttree start {issue.id}' again.[/dim]")
         sys.exit(1)
@@ -590,20 +590,20 @@ def start_agent(
             time.sleep(0.5)
             container_uuid = find_container_by_worktree(worktree_path)
             if container_uuid:
-                update_agent_container_id(issue.id, container_uuid, host)
+                update_agent_container_id(issue.id, container_uuid, role)
                 console.print(f"[dim]Container UUID: {container_uuid[:12]}...[/dim]")
                 break
         else:
             console.print(f"[yellow]Warning: Could not find container UUID for cleanup tracking[/yellow]")
 
-    console.print(f"\n[bold]Agent{host_label} ready for issue #{issue.id}[/bold]")
+    console.print(f"\n[bold]Agent{role_label} ready for issue #{issue.id}[/bold]")
     console.print(f"  Container: {agent.container}")
     console.print(f"  Port: {agent.port}")
-    console.print(f"  Host: {host}")
+    console.print(f"  Role: {role}")
     console.print(f"\n[dim]Commands:[/dim]")
-    host_flag = f" --host {host}" if host != "agent" else ""
-    console.print(f"  agenttree attach {issue.id}{host_flag}")
-    console.print(f"  agenttree send {issue.id}{host_flag} 'message'")
+    role_flag = f" --role {role}" if role != "developer" else ""
+    console.print(f"  agenttree attach {issue.id}{role_flag}")
+    console.print(f"  agenttree send {issue.id}{role_flag} 'message'")
     console.print(f"  agenttree agents")
 
 
@@ -647,7 +647,7 @@ def agents_status() -> None:
 
         table.add_row(
             agent.issue_id,
-            agent.host,
+            agent.role,
             issue_title,
             status_str,
             str(agent.port),
@@ -655,10 +655,10 @@ def agents_status() -> None:
         )
 
     console.print(table)
-    console.print(f"\n[dim]Commands (use ID from table above, add --host if not 'agent'):[/dim]")
-    console.print(f"  agenttree attach <id> [--host <host>]")
-    console.print(f"  agenttree send <id> [--host <host>] 'message'")
-    console.print(f"  agenttree stop <id> [--host <host>]")
+    console.print(f"\n[dim]Commands (use ID from table above, add --role if not 'developer'):[/dim]")
+    console.print(f"  agenttree attach <id> [--role <role>]")
+    console.print(f"  agenttree send <id> [--role <role>] 'message'")
+    console.print(f"  agenttree stop <id> [--role <role>]")
 
 
 @main.command()
@@ -801,8 +801,8 @@ def sandbox(name: str, list_sandboxes: bool, kill: bool, tool: Optional[str], sh
 
 @main.command()
 @click.argument("issue_id", type=str)
-@click.option("--host", default="agent", help="Agent host type (default: agent)")
-def attach(issue_id: str, host: str) -> None:
+@click.option("--role", default="developer", help="Agent role (default: developer)")
+def attach(issue_id: str, role: str) -> None:
     """Attach to an issue's agent tmux session.
 
     ISSUE_ID is the issue number (e.g., "23" or "023"), or "0" for controller.
@@ -828,23 +828,23 @@ def attach(issue_id: str, host: str) -> None:
         return
 
     # Get active agent for this issue and host
-    agent = get_active_agent(issue_id_normalized, host)
+    agent = get_active_agent(issue_id_normalized, role)
     if not agent:
         # Try with padded ID
         issue = get_issue_func(issue_id_normalized)
         if issue:
-            agent = get_active_agent(issue.id, host)
+            agent = get_active_agent(issue.id, role)
 
     if not agent:
-        host_label = f" ({host})" if host != "agent" else ""
-        console.print(f"[red]Error: No active{host_label} agent for issue #{issue_id}[/red]")
-        host_flag = f" --host {host}" if host != "agent" else ""
-        console.print(f"[yellow]Start one with: agenttree start {issue_id}{host_flag}[/yellow]")
+        role_label = f" ({role})" if role != "developer" else ""
+        console.print(f"[red]Error: No active{role_label} agent for issue #{issue_id}[/red]")
+        role_flag = f" --role {role}" if role != "developer" else ""
+        console.print(f"[yellow]Start one with: agenttree start {issue_id}{role_flag}[/yellow]")
         sys.exit(1)
 
     try:
-        host_label = f" ({agent.host})" if agent.host != "agent" else ""
-        console.print(f"Attaching to issue #{agent.issue_id}{host_label} (Ctrl+B, D to detach)...")
+        role_label = f" ({agent.role})" if agent.role != "developer" else ""
+        console.print(f"Attaching to issue #{agent.issue_id}{role_label} (Ctrl+B, D to detach)...")
         tmux_manager.attach_to_issue(agent.tmux_session)
     except RuntimeError as e:
         console.print(f"[red]Error: {e}[/red]")
@@ -854,8 +854,8 @@ def attach(issue_id: str, host: str) -> None:
 @main.command()
 @click.argument("issue_id", type=str)
 @click.argument("message")
-@click.option("--host", default="agent", help="Agent host type (default: agent)")
-def send(issue_id: str, message: str, host: str) -> None:
+@click.option("--role", default="developer", help="Agent role (default: developer)")
+def send(issue_id: str, message: str, role: str) -> None:
     """Send a message to an issue's agent.
 
     ISSUE_ID is the issue number (e.g., "23" or "023"), or "0" for controller.
@@ -894,17 +894,17 @@ def send(issue_id: str, message: str, host: str) -> None:
     # Helper to start agent if needed
     def ensure_agent_running() -> bool:
         """Start agent if not running. Returns True if agent is now running."""
-        agent = get_active_agent(issue_id_normalized, host)
+        agent = get_active_agent(issue_id_normalized, role)
         if agent and tmux_manager.is_issue_running(agent.tmux_session):
             return True
 
         # Agent not running - start it
-        host_label = f" ({host})" if host != "agent" else ""
-        console.print(f"[dim]Agent{host_label} not running, starting...[/dim]")
+        role_label = f" ({role})" if role != "developer" else ""
+        console.print(f"[dim]Agent{role_label} not running, starting...[/dim]")
 
-        host_flag = f" --host {host}" if host != "agent" else ""
+        role_flag = f" --role {role}" if role != "developer" else ""
         result = subprocess.run(
-            ["agenttree", "start", issue_id_normalized] + (["--host", host] if host != "agent" else []) + ["--skip-preflight"],
+            ["agenttree", "start", issue_id_normalized] + (["--role", role] if role != "developer" else []) + ["--skip-preflight"],
             capture_output=True,
             text=True,
         )
@@ -912,7 +912,7 @@ def send(issue_id: str, message: str, host: str) -> None:
             console.print(f"[red]Error: Could not start agent: {result.stderr}[/red]")
             return False
 
-        console.print(f"[green]✓ Started agent{host_label}[/green]")
+        console.print(f"[green]✓ Started agent{role_label}[/green]")
         return True
 
     # Ensure agent is running
@@ -920,7 +920,7 @@ def send(issue_id: str, message: str, host: str) -> None:
         sys.exit(1)
 
     # Re-fetch agent after potential start
-    agent = get_active_agent(issue_id_normalized, host)
+    agent = get_active_agent(issue_id_normalized, role)
     if not agent:
         console.print(f"[red]Error: Agent started but not found in state[/red]")
         sys.exit(1)
@@ -928,18 +928,18 @@ def send(issue_id: str, message: str, host: str) -> None:
     # Send the message
     result = tmux_manager.send_message_to_issue(agent.tmux_session, message)
 
-    host_label = f" ({agent.host})" if agent.host != "agent" else ""
+    role_label = f" ({agent.role})" if agent.role != "developer" else ""
     if result == "sent":
-        console.print(f"[green]✓ Sent message to issue #{agent.issue_id}{host_label}[/green]")
+        console.print(f"[green]✓ Sent message to issue #{agent.issue_id}{role_label}[/green]")
     elif result == "claude_exited":
         # Claude exited - restart and try again
         console.print(f"[yellow]Claude CLI exited, restarting agent...[/yellow]")
         if ensure_agent_running():
-            agent = get_active_agent(issue_id_normalized, host)
+            agent = get_active_agent(issue_id_normalized, role)
             if agent:
                 result = tmux_manager.send_message_to_issue(agent.tmux_session, message)
                 if result == "sent":
-                    console.print(f"[green]✓ Sent message to issue #{agent.issue_id}{host_label}[/green]")
+                    console.print(f"[green]✓ Sent message to issue #{agent.issue_id}{role_label}[/green]")
                     return
         console.print(f"[red]Error: Could not send message after restart[/red]")
         sys.exit(1)
@@ -953,16 +953,16 @@ def send(issue_id: str, message: str, host: str) -> None:
 
 @main.command()
 @click.argument("issue_id", type=str)
-@click.option("--host", default="agent", help="Agent host type (default: agent)")
-@click.option("--all", "all_hosts", is_flag=True, help="Stop all agents for this issue (all hosts)")
-def stop(issue_id: str, host: str, all_hosts: bool) -> None:
+@click.option("--role", default="developer", help="Agent role (default: developer)")
+@click.option("--all", "all_roles", is_flag=True, help="Stop all agents for this issue (all roles)")
+def stop(issue_id: str, role: str, all_roles: bool) -> None:
     """Stop an issue's agent (kills tmux, stops container, cleans up state).
 
     ISSUE_ID is the issue number (e.g., "23" or "023"), or "0" for controller.
 
     Examples:
         agenttree stop 23              # Stop the default agent for issue 23
-        agenttree stop 23 --host review  # Stop the review agent
+        agenttree stop 23 --role reviewer  # Stop the review agent
         agenttree stop 23 --all        # Stop all agents for issue 23
     """
     from agenttree.state import stop_agent, stop_all_agents_for_issue, get_active_agent
@@ -984,7 +984,7 @@ def stop(issue_id: str, host: str, all_hosts: bool) -> None:
         return
 
     # Stop all agents for this issue if --all flag
-    if all_hosts:
+    if all_roles:
         count = stop_all_agents_for_issue(issue_id_normalized)
         if count == 0:
             console.print(f"[yellow]No active agents for issue #{issue_id}[/yellow]")
@@ -995,24 +995,24 @@ def stop(issue_id: str, host: str, all_hosts: bool) -> None:
     actual_id = issue.id if issue else issue_id_normalized
 
     # Check if agent exists
-    agent = get_active_agent(actual_id, host)
+    agent = get_active_agent(actual_id, role)
     if not agent:
-        host_label = f" ({host})" if host != "agent" else ""
-        console.print(f"[red]Error: No active{host_label} agent for issue #{issue_id}[/red]")
+        role_label = f" ({role})" if role != "developer" else ""
+        console.print(f"[red]Error: No active{role_label} agent for issue #{issue_id}[/red]")
         sys.exit(1)
 
     # Use consolidated stop_agent function
-    stop_agent(actual_id, host)
+    stop_agent(actual_id, role)
 
 
 # Alias for backwards compatibility - just invokes stop
 @main.command(name="kill", hidden=True)
 @click.argument("issue_id", type=str)
-@click.option("--host", default="agent", help="Agent host type (default: agent)")
+@click.option("--role", default="developer", help="Agent role (default: developer)")
 @click.pass_context
-def kill_alias(ctx: click.Context, issue_id: str, host: str) -> None:
+def kill_alias(ctx: click.Context, issue_id: str, role: str) -> None:
     """Alias for 'stop' command (use 'agenttree stop' instead)."""
-    ctx.invoke(stop, issue_id=issue_id, host=host, all_hosts=False)
+    ctx.invoke(stop, issue_id=issue_id, role=role, all_roles=False)
 
 
 @main.group()
@@ -1157,13 +1157,13 @@ def stalls(threshold: int | None) -> None:
         agenttree stalls              # Check for stalled agents
         agenttree stalls -t 30        # Use 30-minute threshold
     """
-    from agenttree.controller_agent import get_stalled_agents
+    from agenttree.manager_agent import get_stalled_agents
 
     config = load_config()
     agents_dir = Path.cwd() / "_agenttree"
 
     # Use config threshold or override
-    threshold_min = threshold if threshold is not None else config.controller.stall_threshold_min
+    threshold_min = threshold if threshold is not None else config.manager.stall_threshold_min
 
     stalled = get_stalled_agents(agents_dir, threshold_min=threshold_min)
 
@@ -1616,7 +1616,10 @@ def issue_show(issue_id: str, as_json: bool, field_name: Optional[str]) -> None:
         console.print(f"[bold]Branch:[/bold] {issue.branch}")
 
     if issue.pr_number:
-        console.print(f"[bold]PR:[/bold] #{issue.pr_number}")
+        if issue.pr_url:
+            console.print(f"[bold]PR:[/bold] #{issue.pr_number} - {issue.pr_url} (diff: {issue.pr_url}/files)")
+        else:
+            console.print(f"[bold]PR:[/bold] #{issue.pr_number}")
 
     if issue.github_issue:
         console.print(f"[bold]GitHub Issue:[/bold] #{issue.github_issue}")
@@ -1838,11 +1841,11 @@ def stage_status(issue_id: Optional[str]) -> None:
     from agenttree.config import load_config
     config_for_status = load_config()
     status_stage_config = config_for_status.get_stage(issue.stage)
-    if status_stage_config and status_stage_config.host != "agent":
-        if status_stage_config.host == "controller":
+    if status_stage_config and status_stage_config.role != "developer":
+        if status_stage_config.role == "manager":
             console.print(f"\n[yellow]⏳ Waiting for human review[/yellow]")
         else:
-            console.print(f"\n[yellow]⏳ Waiting for '{status_stage_config.host}' agent[/yellow]")
+            console.print(f"\n[yellow]⏳ Waiting for '{status_stage_config.role}' agent[/yellow]")
     elif issue.stage == ACCEPTED:
         console.print(f"\n[green]✓ Issue completed[/green]")
 
@@ -1888,10 +1891,10 @@ def stage_next(issue_id: Optional[str], reassess: bool) -> None:
     config = load_config()
     stage_config = config.get_stage(issue.stage)
     if stage_config:
-        stage_host = stage_config.host
-        current_host = get_current_agent_host()
+        stage_role = stage_config.role
+        current_role = get_current_role()
         # Only block if this is a controller stage and we're not the controller
-        if stage_host == "controller" and current_host != "controller":
+        if stage_role == "manager" and current_role != "manager":
             console.print(f"\n[yellow]⏳ Waiting for human review[/yellow]")
             console.print(f"[dim]Stage '{issue.stage}' requires human review.[/dim]")
             console.print(f"[dim]A human will run 'agenttree approve {issue.id}' when ready.[/dim]")
@@ -2040,14 +2043,14 @@ def stage_next(issue_id: Optional[str], reassess: bool) -> None:
 
     # Check if next stage requires a different host
     next_stage_config = config.get_stage(next_stage)
-    if next_stage_config and next_stage_config.host != "agent" and is_running_in_container():
-        if next_stage_config.host == "controller" or is_human_review:
+    if next_stage_config and next_stage_config.role != "developer" and is_running_in_container():
+        if next_stage_config.role == "manager" or is_human_review:
             console.print(f"\n[yellow]⏳ Waiting for human review[/yellow]")
             console.print(f"[dim]Your work has been submitted for review.[/dim]")
             console.print(f"[dim]You will receive instructions when the review is complete.[/dim]")
         else:
-            console.print(f"\n[yellow]⏳ Waiting for '{next_stage_config.host}' agent[/yellow]")
-            console.print(f"[dim]The '{next_stage_config.host}' agent will handle the next stage.[/dim]")
+            console.print(f"\n[yellow]⏳ Waiting for '{next_stage_config.role}' agent[/yellow]")
+            console.print(f"[dim]The '{next_stage_config.role}' agent will handle the next stage.[/dim]")
             console.print(f"[dim]You will receive instructions when that stage is complete.[/dim]")
         return
 
@@ -2099,7 +2102,7 @@ def approve_issue(issue_id: str, skip_approval: bool) -> None:
     from agenttree.config import load_config
     approve_config = load_config()
     approve_stage_config = approve_config.get_stage(issue.stage)
-    if not approve_stage_config or not (approve_stage_config.human_review or approve_stage_config.host == "controller"):
+    if not approve_stage_config or not (approve_stage_config.human_review or approve_stage_config.role == "manager"):
         human_review_stages = approve_config.get_human_review_stages()
         console.print(f"[red]Issue is at '{issue.stage}', not a human review stage[/red]")
         console.print(f"[dim]Human review stages: {', '.join(human_review_stages)}[/dim]")
@@ -2917,7 +2920,7 @@ def rollback_issue(
 
     should_reset = reset_worktree or (auto_reset and not keep_changes)
 
-    # Check for active agents (all hosts)
+    # Check for active agents (all roles)
     from agenttree.state import get_active_agents_for_issue
     active_agents = get_active_agents_for_issue(issue_id_normalized)
     active_agent = active_agents[0] if active_agents else None  # For worktree reference

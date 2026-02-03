@@ -459,7 +459,7 @@ class TestTmuxManager:
 
 
 class TestStartController:
-    """Tests for TmuxManager.start_controller method."""
+    """Tests for TmuxManager.start_manager method."""
 
     @pytest.fixture
     def mock_config(self):
@@ -471,7 +471,7 @@ class TestStartController:
         config.get_tool_config.return_value = tool_config
         return config
 
-    def test_start_controller_creates_session(self, mock_config, tmp_path):
+    def test_start_manager_creates_session(self, mock_config, tmp_path):
         """Should create a new tmux session for the controller."""
         from agenttree.tmux import TmuxManager
 
@@ -481,7 +481,7 @@ class TestStartController:
             with patch("agenttree.tmux.create_session") as mock_create:
                 with patch("agenttree.tmux.wait_for_prompt", return_value=True):
                     with patch("agenttree.tmux.send_keys") as mock_send:
-                        manager.start_controller(
+                        manager.start_manager(
                             session_name="testproject-controller-000",
                             repo_path=tmp_path,
                             tool_name="claude",
@@ -491,9 +491,9 @@ class TestStartController:
         mock_send.assert_called_once()
         # Verify the startup prompt includes controller instructions
         startup_prompt = mock_send.call_args[0][1]
-        assert "controller" in startup_prompt.lower()
+        assert "manager" in startup_prompt.lower()
 
-    def test_start_controller_kills_existing_session(self, mock_config, tmp_path):
+    def test_start_manager_kills_existing_session(self, mock_config, tmp_path):
         """Should kill existing session before creating new one."""
         from agenttree.tmux import TmuxManager
 
@@ -503,7 +503,7 @@ class TestStartController:
             with patch("agenttree.tmux.kill_session") as mock_kill:
                 with patch("agenttree.tmux.create_session"):
                     with patch("agenttree.tmux.wait_for_prompt", return_value=False):
-                        manager.start_controller(
+                        manager.start_manager(
                             session_name="testproject-controller-000",
                             repo_path=tmp_path,
                             tool_name="claude",
@@ -511,7 +511,7 @@ class TestStartController:
 
         mock_kill.assert_called_once_with("testproject-controller-000")
 
-    def test_start_controller_uses_correct_tool(self, mock_config, tmp_path):
+    def test_start_manager_uses_correct_tool(self, mock_config, tmp_path):
         """Should use the configured AI tool command."""
         from agenttree.tmux import TmuxManager
 
@@ -525,7 +525,7 @@ class TestStartController:
         with patch("agenttree.tmux.session_exists", return_value=False):
             with patch("agenttree.tmux.create_session") as mock_create:
                 with patch("agenttree.tmux.wait_for_prompt", return_value=False):
-                    manager.start_controller(
+                    manager.start_manager(
                         session_name="testproject-controller-000",
                         repo_path=tmp_path,
                         tool_name="custom",

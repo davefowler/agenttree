@@ -183,7 +183,7 @@ stages:
 
   # Independent code review by a specialized review agent (not the implementing agent)
   - name: independent_code_review
-    host: review  # Custom agent host - spawned by controller
+    role: reviewer  # Custom agent host - spawned by controller
     output: independent_review.md
     skill: independent_review.md
     pre_completion:
@@ -201,7 +201,7 @@ stages:
   # Only reachable via StageRedirect when reviewer doesn't approve
   - name: address_independent_review
     redirect_only: true  # Not in normal progression, only via redirect
-    host: agent  # Back to the implementing agent
+    role: developer  # Back to the implementing agent
     output: independent_review_response.md
     skill: address_independent_review.md
     post_start:
@@ -227,7 +227,7 @@ stages:
 
   - name: implementation_review
     human_review: true
-    host: controller  # Host handles PR creation (agents can't push)
+    role: manager  # Manager handles PR creation (agents can't push)
     post_start:
       - create_pr:
     substages:
@@ -242,12 +242,12 @@ stages:
       - pr_approved:
 
   - name: knowledge_base
-    host: agent
+    role: developer
     skill: knowledge_base.md
 
   - name: accepted
     terminal: true
-    host: controller  # Host handles merge/cleanup (agents can't push)
+    role: manager  # Manager handles merge/cleanup (agents can't push)
     post_start:
       - merge_pr:
       - cleanup_agent:
@@ -258,7 +258,7 @@ stages:
 
 # Controller hooks for dogfooding - track cleanup frequency to identify workflow issues
 # This is project-specific logging to help us find broken workflow steps
-controller_hooks:
+manager_hooks:
   post_sync:
     # Run periodic cleanup and log what was cleaned
     # High cleanup frequency indicates broken workflow steps that need fixing

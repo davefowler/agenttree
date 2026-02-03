@@ -25,36 +25,36 @@ class ContainerConfig(BaseModel):
     # Future: additional container options (memory limits, env vars, etc.)
 
 
-class HostConfig(BaseModel):
-    """Configuration for a host in the workflow.
+class RoleConfig(BaseModel):
+    """Configuration for a role in the workflow.
 
-    Hosts are execution environments that handle stages. Built-in hosts:
-    - controller: Human-driven, runs on host machine (no container)
-    - agent: Default AI agent, runs in container
+    Roles define who handles stages. Built-in roles:
+    - manager: Human-driven orchestration (runs on host machine, no container)
+    - developer: Default AI agent that writes code (runs in container)
 
-    Custom hosts can be defined for specialized agents (e.g., code review).
+    Custom roles can be defined for specialized agents (e.g., reviewer).
     """
 
-    name: str  # Host name (e.g., "controller", "agent", "review")
+    name: str  # Role name (e.g., "manager", "developer", "reviewer")
     description: str = ""  # Human-readable description
 
     # Container configuration (None = no container, runs on host)
     container: Optional[ContainerConfig] = None
 
-    # AI agent settings (only for agent hosts, not controller)
+    # AI agent settings (only for AI roles, not manager)
     tool: Optional[str] = None  # AI tool to use (e.g., "claude", "codex")
     model: Optional[str] = None  # Model to use (e.g., "opus", "gpt-5.2")
     skill: Optional[str] = None  # Skill file path for custom agents
 
-    # Process to run (for controller, this could be "agenttree watch")
+    # Process to run (for manager, this could be "agenttree watch")
     process: Optional[str] = None
 
     def is_containerized(self) -> bool:
-        """Check if this host runs in a container."""
+        """Check if this role runs in a container."""
         return self.container is not None and self.container.enabled
 
     def is_agent(self) -> bool:
-        """Check if this host is an AI agent (has tool configured)."""
+        """Check if this role is an AI agent (has tool configured)."""
         return self.tool is not None
 
 
@@ -90,7 +90,7 @@ class StageConfig(BaseModel):
     human_review: bool = False    # Requires human approval to exit
     terminal: bool = False        # Cannot progress from here (accepted, not_doing)
     redirect_only: bool = False   # Only reachable via StageRedirect, skipped in normal progression
-    host: str = "agent"           # Who executes this stage: "agent" (in container) or "controller" (host)
+    role: str = "developer"       # Who executes this stage: "developer" (in container) or "manager" (host)
     substages: Dict[str, SubstageConfig] = Field(default_factory=dict)
     pre_completion: list[dict] = Field(default_factory=list)  # Stage-level hooks before completing
     post_start: list[dict] = Field(default_factory=list)  # Stage-level hooks after starting
@@ -121,10 +121,10 @@ class StageConfig(BaseModel):
         return getattr(self, event, [])
 
 
-class ControllerConfig(BaseModel):
-    """Configuration for the controller agent's stall monitoring.
+class ManagerConfig(BaseModel):
+    """Configuration for the manager's stall monitoring.
 
-    These settings control how the controller detects and handles stalled agents.
+    These settings control how the manager detects and handles stalled agents.
     """
 
     stall_threshold_min: int = 20  # Minutes before agent considered stalled
@@ -156,14 +156,14 @@ class Config(BaseModel):
     default_model: str = "opus"  # Model to use for Claude CLI (opus, sonnet)
     refresh_interval: int = 10
     tools: Dict[str, ToolConfig] = Field(default_factory=dict)
-    hosts: Dict[str, HostConfig] = Field(default_factory=dict)  # Host configurations
+    roles: Dict[str, RoleConfig] = Field(default_factory=dict)  # Role configurations
     commands: Dict[str, Union[str, list[str]]] = Field(default_factory=dict)  # Named shell commands
     stages: list[StageConfig] = Field(default_factory=list)  # Must be defined in .agenttree.yaml
     security: SecurityConfig = Field(default_factory=SecurityConfig)
     merge_strategy: str = "squash"  # squash, merge, or rebase
     hooks: HooksConfig = Field(default_factory=HooksConfig)
     save_tmux_history: bool = False  # Save tmux session history on stage transitions
-    controller: ControllerConfig = Field(default_factory=ControllerConfig)
+    manager: ManagerConfig = Field(default_factory=ManagerConfig)
     show_issue_yaml: bool = True  # Show issue.yaml in web UI file tabs
 
     def get_port_for_agent(self, agent_num: int) -> int:
@@ -323,122 +323,122 @@ class Config(BaseModel):
         """
         return [stage.name for stage in self.stages if stage.human_review]
 
-    def get_controller_stages(self) -> list[str]:
-        """Get list of stages executed by the controller (host), not agent.
+    def get_manager_stages(self) -> list[str]:
+        """Get list of stages executed by the manager (host), not developer.
 
         Returns:
-            List of stage names where host=controller
+            List of stage names where role=manager
         """
-        return [stage.name for stage in self.stages if stage.host == "controller"]
+        return [stage.name for stage in self.stages if stage.role == "manager"]
 
-    def get_all_hosts(self) -> Dict[str, HostConfig]:
-        """Get all hosts including built-in defaults.
+    def get_all_roles(self) -> Dict[str, RoleConfig]:
+        """Get all roles including built-in defaults.
 
         Returns dict with:
-        - Built-in 'controller' host (no container)
-        - Built-in 'agent' host (containerized, uses default tool/model)
-        - Any custom hosts from config
+        - Built-in 'manager' role (no container)
+        - Built-in 'developer' role (containerized, uses default tool/model)
+        - Any custom roles from config
 
         Returns:
-            Dict of host name -> HostConfig
+            Dict of role name -> RoleConfig
         """
         # Start with built-in defaults
-        all_hosts: Dict[str, HostConfig] = {
-            "controller": HostConfig(
-                name="controller",
-                description="Human-driven controller (runs on host)",
+        all_roles: Dict[str, RoleConfig] = {
+            "manager": RoleConfig(
+                name="manager",
+                description="Human-driven manager (runs on host)",
                 container=None,  # No container
                 process=None,  # Could be "agenttree watch" in future
             ),
-            "agent": HostConfig(
-                name="agent",
-                description="Default AI agent",
+            "developer": RoleConfig(
+                name="developer",
+                description="Default AI agent that writes code",
                 container=ContainerConfig(enabled=True),
                 tool=self.default_tool,
                 model=self.default_model,
             ),
         }
 
-        # Merge in hosts from config (can override defaults)
-        all_hosts.update(self.hosts)
+        # Merge in roles from config (can override defaults)
+        all_roles.update(self.roles)
 
-        return all_hosts
+        return all_roles
 
-    def get_host(self, host_name: str) -> Optional[HostConfig]:
-        """Get configuration for a host (including built-in defaults).
+    def get_role(self, role_name: str) -> Optional[RoleConfig]:
+        """Get configuration for a role (including built-in defaults).
 
         Args:
-            host_name: Name of the host
+            role_name: Name of the role
 
         Returns:
-            HostConfig or None if not found
+            RoleConfig or None if not found
         """
-        return self.get_all_hosts().get(host_name)
+        return self.get_all_roles().get(role_name)
 
-    def get_custom_agent_stages(self) -> list[str]:
-        """Get list of stages that use custom agent hosts.
+    def get_custom_role_stages(self) -> list[str]:
+        """Get list of stages that use custom roles.
 
-        Custom agent stages have a host value that is neither "agent" nor "controller"
-        and exists in the hosts configuration.
+        Custom role stages have a role value that is neither "developer" nor "manager"
+        and exists in the roles configuration.
 
         Returns:
-            List of stage names where host is a custom agent
+            List of stage names where role is a custom role
         """
-        all_hosts = self.get_all_hosts()
+        all_roles = self.get_all_roles()
         return [
             stage.name for stage in self.stages
-            if stage.host not in ("agent", "controller") and stage.host in all_hosts
+            if stage.role not in ("developer", "manager") and stage.role in all_roles
         ]
 
-    def get_agent_host(self, host_name: str) -> Optional[HostConfig]:
-        """Get configuration for a custom agent host.
+    def get_custom_role(self, role_name: str) -> Optional[RoleConfig]:
+        """Get configuration for a custom role.
 
         Args:
-            host_name: Name of the agent host
+            role_name: Name of the role
 
         Returns:
-            HostConfig or None if not found
+            RoleConfig or None if not found
         """
-        return self.hosts.get(host_name)
+        return self.roles.get(role_name)
 
-    def is_custom_agent_host(self, host_name: str) -> bool:
-        """Check if a host name is a custom agent host (not controller or default agent).
+    def is_custom_role(self, role_name: str) -> bool:
+        """Check if a role name is a custom role (not manager or default developer).
 
         Args:
-            host_name: Name to check
+            role_name: Name to check
 
         Returns:
-            True if it's a custom agent host, False otherwise
+            True if it's a custom role, False otherwise
         """
-        if host_name in ("controller", "agent"):
+        if role_name in ("manager", "developer"):
             return False
-        return host_name in self.hosts
+        return role_name in self.roles
 
-    def get_non_agent_stages(self) -> list[str]:
-        """Get list of stages NOT executed by the default agent.
+    def get_non_developer_stages(self) -> list[str]:
+        """Get list of stages NOT executed by the default developer.
 
-        This includes controller stages and custom agent stages.
-        Used to determine which stages the default agent should block on.
+        This includes manager stages and custom role stages.
+        Used to determine which stages the default developer should block on.
 
         Returns:
-            List of stage names where host != "agent"
+            List of stage names where role != "developer"
         """
-        return [stage.name for stage in self.stages if stage.host != "agent"]
+        return [stage.name for stage in self.stages if stage.role != "developer"]
 
-    def host_is_containerized(self, host_name: str) -> bool:
-        """Check if a host runs in a container.
+    def role_is_containerized(self, role_name: str) -> bool:
+        """Check if a role runs in a container.
 
         Args:
-            host_name: Name of the host
+            role_name: Name of the role
 
         Returns:
             True if containerized, False otherwise
         """
-        host = self.get_host(host_name)
-        if host:
-            return host.is_containerized()
-        # Default: assume custom hosts are containerized
-        return host_name != "controller"
+        role = self.get_role(role_name)
+        if role:
+            return role.is_containerized()
+        # Default: assume custom roles are containerized
+        return role_name != "manager"
 
     def substages_for(self, stage_name: str) -> list[str]:
         """Get ordered list of substage names for a stage.
@@ -710,18 +710,18 @@ def load_config(path: Optional[Path] = None) -> Config:
                     elif "name" not in substage_config:
                         substage_config["name"] = substage_name
 
-    # Auto-populate 'name' field for hosts from the key
-    if "hosts" in data and isinstance(data["hosts"], dict):
-        for host_name, host_config in data["hosts"].items():
-            if host_config is None:
-                data["hosts"][host_name] = {"name": host_name}
-            elif isinstance(host_config, dict):
-                if "name" not in host_config:
-                    host_config["name"] = host_name
+    # Auto-populate 'name' field for roles from the key
+    if "roles" in data and isinstance(data["roles"], dict):
+        for role_name, role_config in data["roles"].items():
+            if role_config is None:
+                data["roles"][role_name] = {"name": role_name}
+            elif isinstance(role_config, dict):
+                if "name" not in role_config:
+                    role_config["name"] = role_name
                 # Ensure container config is properly structured
-                if "container" in host_config and host_config["container"] is True:
-                    host_config["container"] = {"enabled": True}
-                elif "container" in host_config and host_config["container"] is False:
-                    host_config["container"] = None
+                if "container" in role_config and role_config["container"] is True:
+                    role_config["container"] = {"enabled": True}
+                elif "container" in role_config and role_config["container"] is False:
+                    role_config["container"] = None
 
     return Config(**data)
