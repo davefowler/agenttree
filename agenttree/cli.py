@@ -28,7 +28,7 @@ from agenttree.issues import (
     update_issue_stage,
     update_issue_metadata,
     load_skill,
-    load_overview,
+    load_persona,
     # Session management
     create_session,
     get_session,
@@ -1936,18 +1936,19 @@ def stage_next(issue_id: Optional[str], reassess: bool) -> None:
         # Determine if this is a takeover (not starting from beginning)
         is_takeover = issue.stage not in (BACKLOG, DEFINE)
 
-        # Load and display overview for context
-        overview = load_overview(
+        # Load and display persona for context
+        persona = load_persona(
+            agent_type="developer",  # TODO: Get from host config
             issue=issue,
             is_takeover=is_takeover,
             current_stage=issue.stage,
             current_substage=issue.substage,
         )
-        if overview:
+        if persona:
             console.print(f"\n{'='*60}")
-            console.print(f"[bold cyan]AGENTTREE OVERVIEW[/bold cyan]")
+            console.print(f"[bold cyan]AGENT PERSONA[/bold cyan]")
             console.print(f"{'='*60}\n")
-            console.print(overview)
+            console.print(persona)
 
             # Add takeover context message
             if is_takeover:

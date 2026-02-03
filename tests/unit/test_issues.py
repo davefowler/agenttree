@@ -1013,26 +1013,27 @@ class TestSessionManagement:
         assert get_session(issue.id) is None
 
 
-class TestLoadOverview:
-    """Tests for load_overview function (shows overview on restart/takeover)."""
+class TestLoadPersona:
+    """Tests for load_persona function (shows persona on restart/takeover)."""
 
     @pytest.fixture
-    def temp_agenttrees_with_overview(self, monkeypatch, tmp_path):
-        """Create a temporary _agenttree directory with an overview.md."""
+    def temp_agenttrees_with_persona(self, monkeypatch, tmp_path):
+        """Create a temporary _agenttree directory with a persona file."""
         agenttrees_path = tmp_path / "_agenttree"
         agenttrees_path.mkdir()
         (agenttrees_path / "issues").mkdir()
         (agenttrees_path / "templates").mkdir()
         (agenttrees_path / "skills").mkdir()
+        (agenttrees_path / "skills" / "personas").mkdir()
 
         # Create problem template
         template = agenttrees_path / "templates" / "problem.md"
         template.write_text("# Problem Statement\n\n")
 
-        # Create overview.md with Jinja variables
-        overview = agenttrees_path / "skills" / "overview.md"
-        overview.write_text(
-            "# AgentTree Overview\n\n"
+        # Create personas/developer.md with Jinja variables
+        persona = agenttrees_path / "skills" / "personas" / "developer.md"
+        persona.write_text(
+            "# Developer Persona\n\n"
             "Stage: {{ current_stage }}\n"
             "Is takeover: {{ is_takeover }}\n"
             "Completed stages: {{ completed_stages|join(', ') }}\n"
@@ -1051,74 +1052,75 @@ class TestLoadOverview:
 
         return agenttrees_path
 
-    def test_load_overview_returns_content(self, temp_agenttrees_with_overview):
-        """load_overview returns overview content."""
-        from agenttree.issues import load_overview
+    def test_load_persona_returns_content(self, temp_agenttrees_with_persona):
+        """load_persona returns persona content."""
+        from agenttree.issues import load_persona
 
-        overview = load_overview()
-        assert overview is not None
-        assert "AgentTree Overview" in overview
+        persona = load_persona()
+        assert persona is not None
+        assert "Developer Persona" in persona
 
-    def test_load_overview_with_stage_context(self, temp_agenttrees_with_overview):
-        """load_overview renders stage context variables."""
-        from agenttree.issues import load_overview
+    def test_load_persona_with_stage_context(self, temp_agenttrees_with_persona):
+        """load_persona renders stage context variables."""
+        from agenttree.issues import load_persona
 
-        overview = load_overview(
+        persona = load_persona(
             current_stage="implement",
             current_substage="code",
             is_takeover=False,
         )
-        assert overview is not None
-        assert "Stage: implement" in overview
-        assert "Is takeover: False" in overview
+        assert persona is not None
+        assert "Stage: implement" in persona
+        assert "Is takeover: False" in persona
 
-    def test_load_overview_calculates_completed_stages(self, temp_agenttrees_with_overview):
-        """load_overview calculates completed stages before current stage."""
-        from agenttree.issues import load_overview
+    def test_load_persona_calculates_completed_stages(self, temp_agenttrees_with_persona):
+        """load_persona calculates completed stages before current stage."""
+        from agenttree.issues import load_persona
 
-        overview = load_overview(
+        persona = load_persona(
             current_stage="implement",
             is_takeover=True,
         )
-        assert overview is not None
+        assert persona is not None
         # Should include stages before implement (define, research, plan, plan_assess, plan_revise, plan_review)
-        assert "define" in overview
-        assert "research" in overview
-        assert "plan" in overview
-        assert "plan_review" in overview
+        assert "define" in persona
+        assert "research" in persona
+        assert "plan" in persona
+        assert "plan_review" in persona
         # Should not include backlog or accepted
-        assert "backlog" not in overview.lower().replace("agenttree overview", "")
+        assert "backlog" not in persona.lower().replace("developer persona", "")
 
-    def test_load_overview_takeover_true_mid_workflow(self, temp_agenttrees_with_overview):
+    def test_load_persona_takeover_true_mid_workflow(self, temp_agenttrees_with_persona):
         """is_takeover should be True when starting mid-workflow."""
-        from agenttree.issues import load_overview
+        from agenttree.issues import load_persona
 
-        overview = load_overview(
+        persona = load_persona(
             current_stage="implement",
             is_takeover=True,
         )
-        assert overview is not None
-        assert "Is takeover: True" in overview
+        assert persona is not None
+        assert "Is takeover: True" in persona
 
-    def test_load_overview_takeover_false_for_early_stages(self, temp_agenttrees_with_overview):
+    def test_load_persona_takeover_false_for_early_stages(self, temp_agenttrees_with_persona):
         """is_takeover should be False when starting from beginning stages."""
-        from agenttree.issues import load_overview
+        from agenttree.issues import load_persona
 
-        overview = load_overview(
+        persona = load_persona(
             current_stage="define",
             is_takeover=False,
         )
-        assert overview is not None
-        assert "Is takeover: False" in overview
+        assert persona is not None
+        assert "Is takeover: False" in persona
 
-    def test_load_overview_returns_none_if_missing(self, monkeypatch, tmp_path):
-        """load_overview returns None if overview.md doesn't exist."""
-        from agenttree.issues import load_overview
+    def test_load_persona_returns_none_if_missing(self, monkeypatch, tmp_path):
+        """load_persona returns None if persona file doesn't exist."""
+        from agenttree.issues import load_persona
 
         agenttrees_path = tmp_path / "_agenttree"
         agenttrees_path.mkdir()
         (agenttrees_path / "skills").mkdir()
-        # Don't create overview.md
+        (agenttrees_path / "skills" / "personas").mkdir()
+        # Don't create developer.md
 
         monkeypatch.setattr(
             "agenttree.issues.get_agenttree_path",
@@ -1129,28 +1131,44 @@ class TestLoadOverview:
             lambda *args, **kwargs: True
         )
 
-        overview = load_overview()
-        assert overview is None
+        persona = load_persona()
+        assert persona is None
 
-    def test_load_overview_with_issue_context(self, temp_agenttrees_with_overview):
-        """load_overview includes issue context when issue is provided."""
-        from agenttree.issues import load_overview, create_issue
+    def test_load_persona_with_issue_context(self, temp_agenttrees_with_persona):
+        """load_persona includes issue context when issue is provided."""
+        from agenttree.issues import load_persona, create_issue
 
-        # Update overview template to include issue vars
-        overview_path = temp_agenttrees_with_overview / "skills" / "overview.md"
-        overview_path.write_text(
+        # Update persona template to include issue vars
+        persona_path = temp_agenttrees_with_persona / "skills" / "personas" / "developer.md"
+        persona_path.write_text(
             "Issue: {{ issue_id }} - {{ issue_title }}\n"
             "Stage: {{ current_stage }}\n"
         )
 
         issue = create_issue("Test Feature")
-        overview = load_overview(
+        persona = load_persona(
             issue=issue,
             current_stage="plan",
         )
-        assert overview is not None
-        assert issue.id in overview
-        assert "Test Feature" in overview
+        assert persona is not None
+        assert issue.id in persona
+        assert "Test Feature" in persona
+
+    def test_load_persona_loads_different_agent_types(self, temp_agenttrees_with_persona):
+        """load_persona loads correct file based on agent_type."""
+        from agenttree.issues import load_persona
+
+        # Create a reviewer persona
+        reviewer_path = temp_agenttrees_with_persona / "skills" / "personas" / "reviewer.md"
+        reviewer_path.write_text("# Reviewer Persona\n\nYou are a code reviewer.\n")
+
+        # Load developer (default)
+        dev_persona = load_persona(agent_type="developer")
+        assert "Developer Persona" in dev_persona
+
+        # Load reviewer
+        reviewer_persona = load_persona(agent_type="reviewer")
+        assert "Reviewer Persona" in reviewer_persona
 
 
 class TestGetIssueContext:
