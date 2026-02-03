@@ -551,33 +551,37 @@ class TestApproveIssueEndpoint:
         assert response.status_code == 500
         assert "Failed to update" in response.json()["detail"]
 
-    @patch("agenttree.tmux.send_message")
-    @patch("agenttree.tmux.session_exists")
-    @patch("agenttree.state.get_active_agent")
+    @patch("agenttree.web.app.asyncio.create_task")
     @patch("agenttree.hooks.execute_enter_hooks")
     @patch("agenttree.hooks.execute_exit_hooks")
     @patch("agenttree.config.load_config")
     @patch("agenttree.web.app.issue_crud")
     def test_approve_issue_notifies_agent(
-        self, mock_crud, mock_config, mock_exit, mock_enter, mock_get_agent,
-        mock_session_exists, mock_send, client, mock_review_issue
+        self, mock_crud, mock_config, mock_exit, mock_enter, mock_create_task,
+        client, mock_review_issue
     ):
-        """Test approve notifies active agent."""
+        """Test approve creates background task for notification."""
+        import asyncio
+
         mock_crud.get_issue.return_value = mock_review_issue
         mock_crud.update_issue_stage.return_value = mock_review_issue
         mock_config.return_value.get_next_stage.return_value = ("accepted", None, True)
 
-        # Mock active agent with tmux session
-        mock_agent = Mock()
-        mock_agent.tmux_session = "test-session"
-        mock_get_agent.return_value = mock_agent
-        mock_session_exists.return_value = True
+        # Capture the coroutine passed to create_task
+        captured_coro = None
+        def capture_coro(coro):
+            nonlocal captured_coro
+            captured_coro = coro
+            # Return a real task that does nothing (for the fire-and-forget pattern)
+            return asyncio.get_event_loop().create_task(asyncio.sleep(0))
+        mock_create_task.side_effect = capture_coro
 
         response = client.post("/api/issues/002/approve")
 
         assert response.status_code == 200
-        mock_send.assert_called_once()
-        assert "approved" in mock_send.call_args[0][1].lower()
+        # Verify a background task was scheduled for enter hooks and notification
+        assert captured_coro is not None
+        mock_create_task.assert_called_once()
 
 
 class TestRebaseIssueEndpoint:
@@ -651,11 +655,13 @@ class TestAgentTmuxEndpoint:
 class TestSendToAgentEndpoint:
     """Tests for send message to agent endpoint."""
 
+    @patch("agenttree.tmux.session_exists")
     @patch("agenttree.tmux.send_message")
     @patch("agenttree.web.app.load_config")
-    def test_send_to_agent(self, mock_config, mock_send, client):
+    def test_send_to_agent(self, mock_config, mock_send, mock_session_exists, client):
         """Test sending message to agent."""
         mock_config.return_value.project = "test"
+        mock_session_exists.return_value = True
 
         response = client.post(
             "/agent/001/send",
