@@ -20,6 +20,9 @@ Optional:
                  onclick="event.preventDefault(); event.stopPropagation(); toggleAgent('{{ issue.number }}', this)"
                  title="{% if issue.processing %}Processing hooks...{% elif issue.tmux_active %}Agent running{% else %}No agent{% endif %}"></div>
             <span class="issue-number">#{{ issue.number }}</span>
+            {% if issue.priority != 'medium' %}
+            <span class="priority-badge priority-{{ issue.priority }}" title="Priority: {{ issue.priority }}">{{ issue.priority[:1] | upper }}</span>
+            {% endif %}
         </div>
         {% if show_stage %}
         <span class="issue-stage-label {% if issue.is_review %}needs-approval{% endif %}">{% if issue.substage %}{{ issue.substage | replace('_', ' ') | title }}{% else %}{{ issue.stage.value | replace('_', ' ') | title }}{% endif %}</span>
