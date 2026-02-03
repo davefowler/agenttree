@@ -115,6 +115,7 @@ class TestAgentStateEdgeCases:
         with patch("agenttree.state.get_state_path", return_value=workflow_repo / "_agenttree" / "state.yaml"):
             agent = ActiveAgent(
                 issue_id="001",
+                host="agent",
                 container="agenttree-issue-001",
                 worktree=workflow_repo / ".worktrees" / "test",
                 branch="issue-001-test",
