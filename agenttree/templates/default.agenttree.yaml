@@ -135,6 +135,7 @@ stages:
 
   - name: plan_review
     human_review: true
+    review_doc: spec.md
     pre_completion:
       - file_exists: spec.md
       - section_check:
@@ -228,6 +229,7 @@ stages:
 
   - name: implementation_review
     human_review: true
+    review_doc: review.md
     host: controller  # Host handles PR creation (agents can't push)
     post_start:
       - create_pr:
