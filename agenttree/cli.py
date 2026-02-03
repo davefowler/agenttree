@@ -485,13 +485,15 @@ def start_agent(
     worktree_path.parent.mkdir(parents=True, exist_ok=True)
 
     has_merge_conflicts = False
+    is_restart = False
     if worktree_path.exists():
         # Worktree exists - this is a restart scenario
+        is_restart = True
         # Update with latest main to get newest CLI code while preserving agent's work
-        console.print(f"[cyan]Updating existing worktree with latest main...[/cyan]")
+        console.print(f"[cyan]Restarting: Rebasing worktree onto latest main...[/cyan]")
         update_success = update_worktree_with_main(worktree_path)
         if update_success:
-            console.print(f"[green]✓ Worktree updated successfully[/green]")
+            console.print(f"[green]✓ Worktree rebased successfully[/green]")
         else:
             has_merge_conflicts = True
             console.print(f"[yellow]⚠ Merge conflicts detected - agent will need to resolve[/yellow]")
@@ -505,12 +507,13 @@ def start_agent(
 
         if branch_exists:
             # Branch exists - create worktree from it, then update with main
-            console.print(f"[dim]Creating worktree from existing branch: {names['branch']}[/dim]")
+            is_restart = True
+            console.print(f"[dim]Restarting from existing branch: {names['branch']}[/dim]")
             create_worktree(repo_path, worktree_path, names["branch"])
-            console.print(f"[cyan]Updating with latest main...[/cyan]")
+            console.print(f"[cyan]Rebasing onto latest main...[/cyan]")
             update_success = update_worktree_with_main(worktree_path)
             if update_success:
-                console.print(f"[green]✓ Worktree updated successfully[/green]")
+                console.print(f"[green]✓ Worktree rebased successfully[/green]")
             else:
                 has_merge_conflicts = True
                 console.print(f"[yellow]⚠ Merge conflicts detected - agent will need to resolve[/yellow]")
@@ -567,6 +570,7 @@ def start_agent(
         model=model_name,
         agent_host=host,
         has_merge_conflicts=has_merge_conflicts,
+        is_restart=is_restart,
     )
 
     if not start_success:
