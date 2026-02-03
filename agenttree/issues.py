@@ -36,6 +36,7 @@ IMPLEMENT = "implement"
 INDEPENDENT_CODE_REVIEW = "independent_code_review"
 IMPLEMENTATION_REVIEW = "implementation_review"
 ACCEPTED = "accepted"
+KNOWLEDGE_BASE = "knowledge_base"
 NOT_DOING = "not_doing"
 
 
@@ -624,6 +625,7 @@ STAGE_ORDER = [
     PLAN_REVIEW,
     IMPLEMENT,
     IMPLEMENTATION_REVIEW,
+    KNOWLEDGE_BASE,
     ACCEPTED,
     NOT_DOING,
 ]

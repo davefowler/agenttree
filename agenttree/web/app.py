@@ -428,6 +428,7 @@ def get_issue_files(issue_id: str, include_content: bool = False) -> list[dict[s
 
     Files are ordered by workflow stage (problem.md first, then spec.md, etc.),
     with any unknown files at the end sorted alphabetically.
+    If config.show_issue_yaml is True, issue.yaml is included at the end.
     """
     issue_dir = issue_crud.get_issue_dir(issue_id)
     if not issue_dir:
@@ -456,6 +457,24 @@ def get_issue_files(issue_id: str, include_content: bool = False) -> list[dict[s
             except Exception:
                 file_info["content"] = ""
         files.append(file_info)
+
+    # Optionally include issue.yaml at the end
+    if _config.show_issue_yaml:
+        issue_yaml = issue_dir / "issue.yaml"
+        if issue_yaml.exists():
+            file_info = {
+                "name": "issue.yaml",
+                "display_name": "Issue YAML",
+                "size": str(issue_yaml.stat().st_size),
+                "modified": datetime.fromtimestamp(issue_yaml.stat().st_mtime).isoformat()
+            }
+            if include_content:
+                try:
+                    file_info["content"] = issue_yaml.read_text()
+                except Exception:
+                    file_info["content"] = ""
+            files.append(file_info)
+
     return files
 
 
