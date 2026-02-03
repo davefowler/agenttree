@@ -74,8 +74,12 @@ def _get_tmux_sessions() -> list[tuple[str, str]]:
         if result.returncode != 0:
             return []
 
+        stdout = result.stdout.strip()
+        if not stdout:
+            return []
+
         sessions = []
-        for line in result.stdout.strip().split("\n"):
+        for line in stdout.split("\n"):
             if "|" in line:
                 name, created = line.split("|", 1)
                 sessions.append((name, created))
@@ -148,7 +152,7 @@ def get_active_agent(issue_id: str, host: str = "agent") -> Optional[ActiveAgent
     try:
         config = load_config()
         project = config.project
-    except Exception:
+    except (FileNotFoundError, KeyError, AttributeError):
         project = "agenttree"
 
     expected_session = f"{project}-{host}-{issue_id}"
@@ -172,7 +176,7 @@ def get_active_agents_for_issue(issue_id: str) -> list[ActiveAgent]:
     try:
         config = load_config()
         project = config.project
-    except Exception:
+    except (FileNotFoundError, KeyError, AttributeError):
         project = "agenttree"
 
     agents = []
@@ -194,7 +198,7 @@ def list_active_agents() -> list[ActiveAgent]:
     try:
         config = load_config()
         project = config.project
-    except Exception:
+    except (FileNotFoundError, KeyError, AttributeError):
         project = "agenttree"
 
     agents = []
@@ -236,10 +240,10 @@ def update_agent_container_id(issue_id: str, container_id: str, host: str = "age
 
 
 def unregister_agent(issue_id: str, host: str = "agent") -> Optional[ActiveAgent]:
-    """Unregister an active agent.
+    """Unregister an active agent by stopping its tmux session.
 
-    With dynamic state, unregistration happens when the tmux session is killed.
-    This function returns the agent info but doesn't modify any state.
+    With dynamic state, unregistration = killing the tmux session.
+    This function stops the agent and returns its info.
 
     Args:
         issue_id: Issue ID to unregister
@@ -248,23 +252,29 @@ def unregister_agent(issue_id: str, host: str = "agent") -> Optional[ActiveAgent
     Returns:
         The ActiveAgent if found, or None
     """
-    # Get agent info before it's gone (session might already be killed)
-    return get_active_agent(issue_id, host)
+    # Get agent info before stopping
+    agent = get_active_agent(issue_id, host)
+    if agent:
+        # Actually stop the agent (kills tmux session = unregistration)
+        stop_agent(issue_id, host, quiet=True)
+    return agent
 
 
 def unregister_all_agents_for_issue(issue_id: str) -> list[ActiveAgent]:
     """Unregister all agents for an issue (across all hosts).
 
-    With dynamic state, this just returns current agents. Actual unregistration
-    happens when tmux sessions are killed.
+    Stops all agents (across all hosts) and returns their info.
 
     Args:
         issue_id: Issue ID
 
     Returns:
-        List of ActiveAgent objects for this issue
+        List of ActiveAgent objects that were stopped
     """
-    return get_active_agents_for_issue(issue_id)
+    agents = get_active_agents_for_issue(issue_id)
+    for agent in agents:
+        stop_agent(issue_id, agent.host, quiet=True)
+    return agents
 
 
 def stop_agent(issue_id: str, host: str = "agent", quiet: bool = False) -> bool:
