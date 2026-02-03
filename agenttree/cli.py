@@ -2897,10 +2897,10 @@ def rollback_issue(
         console.print("[dim]Rollback is for going backwards in the workflow.[/dim]")
         sys.exit(1)
 
-    # Cannot rollback to terminal stages
+    # Cannot rollback to redirect_only stages (they're not in normal progression)
     target_stage_config = config.get_stage(stage_name)
-    if target_stage_config and target_stage_config.terminal:
-        console.print(f"[red]Cannot rollback to terminal stage '{stage_name}'[/red]")
+    if target_stage_config and target_stage_config.redirect_only:
+        console.print(f"[red]Cannot rollback to redirect-only stage '{stage_name}'[/red]")
         sys.exit(1)
 
     # Determine first substage of target stage
@@ -3153,7 +3153,6 @@ def cleanup_command(
     # Get all issues for reference
     all_issues = list_issues_func()
     issue_by_id = {i.id: i for i in all_issues}
-    terminal_stages = {ACCEPTED, NOT_DOING}
 
     console.print("[bold]Scanning for stale resources...[/bold]\n")
 
@@ -3188,26 +3187,29 @@ def cleanup_command(
 
             if not issue:
                 reason = "issue not found"
-            elif issue.stage in terminal_stages:
-                reason = f"issue in {issue.stage} stage"
-            elif issue.stage == BACKLOG:
-                # Check for uncommitted changes
-                status_result = subprocess.run(
-                    ["git", "status", "--porcelain"],
-                    cwd=wt_path,
-                    capture_output=True,
-                    text=True,
-                )
-                if not status_result.stdout.strip():
-                    reason = "backlogged with no changes"
+            elif config.is_parking_lot(issue.stage):
+                # Parking lot stages may have worktrees cleaned up
+                if issue.stage == BACKLOG:
+                    # For backlog, keep worktree if there are uncommitted changes
+                    status_result = subprocess.run(
+                        ["git", "status", "--porcelain"],
+                        cwd=wt_path,
+                        capture_output=True,
+                        text=True,
+                    )
+                    if not status_result.stdout.strip():
+                        reason = "backlogged with no changes"
+                    else:
+                        is_edge_case = True
+                        edge_cases.append({
+                            "type": "worktree",
+                            "path": str(wt_path),
+                            "issue_id": issue_id,
+                            "reason": "backlogged but has uncommitted changes",
+                        })
                 else:
-                    is_edge_case = True
-                    edge_cases.append({
-                        "type": "worktree",
-                        "path": str(wt_path),
-                        "issue_id": issue_id,
-                        "reason": "backlogged but has uncommitted changes",
-                    })
+                    # Other parking lots (accepted, not_doing) always clean up
+                    reason = f"issue in {issue.stage} stage"
 
             if reason:
                 stale_worktrees.append({
@@ -3259,7 +3261,8 @@ def cleanup_command(
                 issue = issue_by_id.get(branch_issue_id)
                 if not issue:
                     reason = "issue not found"
-                elif issue.stage in terminal_stages:
+                elif config.is_parking_lot(issue.stage) and issue.stage != BACKLOG:
+                    # Clean branches for done/abandoned stages, but keep backlog branches
                     reason = f"issue in {issue.stage} stage"
 
             if reason:
@@ -3284,7 +3287,8 @@ def cleanup_command(
             issue = issue_by_id.get(issue_id)
             if not issue:
                 stale_sessions.append(session.name)
-            elif issue.stage in terminal_stages:
+            elif config.is_parking_lot(issue.stage):
+                # Parking lot stages shouldn't have active sessions
                 stale_sessions.append(session.name)
             # Active agent check
             elif not get_active_agent(issue_id):

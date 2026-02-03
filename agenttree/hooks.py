@@ -2527,13 +2527,12 @@ def run_resource_cleanup(dry_run: bool = False, log_file: str | None = None) -> 
     from agenttree.config import load_config
     from agenttree.worktree import list_worktrees, remove_worktree
     from agenttree.tmux import list_sessions, kill_session
-    from agenttree.issues import list_issues, ACCEPTED, NOT_DOING, BACKLOG
+    from agenttree.issues import list_issues, BACKLOG
     from agenttree.state import get_active_agent
     from agenttree.container import get_container_runtime
 
     config = load_config()
     repo_path = Path.cwd()
-    terminal_stages = {ACCEPTED, NOT_DOING}
 
     # Track results
     cleaned: list[dict] = []
@@ -2564,17 +2563,21 @@ def run_resource_cleanup(dry_run: bool = False, log_file: str | None = None) -> 
             reason = None
             if not issue:
                 reason = "issue not found"
-            elif issue.stage in terminal_stages:
-                reason = f"issue in {issue.stage} stage"
-            elif issue.stage == BACKLOG:
-                status_result = subprocess.run(
-                    ["git", "status", "--porcelain"],
-                    cwd=wt_path,
-                    capture_output=True,
-                    text=True,
-                )
-                if not status_result.stdout.strip():
-                    reason = "backlogged with no changes"
+            elif config.is_parking_lot(issue.stage):
+                # Parking lot stages may have worktrees cleaned up
+                # For backlog, keep worktree if there are uncommitted changes
+                if issue.stage == BACKLOG:
+                    status_result = subprocess.run(
+                        ["git", "status", "--porcelain"],
+                        cwd=wt_path,
+                        capture_output=True,
+                        text=True,
+                    )
+                    if not status_result.stdout.strip():
+                        reason = "backlogged with no changes"
+                else:
+                    # Other parking lots (accepted, not_doing) always clean up
+                    reason = f"issue in {issue.stage} stage"
 
             if reason:
                 if not dry_run:
@@ -2624,7 +2627,8 @@ def run_resource_cleanup(dry_run: bool = False, log_file: str | None = None) -> 
                 issue = issue_by_id.get(branch_issue_id)
                 if not issue:
                     reason = "issue not found"
-                elif issue.stage in terminal_stages:
+                elif config.is_parking_lot(issue.stage) and issue.stage != BACKLOG:
+                    # Clean branches for done/abandoned stages, but keep backlog branches
                     reason = f"issue in {issue.stage} stage"
 
             if reason:
@@ -2661,7 +2665,8 @@ def run_resource_cleanup(dry_run: bool = False, log_file: str | None = None) -> 
             reason = None
             if not issue:
                 reason = "issue not found"
-            elif issue.stage in terminal_stages:
+            elif config.is_parking_lot(issue.stage):
+                # Parking lot stages shouldn't have active sessions
                 reason = f"issue in {issue.stage} stage"
 
             if reason:
