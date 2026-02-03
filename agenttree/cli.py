@@ -28,7 +28,7 @@ from agenttree.issues import (
     update_issue_stage,
     update_issue_metadata,
     load_skill,
-    load_overview,
+    load_persona,
     # Session management
     create_session,
     get_session,
@@ -558,7 +558,7 @@ def start_agent(
     console.print(f"[dim]Model: {model_name}[/dim]")
 
     # Use the host parameter (which was either explicitly set or defaults to "agent")
-    tmux_manager.start_issue_agent_in_container(
+    start_success = tmux_manager.start_issue_agent_in_container(
         issue_id=issue.id,
         session_name=agent.tmux_session,
         worktree_path=worktree_path,
@@ -568,6 +568,15 @@ def start_agent(
         agent_host=host,
         has_merge_conflicts=has_merge_conflicts,
     )
+
+    if not start_success:
+        # Startup failed - clean up state and exit
+        from agenttree.state import unregister_agent
+        unregister_agent(issue.id, host)
+        console.print(f"[red]Error: Agent failed to start (Claude prompt not detected within timeout)[/red]")
+        console.print(f"[dim]State has been cleaned up. Try running 'agenttree start {issue.id}' again.[/dim]")
+        sys.exit(1)
+
     console.print(f"[green]✓ Started {tool_name} in container[/green]")
 
     # For Apple Containers, look up the UUID and store it for cleanup
@@ -1927,18 +1936,19 @@ def stage_next(issue_id: Optional[str], reassess: bool) -> None:
         # Determine if this is a takeover (not starting from beginning)
         is_takeover = issue.stage not in (BACKLOG, DEFINE)
 
-        # Load and display overview for context
-        overview = load_overview(
+        # Load and display persona for context
+        persona = load_persona(
+            agent_type="developer",  # TODO: Get from host config
             issue=issue,
             is_takeover=is_takeover,
             current_stage=issue.stage,
             current_substage=issue.substage,
         )
-        if overview:
+        if persona:
             console.print(f"\n{'='*60}")
-            console.print(f"[bold cyan]AGENTTREE OVERVIEW[/bold cyan]")
+            console.print(f"[bold cyan]AGENT PERSONA[/bold cyan]")
             console.print(f"{'='*60}\n")
-            console.print(overview)
+            console.print(persona)
 
             # Add takeover context message
             if is_takeover:
@@ -3270,41 +3280,32 @@ def cleanup_command(
                     "reason": "session exists but no active agent registered",
                 })
 
-    # 4. Find stale containers
+    # 4. Find stale containers (orphans not tracked in state.yaml)
     if containers:
         console.print("[dim]Checking containers...[/dim]")
 
+        from agenttree.container import list_running_containers
+        from agenttree.state import list_active_agents
+
         runtime = get_container_runtime()
         if runtime.runtime:
-            # List running containers
             try:
-                if runtime.runtime == "container":
-                    result = subprocess.run(
-                        ["container", "list"],
-                        capture_output=True,
-                        text=True,
-                    )
-                else:
-                    result = subprocess.run(
-                        [runtime.runtime, "ps", "--format", "{{.Names}}"],
-                        capture_output=True,
-                        text=True,
-                    )
+                # Get all running containers
+                running_containers = list_running_containers()
 
-                container_names = result.stdout.strip().split("\n") if result.stdout.strip() else []
+                # Get container IDs tracked in state.yaml
+                tracked_agents = list_active_agents()
+                tracked_container_ids = {a.container for a in tracked_agents}
 
-                for name in container_names:
-                    if not name:
-                        continue
-                    # Check if it's an agenttree container
-                    if config.project in name.lower() or "agenttree" in name.lower():
-                        # Try to find associated issue
-                        # Container names often include worktree path
+                # Find orphans: running but not tracked
+                for container_id in running_containers:
+                    if container_id not in tracked_container_ids:
                         stale_containers.append({
-                            "name": name,
+                            "name": container_id,
                             "runtime": runtime.runtime,
+                            "reason": "running but not tracked in state",
                         })
-            except subprocess.CalledProcessError:
+            except Exception:
                 pass
 
     # Print summary

@@ -878,6 +878,9 @@ def load_skill(
 
     Returns:
         Skill content as string (rendered if issue provided), or None if not found
+
+    Raises:
+        FileNotFoundError: If config explicitly specifies a skill path that doesn't exist
     """
     from jinja2 import Template
     from agenttree.config import load_config
@@ -888,6 +891,16 @@ def load_skill(
 
     config = load_config()
 
+    # Check if skill is explicitly configured (not convention-based)
+    stage_config = config.get_stage(stage)
+    explicit_skill = None
+    if substage and stage_config:
+        substage_config = stage_config.get_substage(substage)
+        if substage_config and substage_config.skill:
+            explicit_skill = substage_config.skill
+    if not explicit_skill and stage_config and stage_config.skill:
+        explicit_skill = stage_config.skill
+
     # Get skill path from config
     skill_rel_path = config.skill_path(stage, substage)
     skill_path = agents_path / skill_rel_path
@@ -897,6 +910,12 @@ def load_skill(
     # Try the config-specified path first
     if skill_path.exists():
         skill_content = skill_path.read_text()
+    elif explicit_skill:
+        # Config explicitly specified this skill file - it MUST exist
+        raise FileNotFoundError(
+            f"Skill file '{explicit_skill}' configured for stage '{stage}' "
+            f"does not exist at {skill_path}"
+        )
     else:
         # Try legacy naming convention: {stage}-{substage}.md
         skills_dir = agents_path / "skills"
@@ -970,24 +989,26 @@ def load_skill(
         return skill_content
 
 
-def load_overview(
+def load_persona(
+    agent_type: str = "developer",
     issue: Optional["Issue"] = None,
     is_takeover: bool = False,
     current_stage: Optional[str] = None,
     current_substage: Optional[str] = None,
 ) -> Optional[str]:
-    """Load the overview document with takeover context for agents.
+    """Load the persona document for an agent type.
 
-    Used when an agent restarts to provide context about the AgentTree workflow.
+    Used when an agent starts to provide context about their role and the AgentTree workflow.
 
     Args:
+        agent_type: Type of agent (developer, manager, reviewer)
         issue: Optional Issue object for Jinja context
         is_takeover: True if agent is taking over mid-workflow (not from backlog/define)
         current_stage: Current stage name for template context
         current_substage: Current substage name for template context
 
     Returns:
-        Overview content as string (rendered with Jinja if issue provided), or None if not found
+        Persona content as string (rendered with Jinja if issue provided), or None if not found
     """
     from jinja2 import Template
 
@@ -995,11 +1016,15 @@ def load_overview(
     agents_path = get_agenttree_path()
     sync_agents_repo(agents_path, pull_only=True)
 
-    overview_path = agents_path / "skills" / "overview.md"
-    if not overview_path.exists():
-        return None
+    # Load agent-specific persona
+    persona_path = agents_path / "skills" / "personas" / f"{agent_type}.md"
+    if not persona_path.exists():
+        # Fallback to legacy overview.md
+        persona_path = agents_path / "skills" / "overview.md"
+        if not persona_path.exists():
+            return None
 
-    overview_content = overview_path.read_text()
+    persona_content = persona_path.read_text()
 
     # Calculate completed stages (stages before current_stage)
     completed_stages: list[str] = []
@@ -1031,11 +1056,11 @@ def load_overview(
 
     # Render with Jinja
     try:
-        template = Template(overview_content)
+        template = Template(persona_content)
         return template.render(**context)
     except Exception:
         # If rendering fails, return raw content
-        return overview_content
+        return persona_content
 
 
 # =============================================================================
