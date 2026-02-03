@@ -158,6 +158,11 @@ def agenttree_config() -> dict[str, Any]:
                 "pre_completion": [{"pr_approved": {}}]
             },
             {
+                "name": "knowledge_base",
+                "host": "agent",
+                "skill": "knowledge_base.md"
+            },
+            {
                 "name": "accepted",
                 "terminal": True,
                 "host": "controller",
