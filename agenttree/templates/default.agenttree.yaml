@@ -158,9 +158,11 @@ stages:
           - run:
               command: uv run pytest  # Run full test suite to catch issues before CI
               must_pass: true
+              timeout: 300
           - run:
               command: uv run mypy agenttree || echo "mypy warnings (pre-existing errors in codebase - see issue for cleanup)"
               must_pass: true
+              timeout: 180
           - section_check:
               file: review.md
               section: Self-Review Checklist

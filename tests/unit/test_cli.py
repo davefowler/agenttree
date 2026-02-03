@@ -1665,3 +1665,221 @@ class TestCleanupCommand:
         assert result.exit_code == 0
         # subprocess.run should not be called for git branch commands
         assert "Checking worktrees" in result.output or "Nothing to clean up" in result.output
+
+
+class TestAINotesDetection:
+    """Tests for AI notes detection helper."""
+
+    def test_detect_ai_notes_finds_claude_files(self, tmp_path):
+        """Should detect files with CLAUDE in the name."""
+        from agenttree.cli import _detect_ai_notes
+
+        # Create test files
+        (tmp_path / "CLAUDE.md").write_text("Claude notes")
+        (tmp_path / "CLAUDE_NOTES.md").write_text("More notes")
+        (tmp_path / "src").mkdir()
+        (tmp_path / "src" / "claude_implementation.md").write_text("Implementation")
+
+        notes = _detect_ai_notes(tmp_path)
+        names = [n.name for n in notes]
+
+        assert "CLAUDE.md" in names
+        assert "CLAUDE_NOTES.md" in names
+        assert "claude_implementation.md" in names
+
+    def test_detect_ai_notes_excludes_readme(self, tmp_path):
+        """Should not detect README.md files."""
+        from agenttree.cli import _detect_ai_notes
+
+        (tmp_path / "README.md").write_text("Project readme")
+        (tmp_path / "CLAUDE.md").write_text("Claude notes")
+
+        notes = _detect_ai_notes(tmp_path)
+        names = [n.name.lower() for n in notes]
+
+        assert "readme.md" not in names
+        assert "claude.md" in names
+
+    def test_detect_ai_notes_excludes_agenttree_dir(self, tmp_path):
+        """Should not detect files inside _agenttree directory."""
+        from agenttree.cli import _detect_ai_notes
+
+        (tmp_path / "_agenttree").mkdir()
+        (tmp_path / "_agenttree" / "notes").mkdir()
+        (tmp_path / "_agenttree" / "notes" / "CLAUDE.md").write_text("Already migrated")
+        (tmp_path / "CLAUDE.md").write_text("Should be detected")
+
+        notes = _detect_ai_notes(tmp_path)
+        paths = [str(n) for n in notes]
+
+        assert any("CLAUDE.md" in p and "_agenttree" not in p for p in paths)
+        assert not any("_agenttree" in p for p in paths)
+
+    def test_detect_ai_notes_finds_notes_directory(self, tmp_path):
+        """Should detect files in notes/ directory."""
+        from agenttree.cli import _detect_ai_notes
+
+        (tmp_path / "notes").mkdir()
+        (tmp_path / "notes" / "research.md").write_text("Research notes")
+        (tmp_path / "notes" / "ideas.md").write_text("Ideas")
+
+        notes = _detect_ai_notes(tmp_path)
+        names = [n.name for n in notes]
+
+        assert "research.md" in names
+        assert "ideas.md" in names
+
+    def test_detect_ai_notes_empty_repo(self, tmp_path):
+        """Should return empty list for repo with no AI notes."""
+        from agenttree.cli import _detect_ai_notes
+
+        (tmp_path / "src").mkdir()
+        (tmp_path / "src" / "main.py").write_text("# Code")
+        (tmp_path / "README.md").write_text("Project readme")
+
+        notes = _detect_ai_notes(tmp_path)
+
+        assert len(notes) == 0
+
+
+class TestNotesMigration:
+    """Tests for notes migration helper."""
+
+    def test_migrate_notes_moves_files(self, tmp_path):
+        """Should move files to _agenttree/notes/."""
+        from agenttree.cli import _migrate_notes
+
+        # Create source files
+        (tmp_path / "CLAUDE.md").write_text("Claude notes")
+        agents_path = tmp_path / "_agenttree"
+        agents_path.mkdir()
+
+        notes = [tmp_path / "CLAUDE.md"]
+        migrated = _migrate_notes(tmp_path, notes, agents_path)
+
+        assert len(migrated) == 1
+        assert (agents_path / "notes" / "CLAUDE.md").exists()
+        assert not (tmp_path / "CLAUDE.md").exists()
+
+    def test_migrate_notes_preserves_path_structure(self, tmp_path):
+        """Should preserve relative path structure."""
+        from agenttree.cli import _migrate_notes
+
+        (tmp_path / "docs" / "ai-notes").mkdir(parents=True)
+        (tmp_path / "docs" / "ai-notes" / "research.md").write_text("Research")
+        agents_path = tmp_path / "_agenttree"
+        agents_path.mkdir()
+
+        notes = [tmp_path / "docs" / "ai-notes" / "research.md"]
+        migrated = _migrate_notes(tmp_path, notes, agents_path)
+
+        assert len(migrated) == 1
+        assert (agents_path / "notes" / "docs" / "ai-notes" / "research.md").exists()
+
+
+class TestInitKnowledgeIssue:
+    """Tests for knowledge issue creation during init."""
+
+    def test_create_knowledge_issue_helper(self, tmp_path):
+        """Should create knowledge population issue with correct parameters."""
+        from agenttree.cli import _create_knowledge_issue
+
+        mock_issue = MagicMock()
+        mock_issue.id = "001"
+
+        with patch("agenttree.cli.create_issue_func", return_value=mock_issue) as mock_create:
+            _create_knowledge_issue(tmp_path)
+
+        mock_create.assert_called_once()
+        call_kwargs = mock_create.call_args[1]
+        assert call_kwargs["title"] == "Populate knowledge base"
+        assert "Analyze the codebase" in call_kwargs["problem"]
+
+    def test_prompt_notes_migration_shows_explanation(self, tmp_path, capsys):
+        """Should display explanation about AgentTree notes manager."""
+        from agenttree.cli import _prompt_notes_migration
+
+        agents_path = tmp_path / "_agenttree"
+        agents_path.mkdir()
+
+        mock_notes = [tmp_path / "CLAUDE.md"]
+        (tmp_path / "CLAUDE.md").write_text("Notes")
+
+        with patch("click.confirm", return_value=False):
+            _prompt_notes_migration(tmp_path, mock_notes, agents_path)
+
+        # Check that the explanation was printed (via rich console)
+        # We can't easily capture rich output, so just ensure no exception
+
+    def test_prompt_notes_migration_decline_shows_command(self, tmp_path):
+        """Should show migrate-docs command when user declines."""
+        from agenttree.cli import _prompt_notes_migration
+
+        agents_path = tmp_path / "_agenttree"
+        agents_path.mkdir()
+
+        mock_notes = [tmp_path / "CLAUDE.md"]
+        (tmp_path / "CLAUDE.md").write_text("Notes")
+
+        # User declines migration
+        with patch("click.confirm", return_value=False):
+            # This should not raise and should print the command
+            _prompt_notes_migration(tmp_path, mock_notes, agents_path)
+
+    def test_prompt_notes_migration_accept_migrates_files(self, tmp_path):
+        """Should migrate files when user confirms."""
+        from agenttree.cli import _prompt_notes_migration
+
+        agents_path = tmp_path / "_agenttree"
+        agents_path.mkdir()
+
+        # Create a test file
+        (tmp_path / "CLAUDE.md").write_text("Notes content")
+        mock_notes = [tmp_path / "CLAUDE.md"]
+
+        with patch("click.confirm", return_value=True):
+            with patch("agenttree.cli._migrate_notes", return_value=[(tmp_path / "CLAUDE.md", agents_path / "notes" / "CLAUDE.md")]) as mock_migrate:
+                _prompt_notes_migration(tmp_path, mock_notes, agents_path)
+
+        mock_migrate.assert_called_once()
+
+
+class TestMigrateDocsCommand:
+    """Tests for the migrate-docs command."""
+
+    def test_migrate_docs_no_agenttree(self, cli_runner, mock_config, tmp_path, monkeypatch):
+        """Should error when _agenttree doesn't exist."""
+        from agenttree.cli import main
+
+        monkeypatch.chdir(tmp_path)
+
+        result = cli_runner.invoke(main, ["migrate-docs"])
+
+        assert result.exit_code == 0  # Non-zero would need to be explicit sys.exit
+        assert "_agenttree/ directory not found" in result.output
+
+    def test_migrate_docs_no_notes_found(self, cli_runner, mock_config, tmp_path, monkeypatch):
+        """Should show message when no AI notes found."""
+        from agenttree.cli import main
+
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "_agenttree").mkdir()
+
+        with patch("agenttree.cli._detect_ai_notes", return_value=[]):
+            result = cli_runner.invoke(main, ["migrate-docs"])
+
+        assert "No AI-generated documentation found" in result.output
+
+    def test_migrate_docs_prompts_when_found(self, cli_runner, mock_config, tmp_path, monkeypatch):
+        """Should prompt for migration when AI notes are found."""
+        from agenttree.cli import main
+
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "_agenttree").mkdir()
+
+        mock_notes = [tmp_path / "CLAUDE.md"]
+        with patch("agenttree.cli._detect_ai_notes", return_value=mock_notes):
+            with patch("agenttree.cli._prompt_notes_migration") as mock_prompt:
+                result = cli_runner.invoke(main, ["migrate-docs"])
+
+        mock_prompt.assert_called_once()

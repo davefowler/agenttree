@@ -58,6 +58,209 @@ from agenttree.preflight import run_preflight
 console = Console()
 
 
+# =============================================================================
+# Init helpers: AI notes detection and migration
+# =============================================================================
+
+
+def _detect_ai_notes(repo_path: Path) -> list[Path]:
+    """Detect AI-generated documentation files in the repository.
+
+    Scans for common AI notes patterns:
+    - Files: *CLAUDE*.md, *AI*.md, *AGENT*.md, *NOTES*.md (case-insensitive)
+    - Directories: docs/ai-notes/, docs/notes/, notes/
+
+    Excludes:
+    - README.md, CHANGELOG.md (project docs, not AI notes)
+    - _agenttree/ (already in the right place)
+    - Hidden files/directories
+
+    Args:
+        repo_path: Path to the repository root
+
+    Returns:
+        List of paths to AI-generated documentation files
+    """
+    ai_notes: list[Path] = []
+    exclusions = {"readme.md", "changelog.md", "contributing.md", "license.md"}
+
+    # Keywords to match in filenames (case-insensitive check)
+    keywords = ["claude", "ai_", "_ai", "agent", "notes"]
+
+    # Scan all markdown files and check names case-insensitively
+    for md_file in repo_path.rglob("*.md"):
+        name_lower = md_file.name.lower()
+
+        # Skip exclusions
+        if name_lower in exclusions:
+            continue
+        # Skip _agenttree directory
+        if "_agenttree" in md_file.parts:
+            continue
+        # Skip hidden directories
+        if any(part.startswith(".") for part in md_file.parts):
+            continue
+        # Skip node_modules, venv, etc.
+        if any(part in md_file.parts for part in ["node_modules", "venv", ".venv", "__pycache__"]):
+            continue
+
+        # Check if any keyword matches (case-insensitive)
+        if any(keyword in name_lower for keyword in keywords):
+            if md_file not in ai_notes:
+                ai_notes.append(md_file)
+
+    # Also check specific directories that commonly hold AI notes
+    ai_dirs = [
+        repo_path / "docs" / "ai-notes",
+        repo_path / "docs" / "notes",
+        repo_path / "notes",
+    ]
+    for ai_dir in ai_dirs:
+        if ai_dir.exists() and ai_dir.is_dir():
+            for md_file in ai_dir.rglob("*.md"):
+                if md_file not in ai_notes:
+                    ai_notes.append(md_file)
+
+    return sorted(ai_notes)
+
+
+def _migrate_notes(repo_path: Path, notes: list[Path], agents_path: Path) -> list[tuple[Path, Path]]:
+    """Move AI notes files to _agenttree/notes/.
+
+    Preserves relative path structure so files at docs/ai-notes/research.md
+    become _agenttree/notes/docs/ai-notes/research.md.
+
+    Uses git mv for tracked files to preserve history.
+
+    Args:
+        repo_path: Path to the repository root
+        notes: List of paths to migrate
+        agents_path: Path to _agenttree directory
+
+    Returns:
+        List of (source, destination) tuples for successfully migrated files
+    """
+    import shutil
+
+    notes_dir = agents_path / "notes"
+    notes_dir.mkdir(parents=True, exist_ok=True)
+
+    migrated: list[tuple[Path, Path]] = []
+
+    for src_path in notes:
+        # Calculate relative path from repo root
+        try:
+            rel_path = src_path.relative_to(repo_path)
+        except ValueError:
+            # Not relative to repo_path, skip
+            continue
+
+        dest_path = notes_dir / rel_path
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Check if file is tracked by git
+        result = subprocess.run(
+            ["git", "-C", str(repo_path), "ls-files", "--error-unmatch", str(src_path)],
+            capture_output=True,
+        )
+        is_tracked = result.returncode == 0
+
+        try:
+            if is_tracked:
+                # Use git mv to preserve history
+                subprocess.run(
+                    ["git", "-C", str(repo_path), "mv", str(src_path), str(dest_path)],
+                    check=True,
+                    capture_output=True,
+                )
+            else:
+                # Simple file move for untracked files
+                shutil.move(str(src_path), str(dest_path))
+            migrated.append((src_path, dest_path))
+        except (subprocess.CalledProcessError, OSError) as e:
+            console.print(f"[yellow]Warning: Could not migrate {rel_path}: {e}[/yellow]")
+
+    return migrated
+
+
+def _prompt_notes_migration(repo_path: Path, ai_notes: list[Path], agents_path: Path) -> None:
+    """Prompt user about migrating AI notes to _agenttree/notes/.
+
+    Displays explanation of AgentTree as a notes manager and lists found files.
+    If user confirms, migrates files. If declined, shows the command to run later.
+
+    Args:
+        repo_path: Path to the repository root
+        ai_notes: List of detected AI notes paths
+        agents_path: Path to _agenttree directory
+    """
+    console.print("\n[cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/cyan]")
+    console.print("[bold]AI Notes Migration[/bold]")
+    console.print("[cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/cyan]")
+    console.print()
+    console.print("AgentTree is also a [bold]notes manager[/bold]. It keeps AI-generated documentation")
+    console.print("in a parallel git repository ([cyan]_agenttree/notes/[/cyan]) so agents don't clutter")
+    console.print("your main codebase with their research files.")
+    console.print()
+
+    # Show found files (limit to first 5 + count)
+    console.print(f"[bold]Found {len(ai_notes)} AI-generated doc(s) that could be moved:[/bold]")
+    for note in ai_notes[:5]:
+        try:
+            rel_path = note.relative_to(repo_path)
+            console.print(f"  • {rel_path}")
+        except ValueError:
+            console.print(f"  • {note}")
+    if len(ai_notes) > 5:
+        console.print(f"  [dim]...and {len(ai_notes) - 5} more[/dim]")
+    console.print()
+
+    if click.confirm("Would you like to migrate these now?", default=False):
+        migrated = _migrate_notes(repo_path, ai_notes, agents_path)
+        if migrated:
+            console.print(f"[green]✓ Migrated {len(migrated)} file(s) to _agenttree/notes/[/green]")
+        else:
+            console.print("[yellow]No files were migrated[/yellow]")
+    else:
+        console.print()
+        console.print("[dim]No problem! Run this command anytime to migrate notes:[/dim]")
+        console.print("[bold cyan]  agenttree migrate-docs[/bold cyan]")
+
+
+def _create_knowledge_issue(repo_path: Path) -> None:
+    """Create the initial knowledge population issue.
+
+    Creates issue #001 (or next available) to populate the knowledge base
+    with codebase-specific information.
+
+    Args:
+        repo_path: Path to the repository root
+    """
+    problem_text = (
+        "Analyze the codebase structure, documentation, and configuration to populate "
+        "_agenttree/knowledge/ with project-specific information.\n\n"
+        "Tasks:\n"
+        "1. Read README, CONTRIBUTING, and any existing documentation\n"
+        "2. Detect tech stack from package files (package.json, pyproject.toml, Cargo.toml, etc.)\n"
+        "3. Extract useful commands from CI configs, Makefiles, and scripts\n"
+        "4. Identify key directories, patterns, and gotchas\n"
+        "5. Populate knowledge files with codebase-specific entries\n\n"
+        "This gives future agents a head start on understanding the project."
+    )
+
+    try:
+        issue = create_issue_func(
+            title="Populate knowledge base",
+            problem=problem_text,
+            priority=Priority.MEDIUM,
+        )
+        console.print(f"[green]✓ Created issue #{issue.id}: Populate knowledge base[/green]")
+    except Exception as e:
+        console.print(f"[yellow]Warning: Could not create knowledge population issue: {e}[/yellow]")
+        console.print("[dim]You can create it manually:[/dim]")
+        console.print('[dim]  agenttree issue create "Populate knowledge base" --problem "Analyze the codebase..."[/dim]')
+
+
 @click.group()
 @click.version_option(version="0.1.0")
 def main() -> None:
@@ -110,10 +313,20 @@ def init(worktrees_dir: Optional[str], project: Optional[str]) -> None:
     # Initialize agents repository (from template - includes all scripts/skills/templates)
     # Note: gh CLI and auth were already validated in check_all_dependencies()
     console.print("\n[cyan]Initializing agents repository from template...[/cyan]")
+    agents_path = repo_path / "_agenttree"
     try:
         agents_repo = AgentsRepository(repo_path)
         agents_repo.ensure_repo()
         console.print("[green]✓ _agenttree/ repository created[/green]")
+
+        # Auto-create knowledge population issue (always, every project needs this)
+        _create_knowledge_issue(repo_path)
+
+        # Scan for AI notes and offer migration
+        ai_notes = _detect_ai_notes(repo_path)
+        if ai_notes:
+            _prompt_notes_migration(repo_path, ai_notes, agents_path)
+
     except RuntimeError as e:
         console.print(f"[yellow]Warning: Could not create agents repository:[/yellow]")
         console.print(f"  {e}")
@@ -124,13 +337,10 @@ def init(worktrees_dir: Optional[str], project: Optional[str]) -> None:
     console.print("\n[bold cyan]Next steps:[/bold cyan]")
     console.print("""
 ```bash
-# 1. Create a test issue to verify setup
-agenttree issue create "Verify setup" --problem "Run the app and fix any setup issues in _agenttree/scripts/worktree-setup.sh. Commit your fixes so future agents benefit."
-
-# 2. Start an agent on it
+# 1. Start the agent to populate knowledge base
 agenttree start 001
 
-# 3. Once working, create real issues and start agents
+# 2. Create additional issues and start agents
 agenttree issue create "Your first real issue" --problem "Description of what needs to be done..."
 agenttree start 002
 ```
@@ -235,6 +445,35 @@ def upgrade() -> None:
         console.print(f"[yellow]Warning: Could not push changes: {push_result.stderr}[/yellow]")
         console.print("Changes are committed locally. Push manually with:")
         console.print(f"  cd {agents_path} && git push origin main")
+
+
+@main.command("migrate-docs")
+def migrate_docs() -> None:
+    """Migrate AI-generated documentation to _agenttree/notes/.
+
+    Scans for AI-generated notes (CLAUDE.md, AI_NOTES.md, etc.) in your
+    repository and offers to move them to the AgentTree notes directory.
+
+    This keeps agent-generated documentation organized and separate from
+    your main codebase.
+    """
+    repo_path = Path.cwd()
+    agents_path = repo_path / "_agenttree"
+
+    if not agents_path.exists():
+        console.print("[red]Error: _agenttree/ directory not found.[/red]")
+        console.print("Run 'agenttree init' first.")
+        return
+
+    ai_notes = _detect_ai_notes(repo_path)
+
+    if not ai_notes:
+        console.print("[green]✓ No AI-generated documentation found to migrate.[/green]")
+        console.print("\n[dim]Files looked for: *CLAUDE*.md, *AI*.md, *AGENT*.md, *NOTES*.md[/dim]")
+        console.print("[dim]Directories checked: docs/ai-notes/, docs/notes/, notes/[/dim]")
+        return
+
+    _prompt_notes_migration(repo_path, ai_notes, agents_path)
 
 
 @main.command()
