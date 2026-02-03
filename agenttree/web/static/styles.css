@@ -310,6 +310,52 @@ button[disabled] {
     color: var(--text-primary);
 }
 
+/* Priority badges */
+.priority-badge {
+    padding: 2px 6px;
+    border-radius: 8px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.priority-critical {
+    background: #dc2626;
+    color: #fff;
+}
+
+.priority-high {
+    background: #f59e0b;
+    color: #1a1a1a;
+}
+
+.priority-medium {
+    background: #06b6d4;
+    color: #1a1a1a;
+}
+
+.priority-low {
+    background: #22c55e;
+    color: #1a1a1a;
+}
+
+/* Priority dropdown in detail view */
+.priority-select {
+    padding: 4px 8px;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-card);
+    color: var(--text-primary);
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.priority-select:focus {
+    outline: none;
+    border-color: var(--text-accent);
+}
+
 /* ==============================================
    File Tabs
    ============================================== */
@@ -387,6 +433,19 @@ button[disabled] {
     font-size: 14px;
     color: var(--text-card);
     margin: 0;
+}
+
+.yaml-content {
+    white-space: pre-wrap;
+    line-height: 1.5;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 13px;
+    color: var(--text-card);
+    background: var(--bg-card-alt);
+    padding: 16px;
+    border-radius: 6px;
+    margin: 0;
+    overflow-x: auto;
 }
 
 .markdown-rendered {
@@ -2649,4 +2708,53 @@ button[disabled] {
 .mobile-container .action-buttons .btn {
     flex: 1;
     min-width: calc(50% - 4px);
+}
+
+/* Stage indicators for hidden stages in review mode */
+.stage-indicator {
+    flex: 0 0 44px;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    padding-top: 8px;
+    background: var(--bg-secondary);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: opacity 0.2s, background 0.2s;
+    max-height: calc(100vh - 90px);
+}
+
+.stage-indicator:hover {
+    background: var(--border-color);
+}
+
+.stage-indicator.visible {
+    display: flex;
+}
+
+#indicator-pre-review {
+    order: 6;
+}
+
+#indicator-pre-impl {
+    order: 8;
+}
+
+.indicator-count {
+    background: var(--badge-bg);
+    color: var(--text-muted);
+    padding: 4px 8px;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+/* Dark theme support for stage indicators */
+[data-theme="dark"] .stage-indicator {
+    background: var(--bg-secondary);
+}
+
+[data-theme="dark"] .stage-indicator:hover {
+    background: var(--border-color);
 }

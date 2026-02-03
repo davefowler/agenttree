@@ -24,9 +24,6 @@ class StalledAgent(TypedDict):
 # Human review stages that should be excluded from stall detection
 HUMAN_REVIEW_STAGES = {"plan_review", "implementation_review"}
 
-# Terminal stages that should be excluded (no active agent)
-TERMINAL_STAGES = {"accepted", "not_doing", "closed"}
-
 
 def get_stalled_agents(
     agents_dir: Path,
@@ -36,7 +33,7 @@ def get_stalled_agents(
 
     An agent is considered stalled if:
     - It has an assigned_agent (agent is running)
-    - It's not in a human_review or terminal stage
+    - It's not in a human_review or parking_lot stage
     - It hasn't advanced stages for threshold_min minutes
 
     Note: This does not verify tmux session existence. The CLI caller
@@ -53,10 +50,13 @@ def get_stalled_agents(
         - minutes_stalled: How many minutes since last advancement
         - title: Issue title
     """
+    from agenttree.config import load_config
+
     issues_dir = agents_dir / "issues"
     if not issues_dir.exists():
         return []
 
+    config = load_config()
     stalled: list[StalledAgent] = []
     now = datetime.now(timezone.utc)
 
@@ -72,8 +72,13 @@ def get_stalled_agents(
             with open(issue_yaml) as f:
                 issue_data = yaml.safe_load(f)
 
-            # Skip if no agent assigned
-            if not issue_data.get("assigned_agent"):
+            # Skip if no active agent running for this issue
+            from agenttree.state import get_active_agent
+            issue_id = issue_data.get("id", "")
+            if not issue_id:
+                continue
+            active_agent = get_active_agent(issue_id)
+            if not active_agent:
                 continue
 
             # Get stage info
@@ -84,8 +89,8 @@ def get_stalled_agents(
             if stage in HUMAN_REVIEW_STAGES:
                 continue
 
-            # Skip terminal stages
-            if stage in TERMINAL_STAGES:
+            # Skip parking lot stages (no active agent expected)
+            if config.is_parking_lot(stage):
                 continue
 
             # Read session file for last_advanced_at
@@ -109,8 +114,6 @@ def get_stalled_agents(
                     continue  # Not stalled yet
             except (ValueError, TypeError):
                 continue
-
-            issue_id = issue_data.get("id", "")
 
             # Build stage string
             stage_str = f"{stage}.{substage}" if substage else stage

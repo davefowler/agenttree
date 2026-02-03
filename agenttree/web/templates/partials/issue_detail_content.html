@@ -24,6 +24,14 @@
             <div class="detail-meta-row">
                 <div class="detail-meta">
                     <span>Stage: {{ issue.stage.replace('_', ' ').title() if issue.stage is string else issue.stage.value.replace('_', ' ').title() }}</span>
+                    <span>Priority:
+                        <select class="priority-select" onchange="updatePriority('{{ issue.number }}', this.value, this)">
+                            <option value="low" {% if issue.priority == 'low' %}selected{% endif %}>Low</option>
+                            <option value="medium" {% if issue.priority == 'medium' %}selected{% endif %}>Medium</option>
+                            <option value="high" {% if issue.priority == 'high' %}selected{% endif %}>High</option>
+                            <option value="critical" {% if issue.priority == 'critical' %}selected{% endif %}>Critical</option>
+                        </select>
+                    </span>
                     {% if issue.pr_url %}
                     <span><a href="{{ issue.pr_url }}" target="_blank">PR #{{ issue.pr_number }}</a></span>
                     {% endif %}
@@ -80,10 +88,22 @@
         </div>
 
         <!-- File tabs (desktop) -->
+        {# Determine which file should be active: use default_doc if exists, else last file #}
+        {% set active_file = namespace(name=None) %}
+        {% if default_doc %}
+            {% for file in files %}
+                {% if file.name == default_doc %}
+                    {% set active_file.name = default_doc %}
+                {% endif %}
+            {% endfor %}
+        {% endif %}
+        {% if not active_file.name and files %}
+            {% set active_file.name = files[-1].name %}
+        {% endif %}
         <div class="file-tabs-container">
             <div class="file-tabs" id="file-tabs-{{ issue.number }}">
                 {% for file in files %}
-                <button class="file-tab{% if loop.last and not issue.has_worktree %} active{% endif %}"
+                <button class="file-tab{% if file.name == active_file.name and not issue.has_worktree %} active{% endif %}"
                         onclick="selectFileTab(event, '{{ issue.number }}', '{{ file.name }}')"
                         data-filename="{{ file.name }}">
                     {{ file.display_name }}
@@ -102,7 +122,7 @@
             <!-- Mobile file selector dropdown -->
             <select class="mobile-file-select" onchange="selectFileFromDropdown(this, '{{ issue.number }}')">
                 {% for file in files %}
-                <option value="{{ file.name }}"{% if loop.last and not issue.has_worktree %} selected{% endif %}>{{ file.display_name }}</option>
+                <option value="{{ file.name }}"{% if file.name == active_file.name and not issue.has_worktree %} selected{% endif %}>{{ file.display_name }}</option>
                 {% endfor %}
                 {% if issue.has_worktree %}
                 <option value="changes"{% if files|length == 0 %} selected{% endif %}>Changes</option>
@@ -115,8 +135,11 @@
             {% for file in files %}
             <div class="file-content-item"
                  data-filename="{{ file.name }}"
-                 style="display: {% if loop.last %}block{% else %}none{% endif %};">
+                 style="display: {% if file.name == active_file.name %}block{% else %}none{% endif %};">
                 {% if file.content %}
+                {% if file.name.endswith('.yaml') or file.name.endswith('.yml') %}
+                <pre class="yaml-content">{{ file.content }}</pre>
+                {% else %}
                 <div class="markdown-rendered" id="markdown-{{ issue.number }}-{{ loop.index }}"></div>
                 <script type="text/template" id="source-{{ issue.number }}-{{ loop.index }}">{{ file.content }}</script>
                 <script>
@@ -130,6 +153,7 @@
                         }
                     })();
                 </script>
+                {% endif %}
                 {% else %}
                 <div class="empty-state">
                     <p>No content available</p>
@@ -173,6 +197,37 @@
 // Always reload to get fresh data after approve, rebase, move, etc.
 function afterAction() {
     location.reload();
+}
+
+// Update issue priority
+async function updatePriority(issueNumber, priority, selectEl) {
+    const originalValue = selectEl.getAttribute('data-original') || selectEl.value;
+    selectEl.setAttribute('data-original', originalValue);
+    selectEl.disabled = true;
+
+    try {
+        const response = await fetch(`/api/issues/${issueNumber}/priority`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({priority: priority})
+        });
+
+        if (response.ok) {
+            selectEl.disabled = false;
+            selectEl.setAttribute('data-original', priority);
+            // Reload to update the card badge
+            setTimeout(afterAction, 300);
+        } else {
+            const data = await response.json();
+            alert(`Cannot update priority: ${data.detail || 'Unknown error'}`);
+            selectEl.value = originalValue;
+            selectEl.disabled = false;
+        }
+    } catch (error) {
+        console.error('Error updating priority:', error);
+        selectEl.value = originalValue;
+        selectEl.disabled = false;
+    }
 }
 
 // Action handlers for this issue detail

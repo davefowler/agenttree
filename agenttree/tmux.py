@@ -486,7 +486,8 @@ class TmuxManager:
         model: str | None = None,
         agent_host: str = "agent",
         has_merge_conflicts: bool = False,
-    ) -> None:
+        is_restart: bool = False,
+    ) -> bool:
         """Start an issue-bound agent in a container within a tmux session.
 
         Args:
@@ -498,6 +499,10 @@ class TmuxManager:
             model: Model to use (defaults to config.default_model if not specified)
             agent_host: Agent host type for the stage (e.g., "agent", "review")
             has_merge_conflicts: Whether there are unresolved merge conflicts
+            is_restart: Whether this is a restart (worktree already existed)
+
+        Returns:
+            True if agent started successfully, False if startup failed
         """
         # Kill existing session if it exists
         if session_exists(session_name):
@@ -538,17 +543,31 @@ class TmuxManager:
 
         # Wait for Claude CLI prompt before sending startup message
         if wait_for_prompt(session_name, prompt_char="❯", timeout=30.0):
-            # Build issue-specific startup prompt
+            # Build issue-specific startup prompt based on state
             if has_merge_conflicts:
                 startup_prompt = (
                     f"You are working on issue #{issue_id}. "
-                    f"IMPORTANT: We merged latest main and there are MERGE CONFLICTS. "
-                    f"Run 'git status' to see conflicted files and resolve them first before proceeding. "
-                    f"Then read your task: agenttree status --issue {issue_id}"
+                    f"IMPORTANT: Your branch was rebased onto latest main and there are MERGE CONFLICTS. "
+                    f"Run 'git status' to see conflicted files and resolve them FIRST before any other work. "
+                    f"After resolving conflicts and committing, run: agenttree next"
+                )
+            elif is_restart:
+                startup_prompt = (
+                    f"SESSION RESTARTED - Issue #{issue_id}. "
+                    f"Your branch was rebased onto latest main to get CLI updates. "
+                    f"Any uncommitted work was auto-committed. "
+                    f"Run 'agenttree next' to see your current stage and resume work."
                 )
             else:
                 startup_prompt = "Run 'agenttree next' to see your workflow instructions and current stage."
             send_keys(session_name, startup_prompt)
+            return True
+        else:
+            # Startup failed - session may have crashed or container didn't start
+            # Clean up the tmux session if it exists
+            if session_exists(session_name):
+                kill_session(session_name)
+            return False
 
     def start_controller(
         self,

@@ -485,8 +485,8 @@ This is the context section with content.
 
                     assert errors == []
 
-    def test_accepts_h3_headers(self, workflow_repo: Path, mock_sync: MagicMock):
-        """Section check should accept ### headers."""
+    def test_accepts_h3_subsections(self, workflow_repo: Path, mock_sync: MagicMock):
+        """Section check should accept h2 headers with h3 subsections."""
         from agenttree.issues import create_issue
         from agenttree.hooks import execute_hooks
         from agenttree.config import load_config
@@ -499,14 +499,18 @@ This is the context section with content.
                     issue = create_issue(title="Test H3 Headers")
                     issue_dir = agenttree_path / "issues" / f"{issue.id}-{issue.slug}"
 
-                    # Create problem.md with ### Context
+                    # Create problem.md with ## sections (section_check looks for h2 headers)
                     content = """# Problem
 
-### Context
+## Context
 
 This is the context section with content.
 
-### Possible Solutions
+### Subsection
+
+More details here.
+
+## Possible Solutions
 
 - Solution 1
 """
