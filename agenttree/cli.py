@@ -1331,43 +1331,6 @@ def stop_all(verbose: bool) -> None:
 
 
 @main.command()
-@click.option("--threshold", "-t", default=None, type=int, help="Override stall threshold (minutes)")
-def stalls(threshold: int | None) -> None:
-    """List agents that appear stalled (in same stage too long).
-
-    Detects agents that have been in a non-review stage for longer than
-    the configured threshold (default 20 minutes) without advancing.
-
-    Examples:
-        agenttree stalls              # Check for stalled agents
-        agenttree stalls -t 30        # Use 30-minute threshold
-    """
-    from agenttree.manager_agent import get_stalled_agents
-
-    config = load_config()
-    agents_dir = Path.cwd() / "_agenttree"
-
-    # Use config threshold or override
-    threshold_min = threshold if threshold is not None else config.manager.stall_threshold_min
-
-    stalled = get_stalled_agents(agents_dir, threshold_min=threshold_min)
-
-    if not stalled:
-        console.print(f"[green]No stalled agents detected[/green] (threshold: {threshold_min} min)")
-        return
-
-    console.print(f"[yellow]Found {len(stalled)} stalled agent(s):[/yellow]\n")
-
-    for agent in stalled:
-        console.print(f"  [bold]Issue #{agent['issue_id']}[/bold]: {agent['title']}")
-        console.print(f"    Stage: {agent['stage']}")
-        console.print(f"    Stalled for: {agent['minutes_stalled']} minutes")
-        console.print()
-
-    console.print("[dim]Use 'agenttree send <id> \"message\"' to nudge a stalled agent[/dim]")
-
-
-@main.command()
 @click.argument("pr_number", type=int)
 @click.option("--no-approval", is_flag=True, help="Skip approval requirement")
 @click.option("--monitor", is_flag=True, help="Monitor PR until ready to merge")
