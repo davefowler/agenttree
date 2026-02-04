@@ -321,7 +321,7 @@ class TUIApp(App):  # type: ignore[type-arg]
             return
 
         try:
-            next_stage, next_substage, _ = get_next_stage(issue.stage, issue.substage)
+            next_stage, next_substage, _ = get_next_stage(issue.stage, issue.substage, issue.flow)
 
             # Execute pre-completion hooks (can block with ValidationError or redirect)
             from_stage = issue.stage

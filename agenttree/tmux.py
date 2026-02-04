@@ -84,15 +84,24 @@ def kill_session(session_name: str) -> None:
         pass
 
 
-def send_keys(session_name: str, keys: str, submit: bool = True) -> None:
+def send_keys(session_name: str, keys: str, submit: bool = True, interrupt: bool = False) -> None:
     """Send keystrokes to a tmux session.
 
     Args:
         session_name: Name of the session
         keys: Keys to send
         submit: Whether to send Enter to submit (default True)
+        interrupt: Whether to send Ctrl+C first to interrupt current task (default False)
     """
     import time
+
+    # If interrupt=True, send Ctrl+C first to stop any running command/thinking
+    if interrupt:
+        subprocess.run(
+            ["tmux", "send-keys", "-t", session_name, "C-c"],
+            check=True,
+        )
+        time.sleep(0.5)  # Wait for Claude to process the interrupt
 
     # Always send text using literal mode to avoid interpretation
     subprocess.run(
@@ -147,7 +156,7 @@ def is_claude_running(session_name: str) -> bool:
     return False
 
 
-def send_message(session_name: str, message: str, check_claude: bool = True) -> str:
+def send_message(session_name: str, message: str, check_claude: bool = True, interrupt: bool = False) -> str:
     """Send a message to a tmux session if it's alive.
 
     This is the preferred way to send messages to agents - it checks
@@ -157,6 +166,7 @@ def send_message(session_name: str, message: str, check_claude: bool = True) -> 
         session_name: Name of the tmux session
         message: Message to send
         check_claude: If True, verify Claude CLI is running (not just tmux session)
+        interrupt: If True, send Ctrl+C first to interrupt current task
 
     Returns:
         "sent" if message was sent successfully
@@ -171,7 +181,7 @@ def send_message(session_name: str, message: str, check_claude: bool = True) -> 
         return "claude_exited"
 
     try:
-        send_keys(session_name, message, submit=True)
+        send_keys(session_name, message, submit=True, interrupt=interrupt)
         return "sent"
     except subprocess.CalledProcessError:
         return "error"
@@ -486,6 +496,7 @@ class TmuxManager:
         model: str | None = None,
         agent_host: str = "agent",
         has_merge_conflicts: bool = False,
+        is_restart: bool = False,
     ) -> bool:
         """Start an issue-bound agent in a container within a tmux session.
 
@@ -498,6 +509,7 @@ class TmuxManager:
             model: Model to use (defaults to config.default_model if not specified)
             agent_host: Agent host type for the stage (e.g., "agent", "review")
             has_merge_conflicts: Whether there are unresolved merge conflicts
+            is_restart: Whether this is a restart (worktree already existed)
 
         Returns:
             True if agent started successfully, False if startup failed
@@ -541,13 +553,20 @@ class TmuxManager:
 
         # Wait for Claude CLI prompt before sending startup message
         if wait_for_prompt(session_name, prompt_char="❯", timeout=30.0):
-            # Build issue-specific startup prompt
+            # Build issue-specific startup prompt based on state
             if has_merge_conflicts:
                 startup_prompt = (
                     f"You are working on issue #{issue_id}. "
-                    f"IMPORTANT: We merged latest main and there are MERGE CONFLICTS. "
-                    f"Run 'git status' to see conflicted files and resolve them first before proceeding. "
-                    f"Then read your task: agenttree status --issue {issue_id}"
+                    f"IMPORTANT: Your branch was rebased onto latest main and there are MERGE CONFLICTS. "
+                    f"Run 'git status' to see conflicted files and resolve them FIRST before any other work. "
+                    f"After resolving conflicts and committing, run: agenttree next"
+                )
+            elif is_restart:
+                startup_prompt = (
+                    f"SESSION RESTARTED - Issue #{issue_id}. "
+                    f"Your branch was rebased onto latest main to get CLI updates. "
+                    f"Any uncommitted work was auto-committed. "
+                    f"Run 'agenttree next' to see your current stage and resume work."
                 )
             else:
                 startup_prompt = "Run 'agenttree next' to see your workflow instructions and current stage."
@@ -591,8 +610,8 @@ class TmuxManager:
 
         # Wait for prompt before sending startup message
         if wait_for_prompt(session_name, prompt_char="❯", timeout=30.0):
-            # Load controller instructions
-            send_keys(session_name, "cat _agenttree/skills/controller.md")
+            # Load manager instructions
+            send_keys(session_name, "cat _agenttree/skills/manager.md")
 
     def stop_issue_agent(self, session_name: str) -> None:
         """Stop an issue-bound agent's tmux session.
@@ -602,12 +621,13 @@ class TmuxManager:
         """
         kill_session(session_name)
 
-    def send_message_to_issue(self, session_name: str, message: str) -> str:
+    def send_message_to_issue(self, session_name: str, message: str, interrupt: bool = False) -> str:
         """Send a message to an issue-bound agent.
 
         Args:
             session_name: Tmux session name
             message: Message to send
+            interrupt: Whether to send Ctrl+C first to interrupt current task
 
         Returns:
             "sent" if message was sent successfully
@@ -615,7 +635,7 @@ class TmuxManager:
             "claude_exited" if session exists but Claude CLI isn't running
             "error" if send failed
         """
-        return send_message(session_name, message, check_claude=True)
+        return send_message(session_name, message, check_claude=True, interrupt=interrupt)
 
     def attach_to_issue(self, session_name: str) -> None:
         """Attach to an issue-bound agent's tmux session.
