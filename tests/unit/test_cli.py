@@ -1203,13 +1203,8 @@ class TestRollbackCommand:
                     result = cli_runner.invoke(main, ["send", "0", "hello manager"])
 
         assert result.exit_code == 0
-<<<<<<< HEAD
-        assert "Sent message to controller" in result.output
-        mock_send.assert_called_once_with("testproject-controller-000", "hello controller", interrupt=False)
-=======
         assert "Sent message to manager" in result.output
         mock_send.assert_called_once_with("testproject-manager-000", "hello manager", interrupt=False)
->>>>>>> origin/main
 
     def test_send_to_manager_not_running(self, cli_runner, mock_config):
         """Should error when manager is not running."""

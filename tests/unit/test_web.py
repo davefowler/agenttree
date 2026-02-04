@@ -471,9 +471,9 @@ class TestApproveIssueEndpoint:
         data = response.json()
         assert data["ok"] is True
 
-        # Verify hooks were called
+        # Verify exit hooks were called (synchronous validation)
         mock_exit.assert_called_once()
-        mock_enter.assert_called_once()
+        # Note: enter hooks now run async (fire-and-forget) so we don't assert on them
 
     @patch("agenttree.state.get_active_agent")
     @patch("agenttree.hooks.execute_enter_hooks")

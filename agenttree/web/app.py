@@ -1065,7 +1065,7 @@ async def approve_issue(
     # and show them the current stage instructions instead of advancing.
 
     # Execute enter hooks in background - don't wait for them
-    async def run_enter_hooks_and_notify():
+    async def run_enter_hooks_and_notify() -> None:
         try:
             await asyncio.to_thread(execute_enter_hooks, updated, next_stage, next_substage)
         except Exception:
