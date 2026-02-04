@@ -30,6 +30,9 @@ from agenttree import issues as issue_crud
 from agenttree.agents_repo import sync_agents_repo
 from agenttree.web.models import StageEnum, KanbanBoard, Issue as WebIssue, IssueMoveRequest, PriorityUpdateRequest
 
+# Track background tasks to prevent garbage collection before completion
+_background_tasks: set[asyncio.Task] = set()
+
 # Pattern to match Claude Code's input prompt separator line
 # The separator is a line of U+2500 (BOX DRAWINGS LIGHT HORIZONTAL) characters: ─
 # We match lines that are at least 20 of these characters (with optional whitespace)
@@ -1065,11 +1068,14 @@ async def approve_issue(
     # and show them the current stage instructions instead of advancing.
 
     # Execute enter hooks in background - don't wait for them
-    async def run_enter_hooks_and_notify():
+    async def run_enter_hooks_and_notify() -> None:
+        import logging
+        log = logging.getLogger("agenttree.web")
+
         try:
             await asyncio.to_thread(execute_enter_hooks, updated, next_stage, next_substage)
-        except Exception:
-            pass  # Enter hooks shouldn't block
+        except Exception as e:
+            log.warning("Enter hooks failed for issue %s: %s", issue_id_normalized, e)
 
         # Notify agent to continue (if active)
         try:
@@ -1081,11 +1087,13 @@ async def approve_issue(
                 if session_exists(agent.tmux_session):
                     message = "Your work was approved! Run `agenttree next` for instructions."
                     await asyncio.to_thread(send_message, agent.tmux_session, message)
-        except Exception:
-            pass  # Agent notification is best-effort
+        except Exception as e:
+            log.warning("Agent notification failed for issue %s: %s", issue_id_normalized, e)
 
-    # Fire and forget - don't wait for hooks/notification
-    asyncio.create_task(run_enter_hooks_and_notify())
+    # Run in background task - store reference to prevent GC
+    task = asyncio.create_task(run_enter_hooks_and_notify())
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
 
     return {"ok": True}
 

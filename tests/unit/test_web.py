@@ -473,7 +473,8 @@ class TestApproveIssueEndpoint:
 
         # Verify exit hooks were called synchronously
         mock_exit.assert_called_once()
-        # Note: enter hooks run in background task (fire-and-forget), not tested here
+        # Enter hooks run in background task - verify they were scheduled
+        mock_enter.assert_called_once()
 
     @patch("agenttree.state.get_active_agent")
     @patch("agenttree.hooks.execute_enter_hooks")
