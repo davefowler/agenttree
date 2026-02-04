@@ -56,8 +56,35 @@ hosts:
     model: sonnet
     skill: independent_review.md
 
+# Event-driven hooks configuration
+# Defines what actions run when events fire
+# Note: "on" must be quoted because it's a YAML reserved word (boolean true)
+"on":
+  # Fires once when `agenttree run` starts
+  startup:
+    - start_controller
+    - auto_start_agents
+  
+  # Fires every interval_s seconds
+  heartbeat:
+    interval_s: 10
+    actions:
+      - sync
+      - push_pending_branches: {}
+      - check_controller_stages: {}
+      - check_custom_agent_stages: {}
+      - check_stalled_agents: { min_interval_s: 60 }
+      - check_ci_status: { min_interval_s: 120 }
+      - check_merged_prs: { min_interval_s: 30 }
+  
+  # Fires when `agenttree stop-all` is called
+  shutdown:
+    - sync
+    - stop_all_agents
+
 stages:
   - name: backlog
+    is_parking_lot: true
 
   - name: define
     output: problem.md
@@ -134,6 +161,7 @@ stages:
 
   - name: plan_review
     human_review: true
+    review_doc: spec.md
     pre_completion:
       - file_exists: spec.md
       - section_check:
@@ -228,6 +256,7 @@ stages:
   - name: implementation_review
     human_review: true
     role: manager  # Manager handles PR creation (agents can't push)
+    review_doc: review.md
     post_start:
       - create_pr:
     substages:
@@ -246,7 +275,7 @@ stages:
     skill: knowledge_base.md
 
   - name: accepted
-    terminal: true
+    is_parking_lot: true
     role: manager  # Manager handles merge/cleanup (agents can't push)
     post_start:
       - merge_pr:
@@ -254,9 +283,47 @@ stages:
       - start_blocked_issues:
 
   - name: not_doing
-    terminal: true
+    is_parking_lot: true
+    redirect_only: true  # Only reached via redirect, not normal progression
 
-# Controller hooks for dogfooding - track cleanup frequency to identify workflow issues
+# Workflow flows
+# Each flow defines an ordered subset of stages that issues can follow.
+# The "default" flow is used if no flow is specified when creating an issue.
+# Parking lot stages like not_doing are redirect targets, not part of normal progression.
+flows:
+  default:
+    stages:
+      - backlog
+      - define
+      - research
+      - plan
+      - plan_assess
+      - plan_revise
+      - plan_review
+      - implement
+      - independent_code_review
+      - address_independent_review
+      - implementation_review
+      - knowledge_base
+      - accepted
+
+  # Quick flow for small issues that skip research and planning stages
+  quick:
+    stages:
+      - backlog
+      - define
+      - implement
+      - implementation_review
+      - accepted
+
+  # Abandoned issues - only reachable via redirect
+  not_doing:
+    stages:
+      - not_doing
+
+default_flow: default
+
+# Manager hooks for dogfooding - track cleanup frequency to identify workflow issues
 # This is project-specific logging to help us find broken workflow steps
 manager_hooks:
   post_sync:

@@ -144,7 +144,7 @@ class TestSendMessage:
                     result = send_message("test-session", "hello")
 
         assert result == "sent"
-        mock_send.assert_called_once_with("test-session", "hello", submit=True)
+        mock_send.assert_called_once_with("test-session", "hello", submit=True, interrupt=False)
 
     def test_send_message_session_not_exists(self):
         """Should return 'no_session' when session doesn't exist."""
@@ -421,7 +421,7 @@ class TestTmuxManager:
             result = manager.send_message_to_issue("issue-42", "hello")
 
         assert result == "sent"
-        mock_send.assert_called_once_with("issue-42", "hello", check_claude=True)
+        mock_send.assert_called_once_with("issue-42", "hello", check_claude=True, interrupt=False)
 
     def test_is_issue_running(self, mock_config):
         """Should check issue session existence."""
@@ -489,9 +489,9 @@ class TestStartController:
 
         mock_create.assert_called_once_with("testproject-controller-000", tmp_path, "claude")
         mock_send.assert_called_once()
-        # Verify the startup prompt includes controller instructions
+        # Verify the startup prompt loads manager skill file
         startup_prompt = mock_send.call_args[0][1]
-        assert "manager" in startup_prompt.lower()
+        assert "manager.md" in startup_prompt or "manager" in startup_prompt.lower()
 
     def test_start_manager_kills_existing_session(self, mock_config, tmp_path):
         """Should kill existing session before creating new one."""

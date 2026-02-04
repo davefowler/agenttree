@@ -575,15 +575,15 @@ class TestRedirectOnlyStages:
                 StageConfig(name="independent_code_review"),
                 StageConfig(name="address_independent_review", redirect_only=True),  # Should be skipped
                 StageConfig(name="implementation_review"),
-                StageConfig(name="accepted", terminal=True),
+                StageConfig(name="accepted", is_parking_lot=True),
             ]
         )
 
         # From independent_code_review, should go to implementation_review, skipping address_independent_review
-        next_stage, next_substage, is_terminal = config.get_next_stage("independent_code_review")
+        next_stage, next_substage, is_human_review = config.get_next_stage("independent_code_review")
         assert next_stage == "implementation_review"
         assert next_substage is None
-        assert is_terminal is False
+        assert is_human_review is False
 
     def test_redirect_only_stage_not_included_in_normal_order(self) -> None:
         """redirect_only stages should be accessible but skipped during normal progression."""
@@ -593,18 +593,18 @@ class TestRedirectOnlyStages:
             stages=[
                 StageConfig(name="implement"),
                 StageConfig(name="review", redirect_only=True),
-                StageConfig(name="accepted", terminal=True),
+                StageConfig(name="accepted", is_parking_lot=True),
             ]
         )
 
         # From implement, should go directly to accepted, skipping redirect_only review
-        # Note: get_next_stage returns (stage, substage, human_review), not is_terminal
+        # Note: get_next_stage returns (stage, substage, human_review), not is_parking_lot
         next_stage, next_substage, human_review = config.get_next_stage("implement")
         assert next_stage == "accepted"
-        # accepted is terminal but human_review is False
+        # accepted is parking_lot but human_review is False
         assert human_review is False
-        # Verify accepted is indeed terminal
-        assert config.is_terminal("accepted") is True
+        # Verify accepted is indeed a parking lot
+        assert config.is_parking_lot("accepted") is True
 
     def test_redirect_only_stage_can_still_be_entered_directly(self) -> None:
         """redirect_only stages should still be retrievable and configurable."""
@@ -619,7 +619,7 @@ class TestRedirectOnlyStages:
                     role="developer",
                     output="response.md"
                 ),
-                StageConfig(name="accepted", terminal=True),
+                StageConfig(name="accepted", is_parking_lot=True),
             ]
         )
 
@@ -640,12 +640,12 @@ class TestRedirectOnlyStages:
                 StageConfig(name="address_review1", redirect_only=True),
                 StageConfig(name="address_review2", redirect_only=True),
                 StageConfig(name="final_review"),
-                StageConfig(name="accepted", terminal=True),
+                StageConfig(name="accepted", is_parking_lot=True),
             ]
         )
 
         # From implement, should skip both redirect_only stages
-        next_stage, next_substage, is_terminal = config.get_next_stage("implement")
+        next_stage, next_substage, is_human_review = config.get_next_stage("implement")
         assert next_stage == "final_review"
 
     def test_redirect_only_defaults_to_false(self) -> None:

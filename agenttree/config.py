@@ -1,7 +1,7 @@
 """Configuration management for AgentTree."""
 
 from pathlib import Path
-from typing import Dict, Optional, Union
+from typing import Dict, List, Optional, Union
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -66,6 +66,54 @@ class HooksConfig(BaseModel):
     post_accepted: list[dict] = Field(default_factory=list)  # After issue accepted
 
 
+class ActionConfig(BaseModel):
+    """Configuration for a single action with optional rate limiting.
+    
+    Actions can be specified as:
+    - Simple string: "sync"
+    - Dict with config: {"check_ci_status": {"min_interval_s": 60}}
+    """
+    
+    name: str
+    min_interval_s: int | None = None  # Time-based rate limit
+    every_n: int | None = None  # Count-based rate limit (every Nth heartbeat)
+    optional: bool = False  # If true, failure doesn't block
+
+
+class HeartbeatConfig(BaseModel):
+    """Configuration for heartbeat events."""
+    
+    interval_s: int = 10  # Seconds between heartbeats
+    actions: list[str | dict] = Field(default_factory=list)
+
+
+class OnConfig(BaseModel):
+    """Configuration for event-driven hooks.
+    
+    The `on:` config defines what actions run when events fire.
+    
+    Example:
+        on:
+          startup:
+            - start_controller
+            - auto_start_agents
+          
+          heartbeat:
+            interval_s: 10
+            actions:
+              - sync
+              - check_stalled_agents: { min_interval_s: 60 }
+          
+          shutdown:
+            - sync
+            - stop_all_agents
+    """
+    
+    startup: list[str | dict] = Field(default_factory=list)
+    shutdown: list[str | dict] = Field(default_factory=list)
+    heartbeat: HeartbeatConfig | dict | None = None
+
+
 class SubstageConfig(BaseModel):
     """Configuration for a workflow substage."""
 
@@ -88,9 +136,10 @@ class StageConfig(BaseModel):
     skill: Optional[str] = None   # Override skill file path
     model: Optional[str] = None   # Model to use for this stage (overrides default_model)
     human_review: bool = False    # Requires human approval to exit
-    terminal: bool = False        # Cannot progress from here (accepted, not_doing)
+    is_parking_lot: bool = False  # No agent auto-starts here (backlog, accepted, not_doing)
     redirect_only: bool = False   # Only reachable via StageRedirect, skipped in normal progression
     role: str = "developer"       # Who executes this stage: "developer" (in container) or "manager" (host)
+    review_doc: str | None = None  # Document to show by default when viewing issue in this stage
     substages: Dict[str, SubstageConfig] = Field(default_factory=dict)
     pre_completion: list[dict] = Field(default_factory=list)  # Stage-level hooks before completing
     post_start: list[dict] = Field(default_factory=list)  # Stage-level hooks after starting
@@ -119,6 +168,18 @@ class StageConfig(BaseModel):
                 return getattr(substage_config, event, [])
             return []
         return getattr(self, event, [])
+
+
+class FlowConfig(BaseModel):
+    """Configuration for a workflow flow.
+
+    A flow defines an ordered list of stage names that issues following
+    this flow will progress through. Stage definitions are shared across
+    flows - this just controls the order and which stages are included.
+    """
+
+    name: str  # Flow name (e.g., "default", "quick")
+    stages: list[str] = Field(default_factory=list)  # Ordered list of stage names
 
 
 class ManagerConfig(BaseModel):
@@ -159,12 +220,15 @@ class Config(BaseModel):
     roles: Dict[str, RoleConfig] = Field(default_factory=dict)  # Role configurations
     commands: Dict[str, Union[str, list[str]]] = Field(default_factory=dict)  # Named shell commands
     stages: list[StageConfig] = Field(default_factory=list)  # Must be defined in .agenttree.yaml
+    flows: dict[str, FlowConfig] = Field(default_factory=dict)  # Named workflow flows
+    default_flow: str = "default"  # Which flow to use when not specified
     security: SecurityConfig = Field(default_factory=SecurityConfig)
     merge_strategy: str = "squash"  # squash, merge, or rebase
     hooks: HooksConfig = Field(default_factory=HooksConfig)
     save_tmux_history: bool = False  # Save tmux session history on stage transitions
     manager: ManagerConfig = Field(default_factory=ManagerConfig)
     show_issue_yaml: bool = True  # Show issue.yaml in web UI file tabs
+    on: Optional[OnConfig] = None  # Event-driven hooks configuration
 
     def get_port_for_agent(self, agent_num: int) -> int:
         """Get port number for a specific agent.
@@ -558,35 +622,80 @@ class Config(BaseModel):
 
         return []
 
-    def is_terminal(self, stage_name: str) -> bool:
-        """Check if a stage is terminal (cannot progress further).
+    def is_parking_lot(self, stage_name: str) -> bool:
+        """Check if a stage is a parking lot (no agent auto-starts).
+
+        Parking lot stages are stages where issues can sit without active agents.
+        Examples: backlog (waiting to start), accepted (done), not_doing (abandoned).
 
         Args:
             stage_name: Name of the stage
 
         Returns:
-            True if terminal, False otherwise
+            True if parking lot, False otherwise
         """
         stage = self.get_stage(stage_name)
-        return stage.terminal if stage else False
+        return stage.is_parking_lot if stage else False
+
+    def get_parking_lot_stages(self) -> set[str]:
+        """Get names of all parking lot stages.
+
+        Returns:
+            Set of stage names where is_parking_lot is True
+        """
+        return {stage.name for stage in self.stages if stage.is_parking_lot}
+
+    def get_flow(self, flow_name: str) -> Optional[FlowConfig]:
+        """Get configuration for a flow.
+
+        Args:
+            flow_name: Name of the flow
+
+        Returns:
+            FlowConfig or None if not found
+        """
+        return self.flows.get(flow_name)
+
+    def get_flow_stage_names(self, flow_name: str = "default") -> list[str]:
+        """Get ordered list of stage names for a flow.
+
+        When no flows are defined (e.g., direct Config instantiation in tests
+        or legacy configs), falls back to using all stages in definition order.
+
+        Args:
+            flow_name: Name of the flow (default: "default")
+
+        Returns:
+            List of stage names in flow order
+        """
+        flow = self.get_flow(flow_name)
+        if flow:
+            return flow.stages
+
+        # Fallback for configs without flows defined (tests, legacy configs)
+        if flow_name == "default" and not self.flows:
+            return self.get_stage_names()
+
+        return []
 
     def get_next_stage(
         self,
         current_stage: str,
         current_substage: Optional[str] = None,
+        flow: str = "default",
     ) -> tuple[str, Optional[str], bool]:
         """Calculate the next stage/substage.
 
         Args:
             current_stage: Current stage name
             current_substage: Current substage (if any)
+            flow: Flow name to use for stage progression (default: "default")
 
         Returns:
             Tuple of (next_stage, next_substage, is_human_review)
         """
         stage_config = self.get_stage(current_stage)
-        # Terminal stages don't progress further
-        if stage_config is None or stage_config.terminal:
+        if stage_config is None:
             return current_stage, current_substage, False
 
         substages = stage_config.substage_order()
@@ -602,7 +711,8 @@ class Config(BaseModel):
                 pass  # substage not found, move to next stage
 
         # Move to next stage (skip redirect_only stages)
-        stage_names = self.get_stage_names()
+        # Use the flow's stage order instead of global stages
+        stage_names = self.get_flow_stage_names(flow)
         try:
             stage_idx = stage_names.index(current_stage)
             # Look for next non-redirect_only stage
@@ -723,5 +833,52 @@ def load_config(path: Optional[Path] = None) -> Config:
                     role_config["container"] = {"enabled": True}
                 elif "container" in role_config and role_config["container"] is False:
                     role_config["container"] = None
+
+    # Auto-populate 'name' field for flows from the key
+    if "flows" in data and isinstance(data["flows"], dict):
+        for flow_name, flow_config in data["flows"].items():
+            if flow_config is None:
+                data["flows"][flow_name] = {"name": flow_name, "stages": []}
+            elif isinstance(flow_config, dict):
+                if "name" not in flow_config:
+                    flow_config["name"] = flow_name
+
+    # Get stage names for validation
+    stage_names = set()
+    if "stages" in data:
+        for stage in data["stages"]:
+            if isinstance(stage, dict) and "name" in stage:
+                stage_names.add(stage["name"])
+
+    # Create implicit default flow if no flows defined
+    if "flows" not in data or not data["flows"]:
+        if stage_names:
+            data["flows"] = {
+                "default": {
+                    "name": "default",
+                    "stages": [s["name"] for s in data.get("stages", []) if isinstance(s, dict) and "name" in s]
+                }
+            }
+
+    # Validate flow stage references
+    if "flows" in data and isinstance(data["flows"], dict):
+        for flow_name, flow_config in data["flows"].items():
+            if flow_config and isinstance(flow_config, dict):
+                flow_stages = flow_config.get("stages", [])
+                # Validate empty flows
+                if not flow_stages:
+                    raise ValueError(f"Flow '{flow_name}' has no stages defined")
+                # Validate stage references
+                for stage_name in flow_stages:
+                    if stage_name not in stage_names:
+                        raise ValueError(
+                            f"Flow '{flow_name}' references unknown stage '{stage_name}'"
+                        )
+
+    # Handle YAML 'on:' being parsed as boolean True
+    # In YAML 1.1, 'on', 'off', 'yes', 'no' are reserved boolean keywords
+    # Users can either quote "on": or we handle True -> "on" here
+    if True in data:
+        data["on"] = data.pop(True)
 
     return Config(**data)
