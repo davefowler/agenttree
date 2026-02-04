@@ -1,7 +1,7 @@
 """Configuration management for AgentTree."""
 
 from pathlib import Path
-from typing import Dict, Optional, Union
+from typing import Dict, List, Optional, Union
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -64,6 +64,54 @@ class HooksConfig(BaseModel):
     post_pr_create: list[dict] = Field(default_factory=list)  # After PR created
     post_merge: list[dict] = Field(default_factory=list)  # After merge
     post_accepted: list[dict] = Field(default_factory=list)  # After issue accepted
+
+
+class ActionConfig(BaseModel):
+    """Configuration for a single action with optional rate limiting.
+    
+    Actions can be specified as:
+    - Simple string: "sync"
+    - Dict with config: {"check_ci_status": {"min_interval_s": 60}}
+    """
+    
+    name: str
+    min_interval_s: int | None = None  # Time-based rate limit
+    every_n: int | None = None  # Count-based rate limit (every Nth heartbeat)
+    optional: bool = False  # If true, failure doesn't block
+
+
+class HeartbeatConfig(BaseModel):
+    """Configuration for heartbeat events."""
+    
+    interval_s: int = 10  # Seconds between heartbeats
+    actions: list[str | dict] = Field(default_factory=list)
+
+
+class OnConfig(BaseModel):
+    """Configuration for event-driven hooks.
+    
+    The `on:` config defines what actions run when events fire.
+    
+    Example:
+        on:
+          startup:
+            - start_controller
+            - auto_start_agents
+          
+          heartbeat:
+            interval_s: 10
+            actions:
+              - sync
+              - check_stalled_agents: { min_interval_s: 60 }
+          
+          shutdown:
+            - sync
+            - stop_all_agents
+    """
+    
+    startup: list[str | dict] = Field(default_factory=list)
+    shutdown: list[str | dict] = Field(default_factory=list)
+    heartbeat: HeartbeatConfig | dict | None = None
 
 
 class SubstageConfig(BaseModel):
@@ -180,6 +228,7 @@ class Config(BaseModel):
     save_tmux_history: bool = False  # Save tmux session history on stage transitions
     manager: ManagerConfig = Field(default_factory=ManagerConfig)
     show_issue_yaml: bool = True  # Show issue.yaml in web UI file tabs
+    on: Optional[OnConfig] = None  # Event-driven hooks configuration
 
     def get_port_for_agent(self, agent_num: int) -> int:
         """Get port number for a specific agent.
@@ -825,5 +874,11 @@ def load_config(path: Optional[Path] = None) -> Config:
                         raise ValueError(
                             f"Flow '{flow_name}' references unknown stage '{stage_name}'"
                         )
+
+    # Handle YAML 'on:' being parsed as boolean True
+    # In YAML 1.1, 'on', 'off', 'yes', 'no' are reserved boolean keywords
+    # Users can either quote "on": or we handle True -> "on" here
+    if True in data:
+        data["on"] = data.pop(True)
 
     return Config(**data)

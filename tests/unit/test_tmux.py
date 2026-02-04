@@ -489,7 +489,7 @@ class TestStartController:
 
         mock_create.assert_called_once_with("testproject-controller-000", tmp_path, "claude")
         mock_send.assert_called_once()
-        # Verify the startup prompt includes controller instructions
+        # Verify the startup prompt loads manager skill file
         startup_prompt = mock_send.call_args[0][1]
         assert "manager" in startup_prompt.lower()
 

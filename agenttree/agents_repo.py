@@ -137,10 +137,8 @@ def sync_agents_repo(
                 print(f"Warning: Failed to pull _agenttree repo: {result.stderr}")
                 return False
 
-        # If pull-only, run post-sync hooks then we're done
+        # If pull-only, we're done (hooks run separately by caller)
         if pull_only:
-            from agenttree.manager_hooks import run_post_manager_hooks
-            run_post_manager_hooks(agents_dir)
             return True
 
         # Push changes (local commits + any we just made)
@@ -158,10 +156,6 @@ def sync_agents_repo(
             else:
                 print(f"Warning: Failed to push changes: {push_result.stderr}")
             return False
-
-        # After successful sync, run configurable post-sync hooks
-        from agenttree.manager_hooks import run_post_manager_hooks
-        run_post_manager_hooks(agents_dir)
 
         return True
 
