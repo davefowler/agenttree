@@ -286,66 +286,53 @@ def stop_agent(issue_id: str, role: str = "developer", quiet: bool = False) -> b
         quiet: If True, suppress output messages
 
     Returns:
-        True if agent was stopped, False if no agent was found
+        True if something was stopped, False if nothing to stop
     """
-    agent = get_active_agent(issue_id, role)
-    if not agent:
-        return False
-
+    config = load_config()
+    stopped_something = False
+    
     if not quiet:
         from rich.console import Console
         console = Console()
-        console.print(f"[dim]Stopping agent for issue #{issue_id}...[/dim]")
 
-    # 1. Kill tmux session
+    # 1. Kill tmux session if it exists
     try:
         from agenttree.tmux import kill_session, session_exists
-        if session_exists(agent.tmux_session):
-            kill_session(agent.tmux_session)
+        session_name = f"{config.project}-{role}-{issue_id}"
+        if session_exists(session_name):
+            kill_session(session_name)
+            stopped_something = True
             if not quiet:
-                console.print(f"[dim]  Stopped tmux session: {agent.tmux_session}[/dim]")
+                console.print(f"[dim]  Stopped tmux session: {session_name}[/dim]")
     except Exception as e:
         if not quiet:
             console.print(f"[yellow]  Warning: Could not stop tmux session: {e}[/yellow]")
 
-    # 2. Stop container (look up by worktree mount)
+    # 2. Stop container by name (fast and reliable)
     try:
-        from agenttree.container import get_container_runtime, find_container_by_worktree
+        from agenttree.container import get_container_runtime
 
         runtime = get_container_runtime()
         if runtime.runtime:
-            worktree_path = Path(agent.worktree)
-            if not worktree_path.is_absolute():
-                worktree_path = Path.cwd() / worktree_path
+            # Use container name directly - pattern: agenttree-{project}-{issue_id}
+            container_name = f"agenttree-{config.project}-{issue_id}"
+            
+            if runtime.stop(container_name):
+                stopped_something = True
+                if not quiet:
+                    console.print(f"[dim]  Stopped container: {container_name}[/dim]")
 
-            container_id = find_container_by_worktree(worktree_path)
-            if container_id:
-                result = subprocess.run(
-                    [runtime.runtime, "stop", container_id],
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                )
-                if result.returncode == 0 and not quiet:
-                    short_id = container_id[:12] if len(container_id) > 12 else container_id
-                    console.print(f"[dim]  Stopped container: {short_id}[/dim]")
-
-                # Remove container (only for Docker/Podman - Apple Containers auto-removes)
-                if runtime.runtime != "container":
-                    subprocess.run(
-                        [runtime.runtime, "rm", container_id],
-                        capture_output=True,
-                        text=True,
-                        check=False,
-                    )
+            # Remove container (Apple Containers do NOT auto-remove, Docker needs explicit rm too)
+            if runtime.delete(container_name):
+                stopped_something = True
     except Exception as e:
         if not quiet:
             console.print(f"[yellow]  Warning: Could not stop container: {e}[/yellow]")
 
-    if not quiet:
+    if stopped_something and not quiet:
         console.print(f"[green]✓ Agent stopped for issue #{issue_id}[/green]")
 
-    return True
+    return stopped_something
 
 
 def stop_all_agents_for_issue(issue_id: str, quiet: bool = False) -> int:
@@ -457,3 +444,154 @@ def save_state(state: dict) -> None:
 def get_state_path() -> Path:
     """Legacy function - returns path that won't be used."""
     return Path.cwd() / "_agenttree" / "state.yaml"
+
+
+def cleanup_orphaned_containers(quiet: bool = False) -> int:
+    """Stop containers that don't have a corresponding tmux session.
+    
+    This handles the case where tmux sessions are killed but containers keep running.
+    Looks for containers named like {project}-{role}-{issue_id} and stops any
+    that don't have a matching tmux session.
+    
+    Args:
+        quiet: If True, suppress output messages
+        
+    Returns:
+        Number of containers stopped
+    """
+    from agenttree.container import get_container_runtime
+    from agenttree.tmux import session_exists
+    
+    if not quiet:
+        from rich.console import Console
+        console = Console()
+    
+    runtime = get_container_runtime()
+    if not runtime.runtime:
+        return 0
+        
+    config = load_config()
+    stopped = 0
+    
+    # Get list of running containers
+    try:
+        import json
+        result = subprocess.run(
+            [runtime.runtime, "list", "--format", "json"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if result.returncode != 0:
+            return 0
+            
+        containers = json.loads(result.stdout) if result.stdout.strip() else []
+    except (subprocess.TimeoutExpired, json.JSONDecodeError, Exception):
+        return 0
+    
+    # Check each container to see if it matches our naming pattern
+    # Pattern: agenttree-{project}-{issue_id}
+    import re
+    pattern = rf"^agenttree-{re.escape(config.project)}-(\d+)$"
+    
+    for container in containers:
+        # Handle Apple Container's nested JSON structure
+        container_config = container.get("configuration", {})
+        name = container_config.get("name") or container.get("name") or ""
+        if isinstance(name, list):
+            name = name[0] if name else ""
+        name = name.strip("/")  # Docker adds leading slash
+        
+        match = re.match(pattern, name)
+        if not match:
+            continue
+            
+        issue_id = match.group(1)
+        
+        # Check if there's a tmux session for this container (developer is default role)
+        session_name = f"{config.project}-developer-{issue_id}"
+        
+        if not session_exists(session_name):
+            # Orphaned container - stop and remove it
+            container_id = container_config.get("id") or container.get("uuid") or container.get("id") or name
+            
+            try:
+                subprocess.run(
+                    [runtime.runtime, "stop", container_id],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=30,
+                )
+                subprocess.run(
+                    [runtime.runtime, "delete", container_id],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=30,
+                )
+                stopped += 1
+                if not quiet:
+                    console.print(f"[dim]Cleaned up orphaned container: {name}[/dim]")
+            except subprocess.TimeoutExpired:
+                pass
+            except Exception:
+                pass
+    
+    if not quiet and stopped > 0:
+        console.print(f"[green]✓ Cleaned up {stopped} orphaned container(s)[/green]")
+    
+    return stopped
+
+
+def cleanup_all_agenttree_containers(quiet: bool = False) -> int:
+    """Remove ALL agenttree containers (by name prefix OR image name).
+    
+    Uses the container runtime abstraction which handles differences
+    between Apple Container, Docker, and Podman.
+    
+    Args:
+        quiet: If True, suppress output messages
+        
+    Returns:
+        Number of containers removed
+    """
+    from agenttree.container import get_container_runtime
+    
+    if not quiet:
+        from rich.console import Console
+        console = Console()
+    
+    runtime = get_container_runtime()
+    if not runtime.runtime:
+        return 0
+    
+    config = load_config()
+    project_prefix = f"agenttree-{config.project}-"
+    
+    # Get all containers and filter for agenttree ones
+    containers = runtime.list_all()
+    removed = 0
+    
+    for c in containers:
+        name = c.get("name", "") or c.get("id", "")
+        image = c.get("image", "")
+        
+        # Match by name prefix OR by agenttree image (catches legacy unnamed containers)
+        is_ours = (
+            name.startswith(project_prefix) or 
+            name.startswith("agenttree-") or 
+            "agenttree" in image
+        )
+        
+        if is_ours and name:
+            runtime.stop(name)
+            if runtime.delete(name):
+                removed += 1
+                if not quiet:
+                    console.print(f"[dim]Removed: {name}[/dim]")
+    
+    if not quiet and removed:
+        console.print(f"[green]✓ Removed {removed} container(s)[/green]")
+    
+    return removed
