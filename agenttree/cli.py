@@ -2252,6 +2252,11 @@ def stage_status(issue_id: Optional[str]) -> None:
             return
 
         from datetime import datetime, timezone
+        from agenttree.config import load_config
+        
+        config = load_config()
+        stage_names = [s.name for s in config.stages]
+        total_stages = len(stage_names)
 
         table = Table(title="Active Issues")
         table.add_column("ID", style="cyan")
@@ -2260,7 +2265,14 @@ def stage_status(issue_id: Optional[str]) -> None:
         table.add_column("Time", style="yellow", justify="right")
 
         for active_issue in active_issues:
-            stage_str = active_issue.stage
+            # Get stage index (1-based)
+            try:
+                stage_idx = stage_names.index(active_issue.stage) + 1
+                stage_num = f"{stage_idx}/{total_stages} "
+            except ValueError:
+                stage_num = ""
+            
+            stage_str = stage_num + active_issue.stage
             if active_issue.substage:
                 stage_str += f".{active_issue.substage}"
             
