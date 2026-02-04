@@ -1205,72 +1205,53 @@ def serve(host: str, port: int) -> None:
 @click.option("--host", default="127.0.0.1", help="Host to bind to")
 @click.option("--port", default=8080, type=int, help="Port to bind to")
 @click.option("--skip-agents", is_flag=True, help="Don't auto-start agents")
-def run(host: str, port: int, skip_agents: bool) -> None:
+@click.option("--verbose", "-v", is_flag=True, help="Show detailed event output")
+def run(host: str, port: int, skip_agents: bool, verbose: bool) -> None:
     """Start AgentTree: server + agents for all active issues.
 
     This is the main entry point that:
-    1. Starts agents for all issues NOT in parking lot stages (backlog, accepted, not_doing)
-    2. Starts the manager agent (agent 0)
-    3. Starts the web server with sync/heartbeat
+    1. Fires the 'startup' event (starts controller and agents)
+    2. Starts the web server with heartbeat events
 
-    Use 'agenttree shutdown' to stop everything.
+    Use 'agenttree stop-all' to stop everything.
+
+    Events are configured in .agenttree.yaml under the `on:` key:
+
+    \b
+    on:
+      startup:
+        - start_controller
+        - auto_start_agents
+      heartbeat:
+        interval_s: 10
+        actions:
+          - sync
+          - check_ci_status: { min_interval_s: 60 }
 
     Examples:
         agenttree run                  # Start everything
         agenttree run --skip-agents    # Just start the server
         agenttree run --port 9000      # Use custom port
     """
+    from agenttree.events import fire_event, STARTUP
+    from agenttree.issues import get_agenttree_path
     from agenttree.web.app import run_server
-    from agenttree.issues import list_issues
-    from agenttree.state import get_active_agent
-    from agenttree.tmux import session_exists
 
     repo_path = Path.cwd()
-    config = load_config(repo_path)
+    agents_dir = get_agenttree_path()
 
     if not skip_agents:
-        # Get parking lot stages to filter out
-        parking_lot_stages = config.get_parking_lot_stages()
+        # Fire startup event (runs start_controller, auto_start_agents, etc.)
+        console.print("[cyan]Firing startup event...[/cyan]")
+        results = fire_event(STARTUP, agents_dir, verbose=verbose)
+        
+        if results["errors"]:
+            for error in results["errors"]:
+                console.print(f"[yellow]Warning: {error}[/yellow]")
+        
+        console.print(f"[green]✓ Startup complete ({results['actions_run']} actions run)[/green]")
 
-        # Start agents for all issues not in parking lot stages
-        issues = list_issues(sync=True)
-        started_count = 0
-        skipped_count = 0
-
-        for issue in issues:
-            if issue.stage in parking_lot_stages:
-                skipped_count += 1
-                continue
-
-            # Check if agent already running
-            if get_active_agent(issue.id):
-                console.print(f"[dim]Issue #{issue.id} already has an agent running[/dim]")
-                continue
-
-            # Start agent for this issue
-            console.print(f"[cyan]Starting agent for issue #{issue.id} ({issue.stage})...[/cyan]")
-            result = subprocess.run(
-                ["agenttree", "start", issue.id, "--skip-preflight"],
-                capture_output=True,
-                text=True,
-            )
-            if result.returncode == 0:
-                started_count += 1
-                console.print(f"[green]✓ Started agent for #{issue.id}[/green]")
-            else:
-                console.print(f"[yellow]Could not start agent for #{issue.id}: {result.stderr.strip()}[/yellow]")
-
-        console.print(f"\n[bold]Agents: {started_count} started, {skipped_count} in parking lot[/bold]")
-
-        # Start manager agent (agent 0) if not already running
-        manager_session = f"{config.project}-controller-000"
-        if not session_exists(manager_session):
-            console.print(f"\n[cyan]Starting manager agent...[/cyan]")
-            _start_controller(tool=None, force=False, config=config, repo_path=repo_path)
-        else:
-            console.print(f"[dim]Manager agent already running[/dim]")
-
-    # Start the web server
+    # Start the web server (which handles heartbeat events)
     console.print(f"\n[cyan]Starting AgentTree server at http://{host}:{port}[/cyan]")
     console.print("[dim]Press Ctrl+C to stop[/dim]\n")
 
@@ -1278,40 +1259,52 @@ def run(host: str, port: int, skip_agents: bool) -> None:
 
 
 @main.command("stop-all")
-def stop_all() -> None:
+@click.option("--verbose", "-v", is_flag=True, help="Show detailed event output")
+def stop_all(verbose: bool) -> None:
     """Stop all agents (opposite of 'agenttree run').
 
-    This stops:
-    1. All running issue agents
-    2. The manager agent (agent 0)
+    This fires the 'shutdown' event which:
+    1. Syncs the _agenttree repository
+    2. Stops all running issue agents
+    3. Stops the manager agent (agent 0)
+
+    Events are configured in .agenttree.yaml under the `on:` key:
+
+    \b
+    on:
+      shutdown:
+        - sync
+        - stop_all_agents
 
     Use 'agenttree run' to start everything again.
 
     Examples:
         agenttree stop-all            # Stop all agents
+        agenttree stop-all -v         # Verbose output
     """
-    from agenttree.state import list_active_agents, stop_agent
+    from agenttree.events import fire_event, SHUTDOWN
+    from agenttree.issues import get_agenttree_path
     from agenttree.tmux import session_exists, kill_session
 
+    agents_dir = get_agenttree_path()
     config = load_config()
 
-    # Stop all issue agents
-    agents = list_active_agents()
-    stopped_count = 0
-    for agent in agents:
-        console.print(f"[cyan]Stopping agent for issue #{agent.issue_id}...[/cyan]")
-        if stop_agent(agent.issue_id, agent.host, quiet=True):
-            stopped_count += 1
-            console.print(f"[green]✓ Stopped agent for #{agent.issue_id}[/green]")
-
-    # Stop manager agent
+    # Fire shutdown event (runs sync, stop_all_agents, etc.)
+    console.print("[cyan]Firing shutdown event...[/cyan]")
+    results = fire_event(SHUTDOWN, agents_dir, verbose=verbose)
+    
+    if results["errors"]:
+        for error in results["errors"]:
+            console.print(f"[yellow]Warning: {error}[/yellow]")
+    
+    # Also stop the manager/controller agent (not stopped by stop_all_agents)
     manager_session = f"{config.project}-controller-000"
     if session_exists(manager_session):
         console.print(f"[cyan]Stopping manager agent...[/cyan]")
         kill_session(manager_session)
         console.print(f"[green]✓ Stopped manager[/green]")
 
-    console.print(f"\n[bold green]✓ Shutdown complete: {stopped_count} agents stopped[/bold green]")
+    console.print(f"\n[bold green]✓ Shutdown complete ({results['actions_run']} actions run)[/bold green]")
 
 
 # controller-start and controller-stop commands removed
@@ -2830,6 +2823,7 @@ def sync_command() -> None:
         agenttree sync
     """
     from agenttree.agents_repo import sync_agents_repo
+    from agenttree.controller_hooks import run_post_controller_hooks
     from agenttree.issues import get_agenttree_path
 
     console.print("[dim]Syncing agents repository...[/dim]")
@@ -2840,6 +2834,10 @@ def sync_command() -> None:
         console.print("[green]✓ Sync complete[/green]")
     else:
         console.print("[yellow]Sync completed with warnings[/yellow]")
+
+    # Run controller hooks (stall detection, CI checks, etc.)
+    console.print("[dim]Running controller hooks...[/dim]")
+    run_post_controller_hooks(agents_path)
 
 
 # =============================================================================

@@ -1884,6 +1884,31 @@ button[disabled] {
     color: #fbbf24;
 }
 
+/* Diff header with stats and PR link */
+.diff-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 16px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-color);
+    font-size: 13px;
+}
+
+.diff-stats {
+    color: var(--text-muted);
+}
+
+.diff-pr-link {
+    color: var(--vintage-green);
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.diff-pr-link:hover {
+    text-decoration: underline;
+}
+
 /* Empty diff message */
 .diff-empty {
     padding: 40px;
