@@ -441,7 +441,7 @@ def start_agent(
     # Normalize issue ID (strip leading zeros for lookup, keep for display)
     issue_id_normalized = issue_id.lstrip("0") or "0"
 
-    # Special handling for controller (agent 0)
+    # Special handling for manager (agent 0)
     if issue_id_normalized == "0":
         _start_manager(tool, force, config, repo_path)
         return
@@ -809,7 +809,7 @@ def sandbox(name: str, list_sandboxes: bool, kill: bool, tool: Optional[str], sh
 def attach(issue_id: str, role: str) -> None:
     """Attach to an issue's agent tmux session.
 
-    ISSUE_ID is the issue number (e.g., "23" or "023"), or "0" for controller.
+    ISSUE_ID is the issue number (e.g., "23" or "023"), or "0" for manager.
     """
     from agenttree.state import get_active_agent
     from agenttree.tmux import session_exists, attach_session
@@ -820,18 +820,18 @@ def attach(issue_id: str, role: str) -> None:
     # Normalize issue ID
     issue_id_normalized = issue_id.lstrip("0") or "0"
 
-    # Special handling for controller (agent 0)
+    # Special handling for manager (agent 0)
     if issue_id_normalized == "0":
-        session_name = f"{config.project}-controller-000"
+        session_name = f"{config.project}-manager-000"
         if not session_exists(session_name):
-            console.print("[red]Error: Controller not running[/red]")
+            console.print("[red]Error: Manager not running[/red]")
             console.print("[yellow]Start it with: agenttree start 0[/yellow]")
             sys.exit(1)
-        console.print("Attaching to controller (Ctrl+B, D to detach)...")
+        console.print("Attaching to manager (Ctrl+B, D to detach)...")
         attach_session(session_name)
         return
 
-    # Get active agent for this issue and host
+    # Get active agent for this issue and role
     agent = get_active_agent(issue_id_normalized, role)
     if not agent:
         # Try with padded ID
@@ -857,16 +857,16 @@ def attach(issue_id: str, role: str) -> None:
 
 @main.command()
 @click.argument("issue_id", type=str)
-@click.option("--host", default="agent", help="Agent host type (default: agent)")
+@click.option("--role", default="developer", help="Agent role (default: developer)")
 @click.option("--lines", "-n", default=50, help="Number of lines to show (default: 50)")
-def output(issue_id: str, host: str, lines: int) -> None:
+def output(issue_id: str, role: str, lines: int) -> None:
     """Show recent output from an agent's tmux session.
 
-    ISSUE_ID is the issue number (e.g., "23" or "023"), or "0" for controller.
+    ISSUE_ID is the issue number (e.g., "23" or "023"), or "0" for manager.
 
     Examples:
         agenttree output 137        # Show last 50 lines from agent #137
-        agenttree output 0          # Show controller output
+        agenttree output 0          # Show manager output
         agenttree output 137 -n 100 # Show last 100 lines
     """
     from agenttree.state import get_active_agent
@@ -877,27 +877,27 @@ def output(issue_id: str, host: str, lines: int) -> None:
     # Normalize issue ID
     issue_id_normalized = issue_id.lstrip("0") or "0"
 
-    # Special handling for controller (agent 0)
+    # Special handling for manager (agent 0)
     if issue_id_normalized == "0":
-        session_name = f"{config.project}-controller-000"
+        session_name = f"{config.project}-manager-000"
         if not session_exists(session_name):
-            console.print("[red]Error: Controller not running[/red]")
+            console.print("[red]Error: Manager not running[/red]")
             sys.exit(1)
         output_text = capture_pane(session_name, lines=lines)
         console.print(output_text)
         return
 
-    # Get active agent for this issue and host
-    agent = get_active_agent(issue_id_normalized, host)
+    # Get active agent for this issue and role
+    agent = get_active_agent(issue_id_normalized, role)
     if not agent:
         # Try with padded ID
         issue = get_issue_func(issue_id_normalized)
         if issue:
-            agent = get_active_agent(issue.id, host)
+            agent = get_active_agent(issue.id, role)
 
     if not agent:
-        host_label = f" ({host})" if host != "agent" else ""
-        console.print(f"[red]Error: No active{host_label} agent for issue #{issue_id}[/red]")
+        role_label = f" ({role})" if role != "developer" else ""
+        console.print(f"[red]Error: No active{role_label} agent for issue #{issue_id}[/red]")
         sys.exit(1)
 
     if not session_exists(agent.tmux_session):
@@ -916,7 +916,7 @@ def output(issue_id: str, host: str, lines: int) -> None:
 def send(issue_id: str, message: str, role: str, interrupt: bool) -> None:
     """Send a message to an issue's agent.
 
-    ISSUE_ID is the issue number (e.g., "23" or "023"), or "0" for controller.
+    ISSUE_ID is the issue number (e.g., "23" or "023"), or "0" for manager.
 
     If the agent is not running, it will be automatically started.
 
@@ -931,15 +931,15 @@ def send(issue_id: str, message: str, role: str, interrupt: bool) -> None:
     # Normalize issue ID
     issue_id_normalized = issue_id.lstrip("0") or "0"
 
-    # Special handling for controller (agent 0)
+    # Special handling for manager (agent 0)
     if issue_id_normalized == "0":
-        session_name = f"{config.project}-controller-000"
+        session_name = f"{config.project}-manager-000"
         if not session_exists(session_name):
-            console.print("[red]Error: Controller not running[/red]")
+            console.print("[red]Error: Manager not running[/red]")
             console.print("[yellow]Start it with: agenttree start 0[/yellow]")
             sys.exit(1)
         send_keys(session_name, message, interrupt=interrupt)
-        console.print("[green]✓ Sent message to controller[/green]")
+        console.print("[green]✓ Sent message to manager[/green]")
         return
 
     # Get issue to validate it exists
@@ -1018,7 +1018,7 @@ def send(issue_id: str, message: str, role: str, interrupt: bool) -> None:
 def stop(issue_id: str, role: str, all_roles: bool) -> None:
     """Stop an issue's agent (kills tmux, stops container, cleans up state).
 
-    ISSUE_ID is the issue number (e.g., "23" or "023"), or "0" for controller.
+    ISSUE_ID is the issue number (e.g., "23" or "023"), or "0" for manager.
 
     Examples:
         agenttree stop 23              # Stop the default agent for issue 23
@@ -1033,14 +1033,14 @@ def stop(issue_id: str, role: str, all_roles: bool) -> None:
     # Normalize issue ID
     issue_id_normalized = issue_id.lstrip("0") or "0"
 
-    # Special handling for controller (agent 0)
+    # Special handling for manager (agent 0)
     if issue_id_normalized == "0":
-        session_name = f"{config.project}-controller-000"
+        session_name = f"{config.project}-manager-000"
         if not session_exists(session_name):
-            console.print("[yellow]Controller not running[/yellow]")
+            console.print("[yellow]Manager not running[/yellow]")
             return
         kill_session(session_name)
-        console.print("[green]✓ Stopped controller[/green]")
+        console.print("[green]✓ Stopped manager[/green]")
         return
 
     # Stop all agents for this issue if --all flag
@@ -1185,10 +1185,10 @@ def web(host: str, port: int, config: Optional[str]) -> None:
 def serve(host: str, port: int) -> None:
     """Start the AgentTree server (runs syncs, spawns agents).
 
-    This is the main controller process that:
+    This is the main manager process that:
     - Syncs the _agenttree repo periodically
     - Spawns agents for issues in agent stages
-    - Runs hooks for controller stages
+    - Runs hooks for manager stages
     - Provides the web dashboard
 
     Use 'agenttree start' to run this in a tmux session.
@@ -1297,8 +1297,8 @@ def stop_all(verbose: bool) -> None:
         for error in results["errors"]:
             console.print(f"[yellow]Warning: {error}[/yellow]")
     
-    # Also stop the manager/controller agent (not stopped by stop_all_agents)
-    manager_session = f"{config.project}-controller-000"
+    # Also stop the manager agent (not stopped by stop_all_agents)
+    manager_session = f"{config.project}-manager-000"
     if session_exists(manager_session):
         console.print(f"[cyan]Stopping manager agent...[/cyan]")
         kill_session(manager_session)
@@ -1307,8 +1307,8 @@ def stop_all(verbose: bool) -> None:
     console.print(f"\n[bold green]✓ Shutdown complete ({results['actions_run']} actions run)[/bold green]")
 
 
-# controller-start and controller-stop commands removed
-# Controller is now agent 0 - use: agenttree start 0, agenttree kill 0
+# manager-start and manager-stop commands removed
+# Manager is now agent 0 - use: agenttree start 0, agenttree kill 0
 
 
 @main.command()
@@ -2067,7 +2067,7 @@ def stage_next(issue_id: Optional[str], reassess: bool) -> None:
         console.print(f"[yellow]Issue is marked as not doing[/yellow]")
         return
 
-    # Block agents from operating in controller (human review) stages only
+    # Block agents from operating in manager (human review) stages only
     # Other agent stages can be advanced - hooks will enforce requirements
     from agenttree.config import load_config
     config = load_config()
@@ -2075,7 +2075,7 @@ def stage_next(issue_id: Optional[str], reassess: bool) -> None:
     if stage_config:
         stage_role = stage_config.role
         current_role = get_current_role()
-        # Only block if this is a controller stage and we're not the controller
+        # Only block if this is a manager stage and we're not the manager
         if stage_role == "manager" and current_role != "manager":
             console.print(f"\n[yellow]⏳ Waiting for human review[/yellow]")
             console.print(f"[dim]Stage '{issue.stage}' requires human review.[/dim]")
@@ -2280,7 +2280,7 @@ def approve_issue(issue_id: str, skip_approval: bool) -> None:
         console.print(f"[red]Issue {issue_id} not found[/red]")
         sys.exit(1)
 
-    # Check if at a stage that requires human approval (human_review=true or host=controller)
+    # Check if at a stage that requires human approval (human_review=true or role=manager)
     from agenttree.config import load_config
     approve_config = load_config()
     approve_stage_config = approve_config.get_stage(issue.stage)
@@ -3275,7 +3275,7 @@ def rollback_issue(
 @click.option(
     "--ai-review",
     is_flag=True,
-    help="Ask controller AI to review edge cases before cleanup"
+    help="Ask manager AI to review edge cases before cleanup"
 )
 def cleanup_command(
     dry_run: bool,
@@ -3303,7 +3303,7 @@ def cleanup_command(
         agenttree cleanup --dry-run          # Preview what would be cleaned
         agenttree cleanup --force            # Clean without prompts
         agenttree cleanup --no-branches      # Skip branch cleanup
-        agenttree cleanup --ai-review        # Ask controller AI about edge cases
+        agenttree cleanup --ai-review        # Ask manager AI about edge cases
     """
     from agenttree.worktree import list_worktrees, remove_worktree
     from agenttree.tmux import list_sessions, kill_session
@@ -3543,7 +3543,7 @@ def cleanup_command(
 
     # AI review for edge cases
     if ai_review and edge_cases:
-        console.print("[bold]Asking controller AI to review edge cases...[/bold]")
+        console.print("[bold]Asking manager AI to review edge cases...[/bold]")
         _cleanup_ai_review(edge_cases, config)
 
     if dry_run:
@@ -3620,7 +3620,7 @@ def cleanup_command(
 
 
 def _cleanup_ai_review(edge_cases: list[dict], config: Config) -> None:
-    """Ask the controller AI to review cleanup edge cases.
+    """Ask the manager AI to review cleanup edge cases.
 
     Args:
         edge_cases: List of edge case dictionaries
@@ -3628,11 +3628,11 @@ def _cleanup_ai_review(edge_cases: list[dict], config: Config) -> None:
     """
     from agenttree.tmux import session_exists, send_keys
 
-    controller_session = f"{config.project}-controller"
+    manager_session = f"{config.project}-manager"
 
-    if not session_exists(controller_session):
-        console.print("[yellow]Controller agent not running - skipping AI review[/yellow]")
-        console.print("[dim]Start the controller with: agenttree start --controller[/dim]")
+    if not session_exists(manager_session):
+        console.print("[yellow]Manager agent not running - skipping AI review[/yellow]")
+        console.print("[dim]Start the manager with: agenttree start 0[/dim]")
         return
 
     # Format the edge cases for the AI
@@ -3652,9 +3652,9 @@ For each edge case, please tell me:
 
 Be concise - just a few lines per case."""
 
-    console.print("[dim]Sending to controller for review...[/dim]")
-    send_keys(controller_session, prompt + "\n")
-    console.print(f"[cyan]Sent edge cases to controller. Check tmux session '{controller_session}' for response.[/cyan]")
+    console.print("[dim]Sending to manager for review...[/dim]")
+    send_keys(manager_session, prompt + "\n")
+    console.print(f"[cyan]Sent edge cases to manager. Check tmux session '{manager_session}' for response.[/cyan]")
 
 
 @main.command("tui")

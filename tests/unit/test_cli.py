@@ -1193,21 +1193,21 @@ class TestRollbackCommand:
 
 
 
-    def test_send_to_controller_success(self, cli_runner, mock_config):
-        """Should send message to controller when running."""
+    def test_send_to_manager_success(self, cli_runner, mock_config):
+        """Should send message to manager when running."""
         from agenttree.cli import main
 
         with patch("agenttree.cli.load_config", return_value=mock_config):
             with patch("agenttree.tmux.session_exists", return_value=True):
                 with patch("agenttree.tmux.send_keys") as mock_send:
-                    result = cli_runner.invoke(main, ["send", "0", "hello controller"])
+                    result = cli_runner.invoke(main, ["send", "0", "hello manager"])
 
         assert result.exit_code == 0
-        assert "Sent message to controller" in result.output
-        mock_send.assert_called_once_with("testproject-controller-000", "hello controller", interrupt=False)
+        assert "Sent message to manager" in result.output
+        mock_send.assert_called_once_with("testproject-manager-000", "hello manager", interrupt=False)
 
-    def test_send_to_controller_not_running(self, cli_runner, mock_config):
-        """Should error when controller is not running."""
+    def test_send_to_manager_not_running(self, cli_runner, mock_config):
+        """Should error when manager is not running."""
         from agenttree.cli import main
 
         with patch("agenttree.cli.load_config", return_value=mock_config):
@@ -1215,11 +1215,11 @@ class TestRollbackCommand:
                 result = cli_runner.invoke(main, ["send", "0", "hello"])
 
         assert result.exit_code == 1
-        assert "Controller not running" in result.output
+        assert "Manager not running" in result.output
         assert "agenttree start 0" in result.output
 
-    def test_stop_controller_success(self, cli_runner, mock_config):
-        """Should stop controller session when running."""
+    def test_stop_manager_success(self, cli_runner, mock_config):
+        """Should stop manager session when running."""
         from agenttree.cli import main
 
         with patch("agenttree.cli.load_config", return_value=mock_config):
@@ -1228,11 +1228,11 @@ class TestRollbackCommand:
                     result = cli_runner.invoke(main, ["stop", "0"])
 
         assert result.exit_code == 0
-        assert "Stopped controller" in result.output
-        mock_kill.assert_called_once_with("testproject-controller-000")
+        assert "Stopped manager" in result.output
+        mock_kill.assert_called_once_with("testproject-manager-000")
 
-    def test_stop_controller_not_running(self, cli_runner, mock_config):
-        """Should handle gracefully when controller not running."""
+    def test_stop_manager_not_running(self, cli_runner, mock_config):
+        """Should handle gracefully when manager not running."""
         from agenttree.cli import main
 
         with patch("agenttree.cli.load_config", return_value=mock_config):
@@ -1242,8 +1242,8 @@ class TestRollbackCommand:
         assert result.exit_code == 0
         assert "not running" in result.output.lower()
 
-    def test_attach_to_controller_not_running(self, cli_runner, mock_config):
-        """Should error when trying to attach to controller that's not running."""
+    def test_attach_to_manager_not_running(self, cli_runner, mock_config):
+        """Should error when trying to attach to manager that's not running."""
         from agenttree.cli import main
 
         with patch("agenttree.cli.load_config", return_value=mock_config):
@@ -1251,11 +1251,11 @@ class TestRollbackCommand:
                 result = cli_runner.invoke(main, ["attach", "0"])
 
         assert result.exit_code == 1
-        assert "Controller not running" in result.output
+        assert "Manager not running" in result.output
         assert "agenttree start 0" in result.output
 
-    def test_attach_to_controller_success(self, cli_runner, mock_config):
-        """Should attach to controller when running."""
+    def test_attach_to_manager_success(self, cli_runner, mock_config):
+        """Should attach to manager when running."""
         from agenttree.cli import main
 
         with patch("agenttree.cli.load_config", return_value=mock_config):
@@ -1264,8 +1264,8 @@ class TestRollbackCommand:
                     result = cli_runner.invoke(main, ["attach", "0"])
 
         assert result.exit_code == 0
-        assert "Attaching to controller" in result.output
-        mock_attach.assert_called_once_with("testproject-controller-000")
+        assert "Attaching to manager" in result.output
+        mock_attach.assert_called_once_with("testproject-manager-000")
 
 
 class TestIssueShowCommand:

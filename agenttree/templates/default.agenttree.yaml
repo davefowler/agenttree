@@ -211,7 +211,7 @@ stages:
 
   # Independent code review by a specialized review agent (not the implementing agent)
   - name: independent_code_review
-    role: reviewer  # Custom agent host - spawned by controller
+    role: reviewer  # Custom agent role - spawned by manager
     output: independent_review.md
     skill: independent_review.md
     pre_completion:
@@ -255,8 +255,8 @@ stages:
 
   - name: implementation_review
     human_review: true
-    role: manager  # Manager handles PR creation (agents can't push)
     review_doc: review.md
+    role: manager  # Manager handles PR creation (agents can't push)
     post_start:
       - create_pr:
     substages:
@@ -323,11 +323,14 @@ flows:
 
 default_flow: default
 
-# Manager hooks for dogfooding - track cleanup frequency to identify workflow issues
-# This is project-specific logging to help us find broken workflow steps
-manager_hooks:
-  post_sync:
-    # Run periodic cleanup and log what was cleaned
-    # High cleanup frequency indicates broken workflow steps that need fixing
-    - cleanup_resources:
-        log_file: _agenttree/logs/cleanup.log
+# DEPRECATED: manager_hooks - use on.heartbeat.actions instead
+# This section is kept for backwards compatibility but will be removed in a future version.
+# The new on: config above provides better control with:
+#   - Separate startup/shutdown events
+#   - Configurable heartbeat interval
+#   - Rate limiting with min_interval_s and every_n
+#
+# manager_hooks:
+#   post_sync:
+#     - cleanup_resources:
+#         log_file: _agenttree/logs/cleanup.log

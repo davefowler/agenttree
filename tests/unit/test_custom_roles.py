@@ -434,7 +434,7 @@ class TestContainerAgentHost:
             assert cmd[host_index] == "AGENTTREE_ROLE=review"
 
     def test_build_run_command_default_role(self):
-        """Test that default role is 'agent'."""
+        """Test that default role is 'developer'."""
         from agenttree.container import ContainerRuntime
 
         runtime = ContainerRuntime()
@@ -448,7 +448,7 @@ class TestContainerAgentHost:
             cmd = runtime.build_run_command(
                 worktree_path=worktree,
                 ai_tool="claude"
-                # role defaults to "agent"
+                # role defaults to "developer"
             )
 
             # Check default value

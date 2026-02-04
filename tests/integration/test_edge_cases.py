@@ -124,18 +124,18 @@ class TestAgentStateEdgeCases:
             mock_issue.branch = "issue-001-test"
             mock_get_issue.return_value = mock_issue
 
-            # Simulate tmux session for agent
-            mock_sessions.return_value = [("agenttree-agent-001", "1704067200")]
+            # Simulate tmux session for developer
+            mock_sessions.return_value = [("agenttree-developer-001", "1704067200")]
 
-            found = get_active_agent("001", "agent")
+            found = get_active_agent("001", "developer")
             assert found is not None
             assert found.issue_id == "001"
-            assert found.role == "agent"
+            assert found.role == "developer"
             assert found.port == 9001
 
             # Simulate tmux session removed (agent stopped)
             mock_sessions.return_value = []
-            found = get_active_agent("001", "agent")
+            found = get_active_agent("001", "developer")
             assert found is None
 
 
