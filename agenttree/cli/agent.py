@@ -534,12 +534,15 @@ def attach(issue_id: str, host: str) -> None:
 @click.argument("issue_id", type=str)
 @click.argument("message")
 @click.option("--host", default="agent", help="Agent host type (default: agent)")
-def send(issue_id: str, message: str, host: str) -> None:
+@click.option("--interrupt", is_flag=True, help="Send Ctrl+C first to interrupt current task")
+def send(issue_id: str, message: str, host: str, interrupt: bool) -> None:
     """Send a message to an issue's agent.
 
     ISSUE_ID is the issue number (e.g., "23" or "023"), or "0" for controller.
 
     If the agent is not running, it will be automatically started.
+
+    Use --interrupt to stop the agent's current task (sends Ctrl+C) before sending.
     """
     from agenttree.state import get_active_agent
     from agenttree.tmux import session_exists, send_keys
@@ -557,7 +560,7 @@ def send(issue_id: str, message: str, host: str) -> None:
             console.print("[red]Error: Controller not running[/red]")
             console.print("[yellow]Start it with: agenttree start 0[/yellow]")
             sys.exit(1)
-        send_keys(session_name, message)
+        send_keys(session_name, message, interrupt=interrupt)
         console.print("[green]✓ Sent message to controller[/green]")
         return
 
@@ -604,7 +607,7 @@ def send(issue_id: str, message: str, host: str) -> None:
         sys.exit(1)
 
     # Send the message
-    result = tmux_manager.send_message_to_issue(agent.tmux_session, message)
+    result = tmux_manager.send_message_to_issue(agent.tmux_session, message, interrupt=interrupt)
 
     host_label = f" ({agent.host})" if agent.host != "agent" else ""
     if result == "sent":
@@ -615,7 +618,7 @@ def send(issue_id: str, message: str, host: str) -> None:
         if ensure_agent_running():
             agent = get_active_agent(issue_id_normalized, host)
             if agent:
-                result = tmux_manager.send_message_to_issue(agent.tmux_session, message)
+                result = tmux_manager.send_message_to_issue(agent.tmux_session, message, interrupt=interrupt)
                 if result == "sent":
                     console.print(f"[green]✓ Sent message to issue #{agent.issue_id}{host_label}[/green]")
                     return
@@ -627,6 +630,59 @@ def send(issue_id: str, message: str, host: str) -> None:
     else:
         console.print(f"[red]Error: Failed to send message[/red]")
         sys.exit(1)
+
+
+@click.command()
+@click.argument("issue_id", type=str)
+@click.option("--host", default="agent", help="Agent host type (default: agent)")
+@click.option("--lines", "-n", default=50, help="Number of lines to show (default: 50)")
+def output(issue_id: str, host: str, lines: int) -> None:
+    """Show recent output from an agent's tmux session.
+
+    ISSUE_ID is the issue number (e.g., "23" or "023"), or "0" for controller.
+
+    Examples:
+        agenttree output 137        # Show last 50 lines from agent #137
+        agenttree output 0          # Show controller output
+        agenttree output 137 -n 100 # Show last 100 lines
+    """
+    from agenttree.state import get_active_agent
+    from agenttree.tmux import session_exists, capture_pane
+
+    config = load_config()
+
+    # Normalize issue ID
+    issue_id_normalized = issue_id.lstrip("0") or "0"
+
+    # Special handling for controller (agent 0)
+    if issue_id_normalized == "0":
+        session_name = f"{config.project}-controller-000"
+        if not session_exists(session_name):
+            console.print("[red]Error: Controller not running[/red]")
+            sys.exit(1)
+        output_text = capture_pane(session_name, lines=lines)
+        console.print(output_text)
+        return
+
+    # Get active agent for this issue and host
+    agent = get_active_agent(issue_id_normalized, host)
+    if not agent:
+        # Try with padded ID
+        issue = get_issue_func(issue_id_normalized)
+        if issue:
+            agent = get_active_agent(issue.id, host)
+
+    if not agent:
+        host_label = f" ({host})" if host != "agent" else ""
+        console.print(f"[red]Error: No active{host_label} agent for issue #{issue_id}[/red]")
+        sys.exit(1)
+
+    if not session_exists(agent.tmux_session):
+        console.print(f"[red]Error: Tmux session '{agent.tmux_session}' not found[/red]")
+        sys.exit(1)
+
+    output_text = capture_pane(agent.tmux_session, lines=lines)
+    console.print(output_text)
 
 
 @click.command()

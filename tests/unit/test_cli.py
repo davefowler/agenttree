@@ -100,7 +100,7 @@ class TestSendCommand:
 
         assert result.exit_code == 0
         assert "Sent message" in result.output
-        mock_tm.send_message_to_issue.assert_called_once_with("agent-42", "hello")
+        mock_tm.send_message_to_issue.assert_called_once_with("agent-42", "hello", interrupt=False)
 
 
 class TestStopCommand:
@@ -1204,7 +1204,7 @@ class TestRollbackCommand:
 
         assert result.exit_code == 0
         assert "Sent message to controller" in result.output
-        mock_send.assert_called_once_with("testproject-controller-000", "hello controller")
+        mock_send.assert_called_once_with("testproject-controller-000", "hello controller", interrupt=False)
 
     def test_send_to_controller_not_running(self, cli_runner, mock_config):
         """Should error when controller is not running."""
