@@ -144,7 +144,10 @@ The `_agenttree/` directory is a **separate git repository** that stores all AI 
 
 **Why:** CLI commands run the proper hooks and workflow logic. Manually editing `issue.yaml` or using raw commands bypasses hooks, breaks notifications, and causes state inconsistencies.
 
-**Important:** Use `agenttree output <id>` to check on agents, NOT raw tmux commands like `tmux capture-pane`.
+**Important:** 
+- Use `agenttree output <id>` to check on agents, NOT raw tmux commands like `tmux capture-pane`
+- Use `agenttree status` to see all agents and their states, NOT `tmux list-sessions`
+- Use `agenttree start/stop/send` to manage agents, NOT direct tmux commands
 
 ---
 
