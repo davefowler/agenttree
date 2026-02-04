@@ -1,5 +1,6 @@
 <!-- Manager panel - right-side overlay for manager agent (agent 0) -->
 <div class="manager-panel" id="manager-panel">
+    <div class="resize-handle"></div>
     <div class="manager-panel-header">
         <h4>Manager</h4>
         <button class="manager-panel-close" onclick="toggleManagerPanel()" title="Close panel">&times;</button>
@@ -22,13 +23,66 @@
     if (window._managerPanelInitialized) return;
     window._managerPanelInitialized = true;
 
+    const minWidth = 250;
+    const maxWidth = 800;
+
+    // Panel resize functionality for manager panel
+    function initManagerResize(panel) {
+        const handle = panel.querySelector('.resize-handle');
+        if (!handle) return;
+
+        let isDragging = false;
+
+        // Restore saved width on load
+        const savedWidth = localStorage.getItem('managerPanelWidth');
+        if (savedWidth) {
+            const width = Math.min(Math.max(parseInt(savedWidth, 10), minWidth), Math.min(maxWidth, window.innerWidth * 0.6));
+            panel.style.width = width + 'px';
+        }
+
+        handle.addEventListener('mousedown', function(e) {
+            e.preventDefault();
+            isDragging = true;
+            handle.classList.add('dragging');
+            panel.style.transition = 'none';
+            document.body.style.cursor = 'col-resize';
+            document.body.style.userSelect = 'none';
+        });
+
+        document.addEventListener('mousemove', function(e) {
+            if (!isDragging) return;
+            const maxAllowed = Math.min(maxWidth, window.innerWidth * 0.6);
+            const newWidth = Math.min(Math.max(window.innerWidth - e.clientX, minWidth), maxAllowed);
+            panel.style.width = newWidth + 'px';
+        });
+
+        document.addEventListener('mouseup', function() {
+            if (!isDragging) return;
+            isDragging = false;
+            handle.classList.remove('dragging');
+            panel.style.transition = '';
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+            localStorage.setItem('managerPanelWidth', parseInt(panel.style.width, 10));
+        });
+    }
+
     // Manager panel toggle with localStorage persistence
     window.toggleManagerPanel = function() {
         const panel = document.getElementById('manager-panel');
         if (panel) {
+            const wasCollapsed = panel.classList.contains('collapsed');
             panel.classList.toggle('collapsed');
             const isOpen = !panel.classList.contains('collapsed');
             localStorage.setItem('managerPanelOpen', isOpen ? '1' : '0');
+
+            // Restore saved width when expanding
+            if (wasCollapsed && isOpen) {
+                const savedWidth = localStorage.getItem('managerPanelWidth');
+                if (savedWidth) {
+                    panel.style.width = savedWidth + 'px';
+                }
+            }
 
             // If opening, refresh the tmux output
             if (isOpen) {
@@ -81,6 +135,8 @@
         if (isOpen) {
             checkManagerStatus();
         }
+        // Initialize resize functionality
+        initManagerResize(panel);
     }
 
     // Poll manager status every 10 seconds when panel is open

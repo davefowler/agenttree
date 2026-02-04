@@ -1071,7 +1071,7 @@ button[disabled] {
 }
 
 .agent-chat-panel.collapsed .resize-handle,
-.controller-panel.collapsed .resize-handle {
+.manager-panel.collapsed .resize-handle {
     display: none;
 }
 
