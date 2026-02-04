@@ -19,6 +19,8 @@ def mock_config():
     config = MagicMock()
     config.project = "testproject"
     config.get_tmux_session_name.return_value = "agent-42"
+    # Add flows dict for flow validation in issue create
+    config.flows = {"default": MagicMock()}
     return config
 
 
@@ -98,7 +100,7 @@ class TestSendCommand:
 
         assert result.exit_code == 0
         assert "Sent message" in result.output
-        mock_tm.send_message_to_issue.assert_called_once_with("agent-42", "hello")
+        mock_tm.send_message_to_issue.assert_called_once_with("agent-42", "hello", interrupt=False)
 
 
 class TestStopCommand:
@@ -928,21 +930,23 @@ class TestRollbackCommand:
         mock_issue.id = "42"
         mock_issue.stage = "implement"
 
+        # not_doing is positioned before implement so we can test the redirect_only check
+        # (position check must pass before redirect_only check is reached)
         mock_config.get_stage_names.return_value = [
-            "backlog", "define", "research", "plan", "implement", "accepted"
+            "backlog", "not_doing", "define", "research", "plan", "implement", "accepted"
         ]
         mock_stage_config = MagicMock()
-        mock_stage_config.terminal = True
+        mock_stage_config.redirect_only = True
         mock_config.get_stage.return_value = mock_stage_config
 
         with patch("agenttree.cli.load_config", return_value=mock_config):
             with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
                 with patch("agenttree.cli.is_running_in_container", return_value=False):
-                    # Note: "accepted" is normally at the end, this tests terminal check
-                    result = cli_runner.invoke(main, ["rollback", "42", "backlog"])
+                    # Note: "not_doing" is redirect_only, this tests that check
+                    result = cli_runner.invoke(main, ["rollback", "42", "not_doing"])
 
         assert result.exit_code == 1
-        assert "terminal stage" in result.output.lower()
+        assert "redirect-only stage" in result.output.lower()
 
     def test_rollback_blocked_in_container(self, cli_runner, mock_config):
         """Should error when run inside a container."""
@@ -969,7 +973,7 @@ class TestRollbackCommand:
             "backlog", "define", "research", "plan", "implement", "accepted"
         ]
         mock_stage_config = MagicMock()
-        mock_stage_config.terminal = False
+        mock_stage_config.redirect_only = False
         mock_stage_config.substage_order.return_value = []
         mock_stage_config.output = None
         mock_stage_config.substages = {}
@@ -1002,7 +1006,7 @@ class TestRollbackCommand:
             "backlog", "define", "research", "plan", "implement", "accepted"
         ]
         mock_stage_config = MagicMock()
-        mock_stage_config.terminal = False
+        mock_stage_config.redirect_only = False
         mock_stage_config.substage_order.return_value = ["explore", "document"]
         mock_stage_config.output = "research.md"
         mock_stage_config.substages = {}
@@ -1067,7 +1071,7 @@ class TestRollbackCommand:
         # Set up stage configs with output files
         def get_stage_side_effect(name):
             stage_config = MagicMock()
-            stage_config.terminal = False
+            stage_config.redirect_only = False
             stage_config.substage_order.return_value = []
             stage_config.substages = {}
             if name == "plan":
@@ -1148,7 +1152,7 @@ class TestRollbackCommand:
             "backlog", "define", "research", "plan", "implement", "accepted"
         ]
         mock_stage_config = MagicMock()
-        mock_stage_config.terminal = False
+        mock_stage_config.redirect_only = False
         mock_stage_config.substage_order.return_value = []
         mock_stage_config.output = None
         mock_stage_config.substages = {}
@@ -1189,21 +1193,21 @@ class TestRollbackCommand:
 
 
 
-    def test_send_to_controller_success(self, cli_runner, mock_config):
-        """Should send message to controller when running."""
+    def test_send_to_manager_success(self, cli_runner, mock_config):
+        """Should send message to manager when running."""
         from agenttree.cli import main
 
         with patch("agenttree.cli.load_config", return_value=mock_config):
             with patch("agenttree.tmux.session_exists", return_value=True):
                 with patch("agenttree.tmux.send_keys") as mock_send:
-                    result = cli_runner.invoke(main, ["send", "0", "hello controller"])
+                    result = cli_runner.invoke(main, ["send", "0", "hello manager"])
 
         assert result.exit_code == 0
-        assert "Sent message to controller" in result.output
-        mock_send.assert_called_once_with("testproject-controller-000", "hello controller")
+        assert "Sent message to manager" in result.output
+        mock_send.assert_called_once_with("testproject-manager-000", "hello manager", interrupt=False)
 
-    def test_send_to_controller_not_running(self, cli_runner, mock_config):
-        """Should error when controller is not running."""
+    def test_send_to_manager_not_running(self, cli_runner, mock_config):
+        """Should error when manager is not running."""
         from agenttree.cli import main
 
         with patch("agenttree.cli.load_config", return_value=mock_config):
@@ -1211,11 +1215,11 @@ class TestRollbackCommand:
                 result = cli_runner.invoke(main, ["send", "0", "hello"])
 
         assert result.exit_code == 1
-        assert "Controller not running" in result.output
+        assert "Manager not running" in result.output
         assert "agenttree start 0" in result.output
 
-    def test_stop_controller_success(self, cli_runner, mock_config):
-        """Should stop controller session when running."""
+    def test_stop_manager_success(self, cli_runner, mock_config):
+        """Should stop manager session when running."""
         from agenttree.cli import main
 
         with patch("agenttree.cli.load_config", return_value=mock_config):
@@ -1224,11 +1228,11 @@ class TestRollbackCommand:
                     result = cli_runner.invoke(main, ["stop", "0"])
 
         assert result.exit_code == 0
-        assert "Stopped controller" in result.output
-        mock_kill.assert_called_once_with("testproject-controller-000")
+        assert "Stopped manager" in result.output
+        mock_kill.assert_called_once_with("testproject-manager-000")
 
-    def test_stop_controller_not_running(self, cli_runner, mock_config):
-        """Should handle gracefully when controller not running."""
+    def test_stop_manager_not_running(self, cli_runner, mock_config):
+        """Should handle gracefully when manager not running."""
         from agenttree.cli import main
 
         with patch("agenttree.cli.load_config", return_value=mock_config):
@@ -1238,8 +1242,8 @@ class TestRollbackCommand:
         assert result.exit_code == 0
         assert "not running" in result.output.lower()
 
-    def test_attach_to_controller_not_running(self, cli_runner, mock_config):
-        """Should error when trying to attach to controller that's not running."""
+    def test_attach_to_manager_not_running(self, cli_runner, mock_config):
+        """Should error when trying to attach to manager that's not running."""
         from agenttree.cli import main
 
         with patch("agenttree.cli.load_config", return_value=mock_config):
@@ -1247,11 +1251,11 @@ class TestRollbackCommand:
                 result = cli_runner.invoke(main, ["attach", "0"])
 
         assert result.exit_code == 1
-        assert "Controller not running" in result.output
+        assert "Manager not running" in result.output
         assert "agenttree start 0" in result.output
 
-    def test_attach_to_controller_success(self, cli_runner, mock_config):
-        """Should attach to controller when running."""
+    def test_attach_to_manager_success(self, cli_runner, mock_config):
+        """Should attach to manager when running."""
         from agenttree.cli import main
 
         with patch("agenttree.cli.load_config", return_value=mock_config):
@@ -1260,8 +1264,8 @@ class TestRollbackCommand:
                     result = cli_runner.invoke(main, ["attach", "0"])
 
         assert result.exit_code == 0
-        assert "Attaching to controller" in result.output
-        mock_attach.assert_called_once_with("testproject-controller-000")
+        assert "Attaching to manager" in result.output
+        mock_attach.assert_called_once_with("testproject-manager-000")
 
 
 class TestIssueShowCommand:

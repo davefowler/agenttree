@@ -46,6 +46,14 @@
                 <span class="dropzone-count" id="not-doing-count">0</span>
             </div>
         </div>
+
+        <!-- Stage indicators for hidden stages in review mode -->
+        <div class="stage-indicator" id="indicator-pre-review" title="Click to view all stages">
+            <span class="indicator-count" id="pre-review-count">0</span>
+        </div>
+        <div class="stage-indicator" id="indicator-pre-impl" title="Click to view all stages">
+            <span class="indicator-count" id="pre-impl-count">0</span>
+        </div>
     </div>
 
     <!-- Modal for issue detail -->
@@ -324,6 +332,8 @@ Possible solutions:
 
         // Stage toggle functionality
         const reviewStages = ['backlog', 'plan_review', 'implementation_review'];
+        const preReviewStages = ['define', 'research', 'plan', 'plan_assess', 'plan_revise'];
+        const preImplStages = ['implement'];
 
         function updateMiniDropzones() {
             const miniDropzones = document.getElementById('mini-dropzones');
@@ -356,6 +366,53 @@ Possible solutions:
             }
             if (notDoingCol) {
                 document.getElementById('not-doing-count').textContent = notDoingCol.querySelectorAll('.issue-item').length;
+            }
+        }
+
+        function updateIndicators() {
+            const currentView = localStorage.getItem('kanbanStageView') || 'review';
+            const preReviewIndicator = document.getElementById('indicator-pre-review');
+            const preImplIndicator = document.getElementById('indicator-pre-impl');
+
+            // Hide indicators if not in review mode
+            if (currentView !== 'review') {
+                preReviewIndicator.classList.remove('visible');
+                preImplIndicator.classList.remove('visible');
+                return;
+            }
+
+            // Count issues in pre-review stages
+            let preReviewCount = 0;
+            preReviewStages.forEach(stage => {
+                const col = document.querySelector(`.kanban-column[data-stage="${stage}"]`);
+                if (col) {
+                    preReviewCount += col.querySelectorAll('.issue-item').length;
+                }
+            });
+
+            // Count issues in pre-impl stages
+            let preImplCount = 0;
+            preImplStages.forEach(stage => {
+                const col = document.querySelector(`.kanban-column[data-stage="${stage}"]`);
+                if (col) {
+                    preImplCount += col.querySelectorAll('.issue-item').length;
+                }
+            });
+
+            // Update counts and visibility
+            document.getElementById('pre-review-count').textContent = preReviewCount;
+            document.getElementById('pre-impl-count').textContent = preImplCount;
+
+            if (preReviewCount > 0) {
+                preReviewIndicator.classList.add('visible');
+            } else {
+                preReviewIndicator.classList.remove('visible');
+            }
+
+            if (preImplCount > 0) {
+                preImplIndicator.classList.add('visible');
+            } else {
+                preImplIndicator.classList.remove('visible');
             }
         }
 
@@ -399,6 +456,9 @@ Possible solutions:
 
             // Update mini dropzones visibility
             updateMiniDropzones();
+
+            // Update stage indicators visibility
+            updateIndicators();
         };
 
         // Apply view from URL first, then localStorage, then default to 'review'
@@ -406,6 +466,11 @@ Possible solutions:
         const urlView = urlParams.get('view');
         const savedView = urlView || localStorage.getItem('kanbanStageView') || 'review';
         window.setStageView(savedView);
+
+        // Stage indicator click handlers
+        document.querySelectorAll('.stage-indicator').forEach(indicator => {
+            indicator.addEventListener('click', () => setStageView('all'));
+        });
 
         // Mini dropzone drag/drop handlers
         document.querySelectorAll('.mini-dropzone').forEach(dropzone => {

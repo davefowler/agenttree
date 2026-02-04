@@ -383,12 +383,15 @@ async def kanban(
     selected_issue = None
     files: list[dict[str, str]] = []
     commits_behind = 0
+    default_doc: str | None = None
     if issue:
         issue_obj = issue_crud.get_issue(issue, sync=False)
         if issue_obj:
             selected_issue = convert_issue_to_web(issue_obj, load_dependents=True)
             # Load all file contents upfront for CSS toggle tabs
             files = get_issue_files(issue, include_content=True)
+            # Get default doc to show for this stage
+            default_doc = get_default_doc(issue_obj.stage)
             # Get commits behind for rebase button
             if selected_issue.tmux_active and issue_obj.worktree_dir:
                 from agenttree.hooks import get_commits_behind_main
@@ -403,6 +406,7 @@ async def kanban(
             "active_page": "kanban",
             "selected_issue": selected_issue,
             "files": files,
+            "default_doc": default_doc,
             "commits_behind": commits_behind,
             "chat_open": chat == "1",
             "search": search or "",
@@ -476,6 +480,17 @@ def get_issue_files(issue_id: str, include_content: bool = False) -> list[dict[s
             files.append(file_info)
 
     return files
+
+
+def get_default_doc(stage: str) -> str | None:
+    """Get the default document to show for a stage.
+
+    Returns the review_doc for the stage if configured, otherwise None.
+    """
+    stage_config = _config.get_stage(stage)
+    if stage_config and stage_config.review_doc:
+        return stage_config.review_doc
+    return None
 
 
 # Maximum diff size in bytes (50KB - smaller for faster rendering)
@@ -651,13 +666,16 @@ async def flow(
     # Load all file contents upfront for selected issue
     files: list[dict[str, str]] = []
     commits_behind = 0
+    default_doc: str | None = None
     if selected_issue and selected_issue_id:
         # Load all file contents upfront for CSS toggle tabs
         files = get_issue_files(selected_issue_id, include_content=True)
-        # Get commits behind for rebase button
-        if selected_issue.tmux_active:
-            issue_obj = issue_crud.get_issue(selected_issue_id, sync=False)
-            if issue_obj and issue_obj.worktree_dir:
+        # Get default doc to show for this stage
+        issue_obj = issue_crud.get_issue(selected_issue_id, sync=False)
+        if issue_obj:
+            default_doc = get_default_doc(issue_obj.stage)
+            # Get commits behind for rebase button
+            if selected_issue.tmux_active and issue_obj.worktree_dir:
                 from agenttree.hooks import get_commits_behind_main
                 commits_behind = get_commits_behind_main(issue_obj.worktree_dir)
 
@@ -669,6 +687,7 @@ async def flow(
             "selected_issue": selected_issue,
             "issue": selected_issue,  # issue_detail.html expects 'issue'
             "files": files,
+            "default_doc": default_doc,
             "commits_behind": commits_behind,
             "active_page": "flow",
             "chat_open": chat == "1",
@@ -711,11 +730,13 @@ async def mobile(
     # Load all file contents upfront for selected issue
     files: list[dict[str, str]] = []
     commits_behind = 0
+    default_doc: str | None = None
     if selected_issue and selected_issue_id:
         files = get_issue_files(selected_issue_id, include_content=True)
-        if selected_issue.tmux_active:
-            issue_obj = issue_crud.get_issue(selected_issue_id, sync=False)
-            if issue_obj and issue_obj.worktree_dir:
+        issue_obj = issue_crud.get_issue(selected_issue_id, sync=False)
+        if issue_obj:
+            default_doc = get_default_doc(issue_obj.stage)
+            if selected_issue.tmux_active and issue_obj.worktree_dir:
                 from agenttree.hooks import get_commits_behind_main
                 commits_behind = get_commits_behind_main(issue_obj.worktree_dir)
 
@@ -732,6 +753,7 @@ async def mobile(
             "selected_issue": selected_issue,
             "issue": selected_issue,
             "files": files,
+            "default_doc": default_doc,
             "commits_behind": commits_behind,
             "active_page": "mobile",
             "active_tab": active_tab,
@@ -998,7 +1020,7 @@ async def approve_issue(
 
     # Calculate next stage
     config = load_config()
-    next_stage, next_substage, _ = config.get_next_stage(issue.stage, issue.substage)
+    next_stage, next_substage, _ = config.get_next_stage(issue.stage, issue.substage, issue.flow)
 
     # Execute exit hooks (validation)
     try:

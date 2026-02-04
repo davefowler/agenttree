@@ -88,10 +88,22 @@
         </div>
 
         <!-- File tabs (desktop) -->
+        {# Determine which file should be active: use default_doc if exists, else last file #}
+        {% set active_file = namespace(name=None) %}
+        {% if default_doc %}
+            {% for file in files %}
+                {% if file.name == default_doc %}
+                    {% set active_file.name = default_doc %}
+                {% endif %}
+            {% endfor %}
+        {% endif %}
+        {% if not active_file.name and files %}
+            {% set active_file.name = files[-1].name %}
+        {% endif %}
         <div class="file-tabs-container">
             <div class="file-tabs" id="file-tabs-{{ issue.number }}">
                 {% for file in files %}
-                <button class="file-tab{% if loop.last and not issue.has_worktree %} active{% endif %}"
+                <button class="file-tab{% if file.name == active_file.name and not issue.has_worktree %} active{% endif %}"
                         onclick="selectFileTab(event, '{{ issue.number }}', '{{ file.name }}')"
                         data-filename="{{ file.name }}">
                     {{ file.display_name }}
@@ -110,7 +122,7 @@
             <!-- Mobile file selector dropdown -->
             <select class="mobile-file-select" onchange="selectFileFromDropdown(this, '{{ issue.number }}')">
                 {% for file in files %}
-                <option value="{{ file.name }}"{% if loop.last and not issue.has_worktree %} selected{% endif %}>{{ file.display_name }}</option>
+                <option value="{{ file.name }}"{% if file.name == active_file.name and not issue.has_worktree %} selected{% endif %}>{{ file.display_name }}</option>
                 {% endfor %}
                 {% if issue.has_worktree %}
                 <option value="changes"{% if files|length == 0 %} selected{% endif %}>Changes</option>
@@ -123,7 +135,7 @@
             {% for file in files %}
             <div class="file-content-item"
                  data-filename="{{ file.name }}"
-                 style="display: {% if loop.last %}block{% else %}none{% endif %};">
+                 style="display: {% if file.name == active_file.name %}block{% else %}none{% endif %};">
                 {% if file.content %}
                 {% if file.name.endswith('.yaml') or file.name.endswith('.yml') %}
                 <pre class="yaml-content">{{ file.content }}</pre>
