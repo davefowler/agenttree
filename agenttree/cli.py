@@ -2263,6 +2263,7 @@ def stage_status(issue_id: Optional[str]) -> None:
         table.add_column("Title", style="white")
         table.add_column("Stage", style="magenta")
         table.add_column("Time", style="yellow", justify="right")
+        table.add_column("Wait", style="dim", justify="center")
 
         for active_issue in active_issues:
             # Get stage index (1-based)
@@ -2292,7 +2293,11 @@ def stage_status(issue_id: Optional[str]) -> None:
             except (ValueError, TypeError):
                 time_str = "?"
             
-            table.add_row(active_issue.id, active_issue.title[:40], stage_str, time_str)
+            # Check if waiting on human review
+            stage_config = config.get_stage(active_issue.stage)
+            wait_str = "[yellow]human[/yellow]" if stage_config and stage_config.role == "manager" else ""
+            
+            table.add_row(active_issue.id, active_issue.title[:40], stage_str, time_str, wait_str)
 
         console.print(table)
         return
