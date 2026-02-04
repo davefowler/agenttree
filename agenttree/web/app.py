@@ -19,6 +19,7 @@ import re
 from typing import List, Dict, Optional, AsyncIterator, Callable, Awaitable
 from datetime import datetime
 from contextlib import asynccontextmanager
+import logging
 
 from agenttree import __version__
 from agenttree.config import load_config, Config
@@ -29,6 +30,9 @@ _config: Config = load_config()
 from agenttree import issues as issue_crud
 from agenttree.agents_repo import sync_agents_repo
 from agenttree.web.models import StageEnum, KanbanBoard, Issue as WebIssue, IssueMoveRequest, PriorityUpdateRequest
+
+# Module-level logger for web app
+logger = logging.getLogger("agenttree.web")
 
 # Pattern to match Claude Code's input prompt separator line
 # The separator is a line of U+2500 (BOX DRAWINGS LIGHT HORIZONTAL) characters: ─
@@ -1052,15 +1056,15 @@ async def approve_issue(
             if session_exists(agent.tmux_session):
                 message = "Your work was approved! Run `agenttree next` for instructions."
                 await asyncio.to_thread(send_message, agent.tmux_session, message)
-    except Exception:
-        pass  # Agent notification is best-effort
+    except Exception as e:
+        logger.debug(f"Agent notification failed (non-blocking): {e}")
 
     # Execute enter hooks in background - don't wait for them
-    async def run_enter_hooks():
+    async def run_enter_hooks() -> None:
         try:
             await asyncio.to_thread(execute_enter_hooks, updated, next_stage, next_substage)
-        except Exception:
-            pass  # Enter hooks shouldn't block
+        except Exception as e:
+            logger.debug(f"Enter hooks failed (non-blocking): {e}")
 
     # Fire and forget - don't wait for hooks
     asyncio.create_task(run_enter_hooks())
