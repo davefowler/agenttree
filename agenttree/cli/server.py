@@ -78,7 +78,7 @@ def run(host: str, port: int, skip_agents: bool) -> None:
     from agenttree.issues import list_issues
     from agenttree.state import get_active_agent
     from agenttree.tmux import session_exists
-    from agenttree.cli.agent import _start_controller
+    from agenttree.cli.agent import _start_manager
 
     repo_path = Path.cwd()
     config = load_config(repo_path)
@@ -118,10 +118,10 @@ def run(host: str, port: int, skip_agents: bool) -> None:
         console.print(f"\n[bold]Agents: {started_count} started, {skipped_count} in parking lot[/bold]")
 
         # Start manager agent (agent 0) if not already running
-        manager_session = f"{config.project}-controller-000"
+        manager_session = f"{config.project}-manager-000"
         if not session_exists(manager_session):
             console.print(f"\n[cyan]Starting manager agent...[/cyan]")
-            _start_controller(tool=None, force=False, config=config, repo_path=repo_path)
+            _start_manager(tool=None, force=False, config=config, repo_path=repo_path)
         else:
             console.print(f"[dim]Manager agent already running[/dim]")
 
@@ -155,12 +155,12 @@ def stop_all() -> None:
     stopped_count = 0
     for agent in agents:
         console.print(f"[cyan]Stopping agent for issue #{agent.issue_id}...[/cyan]")
-        if stop_agent(agent.issue_id, agent.host, quiet=True):
+        if stop_agent(agent.issue_id, agent.role, quiet=True):
             stopped_count += 1
             console.print(f"[green]✓ Stopped agent for #{agent.issue_id}[/green]")
 
     # Stop manager agent
-    manager_session = f"{config.project}-controller-000"
+    manager_session = f"{config.project}-manager-000"
     if session_exists(manager_session):
         console.print(f"[cyan]Stopping manager agent...[/cyan]")
         kill_session(manager_session)
@@ -181,13 +181,13 @@ def stalls(threshold: int | None) -> None:
         agenttree stalls              # Check for stalled agents
         agenttree stalls -t 30        # Use 30-minute threshold
     """
-    from agenttree.controller_agent import get_stalled_agents
+    from agenttree.manager_agent import get_stalled_agents
 
     config = load_config()
     agents_dir = Path.cwd() / "_agenttree"
 
     # Use config threshold or override
-    threshold_min = threshold if threshold is not None else config.controller.stall_threshold_min
+    threshold_min = threshold if threshold is not None else config.manager.stall_threshold_min
 
     stalled = get_stalled_agents(agents_dir, threshold_min=threshold_min)
 

@@ -15,7 +15,7 @@ from agenttree.hooks import (
     ValidationError,
     StageRedirect,
     is_running_in_container,
-    get_current_agent_host,
+    get_current_role,
 )
 from agenttree.issues import (
     BACKLOG,
@@ -92,14 +92,14 @@ def stage_status(issue_id: str | None) -> None:
     else:
         console.print()
 
-    # Check if waiting for non-agent host
+    # Check if waiting for non-developer role
     config_for_status = load_config()
     status_stage_config = config_for_status.get_stage(issue.stage)
-    if status_stage_config and status_stage_config.host != "agent":
-        if status_stage_config.host == "controller":
+    if status_stage_config and status_stage_config.role != "developer":
+        if status_stage_config.role == "manager":
             console.print(f"\n[yellow]⏳ Waiting for human review[/yellow]")
         else:
-            console.print(f"\n[yellow]⏳ Waiting for '{status_stage_config.host}' agent[/yellow]")
+            console.print(f"\n[yellow]⏳ Waiting for '{status_stage_config.role}' agent[/yellow]")
     elif issue.stage == ACCEPTED:
         console.print(f"\n[green]✓ Issue completed[/green]")
 
@@ -139,15 +139,15 @@ def stage_next(issue_id: str | None, reassess: bool) -> None:
         console.print(f"[yellow]Issue is marked as not doing[/yellow]")
         return
 
-    # Block agents from operating in controller (human review) stages only
+    # Block agents from operating in manager (human review) stages only
     # Other agent stages can be advanced - hooks will enforce requirements
     config = load_config()
     stage_config = config.get_stage(issue.stage)
     if stage_config:
-        stage_host = stage_config.host
-        current_host = get_current_agent_host()
-        # Only block if this is a controller stage and we're not the controller
-        if stage_host == "controller" and current_host != "controller":
+        stage_role = stage_config.role
+        current_role = get_current_role()
+        # Only block if this is a manager stage and we're not the manager
+        if stage_role == "manager" and current_role != "manager":
             console.print(f"\n[yellow]⏳ Waiting for human review[/yellow]")
             console.print(f"[dim]Stage '{issue.stage}' requires human review.[/dim]")
             console.print(f"[dim]A human will run 'agenttree approve {issue.id}' when ready.[/dim]")
@@ -292,16 +292,16 @@ def stage_next(issue_id: str | None, reassess: bool) -> None:
         stage_str += f".{next_substage}"
     console.print(f"[green]✓ Moved to {stage_str}[/green]")
 
-    # Check if next stage requires a different host
+    # Check if next stage requires a different role
     next_stage_config = config.get_stage(next_stage)
-    if next_stage_config and next_stage_config.host != "agent" and is_running_in_container():
-        if next_stage_config.host == "controller" or is_human_review:
+    if next_stage_config and next_stage_config.role != "developer" and is_running_in_container():
+        if next_stage_config.role == "manager" or is_human_review:
             console.print(f"\n[yellow]⏳ Waiting for human review[/yellow]")
             console.print(f"[dim]Your work has been submitted for review.[/dim]")
             console.print(f"[dim]You will receive instructions when the review is complete.[/dim]")
         else:
-            console.print(f"\n[yellow]⏳ Waiting for '{next_stage_config.host}' agent[/yellow]")
-            console.print(f"[dim]The '{next_stage_config.host}' agent will handle the next stage.[/dim]")
+            console.print(f"\n[yellow]⏳ Waiting for '{next_stage_config.role}' agent[/yellow]")
+            console.print(f"[dim]The '{next_stage_config.role}' agent will handle the next stage.[/dim]")
             console.print(f"[dim]You will receive instructions when that stage is complete.[/dim]")
         return
 
@@ -349,10 +349,10 @@ def approve_issue(issue_id: str, skip_approval: bool) -> None:
         console.print(f"[red]Issue {issue_id} not found[/red]")
         sys.exit(1)
 
-    # Check if at a stage that requires human approval (human_review=true or host=controller)
+    # Check if at a stage that requires human approval (human_review=true or role=manager)
     approve_config = load_config()
     approve_stage_config = approve_config.get_stage(issue.stage)
-    if not approve_stage_config or not (approve_stage_config.human_review or approve_stage_config.host == "controller"):
+    if not approve_stage_config or not (approve_stage_config.human_review or approve_stage_config.role == "manager"):
         human_review_stages = approve_config.get_human_review_stages()
         console.print(f"[red]Issue is at '{issue.stage}', not a human review stage[/red]")
         console.print(f"[dim]Human review stages: {', '.join(human_review_stages)}[/dim]")
