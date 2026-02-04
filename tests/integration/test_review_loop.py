@@ -27,8 +27,8 @@ def review_loop_config() -> dict:
         "port_range": "9001-9099",
         "project": "test-project",
         "worktrees_dir": ".worktrees",
-        "hosts": {
-            "controller": {"description": "Human controller"},
+        "roles": {
+            "manager": {"description": "Human manager"},
             "agent": {"description": "Default agent"},
             "review": {"description": "Review agent", "skill": "agents/review.md"},
         },
@@ -65,7 +65,7 @@ def review_loop_config() -> dict:
             {
                 "name": "implementation_review",
                 "human_review": True,
-                "host": "controller",
+                "role": "manager",
             },
             {"name": "accepted", "terminal": True},
         ],

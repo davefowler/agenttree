@@ -46,7 +46,7 @@ class TestActionRegistry:
         assert actions == sorted(actions)
         # Should have built-in actions
         assert "sync" in actions
-        assert "start_controller" in actions
+        assert "start_manager" in actions
 
 
 class TestBuiltinActions:
@@ -55,20 +55,20 @@ class TestBuiltinActions:
     @patch("agenttree.config.load_config")
     @patch("agenttree.tmux.session_exists")
     @patch("subprocess.Popen")
-    def test_start_controller_skips_if_running(
+    def test_start_manager_skips_if_running(
         self,
         mock_popen: MagicMock,
         mock_session_exists: MagicMock,
         mock_load_config: MagicMock,
         tmp_path: Path,
     ) -> None:
-        """start_controller skips if session already exists."""
+        """start_manager skips if session already exists."""
         mock_config = MagicMock()
         mock_config.project = "test"
         mock_load_config.return_value = mock_config
         mock_session_exists.return_value = True
         
-        action = get_action("start_controller")
+        action = get_action("start_manager")
         assert action is not None
         action(tmp_path)
         
@@ -78,20 +78,20 @@ class TestBuiltinActions:
     @patch("agenttree.config.load_config")
     @patch("agenttree.tmux.session_exists")
     @patch("subprocess.Popen")
-    def test_start_controller_starts_if_not_running(
+    def test_start_manager_starts_if_not_running(
         self,
         mock_popen: MagicMock,
         mock_session_exists: MagicMock,
         mock_load_config: MagicMock,
         tmp_path: Path,
     ) -> None:
-        """start_controller starts subprocess if session doesn't exist."""
+        """start_manager starts subprocess if session doesn't exist."""
         mock_config = MagicMock()
         mock_config.project = "test"
         mock_load_config.return_value = mock_config
         mock_session_exists.return_value = False
         
-        action = get_action("start_controller")
+        action = get_action("start_manager")
         assert action is not None
         action(tmp_path)
         
@@ -151,7 +151,7 @@ class TestDefaultEventConfigs:
         config = get_default_event_config("startup")
         assert config is not None
         assert isinstance(config, list)
-        assert "start_controller" in config
+        assert "start_manager" in config
         assert "auto_start_agents" in config
 
     def test_shutdown_has_defaults(self) -> None:
