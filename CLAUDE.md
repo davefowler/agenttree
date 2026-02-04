@@ -140,10 +140,7 @@ The `_agenttree/` directory is a **separate git repository** that stores all AI 
 - `agenttree start <id> --force` - Restart an agent (kills existing, rebases, starts fresh)
 - `agenttree issue create "title" --problem "..."` - Create a new issue (title min 10 chars, problem min 50 chars, always follow with `agenttree start <id>`)
 - `agenttree output <id>` - View an agent's terminal output (use this instead of tmux capture-pane)
-- `agenttree stalls` - List agents that appear stalled
-- `agenttree status` - Show all active issues and their stages
-
-**Stall Monitoring:** The heartbeat writes stall data to `_agenttree/stalled.yaml`. The manager can read this file anytime to see current dead/stalled agents without relying on messages.
+- `agenttree status` - Show all active issues with stage progress, time in stage, agent status (run/dead), and whether waiting on human
 
 **Why:** CLI commands run the proper hooks and workflow logic. Manually editing `issue.yaml` or using raw commands bypasses hooks, breaks notifications, and causes state inconsistencies.
 
