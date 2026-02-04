@@ -651,7 +651,7 @@ def get_next_stage(
     current_stage: str,
     current_substage: Optional[str] = None,
     flow: str = "default",
-    issue_context: Optional[dict] = None,
+    issue_context: dict | None = None,
 ) -> tuple[str, Optional[str], bool]:
     """Calculate the next stage/substage.
 

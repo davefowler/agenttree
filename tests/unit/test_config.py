@@ -806,8 +806,10 @@ class TestConditionalStages:
         )
         assert next_stage == "final_review"
 
-    def test_get_next_stage_invalid_condition_runs(self) -> None:
-        """Invalid Jinja in condition should log warning but stage runs (fail-open)."""
+    def test_get_next_stage_invalid_condition_raises(self) -> None:
+        """Invalid Jinja in condition should raise - config errors crash loudly."""
+        from jinja2 import TemplateSyntaxError
+
         from agenttree.config import Config, StageConfig
 
         config = Config(
@@ -819,11 +821,8 @@ class TestConditionalStages:
             ]
         )
 
-        # Invalid Jinja should fail-open (run the stage)
-        next_stage, next_substage, is_human_review = config.get_next_stage(
-            "implement", issue_context={}
-        )
-        assert next_stage == "ui_review"
+        with pytest.raises(TemplateSyntaxError):
+            config.get_next_stage("implement", issue_context={})
 
     def test_condition_and_redirect_only_combined(self) -> None:
         """redirect_only should take precedence over condition in normal progression."""

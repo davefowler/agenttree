@@ -1242,7 +1242,7 @@ def run_builtin_validator(
                     # Mark as notified
                     mark_stall_notified(agents_dir, issue_id, stage)
 
-                message = "STALL ALERT:\\n" + "\\n".join(stall_report)
+                message = "STALL ALERT:\n" + "\n".join(stall_report)
                 try:
                     result = subprocess.run(
                         ["agenttree", "send", "0", message],

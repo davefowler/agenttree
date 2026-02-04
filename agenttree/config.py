@@ -218,7 +218,9 @@ def evaluate_condition(condition: str, context: dict) -> bool:
 
     Returns:
         True if condition evaluates to truthy value, False otherwise.
-        Invalid templates fail-open (return True) to avoid blocking workflow.
+
+    Raises:
+        TemplateSyntaxError: If the Jinja template has invalid syntax (config bug).
     """
     try:
         template = Template(condition)
@@ -232,10 +234,6 @@ def evaluate_condition(condition: str, context: dict) -> bool:
     except UndefinedError:
         # Missing context variable - treat as falsy (skip the stage)
         return False
-    except Exception as e:
-        # Invalid Jinja syntax or other error - fail-open (run the stage)
-        logger.warning(f"Error evaluating condition '{condition}': {e}")
-        return True
 
 
 class Config(BaseModel):
@@ -717,7 +715,7 @@ class Config(BaseModel):
         current_stage: str,
         current_substage: Optional[str] = None,
         flow: str = "default",
-        issue_context: Optional[dict] = None,
+        issue_context: dict | None = None,
     ) -> tuple[str, Optional[str], bool]:
         """Calculate the next stage/substage.
 
