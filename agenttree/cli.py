@@ -1304,6 +1304,25 @@ def stop_all(verbose: bool) -> None:
         kill_session(manager_session)
         console.print(f"[green]✓ Stopped manager[/green]")
 
+    # Stop the web server
+    import subprocess
+    port = config.port_range.split("-")[0] if hasattr(config, "port_range") else "8080"
+    try:
+        # Find process on port 8080 (default web server port)
+        result = subprocess.run(
+            ["lsof", "-ti", ":8080"],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            pids = result.stdout.strip().split("\n")
+            for pid in pids:
+                if pid:
+                    subprocess.run(["kill", pid], capture_output=True)
+            console.print(f"[green]✓ Stopped web server[/green]")
+    except Exception:
+        pass  # Web server may not be running
+
     console.print(f"\n[bold green]✓ Shutdown complete ({results['actions_run']} actions run)[/bold green]")
 
 
