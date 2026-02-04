@@ -812,15 +812,16 @@ def update_issue_metadata(
     return issue
 
 
-def set_processing(issue_id: str, processing_state: str) -> bool:
-    """Set the processing state for an issue.
+def set_processing(issue_id: str, processing_state: str | None) -> bool:
+    """Set or clear the processing state for an issue.
 
-    This is used to indicate that hooks are currently running on an issue.
+    Used to indicate that hooks are currently running on an issue.
+    Pass None to clear the processing state after hooks complete.
     Does NOT sync to remote - processing state is transient and local only.
 
     Args:
         issue_id: Issue ID
-        processing_state: Processing state to set (e.g., "exit", "enter")
+        processing_state: Processing state to set (e.g., "exit", "enter"), or None to clear
 
     Returns:
         True if successful, False if issue not found
@@ -837,37 +838,6 @@ def set_processing(issue_id: str, processing_state: str) -> bool:
         data = yaml.safe_load(f)
 
     data["processing"] = processing_state
-
-    with open(yaml_path, "w") as f:
-        yaml.dump(data, f, default_flow_style=False, sort_keys=False)
-
-    return True
-
-
-def clear_processing(issue_id: str) -> bool:
-    """Clear the processing state for an issue.
-
-    This should be called after hooks complete (success or failure).
-    Does NOT sync to remote - processing state is transient and local only.
-
-    Args:
-        issue_id: Issue ID
-
-    Returns:
-        True if successful, False if issue not found
-    """
-    issue_dir = get_issue_dir(issue_id)
-    if not issue_dir:
-        return False
-
-    yaml_path = issue_dir / "issue.yaml"
-    if not yaml_path.exists():
-        return False
-
-    with open(yaml_path) as f:
-        data = yaml.safe_load(f)
-
-    data["processing"] = None
 
     with open(yaml_path, "w") as f:
         yaml.dump(data, f, default_flow_style=False, sort_keys=False)

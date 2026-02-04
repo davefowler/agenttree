@@ -19,7 +19,6 @@ from agenttree.issues import (
     update_issue_priority,
     load_skill,
     set_processing,
-    clear_processing,
     STAGE_ORDER,
     STAGE_SUBSTAGES,
     HUMAN_REVIEW_STAGES,
@@ -118,7 +117,7 @@ class TestIssueModel:
 
 
 class TestProcessingHelpers:
-    """Tests for set_processing and clear_processing helper functions."""
+    """Tests for set_processing helper function."""
 
     @pytest.fixture
     def temp_agenttrees_with_issue(self, monkeypatch, tmp_path):
@@ -176,15 +175,15 @@ class TestProcessingHelpers:
         result = set_processing("999", "exit")
         assert result is False
 
-    def test_clear_processing_clears_state(self, temp_agenttrees_with_issue):
-        """clear_processing should set processing to None."""
+    def test_set_processing_clears_state_with_none(self, temp_agenttrees_with_issue):
+        """set_processing(id, None) should clear the processing state."""
         import yaml
 
         # First set processing
         set_processing("001", "exit")
 
-        # Then clear it
-        result = clear_processing("001")
+        # Then clear it by passing None
+        result = set_processing("001", None)
         assert result is True
 
         # Verify it was cleared in issue.yaml
@@ -192,11 +191,6 @@ class TestProcessingHelpers:
         with open(issue_yaml) as f:
             data = yaml.safe_load(f)
         assert data["processing"] is None
-
-    def test_clear_processing_returns_false_for_missing_issue(self, temp_agenttrees_with_issue):
-        """clear_processing should return False for nonexistent issue."""
-        result = clear_processing("999")
-        assert result is False
 
 
 class TestIssueCRUD:

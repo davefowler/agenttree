@@ -1100,7 +1100,7 @@ async def approve_issue(
         return {"ok": True}
     finally:
         # Always clear processing state
-        issue_crud.clear_processing(issue_id_normalized)
+        issue_crud.set_processing(issue_id_normalized, None)
 
 
 @app.post("/api/issues")
