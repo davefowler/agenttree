@@ -355,35 +355,19 @@ def _start_manager(
     The manager runs on the host (not in a container) and orchestrates
     work across all issues. It uses the main branch.
     """
-    from agenttree.tmux import session_exists
+    from agenttree.api import start_controller, AgentAlreadyRunningError
 
-    tmux_manager = TmuxManager(config)
-    session_name = f"{config.project}-manager-000"
-
-    # Check if manager already running
-    if session_exists(session_name) and not force:
-        console.print("[yellow]Manager already running[/yellow]")
+    try:
+        # Use quiet=False to let the API print status messages
+        start_controller(tool=tool, force=force, quiet=False)
+    except AgentAlreadyRunningError:
+        console.print("[yellow]Controller already running[/yellow]")
         console.print(f"\nUse --force to restart, or attach with:")
         console.print(f"  agenttree attach 0")
         sys.exit(1)
-
-    tool_name = tool or config.default_tool
-    console.print(f"[green]Starting manager agent...[/green]")
-    console.print(f"[dim]Tool: {tool_name}[/dim]")
-    console.print(f"[dim]Session: {session_name}[/dim]")
-
-    # Start manager on host (not in container)
-    tmux_manager.start_manager(
-        session_name=session_name,
-        repo_path=repo_path,
-        tool_name=tool_name,
-    )
-
-    console.print(f"\n[bold]Manager ready[/bold]")
-    console.print(f"\n[dim]Commands:[/dim]")
-    console.print(f"  agenttree attach 0")
-    console.print(f"  agenttree send 0 'message'")
-    console.print(f"  agenttree kill 0")
+    except Exception as e:
+        console.print(f"[red]Error starting controller: {e}[/red]")
+        sys.exit(1)
 
 
 @main.command(name="start")
@@ -392,7 +376,7 @@ def _start_manager(
 @click.option("--role", default="developer", help="Agent role (default: developer)")
 @click.option("--force", is_flag=True, help="Force start even if agent already exists")
 @click.option("--skip-preflight", is_flag=True, help="Skip preflight environment checks")
-def start_agent(
+def start_agent_cmd(
     issue_id: str,
     tool: Optional[str],
     role: str,
@@ -412,203 +396,84 @@ def start_agent(
 
     Use --role to start a non-default agent (e.g., --role reviewer for code review).
     """
-    from agenttree.state import (
-        get_active_agent,
-        get_port_for_issue,
-        create_agent_for_issue,
-        get_issue_names,
+    from agenttree.api import (
+        start_agent as api_start_agent,
+        IssueNotFoundError,
+        AgentAlreadyRunningError,
+        PreflightError,
+        ContainerUnavailableError,
+        AgentStartError,
     )
-    from agenttree.worktree import create_worktree, update_worktree_with_main
-
-    repo_path = Path.cwd()
-    config = load_config(repo_path)
-
-    # Run preflight checks unless skipped
-    if not skip_preflight:
-        console.print("[dim]Running preflight checks...[/dim]")
-        results = run_preflight()
-        failed = [r for r in results if not r.passed]
-        if failed:
-            console.print("[red]Preflight checks failed:[/red]")
-            for result in failed:
-                console.print(f"  [red]✗[/red] {result.name}: {result.message}")
-                if result.fix_hint:
-                    console.print(f"    [dim]Hint: {result.fix_hint}[/dim]")
-            console.print("\n[yellow]Use --skip-preflight to bypass these checks[/yellow]")
-            sys.exit(1)
-        console.print("[green]✓ Preflight checks passed[/green]\n")
+    from agenttree.state import get_active_agent
 
     # Normalize issue ID (strip leading zeros for lookup, keep for display)
     issue_id_normalized = issue_id.lstrip("0") or "0"
 
     # Special handling for manager (agent 0)
     if issue_id_normalized == "0":
-        _start_manager(tool, force, config, repo_path)
+        config = load_config()
+        _start_manager(tool, force, config, Path.cwd())
         return
 
-    # Load issue from local _agenttree/issues/
-    issue = get_issue_func(issue_id_normalized)
-    if not issue:
+    try:
+        # Use quiet=False to let the API print progress messages
+        agent = api_start_agent(
+            issue_id,
+            host=role,
+            skip_preflight=skip_preflight,
+            force=force,
+            tool=tool,
+            quiet=False,
+        )
+
+        # Print CLI-specific summary with commands
+        role_label = f" ({role})" if role != "developer" else ""
+        console.print(f"  Container: {agent.container}")
+        console.print(f"  Port: {agent.port}")
+        console.print(f"  Role: {role}")
+        console.print(f"\n[dim]Commands:[/dim]")
+        role_flag = f" --role {role}" if role != "developer" else ""
+        console.print(f"  agenttree attach {agent.issue_id}{role_flag}")
+        console.print(f"  agenttree send {agent.issue_id}{role_flag} 'message'")
+        console.print(f"  agenttree agents")
+
+    except IssueNotFoundError:
         console.print(f"[red]Error: Issue #{issue_id} not found in _agenttree/issues/[/red]")
         console.print(f"[yellow]Create it with: agenttree issue create 'title'[/yellow]")
         sys.exit(1)
 
-    # If issue is in backlog, move it to define stage first
-    if issue.stage == "backlog":
-        from agenttree.issues import update_issue_stage
-        console.print(f"[cyan]Moving issue from backlog to define...[/cyan]")
-        update_issue_stage(issue.id, "define")
-        issue.stage = "define"  # Update local reference
-
-    # Check if issue already has an active agent for this host
-    existing_agent = get_active_agent(issue.id, role)
-    if existing_agent and not force:
-        console.print(f"[yellow]Issue #{issue.id} already has an active {role} agent[/yellow]")
-        console.print(f"  Container: {existing_agent.container}")
-        console.print(f"  Port: {existing_agent.port}")
+    except AgentAlreadyRunningError:
+        existing_agent = get_active_agent(issue_id.lstrip("0") or "0", role)
+        if existing_agent:
+            console.print(f"[yellow]Issue #{existing_agent.issue_id} already has an active {role} agent[/yellow]")
+            console.print(f"  Container: {existing_agent.container}")
+            console.print(f"  Port: {existing_agent.port}")
+        else:
+            console.print(f"[yellow]Issue #{issue_id} already has an active {role} agent[/yellow]")
         console.print(f"\nUse --force to replace it, or attach with:")
-        console.print(f"  agenttree attach {issue.id}" + (f" --role {role}" if role != "developer" else ""))
+        console.print(f"  agenttree attach {issue_id}" + (f" --role {role}" if role != "developer" else ""))
         sys.exit(1)
 
-    # Initialize managers
-    tmux_manager = TmuxManager(config)
-    agents_repo = AgentsRepository(repo_path)
+    except PreflightError as e:
+        console.print("[red]Preflight checks failed:[/red]")
+        for failure in e.failures:
+            console.print(f"  [red]✗[/red] {failure}")
+        console.print("\n[yellow]Use --skip-preflight to bypass these checks[/yellow]")
+        sys.exit(1)
 
-    # Ensure agents repo exists
-    agents_repo.ensure_repo()
-
-    # Get names for this issue and host
-    names = get_issue_names(issue.id, issue.slug, config.project, role)
-
-    # Create worktree for issue
-    worktree_path = config.get_issue_worktree_path(issue.id, issue.slug)
-    worktree_path.parent.mkdir(parents=True, exist_ok=True)
-
-    has_merge_conflicts = False
-    is_restart = False
-    if worktree_path.exists():
-        # Worktree exists - this is a restart scenario
-        is_restart = True
-        # Update with latest main to get newest CLI code while preserving agent's work
-        console.print(f"[cyan]Restarting: Rebasing worktree onto latest main...[/cyan]")
-        update_success = update_worktree_with_main(worktree_path)
-        if update_success:
-            console.print(f"[green]✓ Worktree rebased successfully[/green]")
-        else:
-            has_merge_conflicts = True
-            console.print(f"[yellow]⚠ Merge conflicts detected - agent will need to resolve[/yellow]")
-    else:
-        # No worktree - check if branch exists (agent worked on this before but worktree was removed)
-        branch_exists = subprocess.run(
-            ["git", "rev-parse", "--verify", names["branch"]],
-            cwd=repo_path,
-            capture_output=True,
-        ).returncode == 0
-
-        if branch_exists:
-            # Branch exists - create worktree from it, then update with main
-            is_restart = True
-            console.print(f"[dim]Restarting from existing branch: {names['branch']}[/dim]")
-            create_worktree(repo_path, worktree_path, names["branch"])
-            console.print(f"[cyan]Rebasing onto latest main...[/cyan]")
-            update_success = update_worktree_with_main(worktree_path)
-            if update_success:
-                console.print(f"[green]✓ Worktree rebased successfully[/green]")
-            else:
-                has_merge_conflicts = True
-                console.print(f"[yellow]⚠ Merge conflicts detected - agent will need to resolve[/yellow]")
-        else:
-            # Fresh start - create new worktree from main
-            console.print(f"[dim]Creating worktree: {worktree_path.name}[/dim]")
-            create_worktree(repo_path, worktree_path, names["branch"])
-
-    # Get deterministic port from issue number
-    base_port = int(config.port_range.split("-")[0])
-    port = get_port_for_issue(issue.id, base_port=base_port)
-    console.print(f"[dim]Using port: {port} (derived from issue #{issue.id})[/dim]")
-
-    # Register agent in state
-    agent = create_agent_for_issue(
-        issue_id=issue.id,
-        slug=issue.slug,
-        worktree_path=worktree_path,
-        port=port,
-        project=config.project,
-        role=role,
-    )
-
-    # Save branch and worktree info to issue metadata
-    update_issue_metadata(issue.id, branch=names["branch"], worktree_dir=str(worktree_path))
-
-    role_label = f" ({role})" if role != "developer" else ""
-    console.print(f"[green]✓ Starting agent{role_label} for issue #{issue.id}: {issue.title}[/green]")
-
-    # Create session for restart detection
-    create_session(issue.id)
-
-    # Start agent in tmux (always in container)
-    tool_name = tool or config.default_tool
-    # Resolve model from stage config (substage → stage → default)
-    model_name = config.model_for(issue.stage, issue.substage)
-    runtime = get_container_runtime()
-
-    if not runtime.is_available():
+    except ContainerUnavailableError as e:
         console.print(f"[red]Error: No container runtime available[/red]")
-        console.print(f"Recommendation: {runtime.get_recommended_action()}")
+        console.print(f"Recommendation: {e.recommendation}")
         sys.exit(1)
 
-    console.print(f"[dim]Container runtime: {runtime.get_runtime_name()}[/dim]")
-    console.print(f"[dim]Model: {model_name}[/dim]")
-
-    # Use the host parameter (which was either explicitly set or defaults to "agent")
-    start_success = tmux_manager.start_issue_agent_in_container(
-        issue_id=issue.id,
-        session_name=agent.tmux_session,
-        worktree_path=worktree_path,
-        tool_name=tool_name,
-        container_runtime=runtime,
-        model=model_name,
-        role=role,
-        has_merge_conflicts=has_merge_conflicts,
-        is_restart=is_restart,
-    )
-
-    if not start_success:
-        # Startup failed - clean up state and exit
-        from agenttree.state import unregister_agent
-        unregister_agent(issue.id, role)
-        console.print(f"[red]Error: Agent failed to start (Claude prompt not detected within timeout)[/red]")
-        console.print(f"[dim]State has been cleaned up. Try running 'agenttree start {issue.id}' again.[/dim]")
+    except AgentStartError as e:
+        console.print(f"[red]Error: Agent failed to start ({e.reason})[/red]")
+        console.print(f"[dim]State has been cleaned up. Try running 'agenttree start {issue_id}' again.[/dim]")
         sys.exit(1)
 
-    console.print(f"[green]✓ Started {tool_name} in container[/green]")
-
-    # For Apple Containers, look up the UUID and store it for cleanup
-    if runtime.get_runtime_name() == "container":
-        import time
-        from agenttree.container import find_container_by_worktree
-        from agenttree.state import update_agent_container_id
-
-        # Wait for container to start, then find its UUID
-        for _ in range(10):  # Try for up to 5 seconds
-            time.sleep(0.5)
-            container_uuid = find_container_by_worktree(worktree_path)
-            if container_uuid:
-                update_agent_container_id(issue.id, container_uuid, role)
-                console.print(f"[dim]Container UUID: {container_uuid[:12]}...[/dim]")
-                break
-        else:
-            console.print(f"[yellow]Warning: Could not find container UUID for cleanup tracking[/yellow]")
-
-    console.print(f"\n[bold]Agent{role_label} ready for issue #{issue.id}[/bold]")
-    console.print(f"  Container: {agent.container}")
-    console.print(f"  Port: {agent.port}")
-    console.print(f"  Role: {role}")
-    console.print(f"\n[dim]Commands:[/dim]")
-    role_flag = f" --role {role}" if role != "developer" else ""
-    console.print(f"  agenttree attach {issue.id}{role_flag}")
-    console.print(f"  agenttree send {issue.id}{role_flag} 'message'")
-    console.print(f"  agenttree agents")
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        sys.exit(1)
 
 
 @main.command("agents")
@@ -922,92 +787,43 @@ def send(issue_id: str, message: str, role: str, interrupt: bool) -> None:
 
     Use --interrupt to stop the agent's current task (sends Ctrl+C) before sending.
     """
-    from agenttree.state import get_active_agent
-    from agenttree.tmux import session_exists, send_keys
+    from agenttree.api import (
+        send_message as api_send_message,
+        IssueNotFoundError,
+        ControllerNotRunningError,
+    )
 
-    config = load_config()
-    tmux_manager = TmuxManager(config)
+    try:
+        # Use quiet=False to let the API print progress messages
+        result = api_send_message(
+            issue_id,
+            message,
+            host=role,
+            auto_start=True,
+            interrupt=interrupt,
+            quiet=False,
+        )
 
-    # Normalize issue ID
-    issue_id_normalized = issue_id.lstrip("0") or "0"
-
-    # Special handling for manager (agent 0)
-    if issue_id_normalized == "0":
-        session_name = f"{config.project}-manager-000"
-        if not session_exists(session_name):
-            console.print("[red]Error: Manager not running[/red]")
-            console.print("[yellow]Start it with: agenttree start 0[/yellow]")
+        # Handle non-success results
+        if result == "no_agent":
+            console.print(f"[red]Error: Could not start agent[/red]")
             sys.exit(1)
-        send_keys(session_name, message, interrupt=interrupt)
-        console.print("[green]✓ Sent message to manager[/green]")
-        return
+        elif result == "error":
+            console.print(f"[red]Error: Failed to send message[/red]")
+            sys.exit(1)
+        # "sent" and "restarted" are success - API already printed success message
 
-    # Get issue to validate it exists
-    issue = get_issue_func(issue_id_normalized)
-    if not issue:
+    except IssueNotFoundError:
         console.print(f"[red]Error: Issue #{issue_id} not found[/red]")
         sys.exit(1)
 
-    # Use the canonical issue ID
-    issue_id_normalized = issue.id
-
-    # Helper to start agent if needed
-    def ensure_agent_running() -> bool:
-        """Start agent if not running. Returns True if agent is now running."""
-        agent = get_active_agent(issue_id_normalized, role)
-        if agent and tmux_manager.is_issue_running(agent.tmux_session):
-            return True
-
-        # Agent not running - start it
-        role_label = f" ({role})" if role != "developer" else ""
-        console.print(f"[dim]Agent{role_label} not running, starting...[/dim]")
-
-        role_flag = f" --role {role}" if role != "developer" else ""
-        result = subprocess.run(
-            ["agenttree", "start", issue_id_normalized] + (["--role", role] if role != "developer" else []) + ["--skip-preflight"],
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode != 0:
-            console.print(f"[red]Error: Could not start agent: {result.stderr}[/red]")
-            return False
-
-        console.print(f"[green]✓ Started agent{role_label}[/green]")
-        return True
-
-    # Ensure agent is running
-    if not ensure_agent_running():
+    except ControllerNotRunningError:
+        console.print("[red]Error: Controller not running[/red]")
+        console.print("[yellow]Start it with: agenttree start 0[/yellow]")
         sys.exit(1)
 
-    # Re-fetch agent after potential start
-    agent = get_active_agent(issue_id_normalized, role)
-    if not agent:
-        console.print(f"[red]Error: Agent started but not found in state[/red]")
-        sys.exit(1)
-
-    # Send the message
-    result = tmux_manager.send_message_to_issue(agent.tmux_session, message, interrupt=interrupt)
-
-    role_label = f" ({agent.role})" if agent.role != "developer" else ""
-    if result == "sent":
-        console.print(f"[green]✓ Sent message to issue #{agent.issue_id}{role_label}[/green]")
-    elif result == "claude_exited":
-        # Claude exited - restart and try again
-        console.print(f"[yellow]Claude CLI exited, restarting agent...[/yellow]")
-        if ensure_agent_running():
-            agent = get_active_agent(issue_id_normalized, role)
-            if agent:
-                result = tmux_manager.send_message_to_issue(agent.tmux_session, message)
-                if result == "sent":
-                    console.print(f"[green]✓ Sent message to issue #{agent.issue_id}{role_label}[/green]")
-                    return
-        console.print(f"[red]Error: Could not send message after restart[/red]")
-        sys.exit(1)
-    elif result == "no_session":
-        console.print(f"[red]Error: Tmux session not found[/red]")
-        sys.exit(1)
-    else:
-        console.print(f"[red]Error: Failed to send message[/red]")
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
         sys.exit(1)
 
 
@@ -1623,7 +1439,7 @@ def issue_create(
             console.print(f"  2. Start agent: [cyan]agenttree start {issue.id}[/cyan]")
         else:
             console.print(f"\n[cyan]Auto-starting agent...[/cyan]")
-            ctx.invoke(start_agent, issue_id=issue.id)
+            ctx.invoke(start_agent_cmd, issue_id=issue.id)
 
     except Exception as e:
         console.print(f"[red]Error creating issue: {e}[/red]")
