@@ -58,6 +58,7 @@ hosts:
 
 stages:
   - name: backlog
+    is_parking_lot: true
 
   - name: define
     output: problem.md
@@ -134,6 +135,7 @@ stages:
 
   - name: plan_review
     human_review: true
+    review_doc: spec.md
     pre_completion:
       - file_exists: spec.md
       - section_check:
@@ -227,6 +229,7 @@ stages:
 
   - name: implementation_review
     human_review: true
+    review_doc: review.md
     host: controller  # Host handles PR creation (agents can't push)
     post_start:
       - create_pr:
@@ -246,7 +249,7 @@ stages:
     skill: knowledge_base.md
 
   - name: accepted
-    terminal: true
+    is_parking_lot: true
     host: controller  # Host handles merge/cleanup (agents can't push)
     post_start:
       - merge_pr:
@@ -254,7 +257,45 @@ stages:
       - start_blocked_issues:
 
   - name: not_doing
-    terminal: true
+    is_parking_lot: true
+    redirect_only: true  # Only reached via redirect, not normal progression
+
+# Workflow flows
+# Each flow defines an ordered subset of stages that issues can follow.
+# The "default" flow is used if no flow is specified when creating an issue.
+# Parking lot stages like not_doing are redirect targets, not part of normal progression.
+flows:
+  default:
+    stages:
+      - backlog
+      - define
+      - research
+      - plan
+      - plan_assess
+      - plan_revise
+      - plan_review
+      - implement
+      - independent_code_review
+      - address_independent_review
+      - implementation_review
+      - knowledge_base
+      - accepted
+
+  # Quick flow for small issues that skip research and planning stages
+  quick:
+    stages:
+      - backlog
+      - define
+      - implement
+      - implementation_review
+      - accepted
+
+  # Abandoned issues - only reachable via redirect
+  not_doing:
+    stages:
+      - not_doing
+
+default_flow: default
 
 # Workflow flows
 # Each flow defines an ordered subset of stages that issues can follow.

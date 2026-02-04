@@ -88,9 +88,10 @@ class StageConfig(BaseModel):
     skill: Optional[str] = None   # Override skill file path
     model: Optional[str] = None   # Model to use for this stage (overrides default_model)
     human_review: bool = False    # Requires human approval to exit
-    terminal: bool = False        # Cannot progress from here (accepted, not_doing)
+    is_parking_lot: bool = False  # No agent auto-starts here (backlog, accepted, not_doing)
     redirect_only: bool = False   # Only reachable via StageRedirect, skipped in normal progression
     host: str = "agent"           # Who executes this stage: "agent" (in container) or "controller" (host)
+    review_doc: Optional[str] = None  # Document to show by default when viewing issue in this stage
     substages: Dict[str, SubstageConfig] = Field(default_factory=dict)
     pre_completion: list[dict] = Field(default_factory=list)  # Stage-level hooks before completing
     post_start: list[dict] = Field(default_factory=list)  # Stage-level hooks after starting
@@ -572,17 +573,61 @@ class Config(BaseModel):
 
         return []
 
-    def is_terminal(self, stage_name: str) -> bool:
-        """Check if a stage is terminal (cannot progress further).
+    def is_parking_lot(self, stage_name: str) -> bool:
+        """Check if a stage is a parking lot (no agent auto-starts).
+
+        Parking lot stages are stages where issues can sit without active agents.
+        Examples: backlog (waiting to start), accepted (done), not_doing (abandoned).
 
         Args:
             stage_name: Name of the stage
 
         Returns:
-            True if terminal, False otherwise
+            True if parking lot, False otherwise
         """
         stage = self.get_stage(stage_name)
-        return stage.terminal if stage else False
+        return stage.is_parking_lot if stage else False
+
+    def get_parking_lot_stages(self) -> set[str]:
+        """Get names of all parking lot stages.
+
+        Returns:
+            Set of stage names where is_parking_lot is True
+        """
+        return {stage.name for stage in self.stages if stage.is_parking_lot}
+
+    def get_flow(self, flow_name: str) -> Optional[FlowConfig]:
+        """Get configuration for a flow.
+
+        Args:
+            flow_name: Name of the flow
+
+        Returns:
+            FlowConfig or None if not found
+        """
+        return self.flows.get(flow_name)
+
+    def get_flow_stage_names(self, flow_name: str = "default") -> list[str]:
+        """Get ordered list of stage names for a flow.
+
+        When no flows are defined (e.g., direct Config instantiation in tests
+        or legacy configs), falls back to using all stages in definition order.
+
+        Args:
+            flow_name: Name of the flow (default: "default")
+
+        Returns:
+            List of stage names in flow order
+        """
+        flow = self.get_flow(flow_name)
+        if flow:
+            return flow.stages
+
+        # Fallback for configs without flows defined (tests, legacy configs)
+        if flow_name == "default" and not self.flows:
+            return self.get_stage_names()
+
+        return []
 
     def get_flow(self, flow_name: str) -> FlowConfig | None:
         """Get configuration for a flow.
@@ -634,8 +679,7 @@ class Config(BaseModel):
             Tuple of (next_stage, next_substage, is_human_review)
         """
         stage_config = self.get_stage(current_stage)
-        # Terminal stages don't progress further
-        if stage_config is None or stage_config.terminal:
+        if stage_config is None:
             return current_stage, current_substage, False
 
         substages = stage_config.substage_order()
