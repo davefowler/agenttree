@@ -84,15 +84,24 @@ def kill_session(session_name: str) -> None:
         pass
 
 
-def send_keys(session_name: str, keys: str, submit: bool = True) -> None:
+def send_keys(session_name: str, keys: str, submit: bool = True, interrupt: bool = False) -> None:
     """Send keystrokes to a tmux session.
 
     Args:
         session_name: Name of the session
         keys: Keys to send
         submit: Whether to send Enter to submit (default True)
+        interrupt: Whether to send Ctrl+C first to interrupt current task (default False)
     """
     import time
+
+    # If interrupt=True, send Ctrl+C first to stop any running command/thinking
+    if interrupt:
+        subprocess.run(
+            ["tmux", "send-keys", "-t", session_name, "C-c"],
+            check=True,
+        )
+        time.sleep(0.5)  # Wait for Claude to process the interrupt
 
     # Always send text using literal mode to avoid interpretation
     subprocess.run(
@@ -147,7 +156,7 @@ def is_claude_running(session_name: str) -> bool:
     return False
 
 
-def send_message(session_name: str, message: str, check_claude: bool = True) -> str:
+def send_message(session_name: str, message: str, check_claude: bool = True, interrupt: bool = False) -> str:
     """Send a message to a tmux session if it's alive.
 
     This is the preferred way to send messages to agents - it checks
@@ -157,6 +166,7 @@ def send_message(session_name: str, message: str, check_claude: bool = True) -> 
         session_name: Name of the tmux session
         message: Message to send
         check_claude: If True, verify Claude CLI is running (not just tmux session)
+        interrupt: If True, send Ctrl+C first to interrupt current task
 
     Returns:
         "sent" if message was sent successfully
@@ -171,7 +181,7 @@ def send_message(session_name: str, message: str, check_claude: bool = True) -> 
         return "claude_exited"
 
     try:
-        send_keys(session_name, message, submit=True)
+        send_keys(session_name, message, submit=True, interrupt=interrupt)
         return "sent"
     except subprocess.CalledProcessError:
         return "error"
@@ -611,12 +621,13 @@ class TmuxManager:
         """
         kill_session(session_name)
 
-    def send_message_to_issue(self, session_name: str, message: str) -> str:
+    def send_message_to_issue(self, session_name: str, message: str, interrupt: bool = False) -> str:
         """Send a message to an issue-bound agent.
 
         Args:
             session_name: Tmux session name
             message: Message to send
+            interrupt: Whether to send Ctrl+C first to interrupt current task
 
         Returns:
             "sent" if message was sent successfully
@@ -624,7 +635,7 @@ class TmuxManager:
             "claude_exited" if session exists but Claude CLI isn't running
             "error" if send failed
         """
-        return send_message(session_name, message, check_claude=True)
+        return send_message(session_name, message, check_claude=True, interrupt=interrupt)
 
     def attach_to_issue(self, session_name: str) -> None:
         """Attach to an issue-bound agent's tmux session.

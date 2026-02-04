@@ -1221,11 +1221,11 @@ def run_builtin_validator(
                 issue_id = agent_info["issue_id"]
                 minutes = agent_info["minutes_stalled"]
 
-                # Send nudge via agenttree send - handles agent restart if needed
-                message = f"You've been in the same stage for {minutes} minutes. Run `agenttree next` to check your progress and continue."
+                # Send nudge via agenttree send --interrupt to actually interrupt the agent
+                message = f"STALL DETECTED ({minutes}m). Run `agenttree next` NOW to check your progress and advance."
                 try:
                     result = subprocess.run(
-                        ["agenttree", "send", issue_id, message],
+                        ["agenttree", "send", issue_id, message, "--interrupt"],
                         capture_output=True,
                         text=True,
                         timeout=30,

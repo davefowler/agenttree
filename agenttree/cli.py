@@ -859,12 +859,15 @@ def attach(issue_id: str, host: str) -> None:
 @click.argument("issue_id", type=str)
 @click.argument("message")
 @click.option("--host", default="agent", help="Agent host type (default: agent)")
-def send(issue_id: str, message: str, host: str) -> None:
+@click.option("--interrupt", is_flag=True, help="Send Ctrl+C first to interrupt current task")
+def send(issue_id: str, message: str, host: str, interrupt: bool) -> None:
     """Send a message to an issue's agent.
 
     ISSUE_ID is the issue number (e.g., "23" or "023"), or "0" for controller.
 
     If the agent is not running, it will be automatically started.
+
+    Use --interrupt to stop the agent's current task (sends Ctrl+C) before sending.
     """
     from agenttree.state import get_active_agent
     from agenttree.tmux import session_exists, send_keys
@@ -882,7 +885,7 @@ def send(issue_id: str, message: str, host: str) -> None:
             console.print("[red]Error: Controller not running[/red]")
             console.print("[yellow]Start it with: agenttree start 0[/yellow]")
             sys.exit(1)
-        send_keys(session_name, message)
+        send_keys(session_name, message, interrupt=interrupt)
         console.print("[green]✓ Sent message to controller[/green]")
         return
 
@@ -930,7 +933,7 @@ def send(issue_id: str, message: str, host: str) -> None:
         sys.exit(1)
 
     # Send the message
-    result = tmux_manager.send_message_to_issue(agent.tmux_session, message)
+    result = tmux_manager.send_message_to_issue(agent.tmux_session, message, interrupt=interrupt)
 
     host_label = f" ({agent.host})" if agent.host != "agent" else ""
     if result == "sent":
