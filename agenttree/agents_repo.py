@@ -232,10 +232,11 @@ def check_manager_stages(agents_dir: Path) -> int:
 
             stage = data.get("stage", "")
 
-            # Check if in a controller stage
+            # Check if in a manager stage
             if stage in manager_stages:
                 # Skip if hooks already executed for this stage
-                hooks_executed_stage = data.get("manager_hooks_executed")
+                # Check both new field name and legacy field name for backwards compatibility
+                hooks_executed_stage = data.get("manager_hooks_executed") or data.get("controller_hooks_executed")
                 if hooks_executed_stage == stage:
                     continue
 
@@ -258,10 +259,10 @@ def check_manager_stages(agents_dir: Path) -> int:
 
 
 def check_custom_agent_stages(agents_dir: Path) -> int:
-    """Spawn custom agent hosts for issues in custom agent stages.
+    """Spawn custom role agents for issues in custom agent stages.
 
-    Custom agent stages (host: <custom_agent_name>) have their agents
-    spawned by the controller, similar to how manager stages work
+    Custom agent stages (role: <custom_role_name>) have their agents
+    spawned by the manager, similar to how manager stages work
     but instead of running hooks directly, we spawn a specialized agent.
 
     Called from host (sync, web server, etc.) on every sync.
