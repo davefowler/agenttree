@@ -439,7 +439,8 @@ class TestStatusCommand:
 
         with patch("agenttree.cli.load_config", return_value=mock_config):
             with patch("agenttree.cli.list_issues_func", return_value=[mock_issue]):
-                result = cli_runner.invoke(main, ["status"])
+                with patch("agenttree.tmux.session_exists", return_value=True):
+                    result = cli_runner.invoke(main, ["status"])
 
         assert result.exit_code == 0
         assert "Active Issues" in result.output
