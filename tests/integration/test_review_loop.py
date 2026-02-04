@@ -65,7 +65,7 @@ def review_loop_config() -> dict:
             {
                 "name": "implementation_review",
                 "human_review": True,
-                "host": "manager",
+                "role": "manager",
             },
             {"name": "accepted", "terminal": True},
         ],
