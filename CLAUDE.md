@@ -2,6 +2,20 @@
 
 ## ⛔ NEVER merge your own PRs without explicit approval. Create PR → request `@cursoragent review` → WAIT for review → ASK before merging.
 
+## ⛔ NEVER USE RAW TMUX COMMANDS
+
+**Use `agenttree` CLI instead of tmux. ALWAYS.**
+
+| ❌ DON'T | ✅ DO |
+|----------|-------|
+| `tmux list-sessions` | `agenttree status` |
+| `tmux capture-pane` | `agenttree output <id>` |
+| `tmux send-keys` | `agenttree send <id> "msg"` |
+| `tmux kill-session` | `agenttree stop <id>` |
+| `tmux has-session` | `agenttree status` |
+
+Raw tmux commands bypass the workflow, break state tracking, and cause bugs. The CLI handles everything properly.
+
 ## Tech Stack
 
 - **Language:** Python 3.12+
