@@ -857,6 +857,59 @@ def attach(issue_id: str, host: str) -> None:
 
 @main.command()
 @click.argument("issue_id", type=str)
+@click.option("--host", default="agent", help="Agent host type (default: agent)")
+@click.option("--lines", "-n", default=50, help="Number of lines to show (default: 50)")
+def output(issue_id: str, host: str, lines: int) -> None:
+    """Show recent output from an agent's tmux session.
+
+    ISSUE_ID is the issue number (e.g., "23" or "023"), or "0" for controller.
+
+    Examples:
+        agenttree output 137        # Show last 50 lines from agent #137
+        agenttree output 0          # Show controller output
+        agenttree output 137 -n 100 # Show last 100 lines
+    """
+    from agenttree.state import get_active_agent
+    from agenttree.tmux import session_exists, capture_pane
+
+    config = load_config()
+
+    # Normalize issue ID
+    issue_id_normalized = issue_id.lstrip("0") or "0"
+
+    # Special handling for controller (agent 0)
+    if issue_id_normalized == "0":
+        session_name = f"{config.project}-controller-000"
+        if not session_exists(session_name):
+            console.print("[red]Error: Controller not running[/red]")
+            sys.exit(1)
+        output_text = capture_pane(session_name, lines=lines)
+        console.print(output_text)
+        return
+
+    # Get active agent for this issue and host
+    agent = get_active_agent(issue_id_normalized, host)
+    if not agent:
+        # Try with padded ID
+        issue = get_issue_func(issue_id_normalized)
+        if issue:
+            agent = get_active_agent(issue.id, host)
+
+    if not agent:
+        host_label = f" ({host})" if host != "agent" else ""
+        console.print(f"[red]Error: No active{host_label} agent for issue #{issue_id}[/red]")
+        sys.exit(1)
+
+    if not session_exists(agent.tmux_session):
+        console.print(f"[red]Error: Tmux session '{agent.tmux_session}' not found[/red]")
+        sys.exit(1)
+
+    output_text = capture_pane(agent.tmux_session, lines=lines)
+    console.print(output_text)
+
+
+@main.command()
+@click.argument("issue_id", type=str)
 @click.argument("message")
 @click.option("--host", default="agent", help="Agent host type (default: agent)")
 @click.option("--interrupt", is_flag=True, help="Send Ctrl+C first to interrupt current task")
