@@ -473,8 +473,11 @@ class TestApproveIssueEndpoint:
 
         # Verify exit hooks were called synchronously
         mock_exit.assert_called_once()
-        # Enter hooks run in background task - verify they were scheduled
-        mock_enter.assert_called_once()
+        # Verify stage was updated (the step right before background task is created)
+        mock_crud.update_issue_stage.assert_called_once()
+        # Enter hooks run in background task via asyncio.create_task with
+        # _background_tasks tracking. Background task completion is async and
+        # verified separately in test_approve_enter_hooks_run_in_background.
 
     @patch("agenttree.state.get_active_agent")
     @patch("agenttree.hooks.execute_enter_hooks")
@@ -573,6 +576,35 @@ class TestApproveIssueEndpoint:
         assert response.json()["ok"] is True
 
 
+class TestApproveBackgroundTask:
+    """Tests for the background task in the approve endpoint."""
+
+    @patch("agenttree.state.get_active_agent")
+    @patch("agenttree.hooks.execute_enter_hooks")
+    @patch("agenttree.hooks.execute_exit_hooks")
+    @patch("agenttree.config.load_config")
+    @patch("agenttree.web.app.issue_crud")
+    def test_approve_enter_hooks_run_in_background(
+        self, mock_crud, mock_config, mock_exit, mock_enter, mock_get_agent,
+        client, mock_review_issue
+    ):
+        """Verify enter hooks are scheduled via background task."""
+        import time
+        mock_crud.get_issue.return_value = mock_review_issue
+        mock_crud.update_issue_stage.return_value = mock_review_issue
+        mock_get_agent.return_value = None
+        mock_config.return_value.get_next_stage.return_value = ("accepted", None, True)
+
+        response = client.post("/api/issues/002/approve")
+        assert response.status_code == 200
+
+        # Give background task time to complete (runs via asyncio.to_thread)
+        time.sleep(0.1)
+
+        # Enter hooks should have been called in the background task
+        mock_enter.assert_called_once()
+
+
 class TestRebaseIssueEndpoint:
     """Tests for rebase issue endpoint."""
 
@@ -644,9 +676,10 @@ class TestAgentTmuxEndpoint:
 class TestSendToAgentEndpoint:
     """Tests for send message to agent endpoint."""
 
+    @patch("agenttree.tmux.session_exists", return_value=False)
     @patch("agenttree.tmux.send_message")
     @patch("agenttree.web.app.load_config")
-    def test_send_to_agent(self, mock_config, mock_send, client):
+    def test_send_to_agent(self, mock_config, mock_send, mock_session, client):
         """Test sending message to agent."""
         mock_config.return_value.project = "test"
 
