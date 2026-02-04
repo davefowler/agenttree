@@ -1221,21 +1221,18 @@ def run_builtin_validator(
                 issue_id = agent_info["issue_id"]
                 minutes = agent_info["minutes_stalled"]
 
-                # Send nudge via agenttree send --interrupt to actually interrupt the agent
+                # Send nudge via api with interrupt to actually interrupt the agent
                 message = f"STALL DETECTED ({minutes}m). Run `agenttree next` NOW to check your progress and advance."
                 try:
-                    result = subprocess.run(
-                        ["agenttree", "send", issue_id, message, "--interrupt"],
-                        capture_output=True,
-                        text=True,
-                        timeout=30,
-                    )
-                    if result.returncode == 0:
+                    from agenttree.api import send_message, IssueNotFoundError
+
+                    send_result = send_message(issue_id, message, interrupt=True, quiet=True)
+                    if send_result == "sent" or send_result == "restarted":
                         console.print(f"[yellow]Nudged stalled agent #{issue_id} ({minutes}m)[/yellow]")
                     else:
-                        console.print(f"[red]Failed to nudge #{issue_id}: {result.stderr}[/red]")
-                except subprocess.TimeoutExpired:
-                    console.print(f"[red]Nudge timed out for #{issue_id}[/red]")
+                        console.print(f"[red]Failed to nudge #{issue_id}: {send_result}[/red]")
+                except IssueNotFoundError:
+                    console.print(f"[red]Failed to nudge #{issue_id}: Issue not found[/red]")
                 except Exception as e:
                     console.print(f"[red]Failed to nudge #{issue_id}: {e}[/red]")
 
@@ -2491,17 +2488,12 @@ def check_and_start_blocked_issues(issue: Issue) -> None:
         if all_met:
             console.print(f"[green]→ Issue #{blocked_issue.id} ready to start (all dependencies met)[/green]")
             try:
-                # Use subprocess to call agenttree start (safer than importing CLI)
-                result = subprocess.run(
-                    ["agenttree", "start", blocked_issue.id],
-                    capture_output=True,
-                    text=True,
-                    timeout=60,
-                )
-                if result.returncode == 0:
-                    console.print(f"[green]✓ Started agent for issue #{blocked_issue.id}[/green]")
-                else:
-                    console.print(f"[yellow]Could not start issue #{blocked_issue.id}: {result.stderr}[/yellow]")
+                from agenttree.api import start_agent, IssueNotFoundError, AgentStartError
+
+                start_agent(blocked_issue.id, quiet=True)
+                console.print(f"[green]✓ Started agent for issue #{blocked_issue.id}[/green]")
+            except (IssueNotFoundError, AgentStartError) as e:
+                console.print(f"[yellow]Could not start issue #{blocked_issue.id}: {e}[/yellow]")
             except Exception as e:
                 console.print(f"[yellow]Failed to start issue #{blocked_issue.id}: {e}[/yellow]")
         else:

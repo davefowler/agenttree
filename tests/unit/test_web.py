@@ -360,22 +360,23 @@ class TestAgentStatusEndpoint:
 class TestStartIssueEndpoint:
     """Tests for start issue endpoint."""
 
-    @patch("subprocess.Popen")
-    def test_start_issue_success(self, mock_popen, client):
+    @patch("agenttree.api.start_agent")
+    def test_start_issue_success(self, mock_start, client):
         """Test starting an agent for an issue."""
-        mock_popen.return_value = Mock()
+        mock_start.return_value = Mock()
 
         response = client.post("/api/issues/001/start")
 
         assert response.status_code == 200
         data = response.json()
         assert data["ok"] is True
-        assert "Starting agent" in data["status"]
+        assert "Started agent" in data["status"]
 
-    @patch("subprocess.Popen")
-    def test_start_issue_error(self, mock_popen, client):
-        """Test start issue when Popen fails."""
-        mock_popen.side_effect = Exception("Process failed")
+    @patch("agenttree.api.start_agent")
+    def test_start_issue_error(self, mock_start, client):
+        """Test start issue when start_agent fails."""
+        from agenttree.api import AgentStartError
+        mock_start.side_effect = AgentStartError("001", "Process failed")
 
         response = client.post("/api/issues/001/start")
 
@@ -651,9 +652,10 @@ class TestAgentTmuxEndpoint:
 class TestSendToAgentEndpoint:
     """Tests for send message to agent endpoint."""
 
+    @patch("agenttree.tmux.session_exists", return_value=False)
     @patch("agenttree.tmux.send_message")
     @patch("agenttree.web.app.load_config")
-    def test_send_to_agent(self, mock_config, mock_send, client):
+    def test_send_to_agent(self, mock_config, mock_send, mock_session, client):
         """Test sending message to agent."""
         mock_config.return_value.project = "test"
 

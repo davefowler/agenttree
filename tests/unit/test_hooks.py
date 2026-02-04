@@ -1767,18 +1767,11 @@ class TestCheckAndStartBlockedIssues:
 
         with patch('agenttree.issues.get_blocked_issues', return_value=[blocked_issue]):
             with patch('agenttree.issues.check_dependencies_met', return_value=(True, [])):
-                with patch('subprocess.run') as mock_run:
-                    mock_run.return_value = MagicMock(returncode=0, stderr="")
-
+                with patch('agenttree.api.start_agent') as mock_start:
                     check_and_start_blocked_issues(accepted_issue)
 
-                    # Should call agenttree start for the blocked issue
-                    mock_run.assert_called_once_with(
-                        ["agenttree", "start", blocked_issue.id],
-                        capture_output=True,
-                        text=True,
-                        timeout=60,
-                    )
+                    # Should call api.start_agent for the blocked issue
+                    mock_start.assert_called_once_with(blocked_issue.id, quiet=True)
 
     @patch('agenttree.hooks.is_running_in_container', return_value=False)
     def test_check_and_start_blocked_issues_skips_unmet(
@@ -1790,30 +1783,31 @@ class TestCheckAndStartBlockedIssues:
         with patch('agenttree.issues.get_blocked_issues', return_value=[blocked_issue]):
             # Dependencies not met - issue 003 is still pending
             with patch('agenttree.issues.check_dependencies_met', return_value=(False, ["003"])):
-                with patch('subprocess.run') as mock_run:
+                with patch('agenttree.api.start_agent') as mock_start:
                     check_and_start_blocked_issues(accepted_issue)
 
-                    # Should not call subprocess.run (deps not met)
-                    mock_run.assert_not_called()
+                    # Should not call start_agent (deps not met)
+                    mock_start.assert_not_called()
 
     @patch('agenttree.hooks.is_running_in_container', return_value=False)
-    def test_check_and_start_blocked_issues_subprocess_failure(
+    def test_check_and_start_blocked_issues_api_failure(
         self, mock_in_container, accepted_issue, blocked_issue
     ):
-        """Should handle subprocess failures gracefully."""
+        """Should handle API failures gracefully."""
         from agenttree.hooks import check_and_start_blocked_issues
+        from agenttree.api import AgentStartError
 
         with patch('agenttree.issues.get_blocked_issues', return_value=[blocked_issue]):
             with patch('agenttree.issues.check_dependencies_met', return_value=(True, [])):
-                with patch('subprocess.run') as mock_run:
-                    # Simulate subprocess failure
-                    mock_run.return_value = MagicMock(returncode=1, stderr="Error starting agent")
+                with patch('agenttree.api.start_agent') as mock_start:
+                    # Simulate API failure
+                    mock_start.side_effect = AgentStartError(blocked_issue.id, "Error starting agent")
 
                     # Should not raise - errors are caught and logged
                     check_and_start_blocked_issues(accepted_issue)
 
                     # Should have attempted to start
-                    mock_run.assert_called_once()
+                    mock_start.assert_called_once()
 
     @patch('agenttree.hooks.is_running_in_container', return_value=False)
     def test_check_and_start_blocked_issues_exception_handling(
@@ -1824,15 +1818,15 @@ class TestCheckAndStartBlockedIssues:
 
         with patch('agenttree.issues.get_blocked_issues', return_value=[blocked_issue]):
             with patch('agenttree.issues.check_dependencies_met', return_value=(True, [])):
-                with patch('subprocess.run') as mock_run:
-                    # Simulate an exception (e.g., timeout)
-                    mock_run.side_effect = Exception("Timeout exceeded")
+                with patch('agenttree.api.start_agent') as mock_start:
+                    # Simulate an exception
+                    mock_start.side_effect = Exception("Something went wrong")
 
                     # Should not raise - exceptions are caught and logged
                     check_and_start_blocked_issues(accepted_issue)
 
                     # Should have attempted to start
-                    mock_run.assert_called_once()
+                    mock_start.assert_called_once()
 
     @patch('agenttree.hooks.is_running_in_container', return_value=False)
     def test_check_and_start_blocked_issues_multiple_blocked(
@@ -1868,18 +1862,11 @@ class TestCheckAndStartBlockedIssues:
                 return (False, ["004"])
 
             with patch('agenttree.issues.check_dependencies_met', side_effect=check_deps):
-                with patch('subprocess.run') as mock_run:
-                    mock_run.return_value = MagicMock(returncode=0, stderr="")
-
+                with patch('agenttree.api.start_agent') as mock_start:
                     check_and_start_blocked_issues(accepted_issue)
 
                     # Should only start blocked1 (blocked2 has unmet deps)
-                    mock_run.assert_called_once_with(
-                        ["agenttree", "start", "002"],
-                        capture_output=True,
-                        text=True,
-                        timeout=60,
-                    )
+                    mock_start.assert_called_once_with("002", quiet=True)
 
 
 class TestCleanupIssueAgent:
