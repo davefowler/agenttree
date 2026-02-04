@@ -244,48 +244,55 @@ def check_stalled_agents(
     threshold_min: int = 15,
     **kwargs: Any
 ) -> None:
-    """Check for stalled agents and notify the manager.
+    """Check for stalled agents and write to stalled.yaml, then notify manager.
     
-    Instead of nudging agents directly, this builds a report of stalled agents
-    and sends it to the manager so it can decide how to handle them
-    (restart, nudge, or investigate).
+    Writes stall data to _agenttree/stalled.yaml so manager can read it anytime,
+    then sends a brief notification to the manager.
+    
+    Uses fast session_exists() checks instead of slow get_active_agent().
     
     Args:
         agents_dir: Path to _agenttree directory
         threshold_min: Minutes before considering agent stalled
     """
+    import yaml
     from datetime import datetime, timezone
     from agenttree.config import load_config
-    from agenttree.issues import list_issues
-    from agenttree.state import get_active_agent
+    from agenttree.issues import list_issues, BACKLOG, ACCEPTED, NOT_DOING
     from agenttree.tmux import session_exists, send_message, is_claude_running
     
     config = load_config()
-    parking_lot_stages = config.get_parking_lot_stages()
     manager_session = f"{config.project}-manager-000"
     
-    # Check if manager is running
-    if not session_exists(manager_session):
-        console.print("[dim]Manager not running, skipping stall check[/dim]")
-        return
+    # Get active issues (not backlog/accepted/not_doing)
+    issues = [
+        i for i in list_issues(sync=False)
+        if i.stage not in (BACKLOG, ACCEPTED, NOT_DOING)
+    ]
     
-    issues = list_issues(sync=False)
-    stalled: list[tuple[str, str, int]] = []  # (id, title, minutes)
-    dead: list[tuple[str, str]] = []  # (id, title) - session exists but claude exited
+    stalled: list[dict[str, Any]] = []
+    dead: list[dict[str, Any]] = []
     
     for issue in issues:
-        if issue.stage in parking_lot_stages:
+        # Build session name directly (fast) instead of get_active_agent (slow)
+        session_name = f"{config.project}-developer-{issue.id}"
+        
+        # Check if session exists
+        if not session_exists(session_name):
+            # No session = dead agent (if not in a human review stage)
+            stage_config = config.get_stage(issue.stage)
+            if stage_config and stage_config.role == "manager":
+                continue  # Waiting on human, not dead
+            dead.append({
+                "id": issue.id,
+                "title": issue.title[:60],
+                "stage": issue.stage,
+                "reason": "no_session",
+            })
             continue
         
-        agent = get_active_agent(issue.id)
-        if not agent or not agent.tmux_session:
-            continue
-        
-        if not session_exists(agent.tmux_session):
-            continue
-        
-        # Check if Claude is actually running
-        claude_running = is_claude_running(agent.tmux_session)
+        # Session exists - check if Claude is running
+        claude_running = is_claude_running(session_name)
         
         # Check last activity
         try:
@@ -293,38 +300,65 @@ def check_stalled_agents(
             elapsed_min = int((datetime.now(timezone.utc) - last_updated).total_seconds() / 60)
             
             if not claude_running:
-                # Claude exited - agent is dead
-                dead.append((issue.id, issue.title[:40]))
+                dead.append({
+                    "id": issue.id,
+                    "title": issue.title[:60],
+                    "stage": issue.stage,
+                    "reason": "claude_exited",
+                })
             elif elapsed_min > threshold_min:
-                # Claude running but stalled
-                stalled.append((issue.id, issue.title[:40], elapsed_min))
+                stalled.append({
+                    "id": issue.id,
+                    "title": issue.title[:60],
+                    "stage": issue.stage,
+                    "stalled_minutes": elapsed_min,
+                })
         except (ValueError, TypeError):
             continue
     
-    # Build message for controller
+    # Write to stalled.yaml (always, even if empty - so manager knows state is fresh)
+    stall_file = agents_dir / "stalled.yaml"
+    stall_data = {
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "threshold_min": threshold_min,
+        "dead_agents": dead,
+        "stalled_agents": stalled,
+    }
+    stall_file.write_text(yaml.dump(stall_data, default_flow_style=False))
+    
+    # If nothing to report, we're done
     if not stalled and not dead:
         return
     
-    lines = ["STALL REPORT - Please investigate and take action:"]
+    # Check if manager is running before sending notification
+    if not session_exists(manager_session):
+        console.print("[dim]Manager not running, wrote stalled.yaml only[/dim]")
+        return
+    
+    # Send brief notification pointing to file
+    lines = ["STALL REPORT - Check _agenttree/stalled.yaml for details:"]
     
     if dead:
-        lines.append(f"\nDEAD AGENTS ({len(dead)}) - Claude exited, need restart:")
-        for issue_id, title in dead:
-            lines.append(f"  #{issue_id}: {title}")
-        lines.append("  → Use 'agenttree start <id> --force' to restart")
+        lines.append(f"  {len(dead)} dead agent(s) need restart")
+        for agent in dead[:3]:  # Show first 3
+            lines.append(f"    #{agent['id']}: {agent['title'][:30]}")
+        if len(dead) > 3:
+            lines.append(f"    ... and {len(dead) - 3} more")
     
     if stalled:
-        lines.append(f"\nSTALLED AGENTS ({len(stalled)}) - No progress:")
-        for issue_id, title, mins in stalled:
-            lines.append(f"  #{issue_id}: {title} ({mins}min)")
-        lines.append("  → Use 'agenttree output <id>' to diagnose")
-        lines.append("  → Use 'agenttree send <id> \"message\" --interrupt' to nudge")
+        lines.append(f"  {len(stalled)} stalled agent(s)")
+        for agent in stalled[:3]:  # Show first 3
+            lines.append(f"    #{agent['id']}: {agent['title'][:30]} ({agent['stalled_minutes']}min)")
+        if len(stalled) > 3:
+            lines.append(f"    ... and {len(stalled) - 3} more")
+    
+    lines.append("\nUse: agenttree start <id> --force (restart) or agenttree output <id> (diagnose)")
     
     message = "\n".join(lines)
     result = send_message(manager_session, message)
     
     if result == "sent":
-        console.print(f"[dim]Sent stall report to manager ({len(dead)} dead, {len(stalled)} stalled)[/dim]")
+        console.print(f"[dim]Wrote stalled.yaml, notified manager ({len(dead)} dead, {len(stalled)} stalled)[/dim]")
 
 
 @register_action("check_ci_status")
