@@ -2012,16 +2012,36 @@ def stage_status(issue_id: Optional[str]) -> None:
             console.print("[dim]No active issues[/dim]")
             return
 
+        from datetime import datetime, timezone
+
         table = Table(title="Active Issues")
         table.add_column("ID", style="cyan")
         table.add_column("Title", style="white")
         table.add_column("Stage", style="magenta")
+        table.add_column("Time", style="yellow", justify="right")
 
         for active_issue in active_issues:
             stage_str = active_issue.stage
             if active_issue.substage:
                 stage_str += f".{active_issue.substage}"
-            table.add_row(active_issue.id, active_issue.title[:40], stage_str)
+            
+            # Calculate time in current stage
+            time_str = ""
+            try:
+                updated = datetime.fromisoformat(active_issue.updated.replace("Z", "+00:00"))
+                elapsed = datetime.now(timezone.utc) - updated
+                mins = int(elapsed.total_seconds() / 60)
+                if mins < 60:
+                    time_str = f"{mins}m"
+                elif mins < 1440:  # Less than 24 hours
+                    time_str = f"{mins // 60}h {mins % 60}m"
+                else:
+                    days = mins // 1440
+                    time_str = f"{days}d {(mins % 1440) // 60}h"
+            except (ValueError, TypeError):
+                time_str = "?"
+            
+            table.add_row(active_issue.id, active_issue.title[:40], stage_str, time_str)
 
         console.print(table)
         return
