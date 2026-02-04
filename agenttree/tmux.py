@@ -610,8 +610,8 @@ class TmuxManager:
 
         # Wait for prompt before sending startup message
         if wait_for_prompt(session_name, prompt_char="❯", timeout=30.0):
-            # Load controller instructions
-            send_keys(session_name, "cat _agenttree/skills/controller.md")
+            # Load manager instructions
+            send_keys(session_name, "cat _agenttree/skills/manager.md")
 
     def stop_issue_agent(self, session_name: str) -> None:
         """Stop an issue-bound agent's tmux session.
