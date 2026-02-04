@@ -32,7 +32,7 @@ State is persisted in _agenttree/.hook_state.yaml for rate limiting across resta
 
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 import yaml
 from rich.console import Console
@@ -45,7 +45,7 @@ SHUTDOWN = "shutdown"
 HEARTBEAT = "heartbeat"
 
 
-def load_event_state(agents_dir: Path) -> Dict[str, Any]:
+def load_event_state(agents_dir: Path) -> dict[str, Any]:
     """Load event/hook state from _agenttree/.hook_state.yaml.
     
     Args:
@@ -65,7 +65,7 @@ def load_event_state(agents_dir: Path) -> Dict[str, Any]:
     return {}
 
 
-def save_event_state(agents_dir: Path, state: Dict[str, Any]) -> None:
+def save_event_state(agents_dir: Path, state: dict[str, Any]) -> None:
     """Save event/hook state to _agenttree/.hook_state.yaml.
     
     Args:
@@ -82,9 +82,9 @@ def save_event_state(agents_dir: Path, state: Dict[str, Any]) -> None:
 
 def check_action_rate_limit(
     action_name: str,
-    action_config: Dict[str, Any],
-    state: Dict[str, Any],
-    heartbeat_count: Optional[int] = None,
+    action_config: dict[str, Any],
+    state: dict[str, Any],
+    heartbeat_count: int | None = None,
 ) -> tuple[bool, str]:
     """Check if a rate-limited action should run.
     
@@ -133,9 +133,9 @@ def check_action_rate_limit(
 
 def update_action_state(
     action_name: str,
-    state: Dict[str, Any],
+    state: dict[str, Any],
     success: bool = True,
-    error: Optional[str] = None,
+    error: str | None = None,
 ) -> None:
     """Update action state after running.
     
@@ -160,8 +160,8 @@ def update_action_state(
 
 
 def parse_action_entry(
-    entry: Union[str, Dict[str, Any]]
-) -> tuple[str, Dict[str, Any]]:
+    entry: str | dict[str, Any]
+) -> tuple[str, dict[str, Any]]:
     """Parse an action entry from config into (name, config).
     
     Supports formats:
@@ -195,8 +195,8 @@ def fire_event(
     event: str,
     agents_dir: Path,
     verbose: bool = False,
-    heartbeat_count: Optional[int] = None,
-) -> Dict[str, Any]:
+    heartbeat_count: int | None = None,
+) -> dict[str, Any]:
     """Fire an event and execute its configured actions.
     
     Reads the event configuration from .agenttree.yaml `on:` section
@@ -214,7 +214,7 @@ def fire_event(
     from agenttree.actions import get_action, get_default_event_config
     from agenttree.config import load_config
     
-    results: Dict[str, Any] = {
+    results: dict[str, Any] = {
         "success": True,
         "actions_run": 0,
         "actions_skipped": 0,
@@ -244,7 +244,7 @@ def fire_event(
         return results
     
     # Parse event config - can be a list or a dict with 'actions' key
-    actions: List[Union[str, Dict[str, Any]]] = []
+    actions: list[str | dict[str, Any]] = []
     
     if isinstance(event_config, list):
         # Simple list of actions
@@ -322,7 +322,7 @@ def fire_event(
     return results
 
 
-def get_heartbeat_interval(agents_dir: Optional[Path] = None) -> int:
+def get_heartbeat_interval(agents_dir: Path | None = None) -> int:
     """Get the heartbeat interval from config.
     
     Args:

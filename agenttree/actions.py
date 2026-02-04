@@ -18,8 +18,9 @@ Built-in Actions:
 Naming convention: Action names match function names exactly.
 """
 
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any
 
 from rich.console import Console
 
@@ -29,7 +30,7 @@ console = Console()
 ActionFn = Callable[..., None]
 
 # Action registry: maps action names to functions
-ACTION_REGISTRY: Dict[str, ActionFn] = {}
+ACTION_REGISTRY: dict[str, ActionFn] = {}
 
 
 def register_action(name: str) -> Callable[[ActionFn], ActionFn]:
@@ -47,7 +48,7 @@ def register_action(name: str) -> Callable[[ActionFn], ActionFn]:
     return decorator
 
 
-def get_action(name: str) -> Optional[ActionFn]:
+def get_action(name: str) -> ActionFn | None:
     """Get an action function by name.
     
     Args:
@@ -59,7 +60,7 @@ def get_action(name: str) -> Optional[ActionFn]:
     return ACTION_REGISTRY.get(name)
 
 
-def list_actions() -> List[str]:
+def list_actions() -> list[str]:
     """List all registered action names.
     
     Returns:
@@ -357,7 +358,7 @@ def check_custom_agent_stages(agents_dir: Path, **kwargs: Any) -> None:
 @register_action("cleanup_resources")
 def cleanup_resources(
     agents_dir: Path,
-    log_file: Optional[str] = None,
+    log_file: str | None = None,
     **kwargs: Any
 ) -> None:
     """Clean up stale resources (worktrees, branches, sessions).
@@ -380,7 +381,7 @@ def cleanup_resources(
 # Default Event Configurations
 # =============================================================================
 
-DEFAULT_EVENT_CONFIGS: Dict[str, Union[List[str], Dict[str, Any]]] = {
+DEFAULT_EVENT_CONFIGS: dict[str, list[str] | dict[str, Any]] = {
     "startup": [
         "start_controller",
         "auto_start_agents",
@@ -404,7 +405,7 @@ DEFAULT_EVENT_CONFIGS: Dict[str, Union[List[str], Dict[str, Any]]] = {
 }
 
 
-def get_default_event_config(event: str) -> Optional[Union[List[str], Dict[str, Any]]]:
+def get_default_event_config(event: str) -> list[str] | dict[str, Any] | None:
     """Get default configuration for an event.
     
     Args:
