@@ -144,7 +144,7 @@ class TestSendMessage:
                     result = send_message("test-session", "hello")
 
         assert result == "sent"
-        mock_send.assert_called_once_with("test-session", "hello", submit=True)
+        mock_send.assert_called_once_with("test-session", "hello", submit=True, interrupt=False)
 
     def test_send_message_session_not_exists(self):
         """Should return 'no_session' when session doesn't exist."""
@@ -421,7 +421,7 @@ class TestTmuxManager:
             result = manager.send_message_to_issue("issue-42", "hello")
 
         assert result == "sent"
-        mock_send.assert_called_once_with("issue-42", "hello", check_claude=True)
+        mock_send.assert_called_once_with("issue-42", "hello", check_claude=True, interrupt=False)
 
     def test_is_issue_running(self, mock_config):
         """Should check issue session existence."""
