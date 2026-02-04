@@ -2016,8 +2016,6 @@ def stage_status(issue_id: Optional[str]) -> None:
         from agenttree.config import load_config
         
         config = load_config()
-        stage_names = [s.name for s in config.stages]
-        total_stages = len(stage_names)
 
         table = Table(title="Active Issues")
         table.add_column("ID", style="cyan")
@@ -2027,9 +2025,12 @@ def stage_status(issue_id: Optional[str]) -> None:
         table.add_column("Wait", style="dim", justify="center")
 
         for active_issue in active_issues:
-            # Get stage index (1-based)
+            # Get stage index (1-based) using issue's flow
+            flow_name = getattr(active_issue, 'flow', 'default')
+            flow_stages = config.get_flow_stage_names(flow_name)
+            total_stages = len(flow_stages)
             try:
-                stage_idx = stage_names.index(active_issue.stage) + 1
+                stage_idx = flow_stages.index(active_issue.stage) + 1
                 stage_num = f"{stage_idx}/{total_stages} "
             except ValueError:
                 stage_num = ""
