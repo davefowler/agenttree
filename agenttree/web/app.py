@@ -60,17 +60,19 @@ _sync_task: Optional[asyncio.Task] = None
 
 
 async def background_sync_loop(interval: int = 10) -> None:
-    """Background task that syncs _agenttree repo periodically.
+    """Background task that syncs _agenttree repo and runs controller hooks.
 
     This runs syncs which:
     - Pull/push changes from remote
     - Spawn agents for issues in agent stages
-    - Run hooks for controller stages
+    - Run hooks for controller stages (including stall detection!)
     - Check for merged PRs
 
     Args:
         interval: Seconds between syncs (default: 10)
     """
+    from agenttree.controller_hooks import run_post_controller_hooks
+
     agents_dir = Path.cwd() / "_agenttree"
     while True:
         try:
@@ -78,6 +80,11 @@ async def background_sync_loop(interval: int = 10) -> None:
             await asyncio.get_event_loop().run_in_executor(
                 None,
                 lambda: sync_agents_repo(agents_dir, pull_only=True)
+            )
+            # Run controller hooks (stall detection, CI checks, etc.)
+            await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: run_post_controller_hooks(agents_dir)
             )
         except Exception as e:
             print(f"Background sync error: {e}")
