@@ -255,7 +255,7 @@ class TestStallsCommand:
         }))
 
         runner = CliRunner()
-        with patch("agenttree.cli.Path.cwd", return_value=tmp_path):
+        with patch("agenttree.cli.server.Path.cwd", return_value=tmp_path):
             result = runner.invoke(main, ["stalls"])
 
         assert result.exit_code == 0
@@ -271,7 +271,7 @@ class TestStallsCommand:
         issues_dir.mkdir(parents=True)
 
         runner = CliRunner()
-        with patch("agenttree.cli.Path.cwd", return_value=tmp_path):
+        with patch("agenttree.cli.server.Path.cwd", return_value=tmp_path):
             result = runner.invoke(main, ["stalls"])
 
         assert result.exit_code == 0

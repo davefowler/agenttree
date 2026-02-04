@@ -31,8 +31,8 @@ class TestSendCommand:
         """Should error when issue doesn't exist."""
         from agenttree.cli import main
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
-            with patch("agenttree.cli.get_issue_func", return_value=None):
+        with patch("agenttree.cli.agent.load_config", return_value=mock_config):
+            with patch("agenttree.cli.agent.get_issue_func", return_value=None):
                 result = cli_runner.invoke(main, ["send", "42", "hello"])
 
         assert result.exit_code == 1
@@ -58,16 +58,16 @@ class TestSendCommand:
                 return None  # First check: not running
             return mock_agent  # After start: running
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
-            with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
+        with patch("agenttree.cli.agent.load_config", return_value=mock_config):
+            with patch("agenttree.cli.agent.get_issue_func", return_value=mock_issue):
                 with patch("agenttree.state.get_active_agent", side_effect=mock_get_agent):
-                    with patch("agenttree.cli.TmuxManager") as mock_tm_class:
+                    with patch("agenttree.cli.agent.TmuxManager") as mock_tm_class:
                         mock_tm = MagicMock()
                         mock_tm.is_issue_running.return_value = True
                         mock_tm.send_message_to_issue.return_value = "sent"
                         mock_tm_class.return_value = mock_tm
 
-                        with patch("agenttree.cli.subprocess.run") as mock_run:
+                        with patch("agenttree.cli.agent.subprocess.run") as mock_run:
                             mock_run.return_value = MagicMock(returncode=0, stderr="")
                             result = cli_runner.invoke(main, ["send", "42", "hello"])
 
@@ -87,10 +87,10 @@ class TestSendCommand:
         mock_agent.issue_id = "42"
         mock_agent.host = "agent"
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
-            with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
+        with patch("agenttree.cli.agent.load_config", return_value=mock_config):
+            with patch("agenttree.cli.agent.get_issue_func", return_value=mock_issue):
                 with patch("agenttree.state.get_active_agent", return_value=mock_agent):
-                    with patch("agenttree.cli.TmuxManager") as mock_tm_class:
+                    with patch("agenttree.cli.agent.TmuxManager") as mock_tm_class:
                         mock_tm = MagicMock()
                         mock_tm.is_issue_running.return_value = True
                         mock_tm.send_message_to_issue.return_value = "sent"
@@ -110,9 +110,9 @@ class TestStopCommand:
         """Should error when no active agent for issue."""
         from agenttree.cli import main
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
+        with patch("agenttree.cli.agent.load_config", return_value=mock_config):
             with patch("agenttree.state.get_active_agent", return_value=None):
-                with patch("agenttree.cli.get_issue_func", return_value=None):
+                with patch("agenttree.cli.agent.get_issue_func", return_value=None):
                     result = cli_runner.invoke(main, ["stop", "42"])
 
         assert result.exit_code == 1
@@ -127,10 +127,10 @@ class TestStopCommand:
         mock_agent.issue_id = "42"
         mock_agent.host = "agent"
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
+        with patch("agenttree.cli.agent.load_config", return_value=mock_config):
             with patch("agenttree.state.get_active_agent", return_value=mock_agent):
                 with patch("agenttree.state.stop_agent", return_value=True) as mock_stop:
-                    with patch("agenttree.cli.get_issue_func", return_value=None):
+                    with patch("agenttree.cli.agent.get_issue_func", return_value=None):
                         result = cli_runner.invoke(main, ["stop", "42"])
 
         assert result.exit_code == 0
@@ -145,10 +145,10 @@ class TestStopCommand:
         mock_agent.issue_id = "42"
         mock_agent.host = "agent"
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
+        with patch("agenttree.cli.agent.load_config", return_value=mock_config):
             with patch("agenttree.state.get_active_agent", return_value=mock_agent):
                 with patch("agenttree.state.stop_agent", return_value=True) as mock_stop:
-                    with patch("agenttree.cli.get_issue_func", return_value=None):
+                    with patch("agenttree.cli.agent.get_issue_func", return_value=None):
                         result = cli_runner.invoke(main, ["kill", "42"])
 
         assert result.exit_code == 0
@@ -162,9 +162,9 @@ class TestAttachCommand:
         """Should error when no active agent for issue."""
         from agenttree.cli import main
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
+        with patch("agenttree.cli.agent.load_config", return_value=mock_config):
             with patch("agenttree.state.get_active_agent", return_value=None):
-                with patch("agenttree.cli.get_issue_func", return_value=None):
+                with patch("agenttree.cli.agent.get_issue_func", return_value=None):
                     result = cli_runner.invoke(main, ["attach", "42"])
 
         assert result.exit_code == 1
@@ -182,8 +182,8 @@ class TestIssueListCommand:
         mock_config.agents_dir.mkdir()
         (mock_config.agents_dir / "issues").mkdir()
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
-            with patch("agenttree.cli.list_issues_func", return_value=[]):
+        with patch("agenttree.cli.issue.load_config", return_value=mock_config):
+            with patch("agenttree.cli.issue.list_issues_func", return_value=[]):
                 result = cli_runner.invoke(main, ["issue", "list"])
 
         assert result.exit_code == 0
@@ -205,8 +205,8 @@ class TestIssueListCommand:
         mock_issue.priority = Priority.MEDIUM  # Priority is an enum
         mock_issue.assigned_agent = None
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
-            with patch("agenttree.cli.list_issues_func", return_value=[mock_issue]):
+        with patch("agenttree.cli.issue.load_config", return_value=mock_config):
+            with patch("agenttree.cli.issue.list_issues_func", return_value=[mock_issue]):
                 result = cli_runner.invoke(main, ["issue", "list"])
 
         assert result.exit_code == 0
@@ -219,9 +219,9 @@ class TestApproveCommand:
         """Should error when issue not found."""
         from agenttree.cli import main
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
-            with patch("agenttree.cli.get_issue_func", return_value=None):
-                with patch("agenttree.cli.is_running_in_container", return_value=False):
+        with patch("agenttree.cli.workflow.load_config", return_value=mock_config):
+            with patch("agenttree.cli.workflow.get_issue_func", return_value=None):
+                with patch("agenttree.cli.workflow.is_running_in_container", return_value=False):
                     result = cli_runner.invoke(main, ["approve", "999"])
 
         assert result.exit_code == 1
@@ -241,9 +241,9 @@ class TestApproveCommand:
         mock_config.get_stage.return_value = MagicMock(human_review=False, host="agent")
         mock_config.get_human_review_stages.return_value = ["plan_review", "implementation_review"]
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
-            with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
-                with patch("agenttree.cli.is_running_in_container", return_value=False):
+        with patch("agenttree.cli.workflow.load_config", return_value=mock_config):
+            with patch("agenttree.cli.workflow.get_issue_func", return_value=mock_issue):
+                with patch("agenttree.cli.workflow.is_running_in_container", return_value=False):
                     result = cli_runner.invoke(main, ["approve", "42"])
 
         assert result.exit_code == 1
@@ -253,7 +253,7 @@ class TestApproveCommand:
         """Should block approve command when running in container."""
         from agenttree.cli import main
 
-        with patch("agenttree.cli.is_running_in_container", return_value=True):
+        with patch("agenttree.cli.workflow.is_running_in_container", return_value=True):
             result = cli_runner.invoke(main, ["approve", "42"])
 
         assert result.exit_code == 1
@@ -308,8 +308,8 @@ class TestIssueCreateCommand:
 
         problem = "This is a detailed problem statement that is at least 50 characters long for the test."
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
-            with patch("agenttree.cli.create_issue_func", return_value=mock_issue):
+        with patch("agenttree.cli.issue.load_config", return_value=mock_config):
+            with patch("agenttree.cli.issue.create_issue_func", return_value=mock_issue):
                 # Use --no-start to skip auto-starting agent (which requires more mocking)
                 result = cli_runner.invoke(main, ["issue", "create", "A valid issue title here", "--problem", problem, "--no-start"])
 
@@ -334,9 +334,9 @@ class TestIssueCreateCommand:
 
         problem = "This is a detailed problem statement that is at least 50 characters long for the test."
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
-            with patch("agenttree.cli.create_issue_func", return_value=mock_issue):
-                with patch("agenttree.cli.start_agent") as mock_start_agent:
+        with patch("agenttree.cli.issue.load_config", return_value=mock_config):
+            with patch("agenttree.cli.issue.create_issue_func", return_value=mock_issue):
+                with patch("agenttree.cli.agent.start_agent") as mock_start_agent:
                     result = cli_runner.invoke(main, ["issue", "create", "A valid issue title here", "--problem", problem])
 
         assert "Auto-starting agent" in result.output
@@ -365,10 +365,10 @@ class TestIssueCreateCommand:
 
         problem = "This is a detailed problem statement that is at least 50 characters long for the test."
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
-            with patch("agenttree.cli.create_issue_func", return_value=mock_issue):
-                with patch("agenttree.cli.get_issue_func", return_value=mock_dep_issue):
-                    with patch("agenttree.cli.start_agent") as mock_start_agent:
+        with patch("agenttree.cli.issue.load_config", return_value=mock_config):
+            with patch("agenttree.cli.issue.create_issue_func", return_value=mock_issue):
+                with patch("agenttree.cli.issue.get_issue_func", return_value=mock_dep_issue):
+                    with patch("agenttree.cli.agent.start_agent") as mock_start_agent:
                         result = cli_runner.invoke(main, ["issue", "create", "A valid issue title here", "--problem", problem, "--depends-on", "053"])
 
         assert result.exit_code == 0
@@ -393,9 +393,9 @@ class TestIssueCreateCommand:
 
         problem = "This is a detailed problem statement that is at least 50 characters long for the test."
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
-            with patch("agenttree.cli.create_issue_func", return_value=mock_issue):
-                with patch("agenttree.cli.start_agent") as mock_start_agent:
+        with patch("agenttree.cli.issue.load_config", return_value=mock_config):
+            with patch("agenttree.cli.issue.create_issue_func", return_value=mock_issue):
+                with patch("agenttree.cli.agent.start_agent") as mock_start_agent:
                     result = cli_runner.invoke(main, ["issue", "create", "A valid issue title here", "--problem", problem, "--stage", "backlog"])
 
         assert result.exit_code == 0
@@ -419,8 +419,8 @@ class TestStatusCommand:
         mock_issue.stage = "backlog"
         mock_issue.assigned_agent = None
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
-            with patch("agenttree.cli.list_issues_func", return_value=[mock_issue]):
+        with patch("agenttree.cli.workflow.load_config", return_value=mock_config):
+            with patch("agenttree.cli.workflow.list_issues_func", return_value=[mock_issue]):
                 result = cli_runner.invoke(main, ["status"])
 
         assert result.exit_code == 0
@@ -437,8 +437,8 @@ class TestStatusCommand:
         mock_issue.substage = None
         mock_issue.assigned_agent = 1
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
-            with patch("agenttree.cli.list_issues_func", return_value=[mock_issue]):
+        with patch("agenttree.cli.workflow.load_config", return_value=mock_config):
+            with patch("agenttree.cli.workflow.list_issues_func", return_value=[mock_issue]):
                 result = cli_runner.invoke(main, ["status"])
 
         assert result.exit_code == 0
@@ -476,7 +476,7 @@ class TestShutdownCommand:
         """Should block shutdown command when running in container."""
         from agenttree.cli import main
 
-        with patch("agenttree.cli.is_running_in_container", return_value=True):
+        with patch("agenttree.cli.workflow.is_running_in_container", return_value=True):
             result = cli_runner.invoke(main, ["shutdown", "42", "backlog"])
 
         assert result.exit_code == 1
@@ -486,8 +486,8 @@ class TestShutdownCommand:
         """Should error when issue not found."""
         from agenttree.cli import main
 
-        with patch("agenttree.cli.is_running_in_container", return_value=False):
-            with patch("agenttree.cli.get_issue_func", return_value=None):
+        with patch("agenttree.cli.workflow.is_running_in_container", return_value=False):
+            with patch("agenttree.cli.workflow.get_issue_func", return_value=None):
                 result = cli_runner.invoke(main, ["shutdown", "999", "backlog"])
 
         assert result.exit_code == 1
@@ -501,8 +501,8 @@ class TestShutdownCommand:
         mock_issue.id = "42"
         mock_issue.stage = "backlog"
 
-        with patch("agenttree.cli.is_running_in_container", return_value=False):
-            with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
+        with patch("agenttree.cli.workflow.is_running_in_container", return_value=False):
+            with patch("agenttree.cli.workflow.get_issue_func", return_value=mock_issue):
                 result = cli_runner.invoke(main, ["shutdown", "42", "backlog"])
 
         assert result.exit_code == 0
@@ -538,14 +538,14 @@ class TestShutdownCommand:
                 return MagicMock(stdout="", returncode=0)
             return MagicMock(returncode=0)
 
-        with patch("agenttree.cli.is_running_in_container", return_value=False):
-            with patch("agenttree.cli.load_config", return_value=mock_config):
-                with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
+        with patch("agenttree.cli.workflow.is_running_in_container", return_value=False):
+            with patch("agenttree.cli.workflow.load_config", return_value=mock_config):
+                with patch("agenttree.cli.workflow.get_issue_func", return_value=mock_issue):
                     with patch("agenttree.state.stop_all_agents_for_issue", side_effect=mock_stop_all_agents):
                         with patch("subprocess.run", side_effect=mock_subprocess_run):
-                            with patch("agenttree.cli.update_issue_stage", return_value=mock_issue):
-                                with patch("agenttree.cli.delete_session"):
-                                    with patch("agenttree.cli.update_issue_metadata"):
+                            with patch("agenttree.cli.workflow.update_issue_stage", return_value=mock_issue):
+                                with patch("agenttree.cli.workflow.delete_session"):
+                                    with patch("agenttree.cli.workflow.update_issue_metadata"):
                                         with patch("agenttree.worktree.remove_worktree"):
                                             result = cli_runner.invoke(main, ["shutdown", "42", "not_doing", "-f"])
 
@@ -576,9 +576,9 @@ class TestShutdownCommand:
                 return MagicMock(stdout="abc123 Test commit\n", returncode=0)
             return MagicMock(returncode=0)
 
-        with patch("agenttree.cli.is_running_in_container", return_value=False):
-            with patch("agenttree.cli.load_config", return_value=mock_config):
-                with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
+        with patch("agenttree.cli.workflow.is_running_in_container", return_value=False):
+            with patch("agenttree.cli.workflow.load_config", return_value=mock_config):
+                with patch("agenttree.cli.workflow.get_issue_func", return_value=mock_issue):
                     with patch("agenttree.state.get_active_agent", return_value=None):
                         with patch("subprocess.run", side_effect=mock_subprocess_run):
                             # Don't use -f so we get the warning
@@ -606,9 +606,9 @@ class TestShutdownCommand:
                 return MagicMock(stdout="M  file.py\n", returncode=0)
             return MagicMock(returncode=0)
 
-        with patch("agenttree.cli.is_running_in_container", return_value=False):
-            with patch("agenttree.cli.load_config", return_value=mock_config):
-                with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
+        with patch("agenttree.cli.workflow.is_running_in_container", return_value=False):
+            with patch("agenttree.cli.workflow.load_config", return_value=mock_config):
+                with patch("agenttree.cli.workflow.get_issue_func", return_value=mock_issue):
                     with patch("agenttree.state.get_active_agent", return_value=None):
                         with patch("subprocess.run", side_effect=mock_subprocess_run):
                             # accepted stage defaults to changes=error
@@ -635,9 +635,9 @@ class TestShutdownCommand:
                 return MagicMock(stdout="M  file.py\n", returncode=0)
             return MagicMock(returncode=0)
 
-        with patch("agenttree.cli.is_running_in_container", return_value=False):
-            with patch("agenttree.cli.load_config", return_value=mock_config):
-                with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
+        with patch("agenttree.cli.workflow.is_running_in_container", return_value=False):
+            with patch("agenttree.cli.workflow.load_config", return_value=mock_config):
+                with patch("agenttree.cli.workflow.get_issue_func", return_value=mock_issue):
                     with patch("agenttree.state.get_active_agent", return_value=None):
                         with patch("subprocess.run", side_effect=mock_subprocess_run):
                             # not_doing defaults to discard, user says no
@@ -673,14 +673,14 @@ class TestShutdownCommand:
                 return MagicMock(returncode=0)
             return MagicMock(returncode=0)
 
-        with patch("agenttree.cli.is_running_in_container", return_value=False):
-            with patch("agenttree.cli.load_config", return_value=mock_config):
-                with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
+        with patch("agenttree.cli.workflow.is_running_in_container", return_value=False):
+            with patch("agenttree.cli.workflow.load_config", return_value=mock_config):
+                with patch("agenttree.cli.workflow.get_issue_func", return_value=mock_issue):
                     with patch("agenttree.state.get_active_agent", return_value=None):
                         with patch("subprocess.run", side_effect=mock_subprocess_run):
-                            with patch("agenttree.cli.update_issue_stage", return_value=mock_issue):
-                                with patch("agenttree.cli.delete_session"):
-                                    with patch("agenttree.cli.update_issue_metadata"):
+                            with patch("agenttree.cli.workflow.update_issue_stage", return_value=mock_issue):
+                                with patch("agenttree.cli.workflow.delete_session"):
+                                    with patch("agenttree.cli.workflow.update_issue_metadata"):
                                         with patch("agenttree.worktree.remove_worktree"):
                                             result = cli_runner.invoke(main, ["shutdown", "42", "not_doing", "-f"])
 
@@ -714,14 +714,14 @@ class TestShutdownCommand:
                 return MagicMock(stdout="", returncode=0)
             return MagicMock(returncode=0)
 
-        with patch("agenttree.cli.is_running_in_container", return_value=False):
-            with patch("agenttree.cli.load_config", return_value=mock_config):
-                with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
+        with patch("agenttree.cli.workflow.is_running_in_container", return_value=False):
+            with patch("agenttree.cli.workflow.load_config", return_value=mock_config):
+                with patch("agenttree.cli.workflow.get_issue_func", return_value=mock_issue):
                     with patch("agenttree.state.get_active_agent", return_value=None):
                         with patch("subprocess.run", side_effect=mock_subprocess_run):
-                            with patch("agenttree.cli.update_issue_stage", return_value=mock_issue):
-                                with patch("agenttree.cli.delete_session"):
-                                    with patch("agenttree.cli.update_issue_metadata"):
+                            with patch("agenttree.cli.workflow.update_issue_stage", return_value=mock_issue):
+                                with patch("agenttree.cli.workflow.delete_session"):
+                                    with patch("agenttree.cli.workflow.update_issue_metadata"):
                                         # backlog defaults to stash
                                         result = cli_runner.invoke(main, ["shutdown", "42", "backlog"])
 
@@ -753,9 +753,9 @@ class TestShutdownCommand:
                 return MagicMock(returncode=1)
             return MagicMock(returncode=0)
 
-        with patch("agenttree.cli.is_running_in_container", return_value=False):
-            with patch("agenttree.cli.load_config", return_value=mock_config):
-                with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
+        with patch("agenttree.cli.workflow.is_running_in_container", return_value=False):
+            with patch("agenttree.cli.workflow.load_config", return_value=mock_config):
+                with patch("agenttree.cli.workflow.get_issue_func", return_value=mock_issue):
                     with patch("agenttree.state.get_active_agent", return_value=None):
                         with patch("subprocess.run", side_effect=mock_subprocess_run):
                             result = cli_runner.invoke(main, ["shutdown", "42", "backlog"])
@@ -783,7 +783,7 @@ class TestSandboxCommand:
         """Should show message when no active sandboxes."""
         from agenttree.cli import main
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
+        with patch("agenttree.cli.agent.load_config", return_value=mock_config):
             with patch("agenttree.tmux.list_sessions", return_value=[]):
                 result = cli_runner.invoke(main, ["sandbox", "--list"])
 
@@ -802,7 +802,7 @@ class TestSandboxCommand:
             TmuxSession(name="other-project-agent-1", windows=1, attached=False),  # Should be filtered out
         ]
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
+        with patch("agenttree.cli.agent.load_config", return_value=mock_config):
             with patch("agenttree.tmux.list_sessions", return_value=mock_sessions):
                 result = cli_runner.invoke(main, ["sandbox", "--list"])
 
@@ -817,7 +817,7 @@ class TestSandboxCommand:
         """Should kill an existing sandbox."""
         from agenttree.cli import main
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
+        with patch("agenttree.cli.agent.load_config", return_value=mock_config):
             with patch("agenttree.tmux.session_exists", return_value=True):
                 with patch("agenttree.tmux.kill_session") as mock_kill:
                     result = cli_runner.invoke(main, ["sandbox", "mysandbox", "--kill"])
@@ -830,7 +830,7 @@ class TestSandboxCommand:
         """Should handle killing a non-existent sandbox gracefully."""
         from agenttree.cli import main
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
+        with patch("agenttree.cli.agent.load_config", return_value=mock_config):
             with patch("agenttree.tmux.session_exists", return_value=False):
                 result = cli_runner.invoke(main, ["sandbox", "nosandbox", "--kill"])
 
@@ -841,7 +841,7 @@ class TestSandboxCommand:
         """Should attach to an existing sandbox."""
         from agenttree.cli import main
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
+        with patch("agenttree.cli.agent.load_config", return_value=mock_config):
             with patch("agenttree.tmux.session_exists", return_value=True):
                 with patch("agenttree.tmux.attach_session") as mock_attach:
                     result = cli_runner.invoke(main, ["sandbox", "existing"])
@@ -858,9 +858,9 @@ class TestSandboxCommand:
         mock_runtime.is_available.return_value = False
         mock_runtime.get_recommended_action.return_value = "Install Docker"
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
+        with patch("agenttree.cli.agent.load_config", return_value=mock_config):
             with patch("agenttree.tmux.session_exists", return_value=False):
-                with patch("agenttree.container.get_container_runtime", return_value=mock_runtime):
+                with patch("agenttree.cli.agent.get_container_runtime", return_value=mock_runtime):
                     result = cli_runner.invoke(main, ["sandbox"])
 
         assert result.exit_code == 1
@@ -874,9 +874,9 @@ class TestRollbackCommand:
         """Should error when issue not found."""
         from agenttree.cli import main
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
-            with patch("agenttree.cli.get_issue_func", return_value=None):
-                with patch("agenttree.cli.is_running_in_container", return_value=False):
+        with patch("agenttree.cli.rollback_cmd.load_config", return_value=mock_config):
+            with patch("agenttree.cli.rollback_cmd.get_issue_func", return_value=None):
+                with patch("agenttree.cli.rollback_cmd.is_running_in_container", return_value=False):
                     result = cli_runner.invoke(main, ["rollback", "999", "research"])
 
         assert result.exit_code == 1
@@ -894,9 +894,9 @@ class TestRollbackCommand:
             "backlog", "define", "research", "plan", "implement", "accepted"
         ]
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
-            with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
-                with patch("agenttree.cli.is_running_in_container", return_value=False):
+        with patch("agenttree.cli.rollback_cmd.load_config", return_value=mock_config):
+            with patch("agenttree.cli.rollback_cmd.get_issue_func", return_value=mock_issue):
+                with patch("agenttree.cli.rollback_cmd.is_running_in_container", return_value=False):
                     result = cli_runner.invoke(main, ["rollback", "42", "invalid_stage"])
 
         assert result.exit_code == 1
@@ -914,9 +914,9 @@ class TestRollbackCommand:
             "backlog", "define", "research", "plan", "implement", "accepted"
         ]
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
-            with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
-                with patch("agenttree.cli.is_running_in_container", return_value=False):
+        with patch("agenttree.cli.rollback_cmd.load_config", return_value=mock_config):
+            with patch("agenttree.cli.rollback_cmd.get_issue_func", return_value=mock_issue):
+                with patch("agenttree.cli.rollback_cmd.is_running_in_container", return_value=False):
                     result = cli_runner.invoke(main, ["rollback", "42", "implement"])
 
         assert result.exit_code == 1
@@ -939,9 +939,9 @@ class TestRollbackCommand:
         mock_stage_config.redirect_only = True
         mock_config.get_stage.return_value = mock_stage_config
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
-            with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
-                with patch("agenttree.cli.is_running_in_container", return_value=False):
+        with patch("agenttree.cli.rollback_cmd.load_config", return_value=mock_config):
+            with patch("agenttree.cli.rollback_cmd.get_issue_func", return_value=mock_issue):
+                with patch("agenttree.cli.rollback_cmd.is_running_in_container", return_value=False):
                     # Note: "not_doing" is redirect_only, this tests that check
                     result = cli_runner.invoke(main, ["rollback", "42", "not_doing"])
 
@@ -952,8 +952,8 @@ class TestRollbackCommand:
         """Should error when run inside a container."""
         from agenttree.cli import main
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
-            with patch("agenttree.cli.is_running_in_container", return_value=True):
+        with patch("agenttree.cli.rollback_cmd.load_config", return_value=mock_config):
+            with patch("agenttree.cli.rollback_cmd.is_running_in_container", return_value=True):
                 result = cli_runner.invoke(main, ["rollback", "42", "research"])
 
         assert result.exit_code == 1
@@ -982,10 +982,10 @@ class TestRollbackCommand:
         issue_dir = tmp_path / "_agenttree" / "issues" / "042-test-issue"
         issue_dir.mkdir(parents=True)
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
-            with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
-                with patch("agenttree.cli.get_issue_dir", return_value=issue_dir):
-                    with patch("agenttree.cli.is_running_in_container", return_value=False):
+        with patch("agenttree.cli.rollback_cmd.load_config", return_value=mock_config):
+            with patch("agenttree.cli.rollback_cmd.get_issue_func", return_value=mock_issue):
+                with patch("agenttree.cli.rollback_cmd.get_issue_dir", return_value=issue_dir):
+                    with patch("agenttree.cli.rollback_cmd.is_running_in_container", return_value=False):
                         with patch("agenttree.state.get_active_agent", return_value=None):
                             # User answers 'n' to confirmation
                             result = cli_runner.invoke(main, ["rollback", "42", "research"], input="n\n")
@@ -1033,12 +1033,12 @@ class TestRollbackCommand:
         # Create a file that should be archived
         (issue_dir / "spec.md").write_text("# Spec")
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
-            with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
-                with patch("agenttree.cli.get_issue_dir", return_value=issue_dir):
-                    with patch("agenttree.cli.is_running_in_container", return_value=False):
+        with patch("agenttree.cli.rollback_cmd.load_config", return_value=mock_config):
+            with patch("agenttree.cli.rollback_cmd.get_issue_func", return_value=mock_issue):
+                with patch("agenttree.cli.rollback_cmd.get_issue_dir", return_value=issue_dir):
+                    with patch("agenttree.cli.rollback_cmd.is_running_in_container", return_value=False):
                         with patch("agenttree.state.get_active_agent", return_value=None):
-                            with patch("agenttree.cli.delete_session"):
+                            with patch("agenttree.cli.rollback_cmd.delete_session"):
                                 with patch("agenttree.agents_repo.sync_agents_repo"):
                                     with patch("agenttree.issues.get_agenttree_path", return_value=tmp_path):
                                         result = cli_runner.invoke(main, ["rollback", "42", "research", "--yes"])
@@ -1109,12 +1109,12 @@ class TestRollbackCommand:
         (issue_dir / "spec.md").write_text("# Spec")
         (issue_dir / "review.md").write_text("# Review")
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
-            with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
-                with patch("agenttree.cli.get_issue_dir", return_value=issue_dir):
-                    with patch("agenttree.cli.is_running_in_container", return_value=False):
+        with patch("agenttree.cli.rollback_cmd.load_config", return_value=mock_config):
+            with patch("agenttree.cli.rollback_cmd.get_issue_func", return_value=mock_issue):
+                with patch("agenttree.cli.rollback_cmd.get_issue_dir", return_value=issue_dir):
+                    with patch("agenttree.cli.rollback_cmd.is_running_in_container", return_value=False):
                         with patch("agenttree.state.get_active_agent", return_value=None):
-                            with patch("agenttree.cli.delete_session"):
+                            with patch("agenttree.cli.rollback_cmd.delete_session"):
                                 with patch("agenttree.agents_repo.sync_agents_repo"):
                                     with patch("agenttree.issues.get_agenttree_path", return_value=tmp_path):
                                         result = cli_runner.invoke(main, ["rollback", "42", "research", "--yes"])
@@ -1176,13 +1176,13 @@ class TestRollbackCommand:
         with open(issue_dir / "issue.yaml", "w") as f:
             yaml.dump(issue_yaml, f)
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
-            with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
-                with patch("agenttree.cli.get_issue_dir", return_value=issue_dir):
-                    with patch("agenttree.cli.is_running_in_container", return_value=False):
+        with patch("agenttree.cli.rollback_cmd.load_config", return_value=mock_config):
+            with patch("agenttree.cli.rollback_cmd.get_issue_func", return_value=mock_issue):
+                with patch("agenttree.cli.rollback_cmd.get_issue_dir", return_value=issue_dir):
+                    with patch("agenttree.cli.rollback_cmd.is_running_in_container", return_value=False):
                         with patch("agenttree.state.get_active_agents_for_issue", return_value=[mock_agent]):
                             with patch("agenttree.state.unregister_all_agents_for_issue") as mock_unregister:
-                                with patch("agenttree.cli.delete_session"):
+                                with patch("agenttree.cli.rollback_cmd.delete_session"):
                                     with patch("agenttree.agents_repo.sync_agents_repo"):
                                         with patch("agenttree.issues.get_agenttree_path", return_value=tmp_path):
                                             result = cli_runner.invoke(main, ["rollback", "42", "research", "--yes"])
@@ -1197,7 +1197,7 @@ class TestRollbackCommand:
         """Should send message to controller when running."""
         from agenttree.cli import main
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
+        with patch("agenttree.cli.agent.load_config", return_value=mock_config):
             with patch("agenttree.tmux.session_exists", return_value=True):
                 with patch("agenttree.tmux.send_keys") as mock_send:
                     result = cli_runner.invoke(main, ["send", "0", "hello controller"])
@@ -1210,7 +1210,7 @@ class TestRollbackCommand:
         """Should error when controller is not running."""
         from agenttree.cli import main
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
+        with patch("agenttree.cli.agent.load_config", return_value=mock_config):
             with patch("agenttree.tmux.session_exists", return_value=False):
                 result = cli_runner.invoke(main, ["send", "0", "hello"])
 
@@ -1222,7 +1222,7 @@ class TestRollbackCommand:
         """Should stop controller session when running."""
         from agenttree.cli import main
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
+        with patch("agenttree.cli.agent.load_config", return_value=mock_config):
             with patch("agenttree.tmux.session_exists", return_value=True):
                 with patch("agenttree.tmux.kill_session") as mock_kill:
                     result = cli_runner.invoke(main, ["stop", "0"])
@@ -1235,7 +1235,7 @@ class TestRollbackCommand:
         """Should handle gracefully when controller not running."""
         from agenttree.cli import main
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
+        with patch("agenttree.cli.agent.load_config", return_value=mock_config):
             with patch("agenttree.tmux.session_exists", return_value=False):
                 result = cli_runner.invoke(main, ["stop", "0"])
 
@@ -1246,7 +1246,7 @@ class TestRollbackCommand:
         """Should error when trying to attach to controller that's not running."""
         from agenttree.cli import main
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
+        with patch("agenttree.cli.agent.load_config", return_value=mock_config):
             with patch("agenttree.tmux.session_exists", return_value=False):
                 result = cli_runner.invoke(main, ["attach", "0"])
 
@@ -1258,7 +1258,7 @@ class TestRollbackCommand:
         """Should attach to controller when running."""
         from agenttree.cli import main
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
+        with patch("agenttree.cli.agent.load_config", return_value=mock_config):
             with patch("agenttree.tmux.session_exists", return_value=True):
                 with patch("agenttree.tmux.attach_session") as mock_attach:
                     result = cli_runner.invoke(main, ["attach", "0"])
@@ -1275,8 +1275,8 @@ class TestIssueShowCommand:
         """Should error when issue not found."""
         from agenttree.cli import main
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
-            with patch("agenttree.cli.get_issue_func", return_value=None):
+        with patch("agenttree.cli.issue.load_config", return_value=mock_config):
+            with patch("agenttree.cli.issue.get_issue_func", return_value=None):
                 result = cli_runner.invoke(main, ["issue", "show", "999"])
 
         assert result.exit_code == 1
@@ -1304,9 +1304,9 @@ class TestIssueShowCommand:
         issue_dir.mkdir(parents=True)
         (issue_dir / "problem.md").write_text("# Problem")
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
-            with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
-                with patch("agenttree.cli.get_issue_dir", return_value=issue_dir):
+        with patch("agenttree.cli.issue.load_config", return_value=mock_config):
+            with patch("agenttree.cli.issue.get_issue_func", return_value=mock_issue):
+                with patch("agenttree.cli.issue.get_issue_dir", return_value=issue_dir):
                     with patch("agenttree.issues.get_issue_dir", return_value=issue_dir):
                         result = cli_runner.invoke(main, ["issue", "show", "042", "--json"])
 
@@ -1343,9 +1343,9 @@ class TestIssueShowCommand:
         issue_dir = tmp_path / "_agenttree" / "issues" / "042-test-issue"
         issue_dir.mkdir(parents=True)
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
-            with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
-                with patch("agenttree.cli.get_issue_dir", return_value=issue_dir):
+        with patch("agenttree.cli.issue.load_config", return_value=mock_config):
+            with patch("agenttree.cli.issue.get_issue_func", return_value=mock_issue):
+                with patch("agenttree.cli.issue.get_issue_dir", return_value=issue_dir):
                     with patch("agenttree.issues.get_issue_dir", return_value=issue_dir):
                         result = cli_runner.invoke(main, ["issue", "show", "042", "--field", "branch"])
 
@@ -1369,9 +1369,9 @@ class TestIssueShowCommand:
         issue_dir = tmp_path / "_agenttree" / "issues" / "042-test-issue"
         issue_dir.mkdir(parents=True)
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
-            with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
-                with patch("agenttree.cli.get_issue_dir", return_value=issue_dir):
+        with patch("agenttree.cli.issue.load_config", return_value=mock_config):
+            with patch("agenttree.cli.issue.get_issue_func", return_value=mock_issue):
+                with patch("agenttree.cli.issue.get_issue_dir", return_value=issue_dir):
                     with patch("agenttree.issues.get_issue_dir", return_value=issue_dir):
                         result = cli_runner.invoke(main, ["issue", "show", "042", "--field", "worktree_dir"])
 
@@ -1396,9 +1396,9 @@ class TestIssueShowCommand:
         issue_dir = tmp_path / "_agenttree" / "issues" / "042-test-issue"
         issue_dir.mkdir(parents=True)
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
-            with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
-                with patch("agenttree.cli.get_issue_dir", return_value=issue_dir):
+        with patch("agenttree.cli.issue.load_config", return_value=mock_config):
+            with patch("agenttree.cli.issue.get_issue_func", return_value=mock_issue):
+                with patch("agenttree.cli.issue.get_issue_dir", return_value=issue_dir):
                     with patch("agenttree.issues.get_issue_dir", return_value=issue_dir):
                         result = cli_runner.invoke(main, ["issue", "show", "042", "--field", "stage_substage"])
 
@@ -1421,9 +1421,9 @@ class TestIssueShowCommand:
         issue_dir = tmp_path / "_agenttree" / "issues" / "042-test-issue"
         issue_dir.mkdir(parents=True)
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
-            with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
-                with patch("agenttree.cli.get_issue_dir", return_value=issue_dir):
+        with patch("agenttree.cli.issue.load_config", return_value=mock_config):
+            with patch("agenttree.cli.issue.get_issue_func", return_value=mock_issue):
+                with patch("agenttree.cli.issue.get_issue_dir", return_value=issue_dir):
                     with patch("agenttree.issues.get_issue_dir", return_value=issue_dir):
                         result = cli_runner.invoke(main, ["issue", "show", "042", "--field", "nonexistent_field"])
 
@@ -1449,9 +1449,9 @@ class TestIssueShowCommand:
         issue_dir = tmp_path / "_agenttree" / "issues" / "042-test-issue"
         issue_dir.mkdir(parents=True)
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
-            with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
-                with patch("agenttree.cli.get_issue_dir", return_value=issue_dir):
+        with patch("agenttree.cli.issue.load_config", return_value=mock_config):
+            with patch("agenttree.cli.issue.get_issue_func", return_value=mock_issue):
+                with patch("agenttree.cli.issue.get_issue_dir", return_value=issue_dir):
                     with patch("agenttree.issues.get_issue_dir", return_value=issue_dir):
                         result = cli_runner.invoke(main, ["issue", "show", "042", "--field", "labels"])
 
@@ -1476,9 +1476,9 @@ class TestIssueShowCommand:
         issue_dir = tmp_path / "_agenttree" / "issues" / "042-test-issue"
         issue_dir.mkdir(parents=True)
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
-            with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
-                with patch("agenttree.cli.get_issue_dir", return_value=issue_dir):
+        with patch("agenttree.cli.issue.load_config", return_value=mock_config):
+            with patch("agenttree.cli.issue.get_issue_func", return_value=mock_issue):
+                with patch("agenttree.cli.issue.get_issue_dir", return_value=issue_dir):
                     with patch("agenttree.issues.get_issue_dir", return_value=issue_dir):
                         result = cli_runner.invoke(main, ["issue", "show", "042", "--field", "branch"])
 
@@ -1493,16 +1493,16 @@ class TestCleanupCommand:
         """Should report nothing to clean when no stale resources."""
         from agenttree.cli import main
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
-            with patch("agenttree.cli.is_running_in_container", return_value=False):
-                with patch("agenttree.cli.list_issues_func", return_value=[]):
+        with patch("agenttree.cli.utils.load_config", return_value=mock_config):
+            with patch("agenttree.cli.utils.is_running_in_container", return_value=False):
+                with patch("agenttree.cli.utils.list_issues_func", return_value=[]):
                     with patch("agenttree.worktree.list_worktrees", return_value=[]):
                         with patch("subprocess.run") as mock_run:
                             # Mock git branch --list output
                             mock_run.return_value.stdout = ""
                             mock_run.return_value.returncode = 0
                             with patch("agenttree.tmux.list_sessions", return_value=[]):
-                                with patch("agenttree.cli.get_container_runtime") as mock_runtime:
+                                with patch("agenttree.cli.utils.get_container_runtime") as mock_runtime:
                                     mock_runtime.return_value.runtime = None
                                     result = cli_runner.invoke(main, ["cleanup", "--dry-run"])
 
@@ -1513,8 +1513,8 @@ class TestCleanupCommand:
         """Should error when run from inside a container."""
         from agenttree.cli import main
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
-            with patch("agenttree.cli.is_running_in_container", return_value=True):
+        with patch("agenttree.cli.utils.load_config", return_value=mock_config):
+            with patch("agenttree.cli.utils.is_running_in_container", return_value=True):
                 result = cli_runner.invoke(main, ["cleanup"])
 
         assert result.exit_code == 1
@@ -1539,15 +1539,15 @@ class TestCleanupCommand:
             {"path": "/repo/.worktrees/issue-042-test-issue", "branch": "issue-042-test-issue"},
         ]
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
-            with patch("agenttree.cli.is_running_in_container", return_value=False):
-                with patch("agenttree.cli.list_issues_func", return_value=[mock_issue]):
+        with patch("agenttree.cli.utils.load_config", return_value=mock_config):
+            with patch("agenttree.cli.utils.is_running_in_container", return_value=False):
+                with patch("agenttree.cli.utils.list_issues_func", return_value=[mock_issue]):
                     with patch("agenttree.worktree.list_worktrees", return_value=mock_worktrees):
                         with patch("subprocess.run") as mock_run:
                             mock_run.return_value.stdout = ""
                             mock_run.return_value.returncode = 0
                             with patch("agenttree.tmux.list_sessions", return_value=[]):
-                                with patch("agenttree.cli.get_container_runtime") as mock_runtime:
+                                with patch("agenttree.cli.utils.get_container_runtime") as mock_runtime:
                                     mock_runtime.return_value.runtime = None
                                     result = cli_runner.invoke(main, ["cleanup", "--dry-run"])
 
@@ -1560,9 +1560,9 @@ class TestCleanupCommand:
         """Should identify merged branch as stale."""
         from agenttree.cli import main
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
-            with patch("agenttree.cli.is_running_in_container", return_value=False):
-                with patch("agenttree.cli.list_issues_func", return_value=[]):
+        with patch("agenttree.cli.utils.load_config", return_value=mock_config):
+            with patch("agenttree.cli.utils.is_running_in_container", return_value=False):
+                with patch("agenttree.cli.utils.list_issues_func", return_value=[]):
                     with patch("agenttree.worktree.list_worktrees", return_value=[{"path": "/repo", "branch": "main"}]):
                         with patch("subprocess.run") as mock_run:
                             # Configure different outputs for different commands
@@ -1580,7 +1580,7 @@ class TestCleanupCommand:
 
                             mock_run.side_effect = mock_subprocess
                             with patch("agenttree.tmux.list_sessions", return_value=[]):
-                                with patch("agenttree.cli.get_container_runtime") as mock_runtime:
+                                with patch("agenttree.cli.utils.get_container_runtime") as mock_runtime:
                                     mock_runtime.return_value.runtime = None
                                     result = cli_runner.invoke(main, ["cleanup", "--dry-run"])
 
@@ -1597,15 +1597,15 @@ class TestCleanupCommand:
             TmuxSession(name="testproject-issue-999", windows=1, attached=False),
         ]
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
-            with patch("agenttree.cli.is_running_in_container", return_value=False):
-                with patch("agenttree.cli.list_issues_func", return_value=[]):  # Issue 999 doesn't exist
+        with patch("agenttree.cli.utils.load_config", return_value=mock_config):
+            with patch("agenttree.cli.utils.is_running_in_container", return_value=False):
+                with patch("agenttree.cli.utils.list_issues_func", return_value=[]):  # Issue 999 doesn't exist
                     with patch("agenttree.worktree.list_worktrees", return_value=[{"path": "/repo", "branch": "main"}]):
                         with patch("subprocess.run") as mock_run:
                             mock_run.return_value.stdout = ""
                             mock_run.return_value.returncode = 0
                             with patch("agenttree.tmux.list_sessions", return_value=mock_sessions):
-                                with patch("agenttree.cli.get_container_runtime") as mock_runtime:
+                                with patch("agenttree.cli.utils.get_container_runtime") as mock_runtime:
                                     mock_runtime.return_value.runtime = None
                                     result = cli_runner.invoke(main, ["cleanup", "--dry-run"])
 
@@ -1632,15 +1632,15 @@ class TestCleanupCommand:
             {"path": "/repo/.worktrees/issue-042-test-issue", "branch": "issue-042-test-issue"},
         ]
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
-            with patch("agenttree.cli.is_running_in_container", return_value=False):
-                with patch("agenttree.cli.list_issues_func", return_value=[mock_issue]):
+        with patch("agenttree.cli.utils.load_config", return_value=mock_config):
+            with patch("agenttree.cli.utils.is_running_in_container", return_value=False):
+                with patch("agenttree.cli.utils.list_issues_func", return_value=[mock_issue]):
                     with patch("agenttree.worktree.list_worktrees", return_value=mock_worktrees):
                         with patch("subprocess.run") as mock_run:
                             mock_run.return_value.stdout = ""
                             mock_run.return_value.returncode = 0
                             with patch("agenttree.tmux.list_sessions", return_value=[]):
-                                with patch("agenttree.cli.get_container_runtime") as mock_runtime:
+                                with patch("agenttree.cli.utils.get_container_runtime") as mock_runtime:
                                     mock_runtime.return_value.runtime = None
                                     with patch("agenttree.worktree.remove_worktree") as mock_remove:
                                         result = cli_runner.invoke(main, ["cleanup", "--force"])
@@ -1653,12 +1653,12 @@ class TestCleanupCommand:
         """Should allow selective cleanup of categories."""
         from agenttree.cli import main
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
-            with patch("agenttree.cli.is_running_in_container", return_value=False):
-                with patch("agenttree.cli.list_issues_func", return_value=[]):
+        with patch("agenttree.cli.utils.load_config", return_value=mock_config):
+            with patch("agenttree.cli.utils.is_running_in_container", return_value=False):
+                with patch("agenttree.cli.utils.list_issues_func", return_value=[]):
                     with patch("agenttree.worktree.list_worktrees", return_value=[{"path": "/repo", "branch": "main"}]):
                         with patch("agenttree.tmux.list_sessions", return_value=[]):
-                            with patch("agenttree.cli.get_container_runtime") as mock_runtime:
+                            with patch("agenttree.cli.utils.get_container_runtime") as mock_runtime:
                                 mock_runtime.return_value.runtime = None
                                 # Only check worktrees, skip branches/sessions/containers
                                 result = cli_runner.invoke(main, [

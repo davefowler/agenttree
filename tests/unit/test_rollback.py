@@ -246,9 +246,9 @@ class TestRollbackValidation:
             updated="2026-01-01T00:00:00Z",
         )
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
-            with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
-                with patch("agenttree.cli.is_running_in_container", return_value=False):
+        with patch("agenttree.cli.rollback_cmd.load_config", return_value=mock_config):
+            with patch("agenttree.cli.rollback_cmd.get_issue_func", return_value=mock_issue):
+                with patch("agenttree.cli.rollback_cmd.is_running_in_container", return_value=False):
                     result = cli_runner.invoke(main, ["rollback", "42", "invalid_stage", "-y"])
 
         assert result.exit_code == 1
@@ -269,9 +269,9 @@ class TestRollbackValidation:
             updated="2026-01-01T00:00:00Z",
         )
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
-            with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
-                with patch("agenttree.cli.is_running_in_container", return_value=False):
+        with patch("agenttree.cli.rollback_cmd.load_config", return_value=mock_config):
+            with patch("agenttree.cli.rollback_cmd.get_issue_func", return_value=mock_issue):
+                with patch("agenttree.cli.rollback_cmd.is_running_in_container", return_value=False):
                     result = cli_runner.invoke(main, ["rollback", "42", "accepted", "-y"])
 
         assert result.exit_code == 1
@@ -292,9 +292,9 @@ class TestRollbackValidation:
             updated="2026-01-01T00:00:00Z",
         )
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
-            with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
-                with patch("agenttree.cli.is_running_in_container", return_value=False):
+        with patch("agenttree.cli.rollback_cmd.load_config", return_value=mock_config):
+            with patch("agenttree.cli.rollback_cmd.get_issue_func", return_value=mock_issue):
+                with patch("agenttree.cli.rollback_cmd.is_running_in_container", return_value=False):
                     result = cli_runner.invoke(main, ["rollback", "42", "implement", "-y"])
 
         assert result.exit_code == 1
@@ -305,8 +305,8 @@ class TestRollbackValidation:
         """Should error when running inside a container."""
         from agenttree.cli import main
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
-            with patch("agenttree.cli.is_running_in_container", return_value=True):
+        with patch("agenttree.cli.rollback_cmd.load_config", return_value=mock_config):
+            with patch("agenttree.cli.rollback_cmd.is_running_in_container", return_value=True):
                 result = cli_runner.invoke(main, ["rollback", "42", "research", "-y"])
 
         assert result.exit_code == 1
@@ -331,11 +331,11 @@ class TestRollbackUpdatesState:
             updated="2026-01-01T00:00:00Z",
         )
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
-            with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
-                with patch("agenttree.cli.is_running_in_container", return_value=False):
-                    with patch("agenttree.cli.get_issue_dir", return_value=temp_issue_dir):
-                        with patch("agenttree.cli.delete_session"):
+        with patch("agenttree.cli.rollback_cmd.load_config", return_value=mock_config):
+            with patch("agenttree.cli.rollback_cmd.get_issue_func", return_value=mock_issue):
+                with patch("agenttree.cli.rollback_cmd.is_running_in_container", return_value=False):
+                    with patch("agenttree.cli.rollback_cmd.get_issue_dir", return_value=temp_issue_dir):
+                        with patch("agenttree.cli.rollback_cmd.delete_session"):
                             with patch("agenttree.agents_repo.sync_agents_repo"):
                                 with patch("agenttree.state.get_active_agent", return_value=None):
                                     result = cli_runner.invoke(main, ["rollback", "42", "plan", "-y"])
@@ -376,11 +376,11 @@ class TestRollbackUpdatesState:
         with open(yaml_path, "w") as f:
             yaml.dump(data, f)
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
-            with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
-                with patch("agenttree.cli.is_running_in_container", return_value=False):
-                    with patch("agenttree.cli.get_issue_dir", return_value=temp_issue_dir):
-                        with patch("agenttree.cli.delete_session"):
+        with patch("agenttree.cli.rollback_cmd.load_config", return_value=mock_config):
+            with patch("agenttree.cli.rollback_cmd.get_issue_func", return_value=mock_issue):
+                with patch("agenttree.cli.rollback_cmd.is_running_in_container", return_value=False):
+                    with patch("agenttree.cli.rollback_cmd.get_issue_dir", return_value=temp_issue_dir):
+                        with patch("agenttree.cli.rollback_cmd.delete_session"):
                             with patch("agenttree.agents_repo.sync_agents_repo"):
                                 with patch("agenttree.state.get_active_agent", return_value=None):
                                     result = cli_runner.invoke(main, ["rollback", "42", "implement", "-y"])
@@ -424,11 +424,11 @@ class TestRollbackHandlesAgent:
             nonlocal agent_unregistered
             agent_unregistered = True
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
-            with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
-                with patch("agenttree.cli.is_running_in_container", return_value=False):
-                    with patch("agenttree.cli.get_issue_dir", return_value=temp_issue_dir):
-                        with patch("agenttree.cli.delete_session"):
+        with patch("agenttree.cli.rollback_cmd.load_config", return_value=mock_config):
+            with patch("agenttree.cli.rollback_cmd.get_issue_func", return_value=mock_issue):
+                with patch("agenttree.cli.rollback_cmd.is_running_in_container", return_value=False):
+                    with patch("agenttree.cli.rollback_cmd.get_issue_dir", return_value=temp_issue_dir):
+                        with patch("agenttree.cli.rollback_cmd.delete_session"):
                             with patch("agenttree.agents_repo.sync_agents_repo"):
                                 with patch("agenttree.state.get_active_agents_for_issue", return_value=[mock_agent]):
                                     with patch("agenttree.state.unregister_all_agents_for_issue", side_effect=capture_unregister):
@@ -474,11 +474,11 @@ class TestRollbackWorktreeReset:
             result.returncode = 0
             return result
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
-            with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
-                with patch("agenttree.cli.is_running_in_container", return_value=False):
-                    with patch("agenttree.cli.get_issue_dir", return_value=temp_issue_dir):
-                        with patch("agenttree.cli.delete_session"):
+        with patch("agenttree.cli.rollback_cmd.load_config", return_value=mock_config):
+            with patch("agenttree.cli.rollback_cmd.get_issue_func", return_value=mock_issue):
+                with patch("agenttree.cli.rollback_cmd.is_running_in_container", return_value=False):
+                    with patch("agenttree.cli.rollback_cmd.get_issue_dir", return_value=temp_issue_dir):
+                        with patch("agenttree.cli.rollback_cmd.delete_session"):
                             with patch("agenttree.agents_repo.sync_agents_repo"):
                                 with patch("agenttree.state.get_active_agents_for_issue", return_value=[mock_agent]):
                                     with patch("agenttree.state.unregister_all_agents_for_issue"):
@@ -516,11 +516,11 @@ class TestRollbackWorktreeReset:
             result.returncode = 0
             return result
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
-            with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
-                with patch("agenttree.cli.is_running_in_container", return_value=False):
-                    with patch("agenttree.cli.get_issue_dir", return_value=temp_issue_dir):
-                        with patch("agenttree.cli.delete_session"):
+        with patch("agenttree.cli.rollback_cmd.load_config", return_value=mock_config):
+            with patch("agenttree.cli.rollback_cmd.get_issue_func", return_value=mock_issue):
+                with patch("agenttree.cli.rollback_cmd.is_running_in_container", return_value=False):
+                    with patch("agenttree.cli.rollback_cmd.get_issue_dir", return_value=temp_issue_dir):
+                        with patch("agenttree.cli.rollback_cmd.delete_session"):
                             with patch("agenttree.agents_repo.sync_agents_repo"):
                                 with patch("agenttree.state.get_active_agent", return_value=None):
                                     with patch("subprocess.run", side_effect=mock_run):
@@ -549,10 +549,10 @@ class TestRollbackCLIIntegration:
             updated="2026-01-01T00:00:00Z",
         )
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
-            with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
-                with patch("agenttree.cli.is_running_in_container", return_value=False):
-                    with patch("agenttree.cli.get_issue_dir", return_value=temp_issue_dir):
+        with patch("agenttree.cli.rollback_cmd.load_config", return_value=mock_config):
+            with patch("agenttree.cli.rollback_cmd.get_issue_func", return_value=mock_issue):
+                with patch("agenttree.cli.rollback_cmd.is_running_in_container", return_value=False):
+                    with patch("agenttree.cli.rollback_cmd.get_issue_dir", return_value=temp_issue_dir):
                         with patch("agenttree.state.get_active_agent", return_value=None):
                             # Send 'n' to decline confirmation
                             result = cli_runner.invoke(main, ["rollback", "42", "research"], input="n\n")
@@ -575,10 +575,10 @@ class TestRollbackCLIIntegration:
             updated="2026-01-01T00:00:00Z",
         )
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
-            with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
-                with patch("agenttree.cli.is_running_in_container", return_value=False):
-                    with patch("agenttree.cli.get_issue_dir", return_value=temp_issue_dir):
+        with patch("agenttree.cli.rollback_cmd.load_config", return_value=mock_config):
+            with patch("agenttree.cli.rollback_cmd.get_issue_func", return_value=mock_issue):
+                with patch("agenttree.cli.rollback_cmd.is_running_in_container", return_value=False):
+                    with patch("agenttree.cli.rollback_cmd.get_issue_dir", return_value=temp_issue_dir):
                         with patch("agenttree.state.get_active_agent", return_value=None):
                             result = cli_runner.invoke(main, ["rollback", "42", "research"], input="n\n")
 
@@ -600,11 +600,11 @@ class TestRollbackCLIIntegration:
             updated="2026-01-01T00:00:00Z",
         )
 
-        with patch("agenttree.cli.load_config", return_value=mock_config):
-            with patch("agenttree.cli.get_issue_func", return_value=mock_issue):
-                with patch("agenttree.cli.is_running_in_container", return_value=False):
-                    with patch("agenttree.cli.get_issue_dir", return_value=temp_issue_dir):
-                        with patch("agenttree.cli.delete_session"):
+        with patch("agenttree.cli.rollback_cmd.load_config", return_value=mock_config):
+            with patch("agenttree.cli.rollback_cmd.get_issue_func", return_value=mock_issue):
+                with patch("agenttree.cli.rollback_cmd.is_running_in_container", return_value=False):
+                    with patch("agenttree.cli.rollback_cmd.get_issue_dir", return_value=temp_issue_dir):
+                        with patch("agenttree.cli.rollback_cmd.delete_session"):
                             with patch("agenttree.agents_repo.sync_agents_repo"):
                                 with patch("agenttree.state.get_active_agent", return_value=None):
                                     result = cli_runner.invoke(main, ["rollback", "42", "research", "-y"])
