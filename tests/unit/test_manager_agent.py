@@ -217,6 +217,7 @@ class TestLogStall:
         assert "detected_at" in stall
 
 
+<<<<<<< HEAD
 class TestStallsCommand:
     """Test the agenttree stalls CLI command."""
 
@@ -276,3 +277,5 @@ class TestStallsCommand:
 
         assert result.exit_code == 0
         assert "no stalled" in result.output.lower() or result.output.strip() == ""
+=======
+>>>>>>> origin/main

@@ -1331,43 +1331,6 @@ def stop_all(verbose: bool) -> None:
 
 
 @main.command()
-@click.option("--threshold", "-t", default=None, type=int, help="Override stall threshold (minutes)")
-def stalls(threshold: int | None) -> None:
-    """List agents that appear stalled (in same stage too long).
-
-    Detects agents that have been in a non-review stage for longer than
-    the configured threshold (default 20 minutes) without advancing.
-
-    Examples:
-        agenttree stalls              # Check for stalled agents
-        agenttree stalls -t 30        # Use 30-minute threshold
-    """
-    from agenttree.manager_agent import get_stalled_agents
-
-    config = load_config()
-    agents_dir = Path.cwd() / "_agenttree"
-
-    # Use config threshold or override
-    threshold_min = threshold if threshold is not None else config.manager.stall_threshold_min
-
-    stalled = get_stalled_agents(agents_dir, threshold_min=threshold_min)
-
-    if not stalled:
-        console.print(f"[green]No stalled agents detected[/green] (threshold: {threshold_min} min)")
-        return
-
-    console.print(f"[yellow]Found {len(stalled)} stalled agent(s):[/yellow]\n")
-
-    for agent in stalled:
-        console.print(f"  [bold]Issue #{agent['issue_id']}[/bold]: {agent['title']}")
-        console.print(f"    Stage: {agent['stage']}")
-        console.print(f"    Stalled for: {agent['minutes_stalled']} minutes")
-        console.print()
-
-    console.print("[dim]Use 'agenttree send <id> \"message\"' to nudge a stalled agent[/dim]")
-
-
-@main.command()
 @click.argument("pr_number", type=int)
 @click.option("--no-approval", is_flag=True, help="Skip approval requirement")
 @click.option("--monitor", is_flag=True, help="Monitor PR until ready to merge")
@@ -2012,16 +1975,60 @@ def stage_status(issue_id: Optional[str]) -> None:
             console.print("[dim]No active issues[/dim]")
             return
 
+        from datetime import datetime, timezone
+        from agenttree.config import load_config
+        from agenttree.tmux import session_exists
+        
+        config = load_config()
+
         table = Table(title="Active Issues")
         table.add_column("ID", style="cyan")
         table.add_column("Title", style="white")
         table.add_column("Stage", style="magenta")
+        table.add_column("Time", style="yellow", justify="right")
+        table.add_column("Agent", style="green", justify="center")
+        table.add_column("Wait", style="dim", justify="center")
 
         for active_issue in active_issues:
-            stage_str = active_issue.stage
+            # Get stage index (1-based) using issue's flow
+            flow_name = getattr(active_issue, 'flow', 'default')
+            flow_stages = config.get_flow_stage_names(flow_name)
+            total_stages = len(flow_stages)
+            try:
+                stage_idx = flow_stages.index(active_issue.stage) + 1
+                stage_num = f"{stage_idx}/{total_stages} "
+            except ValueError:
+                stage_num = ""
+            
+            stage_str = stage_num + active_issue.stage
             if active_issue.substage:
                 stage_str += f".{active_issue.substage}"
-            table.add_row(active_issue.id, active_issue.title[:40], stage_str)
+            
+            # Calculate time in current stage
+            time_str = ""
+            try:
+                updated = datetime.fromisoformat(active_issue.updated.replace("Z", "+00:00"))
+                elapsed = datetime.now(timezone.utc) - updated
+                mins = int(elapsed.total_seconds() / 60)
+                if mins < 60:
+                    time_str = f"{mins}m"
+                elif mins < 1440:  # Less than 24 hours
+                    time_str = f"{mins // 60}h {mins % 60}m"
+                else:
+                    days = mins // 1440
+                    time_str = f"{days}d {(mins % 1440) // 60}h"
+            except (ValueError, TypeError):
+                time_str = "?"
+            
+            # Check if agent tmux session is running
+            session_name = f"{config.project}-developer-{active_issue.id}"
+            agent_str = "[green]run[/green]" if session_exists(session_name) else "[red]dead[/red]"
+            
+            # Check if waiting on human review
+            stage_config = config.get_stage(active_issue.stage)
+            wait_str = "[yellow]human[/yellow]" if stage_config and stage_config.role == "manager" else ""
+            
+            table.add_row(active_issue.id, active_issue.title[:40], stage_str, time_str, agent_str, wait_str)
 
         console.print(table)
         return
