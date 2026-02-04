@@ -143,23 +143,38 @@ def auto_start_agents(agents_dir: Path, **kwargs: Any) -> None:
 
 @register_action("stop_all_agents")
 def stop_all_agents(agents_dir: Path, **kwargs: Any) -> None:
-    """Stop all running agents.
+    """Stop all running agents including orphaned sessions.
     
     Args:
         agents_dir: Path to _agenttree directory
     """
-    from agenttree.issues import list_issues
-    from agenttree.state import stop_all_agents_for_issue, get_active_agent
+    import subprocess
+    from agenttree.config import load_config
+    from agenttree.tmux import kill_session
     
-    issues = list_issues(sync=False)
+    config = load_config()
+    prefix = f"{config.project}-"
+    
+    # Get all tmux sessions
+    result = subprocess.run(
+        ["tmux", "list-sessions", "-F", "#{session_name}"],
+        capture_output=True,
+        text=True,
+    )
+    
+    if result.returncode != 0:
+        console.print("[dim]No tmux sessions running[/dim]")
+        return
+    
+    sessions = result.stdout.strip().split("\n")
     stopped = 0
     
-    for issue in issues:
-        if get_active_agent(issue.id):
-            count = stop_all_agents_for_issue(issue.id, quiet=True)
-            if count > 0:
-                stopped += count
-                console.print(f"[dim]Stopped agent(s) for issue #{issue.id}[/dim]")
+    for session in sessions:
+        # Kill all sessions with our project prefix (except manager, handled separately)
+        if session.startswith(prefix) and not session.endswith("-manager-000"):
+            kill_session(session)
+            stopped += 1
+            console.print(f"[dim]Stopped {session}[/dim]")
     
     console.print(f"[green]✓ Stopped {stopped} agent(s)[/green]")
 
