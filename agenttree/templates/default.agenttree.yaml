@@ -58,7 +58,8 @@ hosts:
 
 # Event-driven hooks configuration
 # Defines what actions run when events fire
-on:
+# Note: "on" must be quoted because it's a YAML reserved word (boolean true)
+"on":
   # Fires once when `agenttree run` starts
   startup:
     - start_controller

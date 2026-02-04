@@ -75,8 +75,8 @@ class ActionConfig(BaseModel):
     """
     
     name: str
-    min_interval_s: Optional[int] = None  # Time-based rate limit
-    every_n: Optional[int] = None  # Count-based rate limit (every Nth heartbeat)
+    min_interval_s: int | None = None  # Time-based rate limit
+    every_n: int | None = None  # Count-based rate limit (every Nth heartbeat)
     optional: bool = False  # If true, failure doesn't block
 
 
@@ -84,7 +84,7 @@ class HeartbeatConfig(BaseModel):
     """Configuration for heartbeat events."""
     
     interval_s: int = 10  # Seconds between heartbeats
-    actions: list[Union[str, dict]] = Field(default_factory=list)
+    actions: list[str | dict] = Field(default_factory=list)
 
 
 class OnConfig(BaseModel):
@@ -109,9 +109,9 @@ class OnConfig(BaseModel):
             - stop_all_agents
     """
     
-    startup: list[Union[str, dict]] = Field(default_factory=list)
-    shutdown: list[Union[str, dict]] = Field(default_factory=list)
-    heartbeat: Optional[Union[HeartbeatConfig, dict]] = None
+    startup: list[str | dict] = Field(default_factory=list)
+    shutdown: list[str | dict] = Field(default_factory=list)
+    heartbeat: HeartbeatConfig | dict | None = None
 
 
 class SubstageConfig(BaseModel):
@@ -874,5 +874,11 @@ def load_config(path: Optional[Path] = None) -> Config:
                         raise ValueError(
                             f"Flow '{flow_name}' references unknown stage '{stage_name}'"
                         )
+
+    # Handle YAML 'on:' being parsed as boolean True
+    # In YAML 1.1, 'on', 'off', 'yes', 'no' are reserved boolean keywords
+    # Users can either quote "on": or we handle True -> "on" here
+    if True in data:
+        data["on"] = data.pop(True)
 
     return Config(**data)
