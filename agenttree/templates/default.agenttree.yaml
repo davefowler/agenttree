@@ -56,6 +56,32 @@ hosts:
     model: sonnet
     skill: independent_review.md
 
+# Event-driven hooks configuration
+# Defines what actions run when events fire
+# Note: "on" must be quoted because it's a YAML reserved word (boolean true)
+"on":
+  # Fires once when `agenttree run` starts
+  startup:
+    - start_manager
+    - auto_start_agents
+  
+  # Fires every interval_s seconds
+  heartbeat:
+    interval_s: 10
+    actions:
+      - sync
+      - push_pending_branches: {}
+      - check_manager_stages: {}
+      - check_custom_agent_stages: {}
+      - check_stalled_agents: { min_interval_s: 60 }
+      - check_ci_status: { min_interval_s: 120 }
+      - check_merged_prs: { min_interval_s: 30 }
+  
+  # Fires when `agenttree stop-all` is called
+  shutdown:
+    - sync
+    - stop_all_agents
+
 stages:
   - name: backlog
     is_parking_lot: true
@@ -185,7 +211,7 @@ stages:
 
   # Independent code review by a specialized review agent (not the implementing agent)
   - name: independent_code_review
-    host: review  # Custom agent host - spawned by controller
+    role: reviewer  # Custom agent role - spawned by manager
     output: independent_review.md
     skill: independent_review.md
     pre_completion:
@@ -203,7 +229,7 @@ stages:
   # Only reachable via StageRedirect when reviewer doesn't approve
   - name: address_independent_review
     redirect_only: true  # Not in normal progression, only via redirect
-    host: agent  # Back to the implementing agent
+    role: developer  # Back to the implementing agent
     output: independent_review_response.md
     skill: address_independent_review.md
     post_start:
@@ -247,7 +273,7 @@ stages:
   - name: implementation_review
     human_review: true
     review_doc: review.md
-    host: controller  # Host handles PR creation (agents can't push)
+    role: manager  # Manager handles PR creation (agents can't push)
     post_start:
       - create_pr:
     substages:
@@ -262,12 +288,12 @@ stages:
       - pr_approved:
 
   - name: knowledge_base
-    host: agent
+    role: developer
     skill: knowledge_base.md
 
   - name: accepted
     is_parking_lot: true
-    host: controller  # Host handles merge/cleanup (agents can't push)
+    role: manager  # Manager handles merge/cleanup (agents can't push)
     post_start:
       - merge_pr:
       - cleanup_agent:
@@ -314,11 +340,14 @@ flows:
 
 default_flow: default
 
-# Controller hooks for dogfooding - track cleanup frequency to identify workflow issues
-# This is project-specific logging to help us find broken workflow steps
-controller_hooks:
-  post_sync:
-    # Run periodic cleanup and log what was cleaned
-    # High cleanup frequency indicates broken workflow steps that need fixing
-    - cleanup_resources:
-        log_file: _agenttree/logs/cleanup.log
+# DEPRECATED: manager_hooks - use on.heartbeat.actions instead
+# This section is kept for backwards compatibility but will be removed in a future version.
+# The new on: config above provides better control with:
+#   - Separate startup/shutdown events
+#   - Configurable heartbeat interval
+#   - Rate limiting with min_interval_s and every_n
+#
+# manager_hooks:
+#   post_sync:
+#     - cleanup_resources:
+#         log_file: _agenttree/logs/cleanup.log

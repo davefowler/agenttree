@@ -2,7 +2,7 @@
 
 This module provides a config-driven hook system used by both:
 1. **Stage hooks** - Validation/actions during workflow stage transitions
-2. **Controller hooks** - Post-sync operations for the controller
+2. **Manager hooks** - Post-sync operations for the manager
 
 =============================================================================
 HOOK CONFIGURATION
@@ -49,7 +49,7 @@ context: str
     Human-readable description shown in logs/errors.
 
 host_only: bool (default: false)
-    Only run this hook on the host (controller), skip in containers.
+    Only run this hook on the host (manager), skip in containers.
 
 timeout: int (default: 30)
     Timeout in seconds for command hooks.
@@ -234,21 +234,21 @@ start_blocked_issues: {}
 CONTROLLER HOOKS (run after sync operations)
 =============================================================================
 
-Controller hooks run after each sync and support rate limiting.
-Configure in .agenttree.yaml under controller_hooks:
+Manager hooks run after each sync and support rate limiting.
+Configure in .agenttree.yaml under manager_hooks:
 
-    controller_hooks:
+    manager_hooks:
       post_sync:
         - push_pending_branches: {}
-        - check_controller_stages: {}
+        - check_manager_stages: {}
         - check_merged_prs: {}
         - check_ci_status:
             min_interval_s: 60
             run_every_n_syncs: 5
 
-Built-in controller hooks:
+Built-in manager hooks:
     push_pending_branches - Push any local branches with unpushed commits
-    check_controller_stages - Process issues in controller-owned stages
+    check_manager_stages - Process issues in manager-owned stages
     check_custom_agent_stages - Spawn custom agents for issues in custom agent stages
     check_merged_prs - Detect externally merged PRs and update issue status
 
@@ -268,7 +268,7 @@ Rate limiting prevents hooks from running too frequently. Useful for:
 
 Options:
     min_interval_s: Minimum seconds since last run
-    run_every_n_syncs: Only run every Nth sync (controller hooks only)
+    run_every_n_syncs: Only run every Nth sync (manager hooks only)
 
 Both can be combined - both conditions must pass for hook to run.
 
@@ -287,10 +287,10 @@ Stage hooks (for workflow transitions):
     # Post-start hooks (setup, warnings only)
     execute_enter_hooks(issue, stage, substage)
 
-Controller hooks (for post-sync operations):
-    from agenttree.controller_hooks import run_post_controller_hooks
+Manager hooks (for post-sync operations):
+    from agenttree.manager_hooks import run_post_manager_hooks
 
-    run_post_controller_hooks(agents_dir)
+    run_post_manager_hooks(agents_dir)
 
 """
 
@@ -338,7 +338,7 @@ class StageRedirect(Exception):
 # Hook Type Registry
 # =============================================================================
 
-# All known hook types (validators, actions, and controller hooks)
+# All known hook types (validators, actions, and manager hooks)
 HOOK_TYPES = {
     # Validators (return errors if validation fails)
     "file_exists", "has_commits", "field_check", "section_check", "pr_approved",
@@ -350,8 +350,8 @@ HOOK_TYPES = {
     "version_file",  # Review loop: rename file to versioned name
     "loop_check",  # Review loop: count iterations and fail if max exceeded
     "rollback",  # Review loop: programmatic rollback to earlier stage
-    # Controller hooks (run on post-sync)
-    "push_pending_branches", "check_controller_stages", "check_merged_prs",
+    # Manager hooks (run on post-sync)
+    "push_pending_branches", "check_manager_stages", "check_merged_prs",
     "check_ci_status", "check_custom_agent_stages", "check_stalled_agents",
 }
 
@@ -376,14 +376,14 @@ BASE_HOOK_OPTIONS = {
     # Execution control
     "optional": False,      # bool: If true, failure logs warning but doesn't block
     "context": None,        # str: Human-readable description for logs/errors
-    "host_only": False,     # bool: Only run on host (controller), skip in containers
+    "host_only": False,     # bool: Only run on host (manager), skip in containers
 
     # Timeouts (for run/command hooks)
     "timeout": 30,          # int: Timeout in seconds for command execution
 
     # Rate limiting (prevents running too frequently)
     "min_interval_s": None,     # int: Minimum seconds between runs
-    "run_every_n_syncs": None,  # int: Only run every Nth sync (controller hooks)
+    "run_every_n_syncs": None,  # int: Only run every Nth sync (manager hooks)
 }
 
 # Alias for backwards compatibility
@@ -576,15 +576,15 @@ def parse_hook(hook: Dict[str, Any]) -> tuple[str, Dict[str, Any]]:
 
 
 def _action_create_pr(issue_dir: Path, issue_id: str = "", issue_title: str = "", branch: str = "", **kwargs: Any) -> None:
-    """Create PR for an issue (controller stage hook - runs on host).
+    """Create PR for an issue (manager stage hook - runs on host).
 
-    This hook runs on host for controller stages (host: controller).
+    This hook runs on host for manager stages (role: manager).
     Agents can't push, so PR creation is handled by the host.
 
     Workflow:
-    1. Agent advances to implementation_review (does nothing - controller stage)
-    2. Host sync calls check_controller_stages()
-    3. For issues in controller stages, host runs post_start hooks
+    1. Agent advances to implementation_review (does nothing - manager stage)
+    2. Host sync calls check_manager_stages()
+    3. For issues in manager stages, host runs post_start hooks
     4. This hook (create_pr) calls ensure_pr_for_issue() to create the PR
     """
     if not issue_id:
@@ -1178,18 +1178,18 @@ def run_builtin_validator(
             else:
                 errors.append("rollback hook requires issue context")
 
-    # Controller hooks (delegated to agents_repo functions)
+    # Manager hooks (delegated to agents_repo functions)
     elif hook_type == "push_pending_branches":
         from agenttree.agents_repo import push_pending_branches
         agents_dir = kwargs.get("agents_dir")
         if agents_dir:
             push_pending_branches(agents_dir)
 
-    elif hook_type == "check_controller_stages":
-        from agenttree.agents_repo import check_controller_stages
+    elif hook_type == "check_manager_stages":
+        from agenttree.agents_repo import check_manager_stages
         agents_dir = kwargs.get("agents_dir")
         if agents_dir:
-            check_controller_stages(agents_dir)
+            check_manager_stages(agents_dir)
 
     elif hook_type == "check_merged_prs":
         from agenttree.agents_repo import check_merged_prs
@@ -1210,11 +1210,15 @@ def run_builtin_validator(
             check_custom_agent_stages(agents_dir)
 
     elif hook_type == "check_stalled_agents":
+<<<<<<< HEAD
         from agenttree.controller_agent import (
             get_stalled_agents,
             should_notify_stall,
             mark_stall_notified,
         )
+=======
+        from agenttree.manager_agent import get_stalled_agents
+>>>>>>> origin/main
 
         agents_dir = kwargs.get("agents_dir")
         if agents_dir:
@@ -1230,6 +1234,7 @@ def run_builtin_validator(
                 if should_notify_stall(agents_dir, issue_id, stage, cooldown_min=cooldown):
                     new_stalls.append(agent_info)
 
+<<<<<<< HEAD
             if new_stalls:
                 # Build report and notify controller
                 stall_report = []
@@ -1246,6 +1251,13 @@ def run_builtin_validator(
                 try:
                     result = subprocess.run(
                         ["agenttree", "send", "0", message],
+=======
+                # Send nudge via agenttree send --interrupt to actually interrupt the agent
+                message = f"STALL DETECTED ({minutes}m). Run `agenttree next` NOW to check your progress and advance."
+                try:
+                    result = subprocess.run(
+                        ["agenttree", "send", issue_id, message, "--interrupt"],
+>>>>>>> origin/main
                         capture_output=True,
                         text=True,
                         timeout=30,
@@ -1413,7 +1425,7 @@ def run_hook(
 
     Args:
         hook: Hook configuration dict
-        context_dir: Directory context (issue_dir for stage hooks, agents_dir for controller)
+        context_dir: Directory context (issue_dir for stage hooks, agents_dir for manager)
         hook_state: Optional state dict for rate limiting (updated in place)
         sync_count: Current sync count for run_every_n_syncs rate limiting
         verbose: If True, print detailed output
@@ -1451,8 +1463,8 @@ def run_hook(
         if hook_type == "run":
             # Shell command hook
             errors = run_command_hook(context_dir, params, **kwargs)
-        elif hook_type in ("push_pending_branches", "check_controller_stages", "check_merged_prs", "check_custom_agent_stages"):
-            # Controller hooks need agents_dir - use from kwargs if provided, otherwise context_dir
+        elif hook_type in ("push_pending_branches", "check_manager_stages", "check_merged_prs", "check_custom_agent_stages"):
+            # Manager hooks need agents_dir - use from kwargs if provided, otherwise context_dir
             if "agents_dir" not in kwargs:
                 kwargs["agents_dir"] = context_dir
             errors = run_builtin_validator(context_dir, hook, **kwargs)
@@ -1645,8 +1657,8 @@ def execute_enter_hooks(issue: "Issue", stage: str, substage: Optional[str] = No
     When entering the FIRST substage, runs substage hooks first, then stage-level hooks.
     This ensures stage-level setup (like create_pr) runs when entering a stage with substages.
 
-    For controller stages (host: controller), hooks are skipped when running in a container.
-    The host will execute them via check_controller_stages() during sync.
+    For manager stages (role: manager), hooks are skipped when running in a container.
+    The host will execute them via check_manager_stages() during sync.
 
     Args:
         issue: Issue that was transitioned
@@ -1661,10 +1673,10 @@ def execute_enter_hooks(issue: "Issue", stage: str, substage: Optional[str] = No
     if not stage_config:
         return  # Unknown stage, skip hooks
 
-    # Skip hooks for controller stages when in a container
-    # Host will run them via check_controller_stages() during sync
-    if stage_config.host == "controller" and is_running_in_container():
-        console.print(f"[dim]Controller stage - hooks will run on host sync[/dim]")
+    # Skip hooks for manager stages when in a container
+    # Host will run them via check_manager_stages() during sync
+    if stage_config.role == "manager" and is_running_in_container():
+        console.print(f"[dim]Manager stage - hooks will run on host sync[/dim]")
         return
 
     # Get issue directory
@@ -2256,57 +2268,57 @@ def get_code_directory(issue: Optional["Issue"], issue_dir: Path) -> Path:
     return issue_dir
 
 
-def get_current_agent_host() -> str:
-    """Get the current agent host type.
+def get_current_role() -> str:
+    """Get the current agent role.
 
-    The agent host is determined by the AGENTTREE_AGENT_HOST env var.
-    If not set, defaults to "agent" for containers or "controller" for host.
+    The role is determined by the AGENTTREE_ROLE env var.
+    If not set, defaults to "developer" for containers or "manager" for host.
 
     Returns:
-        Agent host name (e.g., "agent", "controller", "review")
+        Role name (e.g., "developer", "manager", "reviewer")
     """
     import os
 
-    # Check for explicit agent host
-    agent_host = os.environ.get("AGENTTREE_AGENT_HOST")
-    if agent_host:
-        return agent_host
+    # Check for explicit role
+    role = os.environ.get("AGENTTREE_ROLE")
+    if role:
+        return role
 
-    # Default: "agent" if in container, "controller" if on host
+    # Default: "developer" if in container, "manager" if on host
     if is_running_in_container():
-        return "agent"
-    return "controller"
+        return "developer"
+    return "manager"
 
 
-def can_agent_operate_in_stage(stage_host: str) -> bool:
-    """Check if the current agent can operate in a stage with the given host.
+def can_agent_operate_in_stage(stage_role: str) -> bool:
+    """Check if the current agent can operate in a stage with the given role.
 
-    Agents can only operate in stages where the stage's host matches their identity.
-    - Default agents (host="agent") can only operate in host="agent" stages
-    - Custom agents (host="review") can only operate in host="review" stages
-    - Controller can operate in any stage (it's human-driven)
+    Agents can only operate in stages where the stage's role matches their identity.
+    - Default agents (role="developer") can only operate in role="developer" stages
+    - Custom agents (role="reviewer") can only operate in role="reviewer" stages
+    - Manager can operate in any stage (it's human-driven)
 
     Args:
-        stage_host: The host value from the stage config (e.g., "agent", "controller", "review")
+        stage_role: The role value from the stage config (e.g., "developer", "manager", "reviewer")
 
     Returns:
         True if the current agent can operate in this stage, False otherwise
     """
-    current_host = get_current_agent_host()
+    current_role = get_current_role()
 
-    # Controller (human) can operate anywhere
-    if current_host == "controller":
+    # Manager (human) can operate anywhere
+    if current_role == "manager":
         return True
 
-    # Agents can only operate in their own host stages
-    return current_host == stage_host
+    # Agents can only operate in their own role stages
+    return current_role == stage_role
 
 
 def ensure_pr_for_issue(issue_id: str) -> bool:
-    """Ensure a PR exists for an issue in a controller stage.
+    """Ensure a PR exists for an issue in a manager stage.
 
-    Called by host via create_pr hook for controller stages (host: controller).
-    Stage check is done by check_controller_stages(), not here.
+    Called by host via create_pr hook for manager stages (role: manager).
+    Stage check is done by check_manager_stages(), not here.
 
     Args:
         issue_id: Issue ID to create PR for

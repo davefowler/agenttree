@@ -1034,7 +1034,7 @@ def load_persona(
     sync_agents_repo(agents_path, pull_only=True)
 
     # Load agent-specific persona
-    persona_path = agents_path / "skills" / "personas" / f"{agent_type}.md"
+    persona_path = agents_path / "skills" / "roles" / f"{agent_type}.md"
     if not persona_path.exists():
         # Fallback to legacy overview.md
         persona_path = agents_path / "skills" / "overview.md"
