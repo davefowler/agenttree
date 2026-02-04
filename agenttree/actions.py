@@ -94,7 +94,7 @@ def start_manager(agents_dir: Path, **kwargs: Any) -> None:
     
     console.print("[cyan]Starting manager agent...[/cyan]")
     subprocess.Popen(
-        ["uv", "run", "agenttree", "start", "0"],
+        ["uv", "run", "agenttree", "start", "0", "--skip-preflight"],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         cwd=agents_dir.parent,  # Project root
