@@ -2830,6 +2830,7 @@ def sync_command() -> None:
         agenttree sync
     """
     from agenttree.agents_repo import sync_agents_repo
+    from agenttree.controller_hooks import run_post_controller_hooks
     from agenttree.issues import get_agenttree_path
 
     console.print("[dim]Syncing agents repository...[/dim]")
@@ -2840,6 +2841,10 @@ def sync_command() -> None:
         console.print("[green]✓ Sync complete[/green]")
     else:
         console.print("[yellow]Sync completed with warnings[/yellow]")
+
+    # Run controller hooks (stall detection, CI checks, etc.)
+    console.print("[dim]Running controller hooks...[/dim]")
+    run_post_controller_hooks(agents_path)
 
 
 # =============================================================================
