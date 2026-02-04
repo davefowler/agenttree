@@ -1210,34 +1210,54 @@ def run_builtin_validator(
             check_custom_agent_stages(agents_dir)
 
     elif hook_type == "check_stalled_agents":
-        from agenttree.controller_agent import get_stalled_agents
+        from agenttree.controller_agent import (
+            get_stalled_agents,
+            should_notify_stall,
+            mark_stall_notified,
+        )
 
         agents_dir = kwargs.get("agents_dir")
         if agents_dir:
             threshold = params.get("threshold_min", 20)
+            cooldown = params.get("cooldown_min", 10)
             stalled = get_stalled_agents(agents_dir, threshold_min=threshold)
 
+            # Filter to only stalls we haven't recently notified about
+            new_stalls = []
             for agent_info in stalled:
                 issue_id = agent_info["issue_id"]
-                minutes = agent_info["minutes_stalled"]
+                stage = agent_info["stage"]
+                if should_notify_stall(agents_dir, issue_id, stage, cooldown_min=cooldown):
+                    new_stalls.append(agent_info)
 
-                # Send nudge via agenttree send - handles agent restart if needed
-                message = f"You've been in the same stage for {minutes} minutes. Run `agenttree next` to check your progress and continue."
+            if new_stalls:
+                # Build report and notify controller
+                stall_report = []
+                for agent_info in new_stalls:
+                    issue_id = agent_info["issue_id"]
+                    stage = agent_info["stage"]
+                    minutes = agent_info["minutes_stalled"]
+                    title = agent_info.get("title", "")
+                    stall_report.append(f"- Agent #{issue_id} ({title}) stalled in {stage} for {minutes} minutes")
+                    # Mark as notified
+                    mark_stall_notified(agents_dir, issue_id, stage)
+
+                message = "STALL ALERT:\\n" + "\\n".join(stall_report)
                 try:
                     result = subprocess.run(
-                        ["agenttree", "send", issue_id, message],
+                        ["agenttree", "send", "0", message],
                         capture_output=True,
                         text=True,
                         timeout=30,
                     )
                     if result.returncode == 0:
-                        console.print(f"[yellow]Nudged stalled agent #{issue_id} ({minutes}m)[/yellow]")
+                        console.print(f"[yellow]Notified controller of {len(new_stalls)} stalled agent(s)[/yellow]")
                     else:
-                        console.print(f"[red]Failed to nudge #{issue_id}: {result.stderr}[/red]")
+                        console.print(f"[red]Failed to notify controller: {result.stderr}[/red]")
                 except subprocess.TimeoutExpired:
-                    console.print(f"[red]Nudge timed out for #{issue_id}[/red]")
+                    console.print(f"[red]Controller notification timed out[/red]")
                 except Exception as e:
-                    console.print(f"[red]Failed to nudge #{issue_id}: {e}[/red]")
+                    console.print(f"[red]Failed to notify controller: {e}[/red]")
 
     elif hook_type == "server_running":
         # Check that a dev server is running on the issue's port
