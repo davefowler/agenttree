@@ -135,10 +135,16 @@ The `_agenttree/` directory is a **separate git repository** that stores all AI 
 
 - `agenttree approve <id>` - Advance an issue past a review stage (runs hooks, notifies agent)
 - `agenttree send <id> "message"` - Send a message to an agent
+- `agenttree send <id> "message" --interrupt` - Send Ctrl+C first to interrupt, then send message
 - `agenttree start <id>` - Start an agent for an issue
+- `agenttree start <id> --force` - Restart an agent (kills existing, rebases, starts fresh)
 - `agenttree issue create "title" --problem "..."` - Create a new issue (title min 10 chars, problem min 50 chars, always follow with `agenttree start <id>`)
+- `agenttree output <id>` - View an agent's terminal output (use this instead of tmux capture-pane)
+- `agenttree status` - Show all active issues with stage progress, time in stage, agent status (run/dead), and whether waiting on human
 
 **Why:** CLI commands run the proper hooks and workflow logic. Manually editing `issue.yaml` or using raw commands bypasses hooks, breaks notifications, and causes state inconsistencies.
+
+**Important:** Use `agenttree output <id>` to check on agents, NOT raw tmux commands like `tmux capture-pane`.
 
 ---
 
