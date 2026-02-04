@@ -489,9 +489,9 @@ class TestStartController:
 
         mock_create.assert_called_once_with("testproject-controller-000", tmp_path, "claude")
         mock_send.assert_called_once()
-        # Verify the startup prompt includes controller instructions
+        # Verify the startup prompt includes manager skill file
         startup_prompt = mock_send.call_args[0][1]
-        assert "controller" in startup_prompt.lower()
+        assert "manager" in startup_prompt.lower()
 
     def test_start_controller_kills_existing_session(self, mock_config, tmp_path):
         """Should kill existing session before creating new one."""
