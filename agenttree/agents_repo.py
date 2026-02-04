@@ -15,7 +15,7 @@ import re
 
 if TYPE_CHECKING:
     from agenttree.issues import Issue
-    from agenttree.config import HostConfig, StageConfig
+    from agenttree.config import RoleConfig, StageConfig
 
 # Global lock file handle (kept open during sync)
 _sync_lock_fd = None
@@ -176,10 +176,10 @@ def sync_agents_repo(
             _sync_lock_fd = None
 
 
-def check_controller_stages(agents_dir: Path) -> int:
-    """Execute post_start hooks for issues in controller stages.
+def check_manager_stages(agents_dir: Path) -> int:
+    """Execute post_start hooks for issues in manager stages.
 
-    Controller stages (host: controller) have their hooks executed by the host,
+    Manager stages (role: manager) have their hooks executed by the host,
     not by agents. This is for operations agents can't do (like pushing/creating PRs).
 
     Called from host (sync, web server, etc.) on every sync.
@@ -203,9 +203,9 @@ def check_controller_stages(agents_dir: Path) -> int:
         return 0
 
     config = load_config()
-    controller_stages = config.get_controller_stages()
+    manager_stages = config.get_manager_stages()
 
-    if not controller_stages:
+    if not manager_stages:
         return 0
 
     import yaml
@@ -226,16 +226,16 @@ def check_controller_stages(agents_dir: Path) -> int:
 
             stage = data.get("stage", "")
 
-            # Check if in a controller stage
-            if stage in controller_stages:
+            # Check if in a manager stage
+            if stage in manager_stages:
                 # Skip if hooks already executed for this stage
-                hooks_executed_stage = data.get("controller_hooks_executed")
+                hooks_executed_stage = data.get("manager_hooks_executed")
                 if hooks_executed_stage == stage:
                     continue
 
                 # Mark hooks as executed BEFORE running them to prevent infinite loop
-                # (hooks may call sync_agents_repo which calls check_controller_stages)
-                data["controller_hooks_executed"] = stage
+                # (hooks may call sync_agents_repo which calls check_manager_stages)
+                data["manager_hooks_executed"] = stage
                 with open(issue_yaml, "w") as f:
                     yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
 
@@ -252,10 +252,10 @@ def check_controller_stages(agents_dir: Path) -> int:
 
 
 def check_custom_agent_stages(agents_dir: Path) -> int:
-    """Spawn custom agent hosts for issues in custom agent stages.
+    """Spawn custom role agents for issues in custom agent stages.
 
-    Custom agent stages (host: <custom_agent_name>) have their agents
-    spawned by the controller, similar to how controller stages work
+    Custom agent stages (role: <custom_role_name>) have their agents
+    spawned by the manager, similar to how manager stages work
     but instead of running hooks directly, we spawn a specialized agent.
 
     Called from host (sync, web server, etc.) on every sync.
@@ -279,7 +279,7 @@ def check_custom_agent_stages(agents_dir: Path) -> int:
         return 0
 
     config = load_config()
-    custom_agent_stages = config.get_custom_agent_stages()
+    custom_agent_stages = config.get_custom_role_stages()
 
     if not custom_agent_stages:
         return 0
@@ -312,15 +312,15 @@ def check_custom_agent_stages(agents_dir: Path) -> int:
                 if not stage_config:
                     continue
 
-                host_name = stage_config.host
-                agent_config = config.get_agent_host(host_name)
+                role_name = stage_config.role
+                agent_config = config.get_custom_role(role_name)
                 if not agent_config:
-                    console.print(f"[yellow]Custom agent host '{host_name}' not found in config[/yellow]")
+                    console.print(f"[yellow]Custom role '{role_name}' not found in config[/yellow]")
                     continue
 
                 # Check if custom agent is already running (runtime check, not cached marker)
                 issue_id = data.get("id", "")
-                custom_agent_session = f"{config.project}-{host_name}-{issue_id}"
+                custom_agent_session = f"{config.project}-{role_name}-{issue_id}"
 
                 from agenttree.tmux import is_claude_running, send_message
 
@@ -333,28 +333,28 @@ def check_custom_agent_stages(agents_dir: Path) -> int:
                             f"Stage is now {stage}. Run `agenttree next` for your instructions."
                         )
                         if result == "sent":
-                            console.print(f"[dim]Pinged {host_name} agent for issue #{issue_id}[/dim]")
+                            console.print(f"[dim]Pinged {role_name} agent for issue #{issue_id}[/dim]")
                         continue
                     else:
                         # Session exists but Claude exited - need to restart
-                        console.print(f"[yellow]{host_name} agent session exists but Claude exited, restarting...[/yellow]")
+                        console.print(f"[yellow]{role_name} agent session exists but Claude exited, restarting...[/yellow]")
                         # Fall through to spawn logic below
 
                 issue = Issue(**data)
-                console.print(f"[cyan]Starting {host_name} agent for issue #{issue.id} at stage {stage}...[/cyan]")
+                console.print(f"[cyan]Starting {role_name} agent for issue #{issue.id} at stage {stage}...[/cyan]")
 
                 # Use agenttree start --host to spawn the agent
                 import subprocess
                 proc = subprocess.run(
-                    ["agenttree", "start", issue.id, "--host", host_name, "--skip-preflight"],
+                    ["agenttree", "start", issue.id, "--role", role_name, "--skip-preflight"],
                     capture_output=True,
                     text=True,
                 )
                 if proc.returncode == 0:
-                    console.print(f"[green]✓ Started {host_name} agent for issue #{issue.id}[/green]")
+                    console.print(f"[green]✓ Started {role_name} agent for issue #{issue.id}[/green]")
                     spawned += 1
                 else:
-                    console.print(f"[red]Failed to start {host_name} agent for issue #{issue.id}[/red]")
+                    console.print(f"[red]Failed to start {role_name} agent for issue #{issue.id}[/red]")
                     if proc.stderr:
                         console.print(f"[dim]{proc.stderr[:200]}[/dim]")
 

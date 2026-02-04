@@ -4,7 +4,7 @@ This module provides a registry mapping action names to functions.
 Actions are executed by the event dispatcher when events fire.
 
 Built-in Actions:
-    - start_controller: Start the controller/manager agent
+    - start_manager: Start the manager agent
     - auto_start_agents: Start agents for issues not in parking lot
     - stop_all_agents: Stop all running agents
     - sync: Git pull/push _agenttree
@@ -12,7 +12,7 @@ Built-in Actions:
     - check_ci_status: Check GitHub CI status
     - check_merged_prs: Detect and handle merged PRs
     - push_pending_branches: Push branches with unpushed commits
-    - check_controller_stages: Process issues in controller stages
+    - check_manager_stages: Process issues in manager stages
     - check_custom_agent_stages: Spawn custom agents
 
 Naming convention: Action names match function names exactly.
@@ -74,9 +74,9 @@ def list_actions() -> list[str]:
 # =============================================================================
 
 
-@register_action("start_controller")
-def start_controller(agents_dir: Path, **kwargs: Any) -> None:
-    """Start the controller/manager agent (agent 0).
+@register_action("start_manager")
+def start_manager(agents_dir: Path, **kwargs: Any) -> None:
+    """Start the manager agent (agent 0).
     
     Args:
         agents_dir: Path to _agenttree directory
@@ -86,13 +86,13 @@ def start_controller(agents_dir: Path, **kwargs: Any) -> None:
     from agenttree.tmux import session_exists
     
     config = load_config()
-    controller_session = f"{config.project}-controller-000"
+    manager_session = f"{config.project}-manager-000"
     
-    if session_exists(controller_session):
-        console.print("[dim]Controller already running[/dim]")
+    if session_exists(manager_session):
+        console.print("[dim]Manager already running[/dim]")
         return
     
-    console.print("[cyan]Starting controller agent...[/cyan]")
+    console.print("[cyan]Starting manager agent...[/cyan]")
     subprocess.Popen(
         ["uv", "run", "agenttree", "start", "0"],
         stdout=subprocess.DEVNULL,
@@ -100,7 +100,7 @@ def start_controller(agents_dir: Path, **kwargs: Any) -> None:
         cwd=agents_dir.parent,  # Project root
         start_new_session=True,
     )
-    console.print("[green]✓ Started controller agent[/green]")
+    console.print("[green]✓ Started manager agent[/green]")
 
 
 @register_action("auto_start_agents")
@@ -143,23 +143,38 @@ def auto_start_agents(agents_dir: Path, **kwargs: Any) -> None:
 
 @register_action("stop_all_agents")
 def stop_all_agents(agents_dir: Path, **kwargs: Any) -> None:
-    """Stop all running agents.
+    """Stop all running agents including orphaned sessions.
     
     Args:
         agents_dir: Path to _agenttree directory
     """
-    from agenttree.issues import list_issues
-    from agenttree.state import stop_all_agents_for_issue, get_active_agent
+    import subprocess
+    from agenttree.config import load_config
+    from agenttree.tmux import kill_session
     
-    issues = list_issues(sync=False)
+    config = load_config()
+    prefix = f"{config.project}-"
+    
+    # Get all tmux sessions
+    result = subprocess.run(
+        ["tmux", "list-sessions", "-F", "#{session_name}"],
+        capture_output=True,
+        text=True,
+    )
+    
+    if result.returncode != 0:
+        console.print("[dim]No tmux sessions running[/dim]")
+        return
+    
+    sessions = result.stdout.strip().split("\n")
     stopped = 0
     
-    for issue in issues:
-        if get_active_agent(issue.id):
-            count = stop_all_agents_for_issue(issue.id, quiet=True)
-            if count > 0:
-                stopped += count
-                console.print(f"[dim]Stopped agent(s) for issue #{issue.id}[/dim]")
+    for session in sessions:
+        # Kill all sessions with our project prefix (except manager, handled separately)
+        if session.startswith(prefix) and not session.endswith("-manager-000"):
+            kill_session(session)
+            stopped += 1
+            console.print(f"[dim]Stopped {session}[/dim]")
     
     console.print(f"[green]✓ Stopped {stopped} agent(s)[/green]")
 
@@ -229,7 +244,11 @@ def check_stalled_agents(
     threshold_min: int = 15,
     **kwargs: Any
 ) -> None:
-    """Check for stalled agents and nudge them.
+    """Check for stalled agents and notify the manager.
+    
+    Instead of nudging agents directly, this builds a report of stalled agents
+    and sends it to the manager so it can decide how to handle them
+    (restart, nudge, or investigate).
     
     Args:
         agents_dir: Path to _agenttree directory
@@ -243,9 +262,16 @@ def check_stalled_agents(
     
     config = load_config()
     parking_lot_stages = config.get_parking_lot_stages()
+    manager_session = f"{config.project}-manager-000"
+    
+    # Check if manager is running
+    if not session_exists(manager_session):
+        console.print("[dim]Manager not running, skipping stall check[/dim]")
+        return
     
     issues = list_issues(sync=False)
-    nudged = 0
+    stalled: list[tuple[str, str, int]] = []  # (id, title, minutes)
+    dead: list[tuple[str, str]] = []  # (id, title) - session exists but claude exited
     
     for issue in issues:
         if issue.stage in parking_lot_stages:
@@ -259,30 +285,46 @@ def check_stalled_agents(
             continue
         
         # Check if Claude is actually running
-        if not is_claude_running(agent.tmux_session):
-            continue
+        claude_running = is_claude_running(agent.tmux_session)
         
         # Check last activity
         try:
             last_updated = datetime.fromisoformat(issue.updated.replace("Z", "+00:00"))
-            elapsed_min = (datetime.now(timezone.utc) - last_updated).total_seconds() / 60
+            elapsed_min = int((datetime.now(timezone.utc) - last_updated).total_seconds() / 60)
             
-            if elapsed_min > threshold_min:
-                # Nudge the agent
-                message = (
-                    f"You've been working on this for {int(elapsed_min)} minutes. "
-                    "Are you stuck? Run `agenttree status` to check your progress, "
-                    "or `agenttree next` if you need help."
-                )
-                result = send_message(agent.tmux_session, message)
-                if result == "sent":
-                    nudged += 1
-                    console.print(f"[yellow]Nudged stalled agent for issue #{issue.id}[/yellow]")
+            if not claude_running:
+                # Claude exited - agent is dead
+                dead.append((issue.id, issue.title[:40]))
+            elif elapsed_min > threshold_min:
+                # Claude running but stalled
+                stalled.append((issue.id, issue.title[:40], elapsed_min))
         except (ValueError, TypeError):
             continue
     
-    if nudged > 0:
-        console.print(f"[dim]Nudged {nudged} stalled agent(s)[/dim]")
+    # Build message for controller
+    if not stalled and not dead:
+        return
+    
+    lines = ["STALL REPORT - Please investigate and take action:"]
+    
+    if dead:
+        lines.append(f"\nDEAD AGENTS ({len(dead)}) - Claude exited, need restart:")
+        for issue_id, title in dead:
+            lines.append(f"  #{issue_id}: {title}")
+        lines.append("  → Use 'agenttree start <id> --force' to restart")
+    
+    if stalled:
+        lines.append(f"\nSTALLED AGENTS ({len(stalled)}) - No progress:")
+        for issue_id, title, mins in stalled:
+            lines.append(f"  #{issue_id}: {title} ({mins}min)")
+        lines.append("  → Use 'agenttree output <id>' to diagnose")
+        lines.append("  → Use 'agenttree send <id> \"message\" --interrupt' to nudge")
+    
+    message = "\n".join(lines)
+    result = send_message(manager_session, message)
+    
+    if result == "sent":
+        console.print(f"[dim]Sent stall report to manager ({len(dead)} dead, {len(stalled)} stalled)[/dim]")
 
 
 @register_action("check_ci_status")
@@ -327,14 +369,14 @@ def push_pending_branches(agents_dir: Path, **kwargs: Any) -> None:
         console.print(f"[dim]Pushed {count} branch(es)[/dim]")
 
 
-@register_action("check_controller_stages")
-def check_controller_stages(agents_dir: Path, **kwargs: Any) -> None:
+@register_action("check_manager_stages")
+def check_manager_stages(agents_dir: Path, **kwargs: Any) -> None:
     """Process issues in controller-owned stages.
     
     Args:
         agents_dir: Path to _agenttree directory
     """
-    from agenttree.agents_repo import check_controller_stages as do_check
+    from agenttree.agents_repo import check_manager_stages as do_check
     
     count = do_check(agents_dir)
     if count > 0:
@@ -383,7 +425,7 @@ def cleanup_resources(
 
 DEFAULT_EVENT_CONFIGS: dict[str, list[str] | dict[str, Any]] = {
     "startup": [
-        "start_controller",
+        "start_manager",
         "auto_start_agents",
     ],
     "shutdown": [
@@ -395,7 +437,7 @@ DEFAULT_EVENT_CONFIGS: dict[str, list[str] | dict[str, Any]] = {
         "actions": [
             "sync",
             {"push_pending_branches": {}},
-            {"check_controller_stages": {}},
+            {"check_manager_stages": {}},
             {"check_custom_agent_stages": {}},
             {"check_stalled_agents": {"min_interval_s": 60}},
             {"check_ci_status": {"min_interval_s": 60}},

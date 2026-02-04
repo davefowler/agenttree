@@ -2802,7 +2802,7 @@ class TestHookExecutionOrder:
         config = Config(stages=[
             StageConfig(
                 name="implementation_review",
-                host="controller",
+                role="manager",
                 post_start=[{"create_pr": {}}],  # Stage-level hook
                 substages={
                     "ci_wait": SubstageConfig(name="ci_wait"),  # No post_start hooks

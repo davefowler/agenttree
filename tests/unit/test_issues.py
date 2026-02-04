@@ -1139,14 +1139,14 @@ class TestLoadPersona:
         (agenttrees_path / "issues").mkdir()
         (agenttrees_path / "templates").mkdir()
         (agenttrees_path / "skills").mkdir()
-        (agenttrees_path / "skills" / "personas").mkdir()
+        (agenttrees_path / "skills" / "roles").mkdir()
 
         # Create problem template
         template = agenttrees_path / "templates" / "problem.md"
         template.write_text("# Problem Statement\n\n")
 
-        # Create personas/developer.md with Jinja variables
-        persona = agenttrees_path / "skills" / "personas" / "developer.md"
+        # Create roles/developer.md with Jinja variables
+        persona = agenttrees_path / "skills" / "roles" / "developer.md"
         persona.write_text(
             "# Developer Persona\n\n"
             "Stage: {{ current_stage }}\n"
@@ -1234,7 +1234,7 @@ class TestLoadPersona:
         agenttrees_path = tmp_path / "_agenttree"
         agenttrees_path.mkdir()
         (agenttrees_path / "skills").mkdir()
-        (agenttrees_path / "skills" / "personas").mkdir()
+        (agenttrees_path / "skills" / "roles").mkdir()
         # Don't create developer.md
 
         monkeypatch.setattr(
@@ -1254,7 +1254,7 @@ class TestLoadPersona:
         from agenttree.issues import load_persona, create_issue
 
         # Update persona template to include issue vars
-        persona_path = temp_agenttrees_with_persona / "skills" / "personas" / "developer.md"
+        persona_path = temp_agenttrees_with_persona / "skills" / "roles" / "developer.md"
         persona_path.write_text(
             "Issue: {{ issue_id }} - {{ issue_title }}\n"
             "Stage: {{ current_stage }}\n"
@@ -1274,7 +1274,7 @@ class TestLoadPersona:
         from agenttree.issues import load_persona
 
         # Create a reviewer persona
-        reviewer_path = temp_agenttrees_with_persona / "skills" / "personas" / "reviewer.md"
+        reviewer_path = temp_agenttrees_with_persona / "skills" / "roles" / "reviewer.md"
         reviewer_path.write_text("# Reviewer Persona\n\nYou are a code reviewer.\n")
 
         # Load developer (default)
