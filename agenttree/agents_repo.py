@@ -235,8 +235,7 @@ def check_manager_stages(agents_dir: Path) -> int:
             # Check if in a manager stage
             if stage in manager_stages:
                 # Skip if hooks already executed for this stage
-                # Check both new field name and legacy field name for backwards compatibility
-                hooks_executed_stage = data.get("manager_hooks_executed") or data.get("controller_hooks_executed")
+                hooks_executed_stage = data.get("manager_hooks_executed")
                 if hooks_executed_stage == stage:
                     continue
 

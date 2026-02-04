@@ -185,7 +185,7 @@ stages:
 
   # Independent code review by a specialized review agent (not the implementing agent)
   - name: independent_code_review
-    role: reviewer  # Custom agent host - spawned by controller
+    role: reviewer  # Custom agent role - spawned by manager
     output: independent_review.md
     skill: independent_review.md
     pre_completion:
