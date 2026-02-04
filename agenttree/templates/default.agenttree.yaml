@@ -211,7 +211,7 @@ stages:
 
   # Independent code review by a specialized review agent (not the implementing agent)
   - name: independent_code_review
-    host: review  # Custom agent host - spawned by controller
+    role: reviewer  # Custom agent role - spawned by manager
     output: independent_review.md
     skill: independent_review.md
     pre_completion:
@@ -229,7 +229,7 @@ stages:
   # Only reachable via StageRedirect when reviewer doesn't approve
   - name: address_independent_review
     redirect_only: true  # Not in normal progression, only via redirect
-    host: agent  # Back to the implementing agent
+    role: developer  # Back to the implementing agent
     output: independent_review_response.md
     skill: address_independent_review.md
     post_start:
@@ -256,7 +256,7 @@ stages:
   - name: implementation_review
     human_review: true
     review_doc: review.md
-    host: controller  # Host handles PR creation (agents can't push)
+    role: manager  # Manager handles PR creation (agents can't push)
     post_start:
       - create_pr:
     substages:
@@ -271,12 +271,12 @@ stages:
       - pr_approved:
 
   - name: knowledge_base
-    host: agent
+    role: developer
     skill: knowledge_base.md
 
   - name: accepted
     is_parking_lot: true
-    host: controller  # Host handles merge/cleanup (agents can't push)
+    role: manager  # Manager handles merge/cleanup (agents can't push)
     post_start:
       - merge_pr:
       - cleanup_agent:
@@ -323,14 +323,14 @@ flows:
 
 default_flow: default
 
-# DEPRECATED: controller_hooks - use on.heartbeat.actions instead
+# DEPRECATED: manager_hooks - use on.heartbeat.actions instead
 # This section is kept for backwards compatibility but will be removed in a future version.
 # The new on: config above provides better control with:
 #   - Separate startup/shutdown events
 #   - Configurable heartbeat interval
 #   - Rate limiting with min_interval_s and every_n
 #
-# controller_hooks:
+# manager_hooks:
 #   post_sync:
 #     - cleanup_resources:
 #         log_file: _agenttree/logs/cleanup.log

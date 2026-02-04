@@ -269,7 +269,7 @@ class TestSyncAgentsRepo:
         assert result is False
 
     @patch("agenttree.agents_repo.check_merged_prs")
-    @patch("agenttree.agents_repo.check_controller_stages")
+    @patch("agenttree.agents_repo.check_manager_stages")
     @patch("agenttree.agents_repo.push_pending_branches")
     @patch("agenttree.agents_repo.subprocess.run")
     def test_sync_pull_only_success(self, mock_run, mock_push_pending, mock_check_controller, mock_check_merged, git_repo):
@@ -332,7 +332,7 @@ class TestSyncAgentsRepo:
         assert "Merge conflict" in captured.out
 
     @patch("agenttree.agents_repo.check_merged_prs")
-    @patch("agenttree.agents_repo.check_controller_stages")
+    @patch("agenttree.agents_repo.check_manager_stages")
     @patch("agenttree.agents_repo.push_pending_branches")
     @patch("agenttree.agents_repo.subprocess.run")
     def test_sync_write_commits_and_pushes(self, mock_run, mock_push_pending, mock_check_controller, mock_check_merged, git_repo):
@@ -361,7 +361,7 @@ class TestSyncAgentsRepo:
         assert "Test commit" in commit_call[0][0]
 
     @patch("agenttree.agents_repo.check_merged_prs")
-    @patch("agenttree.agents_repo.check_controller_stages")
+    @patch("agenttree.agents_repo.check_manager_stages")
     @patch("agenttree.agents_repo.push_pending_branches")
     @patch("agenttree.agents_repo.subprocess.run")
     def test_sync_write_no_changes(self, mock_run, mock_push_pending, mock_check_controller, mock_check_merged, git_repo):

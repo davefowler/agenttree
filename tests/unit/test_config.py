@@ -616,7 +616,7 @@ class TestRedirectOnlyStages:
                 StageConfig(
                     name="address_review",
                     redirect_only=True,
-                    host="agent",
+                    role="developer",
                     output="response.md"
                 ),
                 StageConfig(name="accepted", is_parking_lot=True),
@@ -627,7 +627,7 @@ class TestRedirectOnlyStages:
         stage = config.get_stage("address_review")
         assert stage is not None
         assert stage.redirect_only is True
-        assert stage.host == "agent"
+        assert stage.role == "developer"
         assert stage.output == "response.md"
 
     def test_multiple_consecutive_redirect_only_stages_skipped(self) -> None:

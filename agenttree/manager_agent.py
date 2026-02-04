@@ -1,6 +1,6 @@
-"""Controller agent stall detection and monitoring.
+"""Manager agent stall detection and monitoring.
 
-This module provides helper functions for the controller agent to detect
+This module provides helper functions for the manager agent to detect
 stalled agents and log interventions.
 """
 
@@ -148,7 +148,7 @@ def log_stall(
         nudge_message: The nudge message that was sent
         escalated: Whether this triggered escalation
     """
-    logs_dir = agents_dir / "controller_logs"
+    logs_dir = agents_dir / "manager_logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
 
     log_file = logs_dir / "stalls.yaml"
@@ -189,7 +189,7 @@ def get_nudge_count(agents_dir: Path, issue_id: str) -> int:
     Returns:
         Number of nudges sent since last stage advancement
     """
-    log_file = agents_dir / "controller_logs" / "stalls.yaml"
+    log_file = agents_dir / "manager_logs" / "stalls.yaml"
     if not log_file.exists():
         return 0
 

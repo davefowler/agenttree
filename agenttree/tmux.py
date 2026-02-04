@@ -494,7 +494,7 @@ class TmuxManager:
         tool_name: str,
         container_runtime: "ContainerRuntime",
         model: str | None = None,
-        agent_host: str = "agent",
+        role: str = "developer",
         has_merge_conflicts: bool = False,
         is_restart: bool = False,
     ) -> bool:
@@ -507,7 +507,7 @@ class TmuxManager:
             tool_name: Name of the AI tool to use
             container_runtime: Container runtime instance
             model: Model to use (defaults to config.default_model if not specified)
-            agent_host: Agent host type for the stage (e.g., "agent", "review")
+            role: Agent role for the stage (e.g., "developer", "reviewer")
             has_merge_conflicts: Whether there are unresolved merge conflicts
             is_restart: Whether this is a restart (worktree already existed)
 
@@ -541,7 +541,7 @@ class TmuxManager:
             ai_tool=tool_name,
             dangerous=True,  # Safe because we're in a container
             model=resolved_model,
-            agent_host=agent_host,
+            role=role,
             port=port,
         )
 
@@ -579,18 +579,18 @@ class TmuxManager:
                 kill_session(session_name)
             return False
 
-    def start_controller(
+    def start_manager(
         self,
         session_name: str,
         repo_path: Path,
         tool_name: str,
     ) -> None:
-        """Start the controller agent on the host (not in a container).
+        """Start the manager agent on the host (not in a container).
 
-        The controller runs on the main branch and orchestrates other agents.
+        The manager runs on the main branch and orchestrates other agents.
 
         Args:
-            session_name: Tmux session name (typically {project}-issue-000)
+            session_name: Tmux session name (typically {project}-manager-000)
             repo_path: Path to the repository root
             tool_name: Name of the AI tool to use
         """
@@ -602,7 +602,7 @@ class TmuxManager:
         tool_config = self.config.get_tool_config(tool_name)
 
         # Build command to run the AI tool directly (not in container)
-        # Controller runs on the host with full access
+        # Manager runs on the host with full access
         ai_command = tool_config.command
 
         # Create tmux session running the AI tool
