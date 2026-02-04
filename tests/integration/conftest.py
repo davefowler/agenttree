@@ -164,13 +164,8 @@ def agenttree_config() -> dict[str, Any]:
             },
             {
                 "name": "accepted",
-<<<<<<< HEAD
                 "is_parking_lot": True,
-                "host": "controller",
-=======
-                "terminal": True,
-                "host": "manager",
->>>>>>> origin/main
+                "role": "manager",
                 "post_start": [
                     {"merge_pr": {}},
                     {"cleanup_agent": {}},
