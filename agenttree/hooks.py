@@ -1210,15 +1210,11 @@ def run_builtin_validator(
             check_custom_agent_stages(agents_dir)
 
     elif hook_type == "check_stalled_agents":
-<<<<<<< HEAD
-        from agenttree.controller_agent import (
+        from agenttree.manager_agent import (
             get_stalled_agents,
             should_notify_stall,
             mark_stall_notified,
         )
-=======
-        from agenttree.manager_agent import get_stalled_agents
->>>>>>> origin/main
 
         agents_dir = kwargs.get("agents_dir")
         if agents_dir:
@@ -1234,9 +1230,8 @@ def run_builtin_validator(
                 if should_notify_stall(agents_dir, issue_id, stage, cooldown_min=cooldown):
                     new_stalls.append(agent_info)
 
-<<<<<<< HEAD
             if new_stalls:
-                # Build report and notify controller
+                # Build report and notify manager
                 stall_report = []
                 for agent_info in new_stalls:
                     issue_id = agent_info["issue_id"]
@@ -1251,25 +1246,18 @@ def run_builtin_validator(
                 try:
                     result = subprocess.run(
                         ["agenttree", "send", "0", message],
-=======
-                # Send nudge via agenttree send --interrupt to actually interrupt the agent
-                message = f"STALL DETECTED ({minutes}m). Run `agenttree next` NOW to check your progress and advance."
-                try:
-                    result = subprocess.run(
-                        ["agenttree", "send", issue_id, message, "--interrupt"],
->>>>>>> origin/main
                         capture_output=True,
                         text=True,
                         timeout=30,
                     )
                     if result.returncode == 0:
-                        console.print(f"[yellow]Notified controller of {len(new_stalls)} stalled agent(s)[/yellow]")
+                        console.print(f"[yellow]Notified manager of {len(new_stalls)} stalled agent(s)[/yellow]")
                     else:
-                        console.print(f"[red]Failed to notify controller: {result.stderr}[/red]")
+                        console.print(f"[red]Failed to notify manager: {result.stderr}[/red]")
                 except subprocess.TimeoutExpired:
-                    console.print(f"[red]Controller notification timed out[/red]")
+                    console.print(f"[red]Manager notification timed out[/red]")
                 except Exception as e:
-                    console.print(f"[red]Failed to notify controller: {e}[/red]")
+                    console.print(f"[red]Failed to notify manager: {e}[/red]")
 
     elif hook_type == "server_running":
         # Check that a dev server is running on the issue's port

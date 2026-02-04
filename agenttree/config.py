@@ -142,14 +142,9 @@ class StageConfig(BaseModel):
     human_review: bool = False    # Requires human approval to exit
     is_parking_lot: bool = False  # No agent auto-starts here (backlog, accepted, not_doing)
     redirect_only: bool = False   # Only reachable via StageRedirect, skipped in normal progression
-<<<<<<< HEAD
-    condition: Optional[str] = None  # Jinja expression - skip stage when false
-    host: str = "agent"           # Who executes this stage: "agent" (in container) or "controller" (host)
-    review_doc: Optional[str] = None  # Document to show by default when viewing issue in this stage
-=======
+    condition: str | None = None  # Jinja expression - skip stage when false
     role: str = "developer"       # Who executes this stage: "developer" (in container) or "manager" (host)
     review_doc: str | None = None  # Document to show by default when viewing issue in this stage
->>>>>>> origin/main
     substages: Dict[str, SubstageConfig] = Field(default_factory=dict)
     pre_completion: list[dict] = Field(default_factory=list)  # Stage-level hooks before completing
     post_start: list[dict] = Field(default_factory=list)  # Stage-level hooks after starting
