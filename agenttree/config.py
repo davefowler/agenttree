@@ -21,7 +21,7 @@ class ContainerConfig(BaseModel):
     """
 
     enabled: bool = True  # Whether to run in a container
-    image: str = "agenttree-agent:latest"  # Container image to use
+    image: str = "agent:latest"  # Container image to use (override in .agenttree.yaml)
     # Future: additional container options (memory limits, env vars, etc.)
 
 
