@@ -153,7 +153,7 @@ def agenttree_config() -> dict[str, Any]:
             {
                 "name": "implementation_review",
                 "human_review": True,
-                "host": "controller",
+                "host": "manager",
                 "post_start": [{"create_pr": {}}],
                 "pre_completion": [{"pr_approved": {}}]
             },
@@ -164,8 +164,13 @@ def agenttree_config() -> dict[str, Any]:
             },
             {
                 "name": "accepted",
+<<<<<<< HEAD
                 "is_parking_lot": True,
                 "host": "controller",
+=======
+                "terminal": True,
+                "host": "manager",
+>>>>>>> origin/main
                 "post_start": [
                     {"merge_pr": {}},
                     {"cleanup_agent": {}},
