@@ -3,10 +3,10 @@
 Derives active agent state from tmux sessions instead of a state file.
 This eliminates staleness issues when containers/sessions die unexpectedly.
 
-Tmux session naming convention: {project}-{host}-{issue_id}
+Tmux session naming convention: {project}-{role}-{issue_id}
 Examples:
-  - agenttree-agent-042  -> issue 042, host "agent"
-  - agenttree-review-042 -> issue 042, host "review"
+  - agenttree-developer-042 -> issue 042, role "developer"
+  - agenttree-reviewer-042  -> issue 042, role "reviewer"
 """
 
 import re
@@ -24,7 +24,7 @@ class ActiveAgent:
     """Information about an active agent for an issue."""
 
     issue_id: str
-    host: str  # Agent host type (e.g., "agent", "review")
+    role: str  # Agent role (e.g., "developer", "reviewer")
     container: str
     worktree: Path
     branch: str
@@ -34,27 +34,27 @@ class ActiveAgent:
 
     @property
     def state_key(self) -> str:
-        """Key for state storage: issue_id:host."""
-        return f"{self.issue_id}:{self.host}"
+        """Key for state storage: issue_id:role."""
+        return f"{self.issue_id}:{self.role}"
 
 
 def _parse_tmux_session_name(session_name: str, project: str) -> Optional[tuple[str, str]]:
-    """Parse a tmux session name to extract issue_id and host.
+    """Parse a tmux session name to extract issue_id and role.
 
     Args:
-        session_name: Tmux session name (e.g., "agenttree-agent-042")
+        session_name: Tmux session name (e.g., "agenttree-developer-042")
         project: Project name prefix to match
 
     Returns:
-        Tuple of (issue_id, host) or None if not a matching session
+        Tuple of (issue_id, role) or None if not a matching session
     """
-    # Pattern: {project}-{host}-{issue_id}
+    # Pattern: {project}-{role}-{issue_id}
     pattern = rf"^{re.escape(project)}-(\w+)-(\d+)$"
     match = re.match(pattern, session_name)
     if match:
-        host = match.group(1)
+        role = match.group(1)
         issue_id = match.group(2)
-        return (issue_id, host)
+        return (issue_id, role)
     return None
 
 
@@ -90,7 +90,7 @@ def _get_tmux_sessions() -> list[tuple[str, str]]:
 
 def _build_agent_from_session(
     issue_id: str,
-    host: str,
+    role: str,
     session_name: str,
     created_timestamp: str,
     project: str,
@@ -99,7 +99,7 @@ def _build_agent_from_session(
 
     Args:
         issue_id: Issue ID
-        host: Host type (agent, review, etc.)
+        role: Role type (developer, reviewer, etc.)
         session_name: Tmux session name
         created_timestamp: Unix timestamp when session was created
         project: Project name
@@ -125,11 +125,11 @@ def _build_agent_from_session(
         started = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     # Container name follows convention (actual UUID looked up when needed)
-    container = f"{project}-{host}-{issue_id}"
+    container = f"{project}-{role}-{issue_id}"
 
     return ActiveAgent(
         issue_id=issue_id,
-        host=host,
+        role=role,
         container=container,
         worktree=worktree,
         branch=branch,
@@ -139,12 +139,12 @@ def _build_agent_from_session(
     )
 
 
-def get_active_agent(issue_id: str, host: str = "agent") -> Optional[ActiveAgent]:
-    """Get active agent for an issue and host by checking tmux sessions.
+def get_active_agent(issue_id: str, role: str = "developer") -> Optional[ActiveAgent]:
+    """Get active agent for an issue and role by checking tmux sessions.
 
     Args:
         issue_id: Issue ID (e.g., "023")
-        host: Agent host type (default: "agent")
+        role: Agent role (default: "developer")
 
     Returns:
         ActiveAgent or None if no active agent
@@ -155,17 +155,17 @@ def get_active_agent(issue_id: str, host: str = "agent") -> Optional[ActiveAgent
     except (FileNotFoundError, KeyError, AttributeError):
         project = "agenttree"
 
-    expected_session = f"{project}-{host}-{issue_id}"
+    expected_session = f"{project}-{role}-{issue_id}"
 
     for session_name, created in _get_tmux_sessions():
         if session_name == expected_session:
-            return _build_agent_from_session(issue_id, host, session_name, created, project)
+            return _build_agent_from_session(issue_id, role, session_name, created, project)
 
     return None
 
 
 def get_active_agents_for_issue(issue_id: str) -> list[ActiveAgent]:
-    """Get all active agents for an issue (across all hosts).
+    """Get all active agents for an issue (across all roles).
 
     Args:
         issue_id: Issue ID (e.g., "023")
@@ -183,8 +183,8 @@ def get_active_agents_for_issue(issue_id: str) -> list[ActiveAgent]:
     for session_name, created in _get_tmux_sessions():
         parsed = _parse_tmux_session_name(session_name, project)
         if parsed and parsed[0] == issue_id:
-            sid, host = parsed
-            agents.append(_build_agent_from_session(sid, host, session_name, created, project))
+            sid, role = parsed
+            agents.append(_build_agent_from_session(sid, role, session_name, created, project))
 
     return agents
 
@@ -205,8 +205,8 @@ def list_active_agents() -> list[ActiveAgent]:
     for session_name, created in _get_tmux_sessions():
         parsed = _parse_tmux_session_name(session_name, project)
         if parsed:
-            issue_id, host = parsed
-            agents.append(_build_agent_from_session(issue_id, host, session_name, created, project))
+            issue_id, role = parsed
+            agents.append(_build_agent_from_session(issue_id, role, session_name, created, project))
 
     return agents
 
@@ -224,7 +224,7 @@ def register_agent(agent: ActiveAgent) -> None:
     pass
 
 
-def update_agent_container_id(issue_id: str, container_id: str, host: str = "agent") -> None:
+def update_agent_container_id(issue_id: str, container_id: str, role: str = "developer") -> None:
     """Update an agent's container ID.
 
     With dynamic state, we don't persist container IDs. They're looked up
@@ -233,13 +233,13 @@ def update_agent_container_id(issue_id: str, container_id: str, host: str = "age
     Args:
         issue_id: Issue ID
         container_id: Container UUID (ignored)
-        host: Agent host type (ignored)
+        role: Agent role (ignored)
     """
     # No-op: container IDs are looked up dynamically when needed
     pass
 
 
-def unregister_agent(issue_id: str, host: str = "agent") -> Optional[ActiveAgent]:
+def unregister_agent(issue_id: str, role: str = "developer") -> Optional[ActiveAgent]:
     """Unregister an active agent by stopping its tmux session.
 
     With dynamic state, unregistration = killing the tmux session.
@@ -247,23 +247,23 @@ def unregister_agent(issue_id: str, host: str = "agent") -> Optional[ActiveAgent
 
     Args:
         issue_id: Issue ID to unregister
-        host: Agent host type (default: "agent")
+        role: Agent role (default: "developer")
 
     Returns:
         The ActiveAgent if found, or None
     """
     # Get agent info before stopping
-    agent = get_active_agent(issue_id, host)
+    agent = get_active_agent(issue_id, role)
     if agent:
         # Actually stop the agent (kills tmux session = unregistration)
-        stop_agent(issue_id, host, quiet=True)
+        stop_agent(issue_id, role, quiet=True)
     return agent
 
 
 def unregister_all_agents_for_issue(issue_id: str) -> list[ActiveAgent]:
-    """Unregister all agents for an issue (across all hosts).
+    """Unregister all agents for an issue (across all roles).
 
-    Stops all agents (across all hosts) and returns their info.
+    Stops all agents (across all roles) and returns their info.
 
     Args:
         issue_id: Issue ID
@@ -273,22 +273,22 @@ def unregister_all_agents_for_issue(issue_id: str) -> list[ActiveAgent]:
     """
     agents = get_active_agents_for_issue(issue_id)
     for agent in agents:
-        stop_agent(issue_id, agent.host, quiet=True)
+        stop_agent(issue_id, agent.role, quiet=True)
     return agents
 
 
-def stop_agent(issue_id: str, host: str = "agent", quiet: bool = False) -> bool:
+def stop_agent(issue_id: str, role: str = "developer", quiet: bool = False) -> bool:
     """Stop an active agent - kills tmux and stops container.
 
     Args:
         issue_id: Issue ID to stop
-        host: Agent host type (default: "agent")
+        role: Agent role (default: "developer")
         quiet: If True, suppress output messages
 
     Returns:
         True if agent was stopped, False if no agent was found
     """
-    agent = get_active_agent(issue_id, host)
+    agent = get_active_agent(issue_id, role)
     if not agent:
         return False
 
@@ -349,7 +349,7 @@ def stop_agent(issue_id: str, host: str = "agent", quiet: bool = False) -> bool:
 
 
 def stop_all_agents_for_issue(issue_id: str, quiet: bool = False) -> int:
-    """Stop all agents for an issue (across all hosts).
+    """Stop all agents for an issue (across all roles).
 
     Args:
         issue_id: Issue ID
@@ -361,19 +361,19 @@ def stop_all_agents_for_issue(issue_id: str, quiet: bool = False) -> int:
     agents = get_active_agents_for_issue(issue_id)
     count = 0
     for agent in agents:
-        if stop_agent(issue_id, agent.host, quiet):
+        if stop_agent(issue_id, agent.role, quiet):
             count += 1
     return count
 
 
-def get_issue_names(issue_id: str, slug: str, project: str = "agenttree", host: str = "agent") -> dict:
+def get_issue_names(issue_id: str, slug: str, project: str = "agenttree", role: str = "developer") -> dict:
     """Get standardized names for issue-bound resources.
 
     Args:
         issue_id: Issue ID (e.g., "023")
         slug: Issue slug (e.g., "fix-login-bug")
         project: Project name
-        host: Agent host type (default: "agent")
+        role: Agent role (default: "developer")
 
     Returns:
         Dictionary with container, worktree, branch, tmux_session names
@@ -382,10 +382,10 @@ def get_issue_names(issue_id: str, slug: str, project: str = "agenttree", host: 
     short_slug = slug[:30] if len(slug) > 30 else slug
 
     return {
-        "container": f"{project}-{host}-{issue_id}",
+        "container": f"{project}-{role}-{issue_id}",
         "worktree": f"issue-{issue_id}-{short_slug}",
         "branch": f"issue-{issue_id}-{short_slug}",
-        "tmux_session": f"{project}-{host}-{issue_id}",
+        "tmux_session": f"{project}-{role}-{issue_id}",
     }
 
 
@@ -411,7 +411,7 @@ def create_agent_for_issue(
     worktree_path: Path,
     port: int,
     project: str = "agenttree",
-    host: str = "agent",
+    role: str = "developer",
 ) -> ActiveAgent:
     """Create an ActiveAgent object for an issue.
 
@@ -424,16 +424,16 @@ def create_agent_for_issue(
         worktree_path: Path to worktree
         port: Allocated port
         project: Project name
-        host: Agent host type (default: "agent")
+        role: Agent role (default: "developer")
 
     Returns:
         ActiveAgent object (not yet running until tmux session created)
     """
-    names = get_issue_names(issue_id, slug, project, host)
+    names = get_issue_names(issue_id, slug, project, role)
 
     return ActiveAgent(
         issue_id=issue_id,
-        host=host,
+        role=role,
         container=names["container"],
         worktree=worktree_path,
         branch=names["branch"],

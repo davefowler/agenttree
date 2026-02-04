@@ -1,4 +1,4 @@
-"""Unit tests for controller agent stall detection.
+"""Unit tests for manager agent stall detection.
 
 Tests the stall detection functionality including:
 - Detecting stalled agents based on last_advanced_at
@@ -20,7 +20,7 @@ class TestGetStalledAgents:
     @patch("agenttree.state.get_active_agent")
     def test_detects_stalled_agent(self, mock_get_active_agent, tmp_path: Path):
         """Agent in implement.code with last_advanced_at 25 min ago should be detected."""
-        from agenttree.controller_agent import get_stalled_agents
+        from agenttree.manager_agent import get_stalled_agents
 
         # Mock get_active_agent to return a truthy value (indicating agent is running)
         mock_get_active_agent.return_value = MagicMock()
@@ -62,7 +62,7 @@ class TestGetStalledAgents:
     @patch("agenttree.state.get_active_agent")
     def test_skips_recent_agent(self, mock_get_active_agent, tmp_path: Path):
         """Agent with last_advanced_at 10 min ago should NOT be detected."""
-        from agenttree.controller_agent import get_stalled_agents
+        from agenttree.manager_agent import get_stalled_agents
 
         # Mock get_active_agent to return a truthy value (indicating agent is running)
         mock_get_active_agent.return_value = MagicMock()
@@ -102,7 +102,7 @@ class TestGetStalledAgents:
     @patch("agenttree.state.get_active_agent")
     def test_skips_human_review_stages(self, mock_get_active_agent, tmp_path: Path):
         """Agent at plan_review stage (even if 2 hours old) should NOT be detected."""
-        from agenttree.controller_agent import get_stalled_agents
+        from agenttree.manager_agent import get_stalled_agents
 
         # Mock get_active_agent to return a truthy value (indicating agent is running)
         mock_get_active_agent.return_value = MagicMock()
@@ -142,7 +142,7 @@ class TestGetStalledAgents:
     @patch("agenttree.state.get_active_agent")
     def test_configurable_threshold(self, mock_get_active_agent, tmp_path: Path):
         """Threshold from config should be respected."""
-        from agenttree.controller_agent import get_stalled_agents
+        from agenttree.manager_agent import get_stalled_agents
 
         # Mock get_active_agent to return a truthy value (indicating agent is running)
         mock_get_active_agent.return_value = MagicMock()
@@ -188,8 +188,8 @@ class TestLogStall:
     """Test stall logging functionality."""
 
     def test_logs_stall_to_yaml(self, tmp_path: Path):
-        """Stall should be recorded in controller_logs/stalls.yaml."""
-        from agenttree.controller_agent import log_stall
+        """Stall should be recorded in manager_logs/stalls.yaml."""
+        from agenttree.manager_agent import log_stall
 
         log_stall(
             agents_dir=tmp_path,
@@ -200,7 +200,7 @@ class TestLogStall:
         )
 
         # Check log file was created
-        log_file = tmp_path / "controller_logs" / "stalls.yaml"
+        log_file = tmp_path / "manager_logs" / "stalls.yaml"
         assert log_file.exists()
 
         # Check content

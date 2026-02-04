@@ -62,14 +62,14 @@ class TestDynamicState:
 
     def test_parse_tmux_session_name_valid(self):
         """Should parse valid session names."""
-        result = _parse_tmux_session_name("agenttree-agent-042", "agenttree")
-        assert result == ("042", "agent")
+        result = _parse_tmux_session_name("agenttree-developer-042", "agenttree")
+        assert result == ("042", "developer")
 
         result = _parse_tmux_session_name("agenttree-review-123", "agenttree")
         assert result == ("123", "review")
 
-        result = _parse_tmux_session_name("myproject-agent-001", "myproject")
-        assert result == ("001", "agent")
+        result = _parse_tmux_session_name("myproject-developer-001", "myproject")
+        assert result == ("001", "developer")
 
     def test_parse_tmux_session_name_invalid(self):
         """Should return None for non-matching session names."""
@@ -86,7 +86,7 @@ class TestDynamicState:
         """register_agent should be a no-op (tmux creation is registration)."""
         agent = ActiveAgent(
             issue_id="042",
-            host="agent",
+            role="developer",
             container="test-container",
             worktree=Path("/tmp/worktree"),
             branch="test-branch",
@@ -115,19 +115,19 @@ class TestDynamicState:
         """get_active_agent should find matching tmux session."""
         mock_config.return_value = MagicMock(project="agenttree")
         mock_sessions.return_value = [
-            ("agenttree-agent-042", "1704067200"),  # Unix timestamp
+            ("agenttree-developer-042", "1704067200"),  # Unix timestamp
         ]
         mock_issue = MagicMock()
         mock_issue.worktree_dir = "/tmp/worktree"
         mock_issue.branch = "issue-042"
         mock_get_issue.return_value = mock_issue
 
-        agent = get_active_agent("042", "agent")
+        agent = get_active_agent("042", "developer")
 
         assert agent is not None
         assert agent.issue_id == "042"
-        assert agent.host == "agent"
-        assert agent.tmux_session == "agenttree-agent-042"
+        assert agent.role == "developer"
+        assert agent.tmux_session == "agenttree-developer-042"
 
     @patch("agenttree.state._get_tmux_sessions")
     @patch("agenttree.state.load_config")
@@ -135,10 +135,10 @@ class TestDynamicState:
         """get_active_agent should return None when no matching session."""
         mock_config.return_value = MagicMock(project="agenttree")
         mock_sessions.return_value = [
-            ("agenttree-agent-001", "1704067200"),
+            ("agenttree-developer-001", "1704067200"),
         ]
 
-        agent = get_active_agent("042", "agent")
+        agent = get_active_agent("042", "developer")
 
         assert agent is None
 
@@ -149,9 +149,9 @@ class TestDynamicState:
         """list_active_agents should return all agents from tmux sessions."""
         mock_config.return_value = MagicMock(project="agenttree")
         mock_sessions.return_value = [
-            ("agenttree-agent-042", "1704067200"),
+            ("agenttree-developer-042", "1704067200"),
             ("agenttree-review-042", "1704067300"),
-            ("agenttree-agent-043", "1704067400"),
+            ("agenttree-developer-043", "1704067400"),
             ("other-session", "1704067500"),  # Not matching
         ]
         mock_issue = MagicMock()
