@@ -1,6 +1,20 @@
 # AgentTree - Project Conventions
 
-## ⛔ NEVER merge your own PRs without explicit approval. Create PR → request `@cursoragent review` → WAIT for review → ASK before merging.
+## ⛔ Git Rules - READ FIRST
+
+1. **NEVER commit directly to main** - Always create a feature branch first
+2. **NEVER merge your own PRs** - Create PR → request review → WAIT → ASK before merging
+3. **NEVER push to main** - All changes go through PRs
+
+**Workflow:**
+```bash
+git checkout -b feature/my-change   # Create branch
+# ... make changes ...
+git add . && git commit -m "..."    # Commit to branch
+git push -u origin HEAD             # Push branch
+gh pr create --title "..." --body "..."  # Create PR
+# WAIT for review and approval
+```
 
 ## Tech Stack
 
