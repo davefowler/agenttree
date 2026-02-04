@@ -321,8 +321,20 @@ def check_stalled_agents(
         except (ValueError, TypeError):
             continue
     
-    # Write to stalled.yaml (always, even if empty - so manager knows state is fresh)
+    # Read previous stall data to detect changes
     stall_file = agents_dir / "stalled.yaml"
+    prev_dead_ids: set[str] = set()
+    prev_stalled_ids: set[str] = set()
+    
+    if stall_file.exists():
+        try:
+            prev_data = yaml.safe_load(stall_file.read_text())
+            prev_dead_ids = {a["id"] for a in prev_data.get("dead_agents", [])}
+            prev_stalled_ids = {a["id"] for a in prev_data.get("stalled_agents", [])}
+        except Exception:
+            pass
+    
+    # Write to stalled.yaml (always, even if empty - so manager knows state is fresh)
     stall_data = {
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "threshold_min": threshold_min,
@@ -333,6 +345,16 @@ def check_stalled_agents(
     
     # If nothing to report, we're done
     if not stalled and not dead:
+        return
+    
+    # Only notify manager if there are NEW dead/stalled agents (not already alerted)
+    current_dead_ids = {a["id"] for a in dead}
+    current_stalled_ids = {a["id"] for a in stalled}
+    new_dead = current_dead_ids - prev_dead_ids
+    new_stalled = current_stalled_ids - prev_stalled_ids
+    
+    if not new_dead and not new_stalled:
+        console.print(f"[dim]Stall state unchanged ({len(dead)} dead, {len(stalled)} stalled) - not re-alerting manager[/dim]")
         return
     
     # Check if manager is running before sending notification
@@ -357,13 +379,13 @@ def check_stalled_agents(
         if len(stalled) > 3:
             lines.append(f"    ... and {len(stalled) - 3} more")
     
-    lines.append("\nUse: agenttree start <id> --force (restart) or agenttree output <id> (diagnose)")
+    lines.append("\nUse: agenttree start <id> --force --skip-preflight (restart) or agenttree output <id> (diagnose)")
     
     message = "\n".join(lines)
     result = send_message(manager_session, message)
     
     if result == "sent":
-        console.print(f"[dim]Wrote stalled.yaml, notified manager ({len(dead)} dead, {len(stalled)} stalled)[/dim]")
+        console.print(f"[dim]Wrote stalled.yaml, notified manager ({len(new_dead)} new dead, {len(new_stalled)} new stalled)[/dim]")
 
 
 @register_action("check_ci_status")
@@ -478,7 +500,7 @@ DEFAULT_EVENT_CONFIGS: dict[str, list[str] | dict[str, Any]] = {
             {"push_pending_branches": {}},
             {"check_manager_stages": {}},
             {"check_custom_agent_stages": {}},
-            {"check_stalled_agents": {"min_interval_s": 60}},
+            {"check_stalled_agents": {"min_interval_s": 180}},
             {"check_ci_status": {"min_interval_s": 60}},
             {"check_merged_prs": {"min_interval_s": 30}},
         ],
