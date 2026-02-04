@@ -180,7 +180,7 @@ class ContainerRuntime:
         additional_args: Optional[List[str]] = None,
         agent_num: Optional[int] = None,
         model: Optional[str] = None,
-        agent_host: str = "agent",
+        role: str = "developer",
         port: Optional[int] = None,
     ) -> List[str]:
         """Build the container run command.
@@ -193,7 +193,7 @@ class ContainerRuntime:
             additional_args: Additional arguments for the container
             agent_num: Agent number for container naming
             model: Model to use (e.g., "opus", "sonnet"). Defaults to CLI default.
-            agent_host: Agent host type (e.g., "agent", "review"). Defaults to "agent".
+            role: Agent role (e.g., "developer", "reviewer"). Defaults to "developer".
             port: Dev server port to expose (e.g., 9001). If provided, adds -p port:port mapping.
 
         Returns:
@@ -254,10 +254,10 @@ class ContainerRuntime:
             cmd.extend(["-v", f"{claude_config_dir}:/home/agent/.claude-host:ro"])
 
         # Mount session storage for conversation persistence across restarts
-        # Each host gets its own session directory to keep conversations separate
+        # Each role gets its own session directory to keep conversations separate
         # This allows using `claude -c` to continue previous conversations
-        # and prevents reviewer from continuing implementer's session
-        sessions_dir = abs_path / f".claude-sessions-{agent_host}"
+        # and prevents reviewer from continuing developer's session
+        sessions_dir = abs_path / f".claude-sessions-{role}"
         sessions_dir.mkdir(exist_ok=True)
         cmd.extend(["-v", f"{sessions_dir}:/home/agent/.claude/projects/-workspace"])
 
@@ -286,8 +286,8 @@ class ContainerRuntime:
         # Set container indicator env var for reliable container detection
         cmd.extend(["-e", "AGENTTREE_CONTAINER=1"])
 
-        # Set agent host type for permission checking
-        cmd.extend(["-e", f"AGENTTREE_AGENT_HOST={agent_host}"])
+        # Set agent role for permission checking
+        cmd.extend(["-e", f"AGENTTREE_ROLE={role}"])
 
         if additional_args:
             cmd.extend(additional_args)
