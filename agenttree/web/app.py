@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.base import BaseHTTPMiddleware
 from pathlib import Path
+import logging
 import subprocess
 import secrets
 import os
@@ -29,6 +30,8 @@ _config: Config = load_config()
 from agenttree import issues as issue_crud
 from agenttree.agents_repo import sync_agents_repo
 from agenttree.web.models import StageEnum, KanbanBoard, Issue as WebIssue, IssueMoveRequest, PriorityUpdateRequest
+
+logger = logging.getLogger(__name__)
 
 # Pattern to match Claude Code's input prompt separator line
 # The separator is a line of U+2500 (BOX DRAWINGS LIGHT HORIZONTAL) characters: ─
@@ -1069,7 +1072,7 @@ async def approve_issue(
         try:
             await asyncio.to_thread(execute_enter_hooks, updated, next_stage, next_substage)
         except Exception:
-            pass  # Enter hooks shouldn't block
+            logger.debug("Enter hooks failed (non-blocking)", exc_info=True)
 
         # Notify agent to continue (if active)
         try:
@@ -1082,7 +1085,7 @@ async def approve_issue(
                     message = "Your work was approved! Run `agenttree next` for instructions."
                     await asyncio.to_thread(send_message, agent.tmux_session, message)
         except Exception:
-            pass  # Agent notification is best-effort
+            logger.debug("Agent notification failed (non-blocking)", exc_info=True)
 
     # Fire and forget - don't wait for hooks/notification
     asyncio.create_task(run_enter_hooks_and_notify())

@@ -81,7 +81,7 @@ def _detect_ai_notes(repo_path: Path) -> list[Path]:
     Returns:
         List of paths to AI-generated documentation files
     """
-    ai_notes: list[Path] = []
+    ai_notes: set[Path] = set()
     exclusions = {"readme.md", "changelog.md", "contributing.md", "license.md"}
 
     # Keywords to match in filenames (case-insensitive check)
@@ -106,8 +106,7 @@ def _detect_ai_notes(repo_path: Path) -> list[Path]:
 
         # Check if any keyword matches (case-insensitive)
         if any(keyword in name_lower for keyword in keywords):
-            if md_file not in ai_notes:
-                ai_notes.append(md_file)
+            ai_notes.add(md_file)
 
     # Also check specific directories that commonly hold AI notes
     ai_dirs = [
@@ -118,8 +117,7 @@ def _detect_ai_notes(repo_path: Path) -> list[Path]:
     for ai_dir in ai_dirs:
         if ai_dir.exists() and ai_dir.is_dir():
             for md_file in ai_dir.rglob("*.md"):
-                if md_file not in ai_notes:
-                    ai_notes.append(md_file)
+                ai_notes.add(md_file)
 
     return sorted(ai_notes)
 
@@ -257,8 +255,7 @@ def _create_knowledge_issue(repo_path: Path) -> None:
         console.print(f"[green]✓ Created issue #{issue.id}: Populate knowledge base[/green]")
     except Exception as e:
         console.print(f"[yellow]Warning: Could not create knowledge population issue: {e}[/yellow]")
-        console.print("[dim]You can create it manually:[/dim]")
-        console.print('[dim]  agenttree issue create "Populate knowledge base" --problem "Analyze the codebase..."[/dim]')
+        console.print('[dim]You can create it manually with: agenttree issue create "Populate knowledge base"[/dim]')
 
 
 @click.group()

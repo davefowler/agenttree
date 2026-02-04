@@ -348,7 +348,7 @@ def _extract_markdown_section(content: str, section: str) -> tuple[bool, str]:
         Tuple of (found, section_content) where found is True if section exists
         and section_content is the text between the header and next header/EOF.
     """
-    pattern = rf'^##[#]?\s*{re.escape(section)}.*?\n(.*?)(?=\n##[#]? [A-Za-z]|\Z)'
+    pattern = rf'^##[#]?\s*{re.escape(section)}.*?\n(.*?)(?=\n##|\Z)'
     match = re.search(pattern, content, re.MULTILINE | re.DOTALL)
     if match:
         return True, match.group(1)
