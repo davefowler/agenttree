@@ -160,19 +160,11 @@ stages:
           - run:
               command: uv run pytest  # Run full test suite to catch issues before CI
               must_pass: true
-<<<<<<< HEAD
-              timeout: 600
-          - run:
-              command: uv run mypy agenttree || echo "mypy warnings (pre-existing)"
-              must_pass: true
-              timeout: 180
-=======
               timeout: 900  # 15 min - tests take ~9 min in containers
           - run:
               command: uv run mypy agenttree || echo "mypy warnings (pre-existing)"
               must_pass: true
               timeout: 300  # 5 min - mypy can be slow in containers
->>>>>>> origin/main
           - section_check:
               file: review.md
               section: Self-Review Checklist
