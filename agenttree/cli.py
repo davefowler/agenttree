@@ -3473,32 +3473,16 @@ def cleanup_command(
         console.print("[dim]Checking tmux sessions...[/dim]")
 
         all_sessions_list = list_sessions()
-        # Check all session naming patterns: issue, agent, review, controller
-        session_prefixes = [
-            f"{config.project}-issue-",
-            f"{config.project}-agent-",
-            f"{config.project}-review-",
-            f"{config.project}-controller-",
-        ]
+        project_prefix = f"{config.project}-issue-"
 
         for session in all_sessions_list:
-            # Find matching prefix
-            matched_prefix = None
-            for prefix in session_prefixes:
-                if session.name.startswith(prefix):
-                    matched_prefix = prefix
-                    break
-            if not matched_prefix:
+            if not session.name.startswith(project_prefix):
                 continue
 
             # Extract issue ID from session name
-            suffix = session.name[len(matched_prefix):]
+            suffix = session.name[len(project_prefix):]
             # Could be just ID or ID-host
             issue_id = suffix.split("-")[0]
-
-            # Skip controller (issue 000)
-            if issue_id == "000":
-                continue
 
             issue = issue_by_id.get(issue_id)
             if not issue:

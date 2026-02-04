@@ -15,9 +15,8 @@ serve-stop:
     @echo "Web server stopped"
 
 # Run the web server with hot reload (kills existing first)
-# --loop asyncio prevents uvloop fork crashes on macOS
 serve: serve-stop
-    uv run uvicorn agenttree.web.app:app --host 0.0.0.0 --port 8080 --reload --loop asyncio
+    uv run uvicorn agenttree.web.app:app --host 0.0.0.0 --port 8080 --reload
 
 # Run the web server (alias)
 web: serve

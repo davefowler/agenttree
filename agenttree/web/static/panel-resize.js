@@ -4,18 +4,18 @@
  */
 function initPanelResize(panel, storageKey, defaultWidth) {
     var handle = panel.querySelector('.resize-handle');
-    if (!handle) return;
+    if (!handle || handle.dataset.resizeInit) return;
+    handle.dataset.resizeInit = 'true';
 
     var minWidth = 250;
     var maxWidth = 800;
     var isDragging = false;
 
-    // Restore saved width on load
+    // Restore saved width or apply default
     var savedWidth = localStorage.getItem(storageKey);
-    if (savedWidth) {
-        var width = Math.min(Math.max(parseInt(savedWidth, 10), minWidth), Math.min(maxWidth, window.innerWidth * 0.6));
-        panel.style.width = width + 'px';
-    }
+    var initial = savedWidth ? parseInt(savedWidth, 10) : (defaultWidth || 350);
+    var maxAllowed = Math.min(maxWidth, window.innerWidth * 0.6);
+    panel.style.width = Math.min(Math.max(initial, minWidth), maxAllowed) + 'px';
 
     handle.addEventListener('mousedown', function(e) {
         e.preventDefault();
@@ -28,7 +28,7 @@ function initPanelResize(panel, storageKey, defaultWidth) {
 
     document.addEventListener('mousemove', function(e) {
         if (!isDragging) return;
-        var maxAllowed = Math.min(maxWidth, window.innerWidth * 0.6);
+        maxAllowed = Math.min(maxWidth, window.innerWidth * 0.6);
         var newWidth = Math.min(Math.max(window.innerWidth - e.clientX, minWidth), maxAllowed);
         panel.style.width = newWidth + 'px';
     });
