@@ -2,14 +2,16 @@
 
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import click
 from rich.table import Table
 
+from agenttree.agents_repo import AgentsRepository
 from agenttree.cli.common import console
 from agenttree.config import load_config, Config
-from agenttree.container import get_container_runtime
+from agenttree.container import get_container_runtime, find_container_by_worktree
 from agenttree.issues import (
     get_issue as get_issue_func,
     update_issue_stage,
@@ -17,7 +19,29 @@ from agenttree.issues import (
     create_session,
 )
 from agenttree.preflight import run_preflight
-from agenttree.tmux import TmuxManager
+from agenttree.state import (
+    get_active_agent,
+    get_port_for_issue,
+    create_agent_for_issue,
+    get_issue_names,
+    unregister_agent,
+    update_agent_container_id,
+    list_active_agents,
+    stop_agent,
+    stop_all_agents_for_issue,
+)
+from agenttree.tmux import (
+    TmuxManager,
+    session_exists,
+    attach_session,
+    send_keys,
+    capture_pane,
+    kill_session,
+    create_session as create_tmux_session,
+    list_sessions,
+    wait_for_prompt,
+)
+from agenttree.worktree import create_worktree, update_worktree_with_main
 
 
 def _start_manager(
@@ -31,8 +55,6 @@ def _start_manager(
     The manager runs on the host (not in a container) and orchestrates
     work across all issues. It uses the main branch.
     """
-    from agenttree.tmux import session_exists
-
     tmux_manager = TmuxManager(config)
     session_name = f"{config.project}-manager-000"
 
@@ -88,15 +110,6 @@ def start_agent(
 
     Use --role to start a non-default agent (e.g., --role reviewer for code review).
     """
-    from agenttree.state import (
-        get_active_agent,
-        get_port_for_issue,
-        create_agent_for_issue,
-        get_issue_names,
-    )
-    from agenttree.worktree import create_worktree, update_worktree_with_main
-    from agenttree.agents_repo import AgentsRepository
-
     repo_path = Path.cwd()
     config = load_config(repo_path)
 
@@ -251,7 +264,6 @@ def start_agent(
 
     if not start_success:
         # Startup failed - clean up state and exit
-        from agenttree.state import unregister_agent
         unregister_agent(issue.id, role)
         console.print(f"[red]Error: Agent failed to start (Claude prompt not detected within timeout)[/red]")
         console.print(f"[dim]State has been cleaned up. Try running 'agenttree start {issue.id}' again.[/dim]")
@@ -261,10 +273,6 @@ def start_agent(
 
     # For Apple Containers, look up the UUID and store it for cleanup
     if runtime.get_runtime_name() == "container":
-        import time
-        from agenttree.container import find_container_by_worktree
-        from agenttree.state import update_agent_container_id
-
         # Wait for container to start, then find its UUID
         for _ in range(10):  # Try for up to 5 seconds
             time.sleep(0.5)
@@ -290,8 +298,6 @@ def start_agent(
 @click.command("agents")
 def agents_status() -> None:
     """Show status of all active issue agents."""
-    from agenttree.state import list_active_agents
-
     config = load_config()
     tmux_manager = TmuxManager(config)
 
@@ -360,16 +366,6 @@ def sandbox(name: str, list_sandboxes: bool, kill: bool, tool: str | None, share
         agenttree sandbox --kill       # Kill default sandbox
         agenttree sandbox exp --kill   # Kill named sandbox
     """
-    from agenttree.tmux import (
-        create_session,
-        kill_session,
-        session_exists,
-        attach_session,
-        list_sessions,
-        wait_for_prompt,
-        send_keys,
-    )
-
     config = load_config()
     project = config.project
 
@@ -460,7 +456,7 @@ def sandbox(name: str, list_sandboxes: bool, kill: bool, tool: str | None, share
     container_cmd_str = " ".join(container_cmd)
 
     # Create tmux session running the container
-    create_session(session_name, repo_path, container_cmd_str)
+    create_tmux_session(session_name, repo_path, container_cmd_str)
     console.print(f"[green]✓ Started sandbox '{name}'[/green]")
 
     # Wait for prompt and send a friendly message
@@ -486,9 +482,6 @@ def attach(issue_id: str, role: str) -> None:
 
     ISSUE_ID is the issue number (e.g., "23" or "023"), or "0" for manager.
     """
-    from agenttree.state import get_active_agent
-    from agenttree.tmux import session_exists, attach_session
-
     config = load_config()
     tmux_manager = TmuxManager(config)
 
@@ -544,9 +537,6 @@ def send(issue_id: str, message: str, role: str, interrupt: bool) -> None:
 
     Use --interrupt to stop the agent's current task (sends Ctrl+C) before sending.
     """
-    from agenttree.state import get_active_agent
-    from agenttree.tmux import session_exists, send_keys
-
     config = load_config()
     tmux_manager = TmuxManager(config)
 
@@ -646,9 +636,6 @@ def output(issue_id: str, role: str, lines: int) -> None:
         agenttree output 0          # Show manager output
         agenttree output 137 -n 100 # Show last 100 lines
     """
-    from agenttree.state import get_active_agent
-    from agenttree.tmux import session_exists, capture_pane
-
     config = load_config()
 
     # Normalize issue ID
@@ -699,9 +686,6 @@ def stop(issue_id: str, role: str, all_roles: bool) -> None:
         agenttree stop 23 --role reviewer  # Stop the reviewer agent
         agenttree stop 23 --all        # Stop all agents for issue 23
     """
-    from agenttree.state import stop_agent, stop_all_agents_for_issue, get_active_agent
-    from agenttree.tmux import session_exists, kill_session
-
     config = load_config()
 
     # Normalize issue ID

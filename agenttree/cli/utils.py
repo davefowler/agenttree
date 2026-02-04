@@ -305,8 +305,8 @@ def cleanup_command(
                             "runtime": runtime.runtime,
                             "reason": "running but not tracked in state",
                         })
-            except Exception:
-                pass
+            except (subprocess.SubprocessError, OSError):
+                pass  # Container runtime unavailable or errored - skip orphan detection
 
     # Print summary
     console.print("\n[bold]Cleanup Summary:[/bold]\n")

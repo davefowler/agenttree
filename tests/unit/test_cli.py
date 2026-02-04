@@ -60,7 +60,7 @@ class TestSendCommand:
 
         with patch("agenttree.cli.agent.load_config", return_value=mock_config):
             with patch("agenttree.cli.agent.get_issue_func", return_value=mock_issue):
-                with patch("agenttree.state.get_active_agent", side_effect=mock_get_agent):
+                with patch("agenttree.cli.agent.get_active_agent", side_effect=mock_get_agent):
                     with patch("agenttree.cli.agent.TmuxManager") as mock_tm_class:
                         mock_tm = MagicMock()
                         mock_tm.is_issue_running.return_value = True
@@ -89,7 +89,7 @@ class TestSendCommand:
 
         with patch("agenttree.cli.agent.load_config", return_value=mock_config):
             with patch("agenttree.cli.agent.get_issue_func", return_value=mock_issue):
-                with patch("agenttree.state.get_active_agent", return_value=mock_agent):
+                with patch("agenttree.cli.agent.get_active_agent", return_value=mock_agent):
                     with patch("agenttree.cli.agent.TmuxManager") as mock_tm_class:
                         mock_tm = MagicMock()
                         mock_tm.is_issue_running.return_value = True
@@ -111,7 +111,7 @@ class TestStopCommand:
         from agenttree.cli import main
 
         with patch("agenttree.cli.agent.load_config", return_value=mock_config):
-            with patch("agenttree.state.get_active_agent", return_value=None):
+            with patch("agenttree.cli.agent.get_active_agent", return_value=None):
                 with patch("agenttree.cli.agent.get_issue_func", return_value=None):
                     result = cli_runner.invoke(main, ["stop", "42"])
 
@@ -128,8 +128,8 @@ class TestStopCommand:
         mock_agent.role = "agent"
 
         with patch("agenttree.cli.agent.load_config", return_value=mock_config):
-            with patch("agenttree.state.get_active_agent", return_value=mock_agent):
-                with patch("agenttree.state.stop_agent", return_value=True) as mock_stop:
+            with patch("agenttree.cli.agent.get_active_agent", return_value=mock_agent):
+                with patch("agenttree.cli.agent.stop_agent", return_value=True) as mock_stop:
                     with patch("agenttree.cli.agent.get_issue_func", return_value=None):
                         result = cli_runner.invoke(main, ["stop", "42"])
 
@@ -146,8 +146,8 @@ class TestStopCommand:
         mock_agent.role = "agent"
 
         with patch("agenttree.cli.agent.load_config", return_value=mock_config):
-            with patch("agenttree.state.get_active_agent", return_value=mock_agent):
-                with patch("agenttree.state.stop_agent", return_value=True) as mock_stop:
+            with patch("agenttree.cli.agent.get_active_agent", return_value=mock_agent):
+                with patch("agenttree.cli.agent.stop_agent", return_value=True) as mock_stop:
                     with patch("agenttree.cli.agent.get_issue_func", return_value=None):
                         result = cli_runner.invoke(main, ["kill", "42"])
 
@@ -163,7 +163,7 @@ class TestAttachCommand:
         from agenttree.cli import main
 
         with patch("agenttree.cli.agent.load_config", return_value=mock_config):
-            with patch("agenttree.state.get_active_agent", return_value=None):
+            with patch("agenttree.cli.agent.get_active_agent", return_value=None):
                 with patch("agenttree.cli.agent.get_issue_func", return_value=None):
                     result = cli_runner.invoke(main, ["attach", "42"])
 
@@ -784,7 +784,7 @@ class TestSandboxCommand:
         from agenttree.cli import main
 
         with patch("agenttree.cli.agent.load_config", return_value=mock_config):
-            with patch("agenttree.tmux.list_sessions", return_value=[]):
+            with patch("agenttree.cli.agent.list_sessions", return_value=[]):
                 result = cli_runner.invoke(main, ["sandbox", "--list"])
 
         assert result.exit_code == 0
@@ -803,7 +803,7 @@ class TestSandboxCommand:
         ]
 
         with patch("agenttree.cli.agent.load_config", return_value=mock_config):
-            with patch("agenttree.tmux.list_sessions", return_value=mock_sessions):
+            with patch("agenttree.cli.agent.list_sessions", return_value=mock_sessions):
                 result = cli_runner.invoke(main, ["sandbox", "--list"])
 
         assert result.exit_code == 0
@@ -818,8 +818,8 @@ class TestSandboxCommand:
         from agenttree.cli import main
 
         with patch("agenttree.cli.agent.load_config", return_value=mock_config):
-            with patch("agenttree.tmux.session_exists", return_value=True):
-                with patch("agenttree.tmux.kill_session") as mock_kill:
+            with patch("agenttree.cli.agent.session_exists", return_value=True):
+                with patch("agenttree.cli.agent.kill_session") as mock_kill:
                     result = cli_runner.invoke(main, ["sandbox", "mysandbox", "--kill"])
 
         assert result.exit_code == 0
@@ -831,7 +831,7 @@ class TestSandboxCommand:
         from agenttree.cli import main
 
         with patch("agenttree.cli.agent.load_config", return_value=mock_config):
-            with patch("agenttree.tmux.session_exists", return_value=False):
+            with patch("agenttree.cli.agent.session_exists", return_value=False):
                 result = cli_runner.invoke(main, ["sandbox", "nosandbox", "--kill"])
 
         assert result.exit_code == 0
@@ -842,8 +842,8 @@ class TestSandboxCommand:
         from agenttree.cli import main
 
         with patch("agenttree.cli.agent.load_config", return_value=mock_config):
-            with patch("agenttree.tmux.session_exists", return_value=True):
-                with patch("agenttree.tmux.attach_session") as mock_attach:
+            with patch("agenttree.cli.agent.session_exists", return_value=True):
+                with patch("agenttree.cli.agent.attach_session") as mock_attach:
                     result = cli_runner.invoke(main, ["sandbox", "existing"])
 
         assert result.exit_code == 0
@@ -859,7 +859,7 @@ class TestSandboxCommand:
         mock_runtime.get_recommended_action.return_value = "Install Docker"
 
         with patch("agenttree.cli.agent.load_config", return_value=mock_config):
-            with patch("agenttree.tmux.session_exists", return_value=False):
+            with patch("agenttree.cli.agent.session_exists", return_value=False):
                 with patch("agenttree.cli.agent.get_container_runtime", return_value=mock_runtime):
                     result = cli_runner.invoke(main, ["sandbox"])
 
@@ -1198,8 +1198,8 @@ class TestRollbackCommand:
         from agenttree.cli import main
 
         with patch("agenttree.cli.agent.load_config", return_value=mock_config):
-            with patch("agenttree.tmux.session_exists", return_value=True):
-                with patch("agenttree.tmux.send_keys") as mock_send:
+            with patch("agenttree.cli.agent.session_exists", return_value=True):
+                with patch("agenttree.cli.agent.send_keys") as mock_send:
                     result = cli_runner.invoke(main, ["send", "0", "hello manager"])
 
         assert result.exit_code == 0
@@ -1211,7 +1211,7 @@ class TestRollbackCommand:
         from agenttree.cli import main
 
         with patch("agenttree.cli.agent.load_config", return_value=mock_config):
-            with patch("agenttree.tmux.session_exists", return_value=False):
+            with patch("agenttree.cli.agent.session_exists", return_value=False):
                 result = cli_runner.invoke(main, ["send", "0", "hello"])
 
         assert result.exit_code == 1
@@ -1223,8 +1223,8 @@ class TestRollbackCommand:
         from agenttree.cli import main
 
         with patch("agenttree.cli.agent.load_config", return_value=mock_config):
-            with patch("agenttree.tmux.session_exists", return_value=True):
-                with patch("agenttree.tmux.kill_session") as mock_kill:
+            with patch("agenttree.cli.agent.session_exists", return_value=True):
+                with patch("agenttree.cli.agent.kill_session") as mock_kill:
                     result = cli_runner.invoke(main, ["stop", "0"])
 
         assert result.exit_code == 0
@@ -1236,7 +1236,7 @@ class TestRollbackCommand:
         from agenttree.cli import main
 
         with patch("agenttree.cli.agent.load_config", return_value=mock_config):
-            with patch("agenttree.tmux.session_exists", return_value=False):
+            with patch("agenttree.cli.agent.session_exists", return_value=False):
                 result = cli_runner.invoke(main, ["stop", "0"])
 
         assert result.exit_code == 0
@@ -1247,7 +1247,7 @@ class TestRollbackCommand:
         from agenttree.cli import main
 
         with patch("agenttree.cli.agent.load_config", return_value=mock_config):
-            with patch("agenttree.tmux.session_exists", return_value=False):
+            with patch("agenttree.cli.agent.session_exists", return_value=False):
                 result = cli_runner.invoke(main, ["attach", "0"])
 
         assert result.exit_code == 1
@@ -1259,8 +1259,8 @@ class TestRollbackCommand:
         from agenttree.cli import main
 
         with patch("agenttree.cli.agent.load_config", return_value=mock_config):
-            with patch("agenttree.tmux.session_exists", return_value=True):
-                with patch("agenttree.tmux.attach_session") as mock_attach:
+            with patch("agenttree.cli.agent.session_exists", return_value=True):
+                with patch("agenttree.cli.agent.attach_session") as mock_attach:
                     result = cli_runner.invoke(main, ["attach", "0"])
 
         assert result.exit_code == 0

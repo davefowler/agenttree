@@ -185,8 +185,8 @@ def stage_next(issue_id: str | None, reassess: bool) -> None:
             if result.stdout.strip():
                 console.print(f"\n[bold]Uncommitted changes:[/bold]")
                 console.print(result.stdout[:500])
-        except Exception:
-            pass
+        except (subprocess.SubprocessError, OSError):
+            pass  # git diff failed or timed out - skip showing changes
 
         # Determine if this is a takeover (not starting from beginning)
         is_takeover = issue.stage not in (BACKLOG, DEFINE)
