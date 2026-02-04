@@ -1,34 +1,34 @@
 """Controller hooks - configurable post-sync hooks for the agenttree controller.
 
-This module provides the entry point for running controller hooks after sync.
-It uses the unified hook system from agenttree.hooks.
+DEPRECATION NOTICE:
+    This module is deprecated in favor of the event-driven architecture.
+    Configure hooks in .agenttree.yaml under `on:` instead of `controller_hooks:`.
+    
+    New config format:
+        on:
+          heartbeat:
+            interval_s: 10
+            actions:
+              - sync
+              - check_stalled_agents: { min_interval_s: 60 }
+              - check_ci_status: { min_interval_s: 120 }
+    
+    Old config format (deprecated, still works):
+        controller_hooks:
+          post_sync:
+            - push_pending_branches: {}
+            - check_ci_status: { min_interval_s: 60 }
 
-Controller hooks are configured in .agenttree.yaml under `controller_hooks.post_sync`.
-See agenttree/hooks.py for full documentation on hook configuration, base options,
-and available hook types.
-
-Quick example:
-    controller_hooks:
-      post_sync:
-        - push_pending_branches: {}
-        - check_controller_stages: {}
-        - check_custom_agent_stages: {}
-        - check_merged_prs: {}
-        - check_ci_status:
-            min_interval_s: 60
-            run_every_n_syncs: 5
-        - notify_slack:
-            command: "curl -X POST $SLACK_WEBHOOK"
-            min_interval_s: 300
-            optional: true
+This module now delegates to the event system for backwards compatibility.
 """
 
+import warnings
 from pathlib import Path
 from typing import Any
 
 from rich.console import Console
 
-# Import shared hook infrastructure
+# Import shared hook infrastructure (still needed for backwards compat)
 from agenttree.hooks import (
     run_hook,
     load_hook_state,
@@ -38,6 +38,7 @@ from agenttree.hooks import (
 console = Console()
 
 # Default hooks if not configured in .agenttree.yaml
+# These are now also the default heartbeat actions in agenttree/actions.py
 DEFAULT_POST_SYNC_HOOKS: list[dict[str, Any]] = [
     {"push_pending_branches": {}},
     {"check_controller_stages": {}},
@@ -51,9 +52,15 @@ DEFAULT_POST_SYNC_HOOKS: list[dict[str, Any]] = [
 def run_post_controller_hooks(agents_dir: Path, verbose: bool = False) -> None:
     """Run all configured post-sync hooks.
 
-    Reads hook config from .agenttree.yaml and executes each hook using
-    the unified hook system. Supports all base hook options including
-    rate limiting.
+    DEPRECATED: This function is deprecated. Use the event system instead:
+    
+        from agenttree.events import fire_event, HEARTBEAT
+        fire_event(HEARTBEAT, agents_dir)
+    
+    This function now checks if the new `on:` config is present. If so,
+    it skips running hooks (the event system will handle them).
+    If only old `controller_hooks:` config is present, it runs the legacy hooks
+    with a deprecation warning.
 
     Args:
         agents_dir: Path to _agenttree directory
@@ -65,7 +72,31 @@ def run_post_controller_hooks(agents_dir: Path, verbose: bool = False) -> None:
     try:
         config = load_config()
         raw_config = config.model_dump() if hasattr(config, "model_dump") else {}
+        
+        # Check if new event config exists
+        on_config = raw_config.get("on", {})
+        if on_config and on_config.get("heartbeat"):
+            # New config exists - don't run legacy hooks (event system handles it)
+            if verbose:
+                console.print("[dim]Using event system for heartbeat actions[/dim]")
+            return
+        
+        # Check for legacy controller_hooks config
         hooks = raw_config.get("controller_hooks", {}).get("post_sync", None)
+        
+        if hooks is not None:
+            # Emit deprecation warning for old config
+            warnings.warn(
+                "controller_hooks.post_sync is deprecated. "
+                "Use on.heartbeat.actions instead. "
+                "See docs for migration guide.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            console.print(
+                "[yellow]Warning: controller_hooks.post_sync is deprecated. "
+                "Migrate to on.heartbeat.actions for better control.[/yellow]"
+            )
     except Exception:
         hooks = None
 
