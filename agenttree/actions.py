@@ -107,25 +107,30 @@ def start_manager(agents_dir: Path, **kwargs: Any) -> None:
 def auto_start_agents(agents_dir: Path, **kwargs: Any) -> None:
     """Start agents for all issues not in parking lot stages.
     
+    Uses fast session_exists checks instead of slow get_active_agent.
+    
     Args:
         agents_dir: Path to _agenttree directory
     """
     import subprocess
     from agenttree.config import load_config
-    from agenttree.issues import list_issues
-    from agenttree.state import get_active_agent
+    from agenttree.issues import list_issues, BACKLOG, ACCEPTED, NOT_DOING
+    from agenttree.tmux import session_exists
     
     config = load_config()
-    parking_lot_stages = config.get_parking_lot_stages()
     
-    issues = list_issues(sync=False)
+    # Get active issues (not parking lot stages)
+    issues = [
+        i for i in list_issues(sync=False)
+        if i.stage not in (BACKLOG, ACCEPTED, NOT_DOING)
+    ]
+    
     started = 0
     
     for issue in issues:
-        if issue.stage in parking_lot_stages:
-            continue
-        
-        if get_active_agent(issue.id):
+        # Fast check using session_exists instead of slow get_active_agent
+        session_name = f"{config.project}-developer-{issue.id}"
+        if session_exists(session_name):
             console.print(f"[dim]Issue #{issue.id} already has an agent[/dim]")
             continue
         
