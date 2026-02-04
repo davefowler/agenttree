@@ -584,7 +584,7 @@ class Config(BaseModel):
         stage = self.get_stage(stage_name)
         return stage.terminal if stage else False
 
-    def get_flow(self, flow_name: str) -> Optional[FlowConfig]:
+    def get_flow(self, flow_name: str) -> FlowConfig | None:
         """Get configuration for a flow.
 
         Args:
