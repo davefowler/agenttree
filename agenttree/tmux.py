@@ -426,7 +426,7 @@ class TmuxManager:
         create_session(session_name, worktree_path, container_cmd_str)
 
         # Wait for Claude CLI prompt before sending startup message
-        if wait_for_prompt(session_name, prompt_char="❯", timeout=90.0):
+        if wait_for_prompt(session_name, prompt_char="❯", timeout=180.0):
             send_keys(session_name, tool_config.startup_prompt)
 
     def stop_agent(self, agent_num: int) -> None:
@@ -552,7 +552,7 @@ class TmuxManager:
         create_session(session_name, worktree_path, container_cmd_str)
 
         # Wait for Claude CLI prompt before sending startup message
-        if wait_for_prompt(session_name, prompt_char="❯", timeout=90.0):
+        if wait_for_prompt(session_name, prompt_char="❯", timeout=180.0):
             # Build issue-specific startup prompt based on state
             if has_merge_conflicts:
                 startup_prompt = (
