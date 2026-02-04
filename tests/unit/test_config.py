@@ -748,7 +748,7 @@ stages:
   - name: backlog
   - name: implement
   - name: accepted
-    terminal: true
+    is_parking_lot: true
 """
         config_file.write_text(minimal_config)
 
@@ -756,4 +756,4 @@ stages:
         assert config.project == "myproject"
         assert len(config.stages) == 3
         assert config.stages[0].name == "backlog"
-        assert config.stages[2].terminal is True
+        assert config.stages[2].is_parking_lot is True
