@@ -493,8 +493,8 @@ def get_default_doc(stage: str) -> str | None:
     return None
 
 
-# Maximum diff size in bytes (50KB - smaller for faster rendering)
-MAX_DIFF_SIZE = 50 * 1024
+# Maximum diff size in bytes (200KB - show more before truncating)
+MAX_DIFF_SIZE = 200 * 1024
 
 
 def get_issue_diff(issue_id: str) -> dict:
@@ -554,6 +554,11 @@ def get_issue_diff(issue_id: str) -> dict:
             elif line.startswith('diff --git'):
                 files_changed += 1
 
+        # Build PR diff URL if PR exists
+        pr_diff_url = None
+        if issue.pr_url:
+            pr_diff_url = issue.pr_url + "/files"
+
         return {
             "diff": diff_output,
             "stat": stat_output,
@@ -562,12 +567,13 @@ def get_issue_diff(issue_id: str) -> dict:
             "truncated": truncated,
             "additions": additions,
             "deletions": deletions,
-            "files_changed": files_changed
+            "files_changed": files_changed,
+            "pr_diff_url": pr_diff_url
         }
     except subprocess.TimeoutExpired:
-        return {"diff": "", "stat": "", "has_changes": False, "error": "Diff generation timed out", "truncated": False}
+        return {"diff": "", "stat": "", "has_changes": False, "error": "Diff generation timed out", "truncated": False, "pr_diff_url": None}
     except Exception as e:
-        return {"diff": "", "stat": "", "has_changes": False, "error": str(e), "truncated": False}
+        return {"diff": "", "stat": "", "has_changes": False, "error": str(e), "truncated": False, "pr_diff_url": None}
 
 
 # Cache stage list for sorting efficiency
