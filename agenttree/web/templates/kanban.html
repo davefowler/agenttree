@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Kanban - AgentTree</title>
-    <link rel="stylesheet" href="/static/styles.css">
+    <link rel="stylesheet" href="/static/styles.css?v=8">
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <!-- diff2html for code diff rendering -->
@@ -45,6 +45,14 @@
                 <span class="dropzone-label">Not Doing</span>
                 <span class="dropzone-count" id="not-doing-count">0</span>
             </div>
+        </div>
+
+        <!-- Stage indicators for hidden stages in review mode -->
+        <div class="stage-indicator" id="indicator-pre-review" title="Click to view all stages">
+            <span class="indicator-count" id="pre-review-count">0</span>
+        </div>
+        <div class="stage-indicator" id="indicator-pre-impl" title="Click to view all stages">
+            <span class="indicator-count" id="pre-impl-count">0</span>
         </div>
     </div>
 
@@ -304,43 +312,28 @@ Possible solutions:
             document.getElementById('new-issue-error').textContent = '';
         };
 
-        window.submitNewIssue = async function(event) {
+        window.submitNewIssue = function(event) {
             event.preventDefault();
             const form = document.getElementById('new-issue-form');
             const formData = new FormData(form);
-            const errorDiv = document.getElementById('new-issue-error');
-            const submitBtn = document.getElementById('create-issue-btn');
 
-            // Disable button while submitting
-            submitBtn.disabled = true;
-            submitBtn.textContent = 'Creating...';
-            errorDiv.textContent = '';
+            // Close modal immediately
+            window.closeNewIssueModal();
 
-            try {
-                const response = await fetch('/api/issues', {
-                    method: 'POST',
-                    body: formData
-                });
+            // Fire request in background
+            fetch('/api/issues', {
+                method: 'POST',
+                body: formData
+            });
 
-                const data = await response.json();
-
-                if (response.ok) {
-                    // Success - reload the page to show new issue
-                    location.reload();
-                } else {
-                    errorDiv.textContent = data.detail || 'Failed to create issue';
-                    submitBtn.disabled = false;
-                    submitBtn.textContent = 'Create Issue';
-                }
-            } catch (error) {
-                errorDiv.textContent = 'Error creating issue: ' + error.message;
-                submitBtn.disabled = false;
-                submitBtn.textContent = 'Create Issue';
-            }
+            // Reload after short delay to show new issue
+            setTimeout(() => location.reload(), 1000);
         };
 
         // Stage toggle functionality
         const reviewStages = ['backlog', 'plan_review', 'implementation_review'];
+        const preReviewStages = ['define', 'research', 'plan', 'plan_assess', 'plan_revise'];
+        const preImplStages = ['implement'];
 
         function updateMiniDropzones() {
             const miniDropzones = document.getElementById('mini-dropzones');
@@ -376,20 +369,64 @@ Possible solutions:
             }
         }
 
+        function updateIndicators() {
+            const currentView = localStorage.getItem('kanbanStageView') || 'review';
+            const preReviewIndicator = document.getElementById('indicator-pre-review');
+            const preImplIndicator = document.getElementById('indicator-pre-impl');
+
+            // Hide indicators if not in review mode
+            if (currentView !== 'review') {
+                preReviewIndicator.classList.remove('visible');
+                preImplIndicator.classList.remove('visible');
+                return;
+            }
+
+            // Count issues in pre-review stages
+            let preReviewCount = 0;
+            preReviewStages.forEach(stage => {
+                const col = document.querySelector(`.kanban-column[data-stage="${stage}"]`);
+                if (col) {
+                    preReviewCount += col.querySelectorAll('.issue-item').length;
+                }
+            });
+
+            // Count issues in pre-impl stages
+            let preImplCount = 0;
+            preImplStages.forEach(stage => {
+                const col = document.querySelector(`.kanban-column[data-stage="${stage}"]`);
+                if (col) {
+                    preImplCount += col.querySelectorAll('.issue-item').length;
+                }
+            });
+
+            // Update counts and visibility
+            document.getElementById('pre-review-count').textContent = preReviewCount;
+            document.getElementById('pre-impl-count').textContent = preImplCount;
+
+            if (preReviewCount > 0) {
+                preReviewIndicator.classList.add('visible');
+            } else {
+                preReviewIndicator.classList.remove('visible');
+            }
+
+            if (preImplCount > 0) {
+                preImplIndicator.classList.add('visible');
+            } else {
+                preImplIndicator.classList.remove('visible');
+            }
+        }
+
         // Stage view toggle
         window.setStageView = function(view) {
             const columns = document.querySelectorAll('.kanban-column');
-            const toggleReview = document.getElementById('toggle-review');
-            const toggleNonempty = document.getElementById('toggle-nonempty');
-            const toggleAll = document.getElementById('toggle-all');
+            const selectEl = document.getElementById('stage-view-select');
 
-            // Clear all active states
-            toggleReview.classList.remove('active');
-            toggleNonempty.classList.remove('active');
-            toggleAll.classList.remove('active');
+            // Update select dropdown to match current view
+            if (selectEl) {
+                selectEl.value = view;
+            }
 
             if (view === 'review') {
-                toggleReview.classList.add('active');
                 columns.forEach(col => {
                     const stage = col.dataset.stage;
                     if (reviewStages.includes(stage)) {
@@ -399,7 +436,6 @@ Possible solutions:
                     }
                 });
             } else if (view === 'nonempty') {
-                toggleNonempty.classList.add('active');
                 columns.forEach(col => {
                     const cardCount = col.querySelectorAll('.issue-item').length;
                     if (cardCount > 0) {
@@ -409,7 +445,6 @@ Possible solutions:
                     }
                 });
             } else {
-                toggleAll.classList.add('active');
                 columns.forEach(col => col.classList.remove('hidden'));
             }
 
@@ -421,6 +456,9 @@ Possible solutions:
 
             // Update mini dropzones visibility
             updateMiniDropzones();
+
+            // Update stage indicators visibility
+            updateIndicators();
         };
 
         // Apply view from URL first, then localStorage, then default to 'review'
@@ -428,6 +466,11 @@ Possible solutions:
         const urlView = urlParams.get('view');
         const savedView = urlView || localStorage.getItem('kanbanStageView') || 'review';
         window.setStageView(savedView);
+
+        // Stage indicator click handlers
+        document.querySelectorAll('.stage-indicator').forEach(indicator => {
+            indicator.addEventListener('click', () => setStageView('all'));
+        });
 
         // Mini dropzone drag/drop handlers
         document.querySelectorAll('.mini-dropzone').forEach(dropzone => {

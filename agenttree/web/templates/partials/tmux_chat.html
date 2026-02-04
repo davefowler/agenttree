@@ -9,7 +9,7 @@
 <div class="tmux-chat-content">
     <div class="tmux-output" id="tmux-output-{{ chat_id }}"
          hx-get="{{ get_url }}"
-         hx-trigger="load, every 2s [document.visibilityState=='visible']"
+         hx-trigger="load, every 2s [document.hasFocus() && !this.closest('.collapsed')]"
          hx-swap="innerHTML">
         Loading...
     </div>

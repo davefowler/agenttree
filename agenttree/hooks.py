@@ -346,13 +346,13 @@ HOOK_TYPES = {
     "checkbox_checked",  # Review loop: check if checkbox is marked
     # Actions (perform side effects)
     "create_file", "create_pr", "merge_pr", "run", "rebase",
-    "cleanup_agent", "start_blocked_issues",
+    "cleanup_agent", "start_blocked_issues", "cleanup_resources",
     "version_file",  # Review loop: rename file to versioned name
     "loop_check",  # Review loop: count iterations and fail if max exceeded
     "rollback",  # Review loop: programmatic rollback to earlier stage
     # Controller hooks (run on post-sync)
     "push_pending_branches", "check_controller_stages", "check_merged_prs",
-    "check_ci_status", "check_custom_agent_stages",
+    "check_ci_status", "check_custom_agent_stages", "check_stalled_agents",
 }
 
 # =============================================================================
@@ -717,10 +717,10 @@ def run_builtin_validator(
             section = params["section"]
             expect = params["expect"]
 
-            # Find section content (between ## Section and next same-level header or end)
-            # Includes subsections (###, ####) as part of the section content
-            # The lookahead stops at "\n## " followed by a letter/word (not "#")
-            pattern = rf'^##\s*{re.escape(section)}.*?\n(.*?)(?=\n## [A-Za-z]|\Z)'
+            # Find section content (between ## or ### Section and next same-level or higher header or end)
+            # Accepts both H2 (##) and H3 (###) section headers
+            # The lookahead stops at "\n## " or "\n### " followed by a letter/word (not "#")
+            pattern = rf'^##[#]?\s*{re.escape(section)}.*?\n(.*?)(?=\n##[#]? [A-Za-z]|\Z)'
             section_match = re.search(pattern, content, re.MULTILINE | re.DOTALL)
 
             if not section_match:
@@ -967,7 +967,10 @@ def run_builtin_validator(
         if template_name and dest:
             template_path = Path("_agenttree/templates") / template_name
             dest_path = issue_dir / dest
-            if not dest_path.exists() and template_path.exists():
+            # Template MUST exist - fail loudly if not
+            if not template_path.exists():
+                errors.append(f"Template '{template_name}' not found at {template_path}")
+            elif not dest_path.exists():
                 template_content = template_path.read_text()
 
                 # Build Jinja context using unified function
@@ -1063,6 +1066,17 @@ def run_builtin_validator(
         issue = kwargs.get("issue")
         if issue:
             check_and_start_blocked_issues(issue)
+
+    elif hook_type == "cleanup_resources":
+        # Run global resource cleanup and optionally log what was cleaned
+        # Tracking helps identify workflow failures - high cleanup frequency
+        # indicates broken workflow steps
+        log_file = params.get("log_file")
+        dry_run = params.get("dry_run", False)
+        cleanup_result = run_resource_cleanup(dry_run=dry_run, log_file=log_file)
+        if cleanup_result.get("errors"):
+            for err in cleanup_result["errors"]:
+                errors.append(f"Cleanup error: {err}")
 
     # === Review loop hooks ===
 
@@ -1195,6 +1209,36 @@ def run_builtin_validator(
         if agents_dir:
             check_custom_agent_stages(agents_dir)
 
+    elif hook_type == "check_stalled_agents":
+        from agenttree.controller_agent import get_stalled_agents
+
+        agents_dir = kwargs.get("agents_dir")
+        if agents_dir:
+            threshold = params.get("threshold_min", 20)
+            stalled = get_stalled_agents(agents_dir, threshold_min=threshold)
+
+            for agent_info in stalled:
+                issue_id = agent_info["issue_id"]
+                minutes = agent_info["minutes_stalled"]
+
+                # Send nudge via agenttree send --interrupt to actually interrupt the agent
+                message = f"STALL DETECTED ({minutes}m). Run `agenttree next` NOW to check your progress and advance."
+                try:
+                    result = subprocess.run(
+                        ["agenttree", "send", issue_id, message, "--interrupt"],
+                        capture_output=True,
+                        text=True,
+                        timeout=30,
+                    )
+                    if result.returncode == 0:
+                        console.print(f"[yellow]Nudged stalled agent #{issue_id} ({minutes}m)[/yellow]")
+                    else:
+                        console.print(f"[red]Failed to nudge #{issue_id}: {result.stderr}[/red]")
+                except subprocess.TimeoutExpired:
+                    console.print(f"[red]Nudge timed out for #{issue_id}[/red]")
+                except Exception as e:
+                    console.print(f"[red]Failed to nudge #{issue_id}: {e}[/red]")
+
     elif hook_type == "server_running":
         # Check that a dev server is running on the issue's port
         import urllib.request
@@ -1239,6 +1283,19 @@ def run_builtin_validator(
                                 f"Dev server not responding at {url} after {retries} attempts: {err}. "
                                 f"Make sure the server is running on port {port}."
                             )
+
+    elif hook_type == "title_set":
+        # Check that the issue title is not "(untitled)" or other placeholder
+        issue = kwargs.get("issue")
+        if issue is None:
+            errors.append("No issue provided for title_set check")
+        else:
+            placeholder_titles = ["(untitled)", "untitled", ""]
+            if issue.title.lower().strip() in placeholder_titles:
+                errors.append(
+                    f"Issue title is '{issue.title}'. Please set a descriptive title in issue.yaml "
+                    f"(edit the 'title:' field in {issue.id}-{issue.slug}/issue.yaml)"
+                )
 
     else:
         # Unknown type - ignore silently (allows for future extensions)
@@ -2379,82 +2436,21 @@ def ensure_pr_for_issue(issue_id: str) -> bool:
         return False
 
 
-def _is_uuid(s: str) -> bool:
-    """Check if a string looks like a UUID (Apple Container ID format)."""
-    import re
-    # UUID format: 8-4-4-4-12 hex characters
-    return bool(re.match(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', s.lower()))
-
-
 def cleanup_issue_agent(issue: Issue) -> None:
     """Clean up agent resources when issue is accepted.
 
     Stops tmux session, stops container, frees port.
+    Uses the consolidated stop_agent function from state.py.
 
     Args:
         issue: Issue that was transitioned to accepted
     """
-    from agenttree.state import get_active_agent, unregister_agent
+    from agenttree.state import stop_all_agents_for_issue
 
-    agent = get_active_agent(issue.id)
-    if not agent:
-        return  # No agent to clean up
-
-    console.print(f"[dim]Cleaning up agent for issue #{issue.id}...[/dim]")
-
-    # Stop tmux session
-    try:
-        from agenttree.tmux import kill_session, session_exists
-        if session_exists(agent.tmux_session):
-            kill_session(agent.tmux_session)
-            console.print(f"[dim]  Stopped tmux session: {agent.tmux_session}[/dim]")
-    except Exception as e:
-        console.print(f"[yellow]  Warning: Could not stop tmux session: {e}[/yellow]")
-
-    # Stop container (if running) - use detected runtime (container/docker/podman)
-    try:
-        from agenttree.container import get_container_runtime, find_container_by_worktree
-        runtime = get_container_runtime()
-        if runtime.runtime:
-            container_id = agent.container
-
-            # For Apple Containers, we need the UUID, not the name
-            # If the stored ID looks like a name (not a UUID), try to find the UUID
-            if runtime.runtime == "container" and not _is_uuid(container_id):
-                # Try to find the container by its worktree mount
-                worktree_path = Path(agent.worktree)
-                if not worktree_path.is_absolute():
-                    worktree_path = Path.cwd() / worktree_path
-                found_uuid = find_container_by_worktree(worktree_path)
-                if found_uuid:
-                    container_id = found_uuid
-                    console.print(f"[dim]  Found container UUID: {container_id[:12]}...[/dim]")
-                else:
-                    console.print(f"[yellow]  Could not find container UUID for {agent.container}[/yellow]")
-
-            result = subprocess.run(
-                [runtime.runtime, "stop", container_id],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            if result.returncode == 0:
-                console.print(f"[dim]  Stopped container: {container_id[:12] if len(container_id) > 12 else container_id}[/dim]")
-
-            # Remove container (only for Docker/Podman - Apple Containers auto-removes)
-            if runtime.runtime != "container":
-                subprocess.run(
-                    [runtime.runtime, "rm", container_id],
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                )
-    except Exception as e:
-        console.print(f"[yellow]  Warning: Could not stop container: {e}[/yellow]")
-
-    # Unregister agent (frees port)
-    unregister_agent(issue.id)
-    console.print(f"[green]✓ Agent cleaned up for issue #{issue.id}[/green]")
+    # Stop all agents for this issue (handles tmux, container, and state cleanup)
+    count = stop_all_agents_for_issue(issue.id)
+    if count == 0:
+        console.print(f"[dim]No active agents to clean up for issue #{issue.id}[/dim]")
 
 
 def check_and_start_blocked_issues(issue: Issue) -> None:
@@ -2510,3 +2506,217 @@ def check_and_start_blocked_issues(issue: Issue) -> None:
                 console.print(f"[yellow]Failed to start issue #{blocked_issue.id}: {e}[/yellow]")
         else:
             console.print(f"[dim]→ Issue #{blocked_issue.id} still blocked by: {', '.join(unmet)}[/dim]")
+
+
+def run_resource_cleanup(dry_run: bool = False, log_file: str | None = None) -> dict:
+    """Run global resource cleanup and optionally log results.
+
+    This is used by the cleanup_resources hook to clean up stale resources
+    and track what was cleaned. Tracking helps identify workflow failures -
+    if we're frequently cleaning the same types of resources, it indicates
+    something upstream is breaking.
+
+    Args:
+        dry_run: If True, don't actually clean anything, just report
+        log_file: Optional path to log file for tracking cleanup
+
+    Returns:
+        Dict with 'cleaned' list and 'errors' list
+    """
+    from datetime import datetime
+    from agenttree.config import load_config
+    from agenttree.worktree import list_worktrees, remove_worktree
+    from agenttree.tmux import list_sessions, kill_session
+    from agenttree.issues import list_issues, BACKLOG
+    from agenttree.state import get_active_agent
+    from agenttree.container import get_container_runtime
+
+    config = load_config()
+    repo_path = Path.cwd()
+
+    # Track results
+    cleaned: list[dict] = []
+    errors: list[str] = []
+
+    # Get all issues for reference
+    all_issues = list_issues()
+    issue_by_id = {i.id: i for i in all_issues}
+
+    # 1. Find stale worktrees
+    try:
+        git_worktrees = list_worktrees(repo_path)
+        for wt in git_worktrees:
+            wt_path = Path(wt["path"])
+            if wt_path == repo_path:
+                continue
+            wt_name = wt_path.name
+            if not wt_name.startswith("issue-"):
+                continue
+
+            parts = wt_name.split("-")
+            if len(parts) < 2:
+                continue
+
+            issue_id = parts[1]
+            issue = issue_by_id.get(issue_id)
+
+            reason = None
+            if not issue:
+                reason = "issue not found"
+            elif config.is_parking_lot(issue.stage):
+                # Parking lot stages may have worktrees cleaned up
+                # For backlog, keep worktree if there are uncommitted changes
+                if issue.stage == BACKLOG:
+                    status_result = subprocess.run(
+                        ["git", "status", "--porcelain"],
+                        cwd=wt_path,
+                        capture_output=True,
+                        text=True,
+                    )
+                    if not status_result.stdout.strip():
+                        reason = "backlogged with no changes"
+                else:
+                    # Other parking lots (accepted, not_doing) always clean up
+                    reason = f"issue in {issue.stage} stage"
+
+            if reason:
+                if not dry_run:
+                    try:
+                        remove_worktree(repo_path, wt_path)
+                        cleaned.append({"type": "worktree", "path": str(wt_path), "reason": reason})
+                        console.print(f"[green]✓ Removed worktree: {wt_path.name}[/green]")
+                    except Exception as e:
+                        errors.append(f"Failed to remove worktree {wt_path}: {e}")
+                else:
+                    cleaned.append({"type": "worktree", "path": str(wt_path), "reason": reason})
+    except Exception as e:
+        errors.append(f"Worktree cleanup failed: {e}")
+
+    # 2. Find stale branches
+    try:
+        result = subprocess.run(
+            ["git", "branch", "--list"],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+        )
+        local_branches = [b.strip().lstrip("* ") for b in result.stdout.strip().split("\n") if b.strip()]
+
+        result = subprocess.run(
+            ["git", "branch", "--merged", "main"],
+            cwd=repo_path,
+            capture_output=True,
+            text=True,
+        )
+        merged_branches = {b.strip().lstrip("* ") for b in result.stdout.strip().split("\n") if b.strip()}
+
+        for branch in local_branches:
+            if branch in ("main", "master", "HEAD"):
+                continue
+
+            branch_issue_id: str | None = None
+            if branch.startswith("issue-"):
+                parts = branch.split("-")
+                if len(parts) >= 2:
+                    branch_issue_id = parts[1]
+
+            reason = None
+            if branch in merged_branches and branch != "main":
+                reason = "merged to main"
+            elif branch_issue_id:
+                issue = issue_by_id.get(branch_issue_id)
+                if not issue:
+                    reason = "issue not found"
+                elif config.is_parking_lot(issue.stage) and issue.stage != BACKLOG:
+                    # Clean branches for done/abandoned stages, but keep backlog branches
+                    reason = f"issue in {issue.stage} stage"
+
+            if reason:
+                if not dry_run:
+                    try:
+                        subprocess.run(
+                            ["git", "branch", "-D", branch],
+                            cwd=repo_path,
+                            check=True,
+                            capture_output=True,
+                        )
+                        cleaned.append({"type": "branch", "name": branch, "reason": reason})
+                        console.print(f"[green]✓ Deleted branch: {branch}[/green]")
+                    except subprocess.CalledProcessError as e:
+                        errors.append(f"Failed to delete branch {branch}: {e}")
+                else:
+                    cleaned.append({"type": "branch", "name": branch, "reason": reason})
+    except Exception as e:
+        errors.append(f"Branch cleanup failed: {e}")
+
+    # 3. Find stale tmux sessions
+    try:
+        all_sessions = list_sessions()
+        project_prefix = f"{config.project}-issue-"
+
+        for session in all_sessions:
+            if not session.name.startswith(project_prefix):
+                continue
+
+            suffix = session.name[len(project_prefix):]
+            issue_id = suffix.split("-")[0]
+
+            issue = issue_by_id.get(issue_id)
+            reason = None
+            if not issue:
+                reason = "issue not found"
+            elif config.is_parking_lot(issue.stage):
+                # Parking lot stages shouldn't have active sessions
+                reason = f"issue in {issue.stage} stage"
+
+            if reason:
+                if not dry_run:
+                    try:
+                        kill_session(session.name)
+                        cleaned.append({"type": "session", "name": session.name, "reason": reason})
+                        console.print(f"[green]✓ Killed session: {session.name}[/green]")
+                    except Exception as e:
+                        errors.append(f"Failed to kill session {session.name}: {e}")
+                else:
+                    cleaned.append({"type": "session", "name": session.name, "reason": reason})
+    except Exception as e:
+        errors.append(f"Session cleanup failed: {e}")
+
+    # Log results if requested
+    if log_file and cleaned:
+        try:
+            log_path = Path(log_file)
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+
+            timestamp = datetime.now().isoformat()
+            log_entries = []
+            for item in cleaned:
+                entry = f"{timestamp} | {item['type']} | {item.get('path') or item.get('name')} | {item['reason']}"
+                log_entries.append(entry)
+
+            with open(log_path, "a") as f:
+                f.write("\n".join(log_entries) + "\n")
+
+            console.print(f"[dim]Logged {len(cleaned)} cleanup actions to {log_file}[/dim]")
+        except Exception as e:
+            errors.append(f"Failed to write cleanup log: {e}")
+
+    # Summary
+    if cleaned:
+        console.print(f"\n[yellow]Cleanup summary: {len(cleaned)} items cleaned[/yellow]")
+        # Group by type for analysis
+        by_type: dict[str, list] = {}
+        for item in cleaned:
+            by_type.setdefault(item["type"], []).append(item)
+        for item_type, items in by_type.items():
+            console.print(f"  - {item_type}: {len(items)}")
+
+        # Group by reason - this helps identify patterns
+        by_reason: dict[str, int] = {}
+        for item in cleaned:
+            by_reason[item["reason"]] = by_reason.get(item["reason"], 0) + 1
+        console.print(f"\n[cyan]Cleanup reasons (indicates potential workflow issues):[/cyan]")
+        for reason, count in sorted(by_reason.items(), key=lambda x: -x[1]):
+            console.print(f"  - {reason}: {count}")
+
+    return {"cleaned": cleaned, "errors": errors}

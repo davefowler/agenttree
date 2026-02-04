@@ -1,5 +1,10 @@
 """Web dashboard for AgentTree using FastAPI + HTMX."""
 
+# Force standard asyncio event loop instead of uvloop to avoid fork crashes
+# uvloop's signal handlers aren't fork-safe, causing crashes when subprocess.run() forks
+import asyncio
+asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
+
 from fastapi import FastAPI, Request, Form, WebSocket, WebSocketDisconnect, Depends, HTTPException, status
 from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse, Response
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
@@ -8,7 +13,6 @@ from fastapi.templating import Jinja2Templates
 from starlette.middleware.base import BaseHTTPMiddleware
 from pathlib import Path
 import subprocess
-import asyncio
 import secrets
 import os
 import re
@@ -24,7 +28,7 @@ from agenttree.worktree import WorktreeManager
 _config: Config = load_config()
 from agenttree import issues as issue_crud
 from agenttree.agents_repo import sync_agents_repo
-from agenttree.web.models import StageEnum, KanbanBoard, Issue as WebIssue, IssueMoveRequest
+from agenttree.web.models import StageEnum, KanbanBoard, Issue as WebIssue, IssueMoveRequest, PriorityUpdateRequest
 
 # Pattern to match Claude Code's input prompt separator line
 # The separator is a line of U+2500 (BOX DRAWINGS LIGHT HORIZONTAL) characters: ─
@@ -82,7 +86,7 @@ async def background_sync_loop(interval: int = 10) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """FastAPI lifespan context - starts/stops background sync."""
+    """FastAPI lifespan context - starts/stops background sync and controller."""
     global _sync_task
 
     # Start background sync task
@@ -90,6 +94,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     interval = config.refresh_interval if hasattr(config, 'refresh_interval') else 10
     _sync_task = asyncio.create_task(background_sync_loop(interval))
     print(f"✓ Started background sync (every {interval}s)")
+
+    # Auto-start controller if not running
+    from agenttree.tmux import session_exists
+    controller_session = f"{config.project}-controller-000"
+    if not session_exists(controller_session):
+        subprocess.Popen(
+            ["uv", "run", "agenttree", "start", "0"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            cwd=Path.cwd(),
+            start_new_session=True
+        )
+        print("✓ Started controller agent")
+    else:
+        print("✓ Controller already running")
 
     yield  # Server runs here
 
@@ -233,10 +252,11 @@ class AgentManager:
         Note: Controller is agent 0, so _check_issue_tmux_session("000") checks controller.
         """
         active = self._get_active_sessions()
-        # Check both naming patterns: {project}-issue-{id} and {project}-agent-{id}
+        # Check all naming patterns: issue, agent, and controller (for agent 0)
         issue_name = f"{_config.project}-issue-{issue_id}"
         agent_name = f"{_config.project}-agent-{issue_id}"
-        return issue_name in active or agent_name in active
+        controller_name = f"{_config.project}-controller-{issue_id}"
+        return issue_name in active or agent_name in active or controller_name in active
 
 
 # Global agent manager - will be initialized in startup
@@ -276,6 +296,7 @@ def convert_issue_to_web(issue: issue_crud.Issue, load_dependents: bool = False)
         assignees=[],
         stage=stage,
         substage=issue.substage,
+        priority=issue.priority.value,
         tmux_active=tmux_active,
         has_worktree=bool(issue.worktree_dir),
         pr_url=issue.pr_url,
@@ -351,6 +372,7 @@ async def kanban(
     issue: Optional[str] = None,
     chat: Optional[str] = None,
     search: Optional[str] = None,
+    view: Optional[str] = None,
     user: Optional[str] = Depends(get_current_user)
 ) -> HTMLResponse:
     """Kanban board page."""
@@ -361,12 +383,15 @@ async def kanban(
     selected_issue = None
     files: list[dict[str, str]] = []
     commits_behind = 0
+    default_doc: str | None = None
     if issue:
         issue_obj = issue_crud.get_issue(issue, sync=False)
         if issue_obj:
             selected_issue = convert_issue_to_web(issue_obj, load_dependents=True)
             # Load all file contents upfront for CSS toggle tabs
             files = get_issue_files(issue, include_content=True)
+            # Get default doc to show for this stage
+            default_doc = get_default_doc(issue_obj.stage)
             # Get commits behind for rebase button
             if selected_issue.tmux_active and issue_obj.worktree_dir:
                 from agenttree.hooks import get_commits_behind_main
@@ -381,9 +406,11 @@ async def kanban(
             "active_page": "kanban",
             "selected_issue": selected_issue,
             "files": files,
+            "default_doc": default_doc,
             "commits_behind": commits_behind,
             "chat_open": chat == "1",
             "search": search or "",
+            "current_view": view or "nonempty",
         }
     )
 
@@ -405,6 +432,7 @@ def get_issue_files(issue_id: str, include_content: bool = False) -> list[dict[s
 
     Files are ordered by workflow stage (problem.md first, then spec.md, etc.),
     with any unknown files at the end sorted alphabetically.
+    If config.show_issue_yaml is True, issue.yaml is included at the end.
     """
     issue_dir = issue_crud.get_issue_dir(issue_id)
     if not issue_dir:
@@ -433,7 +461,36 @@ def get_issue_files(issue_id: str, include_content: bool = False) -> list[dict[s
             except Exception:
                 file_info["content"] = ""
         files.append(file_info)
+
+    # Optionally include issue.yaml at the end
+    if _config.show_issue_yaml:
+        issue_yaml = issue_dir / "issue.yaml"
+        if issue_yaml.exists():
+            file_info = {
+                "name": "issue.yaml",
+                "display_name": "Issue YAML",
+                "size": str(issue_yaml.stat().st_size),
+                "modified": datetime.fromtimestamp(issue_yaml.stat().st_mtime).isoformat()
+            }
+            if include_content:
+                try:
+                    file_info["content"] = issue_yaml.read_text()
+                except Exception:
+                    file_info["content"] = ""
+            files.append(file_info)
+
     return files
+
+
+def get_default_doc(stage: str) -> str | None:
+    """Get the default document to show for a stage.
+
+    Returns the review_doc for the stage if configured, otherwise None.
+    """
+    stage_config = _config.get_stage(stage)
+    if stage_config and stage_config.review_doc:
+        return stage_config.review_doc
+    return None
 
 
 # Maximum diff size in bytes (50KB - smaller for faster rendering)
@@ -609,13 +666,16 @@ async def flow(
     # Load all file contents upfront for selected issue
     files: list[dict[str, str]] = []
     commits_behind = 0
+    default_doc: str | None = None
     if selected_issue and selected_issue_id:
         # Load all file contents upfront for CSS toggle tabs
         files = get_issue_files(selected_issue_id, include_content=True)
-        # Get commits behind for rebase button
-        if selected_issue.tmux_active:
-            issue_obj = issue_crud.get_issue(selected_issue_id, sync=False)
-            if issue_obj and issue_obj.worktree_dir:
+        # Get default doc to show for this stage
+        issue_obj = issue_crud.get_issue(selected_issue_id, sync=False)
+        if issue_obj:
+            default_doc = get_default_doc(issue_obj.stage)
+            # Get commits behind for rebase button
+            if selected_issue.tmux_active and issue_obj.worktree_dir:
                 from agenttree.hooks import get_commits_behind_main
                 commits_behind = get_commits_behind_main(issue_obj.worktree_dir)
 
@@ -627,6 +687,7 @@ async def flow(
             "selected_issue": selected_issue,
             "issue": selected_issue,  # issue_detail.html expects 'issue'
             "files": files,
+            "default_doc": default_doc,
             "commits_behind": commits_behind,
             "active_page": "flow",
             "chat_open": chat == "1",
@@ -669,11 +730,13 @@ async def mobile(
     # Load all file contents upfront for selected issue
     files: list[dict[str, str]] = []
     commits_behind = 0
+    default_doc: str | None = None
     if selected_issue and selected_issue_id:
         files = get_issue_files(selected_issue_id, include_content=True)
-        if selected_issue.tmux_active:
-            issue_obj = issue_crud.get_issue(selected_issue_id, sync=False)
-            if issue_obj and issue_obj.worktree_dir:
+        issue_obj = issue_crud.get_issue(selected_issue_id, sync=False)
+        if issue_obj:
+            default_doc = get_default_doc(issue_obj.stage)
+            if selected_issue.tmux_active and issue_obj.worktree_dir:
                 from agenttree.hooks import get_commits_behind_main
                 commits_behind = get_commits_behind_main(issue_obj.worktree_dir)
 
@@ -690,6 +753,7 @@ async def mobile(
             "selected_issue": selected_issue,
             "issue": selected_issue,
             "files": files,
+            "default_doc": default_doc,
             "commits_behind": commits_behind,
             "active_page": "mobile",
             "active_tab": active_tab,
@@ -712,10 +776,11 @@ async def agent_tmux(
     config = load_config()
     # Pad issue number to 3 digits to match tmux session naming
     padded_num = agent_num.zfill(3)
-    # Try both session naming patterns: -issue- and -agent-
+    # Try all session naming patterns: -issue-, -agent-, and -controller- (for agent 0)
     session_names = [
         f"{config.project}-issue-{padded_num}",
         f"{config.project}-agent-{padded_num}",
+        f"{config.project}-controller-{padded_num}",
     ]
 
     # Capture tmux output - try both session name patterns
@@ -725,7 +790,7 @@ async def agent_tmux(
     for name in session_names:
         try:
             result = subprocess.run(
-                ["tmux", "capture-pane", "-t", name, "-p"],
+                ["tmux", "capture-pane", "-t", name, "-p", "-S", "-100"],
                 capture_output=True,
                 text=True,
                 timeout=2
@@ -783,7 +848,15 @@ async def send_to_agent(
     config = load_config()
     # Pad issue number to 3 digits to match tmux session naming
     padded_num = agent_num.zfill(3)
-    session_name = f"{config.project}-issue-{padded_num}"
+
+    # Try all session naming patterns to find the active one
+    from agenttree.tmux import session_exists
+    session_names = [
+        f"{config.project}-controller-{padded_num}",  # Controller first (for agent 0)
+        f"{config.project}-issue-{padded_num}",
+        f"{config.project}-agent-{padded_num}",
+    ]
+    session_name = next((n for n in session_names if session_exists(n)), session_names[1])
 
     # Send message - result will appear in tmux output on next poll
     result = send_message(session_name, message)
@@ -824,17 +897,18 @@ async def stop_issue(
     issue_id: str,
     user: Optional[str] = Depends(get_current_user)
 ) -> dict:
-    """Stop an agent working on an issue (kills the tmux session)."""
-    from agenttree.tmux import kill_session
-    from agenttree.state import unregister_agent
+    """Stop an agent working on an issue (kills tmux, stops container, cleans up state)."""
+    import asyncio
+    from agenttree.state import stop_all_agents_for_issue
 
     try:
         padded_id = issue_id.zfill(3)
-        session_name = f"{_config.project}-issue-{padded_id}"
-        kill_session(session_name)
-        # Also unregister from state
-        unregister_agent(padded_id)
-        return {"ok": True, "status": f"Stopped agent for issue #{issue_id}"}
+        # Run in thread to avoid blocking event loop
+        count = await asyncio.to_thread(stop_all_agents_for_issue, padded_id, quiet=True)
+        if count > 0:
+            return {"ok": True, "status": f"Stopped {count} agent(s) for issue #{issue_id}"}
+        else:
+            return {"ok": True, "status": f"No active agents for issue #{issue_id}"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -911,8 +985,10 @@ async def move_issue(
     # backlog = pause work (stop agent, keep worktree for later)
     # not_doing = abandon work (stop agent, worktree can be cleaned up)
     if move_request.stage.value in ["backlog", "not_doing"]:
+        import asyncio
         from agenttree.hooks import cleanup_issue_agent
-        cleanup_issue_agent(updated_issue)
+        # Run cleanup in thread to avoid blocking event loop
+        await asyncio.to_thread(cleanup_issue_agent, updated_issue)
 
     return {"success": True, "stage": move_request.stage.value}
 
@@ -944,7 +1020,7 @@ async def approve_issue(
 
     # Calculate next stage
     config = load_config()
-    next_stage, next_substage, _ = config.get_next_stage(issue.stage, issue.substage)
+    next_stage, next_substage, _ = config.get_next_stage(issue.stage, issue.substage, issue.flow)
 
     # Execute exit hooks (validation)
     try:
@@ -1009,20 +1085,9 @@ async def create_issue_api(
     if not description:
         raise HTTPException(status_code=400, detail="Please provide a description")
 
-    # Auto-generate title from description if not provided
+    # Use placeholder if no title - agent will fill it in during define stage
     if not title:
-        # Take first line or first 60 chars of description
-        first_line = description.split('\n')[0].strip()
-        # Remove "Problem:" prefix if present
-        if first_line.lower().startswith('problem:'):
-            first_line = first_line[8:].strip()
-        # Truncate and clean up
-        title = first_line[:60].strip()
-        if len(first_line) > 60:
-            title = title.rsplit(' ', 1)[0] + '...'
-        # Fallback if still empty
-        if not title or len(title) < 5:
-            title = f"Issue from web UI"
+        title = "(untitled)"
 
     try:
         issue = issue_crud.create_issue(
@@ -1030,6 +1095,16 @@ async def create_issue_api(
             priority=Priority.MEDIUM,
             problem=description,
         )
+
+        # Auto-start agent for the new issue
+        subprocess.Popen(
+            ["uv", "run", "agenttree", "start", issue.id],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            cwd=Path.cwd(),
+            start_new_session=True  # Detach from parent process
+        )
+
         return {"ok": True, "issue_id": issue.id, "title": issue.title}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -1054,6 +1129,36 @@ async def remove_dependency(
         return {"ok": True, "issue_id": issue.id, "dependencies": issue.dependencies}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/issues/{issue_id}/priority")
+async def update_issue_priority(
+    issue_id: str,
+    request: PriorityUpdateRequest,
+    user: Optional[str] = Depends(get_current_user)
+) -> dict:
+    """Update an issue's priority."""
+    from agenttree.issues import update_issue_priority as do_update_priority, Priority
+
+    # Validate priority value
+    valid_priorities = [p.value for p in Priority]
+    if request.priority not in valid_priorities:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid priority '{request.priority}'. Must be one of: {', '.join(valid_priorities)}"
+        )
+
+    # Get and update issue
+    issue_id_normalized = issue_id.lstrip("0") or "0"
+    issue = issue_crud.get_issue(issue_id_normalized, sync=False)
+    if not issue:
+        raise HTTPException(status_code=404, detail=f"Issue {issue_id} not found")
+
+    updated = do_update_priority(issue.id, Priority(request.priority))
+    if not updated:
+        raise HTTPException(status_code=500, detail="Failed to update priority")
+
+    return {"ok": True, "priority": request.priority}
 
 
 @app.post("/api/issues/{issue_id}/rebase")
@@ -1107,7 +1212,7 @@ async def tmux_websocket(websocket: WebSocket, agent_num: int) -> None:
             # Capture tmux output every second
             try:
                 result = subprocess.run(
-                    ["tmux", "capture-pane", "-t", f"agent-{agent_num}", "-p"],
+                    ["tmux", "capture-pane", "-t", f"agent-{agent_num}", "-p", "-S", "-100"],
                     capture_output=True,
                     text=True,
                     timeout=1
@@ -1159,7 +1264,10 @@ def run_server(
         print("  Run 'agenttree init' to create a config file")
 
     import uvicorn
-    uvicorn.run(app, host=host, port=port)
+    # Use multiple workers for better concurrency
+    # Workers > 1 requires passing app as import string
+    # loop="asyncio" avoids uvloop fork crashes on macOS
+    uvicorn.run("agenttree.web.app:app", host=host, port=port, workers=4, loop="asyncio")
 
 
 if __name__ == "__main__":

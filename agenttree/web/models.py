@@ -47,6 +47,7 @@ class Issue(IssueBase):
     stage: StageEnum = StageEnum.BACKLOG
     substage: Optional[str] = None
     status: IssueStatus = IssueStatus.OPEN
+    priority: str = "medium"
     url: Optional[str] = None
     pr_url: Optional[str] = None
     pr_number: Optional[int] = None
@@ -75,6 +76,12 @@ class IssueMoveRequest(BaseModel):
     """Request to move issue to new stage."""
 
     stage: StageEnum
+
+
+class PriorityUpdateRequest(BaseModel):
+    """Request to update issue priority."""
+
+    priority: str
 
 
 class IssueDocumentUpdate(BaseModel):

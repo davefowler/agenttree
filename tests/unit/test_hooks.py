@@ -301,7 +301,7 @@ This is the approach section with content.
         assert len(errors) == 1
         assert "No PR number" in errors[0]
 
-    def test_create_file_action(self, tmp_path):
+    def test_create_file_action(self, tmp_path, monkeypatch):
         """Should create file from template."""
         from agenttree.hooks import run_builtin_validator
 
@@ -310,12 +310,14 @@ This is the approach section with content.
         templates_dir.mkdir(parents=True)
         (templates_dir / "review.md").write_text("# Review Template")
 
-        with patch.object(Path, 'cwd', return_value=tmp_path):
-            issue_dir = tmp_path / "issue"
-            issue_dir.mkdir()
-            hook = {"type": "create_file", "template": "review.md", "dest": "review.md"}
+        # Use monkeypatch.chdir to actually change the working directory
+        monkeypatch.chdir(tmp_path)
 
-            errors = run_builtin_validator(issue_dir, hook)
+        issue_dir = tmp_path / "issue"
+        issue_dir.mkdir()
+        hook = {"type": "create_file", "template": "review.md", "dest": "review.md"}
+
+        errors = run_builtin_validator(issue_dir, hook)
 
         # Note: The create_file action uses absolute path from _agenttree/templates
         # This test verifies the hook runs without errors
@@ -1881,12 +1883,15 @@ class TestCheckAndStartBlockedIssues:
 
 
 class TestCleanupIssueAgent:
-    """Tests for cleanup_issue_agent function."""
+    """Tests for cleanup_issue_agent function.
+
+    cleanup_issue_agent now delegates to stop_all_agents_for_issue,
+    so we just verify that delegation happens correctly.
+    """
 
     def test_no_agent_to_cleanup(self):
-        """Should return early if no agent exists for issue."""
+        """Should print message when no agents to cleanup."""
         from agenttree.hooks import cleanup_issue_agent
-        # Import the module first so patch can find it
         import agenttree.state
 
         issue = Issue(
@@ -1898,19 +1903,17 @@ class TestCleanupIssueAgent:
             stage=ACCEPTED,
         )
 
-        with patch.object(agenttree.state, 'get_active_agent', return_value=None) as mock_get:
+        with patch.object(agenttree.state, 'stop_all_agents_for_issue', return_value=0) as mock_stop:
             cleanup_issue_agent(issue)
-            mock_get.assert_called_once_with("001")
+            mock_stop.assert_called_once_with("001")
 
-    def test_cleanup_stops_tmux_session(self):
-        """Should stop tmux session if it exists."""
+    def test_cleanup_delegates_to_stop_all_agents(self):
+        """Should delegate to stop_all_agents_for_issue."""
         from agenttree.hooks import cleanup_issue_agent
         import agenttree.state
-        import agenttree.tmux
-        import agenttree.container
 
         issue = Issue(
-            id="001",
+            id="042",
             slug="test-issue",
             title="Test Issue",
             created="2026-01-11T12:00:00Z",
@@ -1918,109 +1921,9 @@ class TestCleanupIssueAgent:
             stage=ACCEPTED,
         )
 
-        mock_agent = MagicMock()
-        mock_agent.tmux_session = "agenttree-001"
-        mock_agent.container = "agenttree-agent-1"
-
-        with patch.object(agenttree.state, 'get_active_agent', return_value=mock_agent):
-            with patch.object(agenttree.state, 'unregister_agent'):
-                with patch.object(agenttree.tmux, 'session_exists', return_value=True) as mock_exists:
-                    with patch.object(agenttree.tmux, 'kill_session') as mock_kill:
-                        with patch.object(agenttree.container, 'get_container_runtime') as mock_runtime:
-                            mock_runtime.return_value.runtime = None  # No container runtime
-                            cleanup_issue_agent(issue)
-                            mock_exists.assert_called_once_with("agenttree-001")
-                            mock_kill.assert_called_once_with("agenttree-001")
-
-    def test_cleanup_stops_container_with_runtime(self):
-        """Should use detected container runtime to stop container."""
-        from agenttree.hooks import cleanup_issue_agent
-        import agenttree.state
-        import agenttree.tmux
-        import agenttree.container
-
-        issue = Issue(
-            id="001",
-            slug="test-issue",
-            title="Test Issue",
-            created="2026-01-11T12:00:00Z",
-            updated="2026-01-11T12:00:00Z",
-            stage=ACCEPTED,
-        )
-
-        mock_agent = MagicMock()
-        mock_agent.tmux_session = "agenttree-001"
-        mock_agent.container = "agenttree-agent-1"
-
-        with patch.object(agenttree.state, 'get_active_agent', return_value=mock_agent):
-            with patch.object(agenttree.state, 'unregister_agent'):
-                with patch.object(agenttree.tmux, 'session_exists', return_value=False):
-                    with patch.object(agenttree.container, 'get_container_runtime') as mock_runtime:
-                        mock_runtime.return_value.runtime = "docker"
-                        with patch('subprocess.run') as mock_run:
-                            mock_run.return_value = MagicMock(returncode=0)
-                            cleanup_issue_agent(issue)
-                            # Should call docker stop and docker rm
-                            calls = mock_run.call_args_list
-                            assert any("stop" in str(c) and "docker" in str(c) for c in calls)
-                            assert any("rm" in str(c) and "docker" in str(c) for c in calls)
-
-    def test_cleanup_unregisters_agent(self):
-        """Should unregister agent to free port."""
-        from agenttree.hooks import cleanup_issue_agent
-        import agenttree.state
-        import agenttree.tmux
-        import agenttree.container
-
-        issue = Issue(
-            id="001",
-            slug="test-issue",
-            title="Test Issue",
-            created="2026-01-11T12:00:00Z",
-            updated="2026-01-11T12:00:00Z",
-            stage=ACCEPTED,
-        )
-
-        mock_agent = MagicMock()
-        mock_agent.tmux_session = "agenttree-001"
-        mock_agent.container = "agenttree-agent-1"
-
-        with patch.object(agenttree.state, 'get_active_agent', return_value=mock_agent):
-            with patch.object(agenttree.state, 'unregister_agent') as mock_unregister:
-                with patch.object(agenttree.tmux, 'session_exists', return_value=False):
-                    with patch.object(agenttree.container, 'get_container_runtime') as mock_runtime:
-                        mock_runtime.return_value.runtime = None
-                        cleanup_issue_agent(issue)
-                        mock_unregister.assert_called_once_with("001")
-
-    def test_cleanup_handles_tmux_failure_gracefully(self):
-        """Should continue cleanup even if tmux operations fail."""
-        from agenttree.hooks import cleanup_issue_agent
-        import agenttree.state
-        import agenttree.tmux
-        import agenttree.container
-
-        issue = Issue(
-            id="001",
-            slug="test-issue",
-            title="Test Issue",
-            created="2026-01-11T12:00:00Z",
-            updated="2026-01-11T12:00:00Z",
-            stage=ACCEPTED,
-        )
-
-        mock_agent = MagicMock()
-        mock_agent.tmux_session = "agenttree-001"
-        mock_agent.container = "agenttree-agent-1"
-
-        with patch.object(agenttree.state, 'get_active_agent', return_value=mock_agent):
-            with patch.object(agenttree.state, 'unregister_agent') as mock_unregister:
-                with patch.object(agenttree.tmux, 'session_exists', side_effect=Exception("tmux error")):
-                    with patch.object(agenttree.container, 'get_container_runtime') as mock_runtime:
-                        mock_runtime.return_value.runtime = None
-                        # Should not raise, should continue to unregister
-                        cleanup_issue_agent(issue)
-                        mock_unregister.assert_called_once_with("001")
+        with patch.object(agenttree.state, 'stop_all_agents_for_issue', return_value=2) as mock_stop:
+            cleanup_issue_agent(issue)
+            mock_stop.assert_called_once_with("042")
 
 
 class TestBackwardCompatibility:
