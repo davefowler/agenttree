@@ -55,48 +55,64 @@ def _strip_claude_input_prompt(output: str) -> str:
 # Get the directory where this file is located
 BASE_DIR = Path(__file__).resolve().parent
 
-# Background sync task handle
-_sync_task: Optional[asyncio.Task] = None
+# Background heartbeat task handle
+_heartbeat_task: Optional[asyncio.Task] = None
+_heartbeat_count: int = 0
 
 
-async def background_sync_loop(interval: int = 10) -> None:
-    """Background task that syncs _agenttree repo periodically.
+async def heartbeat_loop(interval: int = 10) -> None:
+    """Background task that fires heartbeat events periodically.
 
-    This runs syncs which:
-    - Pull/push changes from remote
-    - Spawn agents for issues in agent stages
-    - Run hooks for controller stages
-    - Check for merged PRs
+    The heartbeat event triggers configured actions like:
+    - sync: Git pull/push _agenttree
+    - check_stalled_agents: Nudge agents stuck too long
+    - check_ci_status: Check GitHub CI status
+    - check_merged_prs: Detect externally merged PRs
+
+    Actions are configured in .agenttree.yaml under on.heartbeat.
 
     Args:
-        interval: Seconds between syncs (default: 10)
+        interval: Seconds between heartbeats (default: 10)
     """
+    global _heartbeat_count
+    from agenttree.events import fire_event, HEARTBEAT
+    
     agents_dir = Path.cwd() / "_agenttree"
+    
     while True:
+        # Sync repo (pull changes from remote)
         try:
-            # Run sync in executor to avoid blocking event loop
+            _heartbeat_count += 1
+            # Run fire_event in executor to avoid blocking event loop
             await asyncio.get_event_loop().run_in_executor(
                 None,
-                lambda: sync_agents_repo(agents_dir, pull_only=True)
+                lambda: fire_event(HEARTBEAT, agents_dir, heartbeat_count=_heartbeat_count)
             )
         except Exception as e:
-            print(f"Background sync error: {e}")
+            print(f"Heartbeat error: {e}")
         await asyncio.sleep(interval)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """FastAPI lifespan context - starts/stops background sync and controller."""
-    global _sync_task
+    """FastAPI lifespan context - starts heartbeat and controller.
+    
+    Note: The startup event is fired by 'agenttree run' before starting the server.
+    This lifespan only handles the heartbeat loop and controller startup fallback.
+    """
+    global _heartbeat_task
 
-    # Start background sync task
-    config = load_config()
-    interval = config.refresh_interval if hasattr(config, 'refresh_interval') else 10
-    _sync_task = asyncio.create_task(background_sync_loop(interval))
-    print(f"✓ Started background sync (every {interval}s)")
+    # Get heartbeat interval from config
+    from agenttree.events import get_heartbeat_interval
+    interval = get_heartbeat_interval()
+    
+    # Start heartbeat task
+    _heartbeat_task = asyncio.create_task(heartbeat_loop(interval))
+    print(f"✓ Started heartbeat events (every {interval}s)")
 
-    # Auto-start controller if not running
+    # Auto-start controller if not running (fallback for direct server start)
     from agenttree.tmux import session_exists
+    config = load_config()
     controller_session = f"{config.project}-controller-000"
     if not session_exists(controller_session):
         subprocess.Popen(
@@ -113,13 +129,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     yield  # Server runs here
 
     # Cleanup on shutdown
-    if _sync_task:
-        _sync_task.cancel()
+    if _heartbeat_task:
+        _heartbeat_task.cancel()
         try:
-            await _sync_task
+            await _heartbeat_task
         except asyncio.CancelledError:
             pass
-    print("✓ Stopped background sync")
+    print("✓ Stopped heartbeat events")
 
 
 app = FastAPI(title="AgentTree Dashboard", lifespan=lifespan)
