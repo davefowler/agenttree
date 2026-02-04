@@ -249,6 +249,8 @@ def check_stalled_agents(
     Writes stall data to _agenttree/stalled.yaml so manager can read it anytime,
     then sends a brief notification to the manager.
     
+    Uses fast session_exists() checks instead of slow get_active_agent().
+    
     Args:
         agents_dir: Path to _agenttree directory
         threshold_min: Minutes before considering agent stalled
@@ -256,31 +258,41 @@ def check_stalled_agents(
     import yaml
     from datetime import datetime, timezone
     from agenttree.config import load_config
-    from agenttree.issues import list_issues
-    from agenttree.state import get_active_agent
+    from agenttree.issues import list_issues, BACKLOG, ACCEPTED, NOT_DOING
     from agenttree.tmux import session_exists, send_message, is_claude_running
     
     config = load_config()
-    parking_lot_stages = config.get_parking_lot_stages()
     manager_session = f"{config.project}-manager-000"
     
-    issues = list_issues(sync=False)
+    # Get active issues (not backlog/accepted/not_doing)
+    issues = [
+        i for i in list_issues(sync=False)
+        if i.stage not in (BACKLOG, ACCEPTED, NOT_DOING)
+    ]
+    
     stalled: list[dict[str, Any]] = []
     dead: list[dict[str, Any]] = []
     
     for issue in issues:
-        if issue.stage in parking_lot_stages:
+        # Build session name directly (fast) instead of get_active_agent (slow)
+        session_name = f"{config.project}-developer-{issue.id}"
+        
+        # Check if session exists
+        if not session_exists(session_name):
+            # No session = dead agent (if not in a human review stage)
+            stage_config = config.get_stage(issue.stage)
+            if stage_config and stage_config.role == "manager":
+                continue  # Waiting on human, not dead
+            dead.append({
+                "id": issue.id,
+                "title": issue.title[:60],
+                "stage": issue.stage,
+                "reason": "no_session",
+            })
             continue
         
-        agent = get_active_agent(issue.id)
-        if not agent or not agent.tmux_session:
-            continue
-        
-        if not session_exists(agent.tmux_session):
-            continue
-        
-        # Check if Claude is actually running
-        claude_running = is_claude_running(agent.tmux_session)
+        # Session exists - check if Claude is running
+        claude_running = is_claude_running(session_name)
         
         # Check last activity
         try:
