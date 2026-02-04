@@ -1,5 +1,15 @@
 # AgentTree Project Rules
 
+## ⛔ NEVER USE RAW TMUX COMMANDS
+
+Use `agenttree` CLI instead of tmux:
+- `agenttree status` NOT `tmux list-sessions`
+- `agenttree output <id>` NOT `tmux capture-pane`
+- `agenttree send <id> "msg"` NOT `tmux send-keys`
+- `agenttree stop <id>` NOT `tmux kill-session`
+
+Raw tmux bypasses workflow and breaks state tracking.
+
 ## Documentation Structure
 
 **All documentation goes in `agents/` repository, NOT in the main codebase.**
