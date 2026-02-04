@@ -75,19 +75,25 @@ async def background_sync_loop(interval: int = 10) -> None:
 
     agents_dir = Path.cwd() / "_agenttree"
     while True:
+        # Sync repo (pull changes from remote)
         try:
-            # Run sync in executor to avoid blocking event loop
             await asyncio.get_event_loop().run_in_executor(
                 None,
                 lambda: sync_agents_repo(agents_dir, pull_only=True)
             )
-            # Run controller hooks (stall detection, CI checks, etc.)
+        except Exception as e:
+            print(f"Background sync error: {e}")
+
+        # Run controller hooks regardless of sync success
+        # (stall detection, CI checks, etc. should run even if offline)
+        try:
             await asyncio.get_event_loop().run_in_executor(
                 None,
                 lambda: run_post_controller_hooks(agents_dir)
             )
         except Exception as e:
-            print(f"Background sync error: {e}")
+            print(f"Controller hooks error: {e}")
+
         await asyncio.sleep(interval)
 
 
