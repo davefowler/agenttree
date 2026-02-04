@@ -54,10 +54,11 @@ hosts:
       image: agenttree-agent:latest
     tool: claude
     model: sonnet
-    skill: agents/review.md
+    skill: independent_review.md
 
 stages:
   - name: backlog
+    is_parking_lot: true
 
   - name: define
     output: problem.md
@@ -134,6 +135,7 @@ stages:
 
   - name: plan_review
     human_review: true
+    review_doc: spec.md
     pre_completion:
       - file_exists: spec.md
       - section_check:
@@ -146,6 +148,8 @@ stages:
     substages:
       setup: {}
       code: {}
+      debug:
+        skill: implement-debug.md
       code_review:
         output: review.md
         post_start:
@@ -154,11 +158,13 @@ stages:
               dest: review.md
         pre_completion:
           - run:
-              command: uv run pytest tests/unit -q
+              command: uv run pytest  # Run full test suite to catch issues before CI
               must_pass: true
+              timeout: 300
           - run:
-              command: uv run mypy agenttree || echo "mypy warnings (pre-existing errors in codebase - see issue for cleanup)"
+              command: uv run mypy agenttree || echo "mypy warnings (pre-existing)"
               must_pass: true
+              timeout: 120
           - section_check:
               file: review.md
               section: Self-Review Checklist
@@ -181,7 +187,7 @@ stages:
   - name: independent_code_review
     host: review  # Custom agent host - spawned by controller
     output: independent_review.md
-    skill: agents/review.md  # Custom skill file for this stage
+    skill: independent_review.md
     pre_completion:
       - file_exists: independent_review.md
       - section_check:
@@ -223,6 +229,7 @@ stages:
 
   - name: implementation_review
     human_review: true
+    review_doc: review.md
     host: controller  # Host handles PR creation (agents can't push)
     post_start:
       - create_pr:
@@ -237,8 +244,12 @@ stages:
     pre_completion:
       - pr_approved:
 
+  - name: knowledge_base
+    host: agent
+    skill: knowledge_base.md
+
   - name: accepted
-    terminal: true
+    is_parking_lot: true
     host: controller  # Host handles merge/cleanup (agents can't push)
     post_start:
       - merge_pr:
@@ -246,4 +257,51 @@ stages:
       - start_blocked_issues:
 
   - name: not_doing
-    terminal: true
+    is_parking_lot: true
+    redirect_only: true  # Only reached via redirect, not normal progression
+
+# Workflow flows
+# Each flow defines an ordered subset of stages that issues can follow.
+# The "default" flow is used if no flow is specified when creating an issue.
+# Parking lot stages like not_doing are redirect targets, not part of normal progression.
+flows:
+  default:
+    stages:
+      - backlog
+      - define
+      - research
+      - plan
+      - plan_assess
+      - plan_revise
+      - plan_review
+      - implement
+      - independent_code_review
+      - address_independent_review
+      - implementation_review
+      - knowledge_base
+      - accepted
+
+  # Quick flow for small issues that skip research and planning stages
+  quick:
+    stages:
+      - backlog
+      - define
+      - implement
+      - implementation_review
+      - accepted
+
+  # Abandoned issues - only reachable via redirect
+  not_doing:
+    stages:
+      - not_doing
+
+default_flow: default
+
+# Controller hooks for dogfooding - track cleanup frequency to identify workflow issues
+# This is project-specific logging to help us find broken workflow steps
+controller_hooks:
+  post_sync:
+    # Run periodic cleanup and log what was cleaned
+    # High cleanup frequency indicates broken workflow steps that need fixing
+    - cleanup_resources:
+        log_file: _agenttree/logs/cleanup.log

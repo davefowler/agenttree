@@ -36,6 +36,7 @@ IMPLEMENT = "implement"
 INDEPENDENT_CODE_REVIEW = "independent_code_review"
 IMPLEMENTATION_REVIEW = "implementation_review"
 ACCEPTED = "accepted"
+KNOWLEDGE_BASE = "knowledge_base"
 NOT_DOING = "not_doing"
 
 
@@ -58,6 +59,7 @@ class Issue(BaseModel):
 
     stage: str = DEFINE
     substage: Optional[str] = "refine"
+    flow: str = "default"  # Which workflow flow this issue follows
 
     branch: Optional[str] = None
     worktree_dir: Optional[str] = None  # Absolute path to worktree directory
@@ -152,6 +154,7 @@ def create_issue(
     labels: Optional[list[str]] = None,
     stage: str = DEFINE,
     substage: Optional[str] = None,
+    flow: str = "default",
     problem: Optional[str] = None,
     context: Optional[str] = None,
     solutions: Optional[str] = None,
@@ -165,6 +168,7 @@ def create_issue(
         labels: Optional list of labels
         stage: Starting stage for the issue (default: DEFINE)
         substage: Starting substage (default: "refine" for define stage)
+        flow: Workflow flow for this issue (default: "default")
         problem: Problem statement text (fills problem.md)
         context: Context/background text (fills problem.md)
         solutions: Possible solutions text (fills problem.md)
@@ -217,6 +221,7 @@ def create_issue(
         updated=now,
         stage=stage,
         substage=substage,
+        flow=flow,
         priority=priority,
         labels=labels or [],
         dependencies=normalized_deps,
@@ -620,6 +625,7 @@ STAGE_ORDER = [
     PLAN_REVIEW,
     IMPLEMENT,
     IMPLEMENTATION_REVIEW,
+    KNOWLEDGE_BASE,
     ACCEPTED,
     NOT_DOING,
 ]
@@ -640,6 +646,7 @@ HUMAN_REVIEW_STAGES = {
 def get_next_stage(
     current_stage: str,
     current_substage: Optional[str] = None,
+    flow: str = "default",
 ) -> tuple[str, Optional[str], bool]:
     """Calculate the next stage/substage.
 
@@ -648,6 +655,7 @@ def get_next_stage(
     Args:
         current_stage: Current stage name (string)
         current_substage: Current substage (if any)
+        flow: Workflow flow to use for stage progression (default: "default")
 
     Returns:
         Tuple of (next_stage, next_substage, is_human_review)
@@ -656,7 +664,7 @@ def get_next_stage(
     from agenttree.config import load_config
 
     config = load_config()
-    return config.get_next_stage(current_stage, current_substage)
+    return config.get_next_stage(current_stage, current_substage, flow)
 
 
 def update_issue_stage(
@@ -731,6 +739,8 @@ def update_issue_metadata(
     relevant_url: Optional[str] = None,
     worktree_dir: Optional[str] = None,
     clear_pr: bool = False,
+    priority: Optional[Priority] = None,
+    commit_message: Optional[str] = None,
 ) -> Optional[Issue]:
     """Update metadata fields on an issue.
 
@@ -743,6 +753,8 @@ def update_issue_metadata(
         relevant_url: Relevant URL (optional)
         worktree_dir: Worktree directory path (optional)
         clear_pr: If True, sets pr_number and pr_url to None
+        priority: Priority level (optional)
+        commit_message: Custom commit message (optional, defaults to generic)
 
     Returns:
         Updated Issue object or None if not found
@@ -781,6 +793,8 @@ def update_issue_metadata(
     if clear_pr:
         issue.pr_number = None
         issue.pr_url = None
+    if priority is not None:
+        issue.priority = priority
     issue.updated = now
 
     # Write back
@@ -789,9 +803,27 @@ def update_issue_metadata(
         yaml.dump(data, f, default_flow_style=False, sort_keys=False)
 
     # Sync after updating metadata
-    sync_agents_repo(agents_path, pull_only=False, commit_message=f"Update issue {issue_id} metadata")
+    msg = commit_message or f"Update issue {issue_id} metadata"
+    sync_agents_repo(agents_path, pull_only=False, commit_message=msg)
 
     return issue
+
+
+def update_issue_priority(issue_id: str, priority: Priority) -> Optional[Issue]:
+    """Update an issue's priority.
+
+    Args:
+        issue_id: Issue ID
+        priority: New priority level
+
+    Returns:
+        Updated Issue object or None if not found
+    """
+    return update_issue_metadata(
+        issue_id,
+        priority=priority,
+        commit_message=f"Update issue {issue_id} priority to {priority.value}"
+    )
 
 
 def get_issue_from_branch() -> Optional[str]:
@@ -853,6 +885,9 @@ def load_skill(
 
     Returns:
         Skill content as string (rendered if issue provided), or None if not found
+
+    Raises:
+        FileNotFoundError: If config explicitly specifies a skill path that doesn't exist
     """
     from jinja2 import Template
     from agenttree.config import load_config
@@ -863,6 +898,16 @@ def load_skill(
 
     config = load_config()
 
+    # Check if skill is explicitly configured (not convention-based)
+    stage_config = config.get_stage(stage)
+    explicit_skill = None
+    if substage and stage_config:
+        substage_config = stage_config.get_substage(substage)
+        if substage_config and substage_config.skill:
+            explicit_skill = substage_config.skill
+    if not explicit_skill and stage_config and stage_config.skill:
+        explicit_skill = stage_config.skill
+
     # Get skill path from config
     skill_rel_path = config.skill_path(stage, substage)
     skill_path = agents_path / skill_rel_path
@@ -872,6 +917,12 @@ def load_skill(
     # Try the config-specified path first
     if skill_path.exists():
         skill_content = skill_path.read_text()
+    elif explicit_skill:
+        # Config explicitly specified this skill file - it MUST exist
+        raise FileNotFoundError(
+            f"Skill file '{explicit_skill}' configured for stage '{stage}' "
+            f"does not exist at {skill_path}"
+        )
     else:
         # Try legacy naming convention: {stage}-{substage}.md
         skills_dir = agents_path / "skills"
@@ -945,24 +996,26 @@ def load_skill(
         return skill_content
 
 
-def load_overview(
+def load_persona(
+    agent_type: str = "developer",
     issue: Optional["Issue"] = None,
     is_takeover: bool = False,
     current_stage: Optional[str] = None,
     current_substage: Optional[str] = None,
 ) -> Optional[str]:
-    """Load the overview document with takeover context for agents.
+    """Load the persona document for an agent type.
 
-    Used when an agent restarts to provide context about the AgentTree workflow.
+    Used when an agent starts to provide context about their role and the AgentTree workflow.
 
     Args:
+        agent_type: Type of agent (developer, manager, reviewer)
         issue: Optional Issue object for Jinja context
         is_takeover: True if agent is taking over mid-workflow (not from backlog/define)
         current_stage: Current stage name for template context
         current_substage: Current substage name for template context
 
     Returns:
-        Overview content as string (rendered with Jinja if issue provided), or None if not found
+        Persona content as string (rendered with Jinja if issue provided), or None if not found
     """
     from jinja2 import Template
 
@@ -970,11 +1023,15 @@ def load_overview(
     agents_path = get_agenttree_path()
     sync_agents_repo(agents_path, pull_only=True)
 
-    overview_path = agents_path / "skills" / "overview.md"
-    if not overview_path.exists():
-        return None
+    # Load agent-specific persona
+    persona_path = agents_path / "skills" / "personas" / f"{agent_type}.md"
+    if not persona_path.exists():
+        # Fallback to legacy overview.md
+        persona_path = agents_path / "skills" / "overview.md"
+        if not persona_path.exists():
+            return None
 
-    overview_content = overview_path.read_text()
+    persona_content = persona_path.read_text()
 
     # Calculate completed stages (stages before current_stage)
     completed_stages: list[str] = []
@@ -1006,11 +1063,11 @@ def load_overview(
 
     # Render with Jinja
     try:
-        template = Template(overview_content)
+        template = Template(persona_content)
         return template.render(**context)
     except Exception:
         # If rendering fails, return raw content
-        return overview_content
+        return persona_content
 
 
 # =============================================================================

@@ -10,6 +10,7 @@ pytest.importorskip("httpx")
 from starlette.testclient import TestClient
 
 from agenttree.web.app import app
+from agenttree.issues import Priority
 
 
 @pytest.fixture
@@ -33,6 +34,7 @@ def mock_issue():
     mock.created = "2024-01-01T00:00:00Z"
     mock.updated = "2024-01-01T00:00:00Z"
     mock.dependencies = []
+    mock.priority = Priority.MEDIUM
     return mock
 
 
@@ -51,6 +53,7 @@ def mock_issue_with_agent():
     mock.created = "2024-01-01T00:00:00Z"
     mock.updated = "2024-01-01T00:00:00Z"
     mock.dependencies = []
+    mock.priority = Priority.MEDIUM
     return mock
 
 

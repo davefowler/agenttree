@@ -28,7 +28,7 @@ from agenttree.issues import (
     update_issue_stage,
     update_issue_metadata,
     load_skill,
-    load_overview,
+    load_persona,
     # Session management
     create_session,
     get_session,
@@ -485,13 +485,15 @@ def start_agent(
     worktree_path.parent.mkdir(parents=True, exist_ok=True)
 
     has_merge_conflicts = False
+    is_restart = False
     if worktree_path.exists():
         # Worktree exists - this is a restart scenario
+        is_restart = True
         # Update with latest main to get newest CLI code while preserving agent's work
-        console.print(f"[cyan]Updating existing worktree with latest main...[/cyan]")
+        console.print(f"[cyan]Restarting: Rebasing worktree onto latest main...[/cyan]")
         update_success = update_worktree_with_main(worktree_path)
         if update_success:
-            console.print(f"[green]✓ Worktree updated successfully[/green]")
+            console.print(f"[green]✓ Worktree rebased successfully[/green]")
         else:
             has_merge_conflicts = True
             console.print(f"[yellow]⚠ Merge conflicts detected - agent will need to resolve[/yellow]")
@@ -505,12 +507,13 @@ def start_agent(
 
         if branch_exists:
             # Branch exists - create worktree from it, then update with main
-            console.print(f"[dim]Creating worktree from existing branch: {names['branch']}[/dim]")
+            is_restart = True
+            console.print(f"[dim]Restarting from existing branch: {names['branch']}[/dim]")
             create_worktree(repo_path, worktree_path, names["branch"])
-            console.print(f"[cyan]Updating with latest main...[/cyan]")
+            console.print(f"[cyan]Rebasing onto latest main...[/cyan]")
             update_success = update_worktree_with_main(worktree_path)
             if update_success:
-                console.print(f"[green]✓ Worktree updated successfully[/green]")
+                console.print(f"[green]✓ Worktree rebased successfully[/green]")
             else:
                 has_merge_conflicts = True
                 console.print(f"[yellow]⚠ Merge conflicts detected - agent will need to resolve[/yellow]")
@@ -558,7 +561,7 @@ def start_agent(
     console.print(f"[dim]Model: {model_name}[/dim]")
 
     # Use the host parameter (which was either explicitly set or defaults to "agent")
-    tmux_manager.start_issue_agent_in_container(
+    start_success = tmux_manager.start_issue_agent_in_container(
         issue_id=issue.id,
         session_name=agent.tmux_session,
         worktree_path=worktree_path,
@@ -567,7 +570,17 @@ def start_agent(
         model=model_name,
         agent_host=host,
         has_merge_conflicts=has_merge_conflicts,
+        is_restart=is_restart,
     )
+
+    if not start_success:
+        # Startup failed - clean up state and exit
+        from agenttree.state import unregister_agent
+        unregister_agent(issue.id, host)
+        console.print(f"[red]Error: Agent failed to start (Claude prompt not detected within timeout)[/red]")
+        console.print(f"[dim]State has been cleaned up. Try running 'agenttree start {issue.id}' again.[/dim]")
+        sys.exit(1)
+
     console.print(f"[green]✓ Started {tool_name} in container[/green]")
 
     # For Apple Containers, look up the UUID and store it for cleanup
@@ -1132,6 +1145,119 @@ def serve(host: str, port: int) -> None:
     run_server(host=host, port=port)
 
 
+@main.command()
+@click.option("--host", default="127.0.0.1", help="Host to bind to")
+@click.option("--port", default=8080, type=int, help="Port to bind to")
+@click.option("--skip-agents", is_flag=True, help="Don't auto-start agents")
+def run(host: str, port: int, skip_agents: bool) -> None:
+    """Start AgentTree: server + agents for all active issues.
+
+    This is the main entry point that:
+    1. Starts agents for all issues NOT in parking lot stages (backlog, accepted, not_doing)
+    2. Starts the manager agent (agent 0)
+    3. Starts the web server with sync/heartbeat
+
+    Use 'agenttree shutdown' to stop everything.
+
+    Examples:
+        agenttree run                  # Start everything
+        agenttree run --skip-agents    # Just start the server
+        agenttree run --port 9000      # Use custom port
+    """
+    from agenttree.web.app import run_server
+    from agenttree.issues import list_issues
+    from agenttree.state import get_active_agent
+    from agenttree.tmux import session_exists
+
+    repo_path = Path.cwd()
+    config = load_config(repo_path)
+
+    if not skip_agents:
+        # Get parking lot stages to filter out
+        parking_lot_stages = config.get_parking_lot_stages()
+
+        # Start agents for all issues not in parking lot stages
+        issues = list_issues(sync=True)
+        started_count = 0
+        skipped_count = 0
+
+        for issue in issues:
+            if issue.stage in parking_lot_stages:
+                skipped_count += 1
+                continue
+
+            # Check if agent already running
+            if get_active_agent(issue.id):
+                console.print(f"[dim]Issue #{issue.id} already has an agent running[/dim]")
+                continue
+
+            # Start agent for this issue
+            console.print(f"[cyan]Starting agent for issue #{issue.id} ({issue.stage})...[/cyan]")
+            result = subprocess.run(
+                ["agenttree", "start", issue.id, "--skip-preflight"],
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode == 0:
+                started_count += 1
+                console.print(f"[green]✓ Started agent for #{issue.id}[/green]")
+            else:
+                console.print(f"[yellow]Could not start agent for #{issue.id}: {result.stderr.strip()}[/yellow]")
+
+        console.print(f"\n[bold]Agents: {started_count} started, {skipped_count} in parking lot[/bold]")
+
+        # Start manager agent (agent 0) if not already running
+        manager_session = f"{config.project}-controller-000"
+        if not session_exists(manager_session):
+            console.print(f"\n[cyan]Starting manager agent...[/cyan]")
+            _start_controller(tool=None, force=False, config=config, repo_path=repo_path)
+        else:
+            console.print(f"[dim]Manager agent already running[/dim]")
+
+    # Start the web server
+    console.print(f"\n[cyan]Starting AgentTree server at http://{host}:{port}[/cyan]")
+    console.print("[dim]Press Ctrl+C to stop[/dim]\n")
+
+    run_server(host=host, port=port)
+
+
+@main.command("stop-all")
+def stop_all() -> None:
+    """Stop all agents (opposite of 'agenttree run').
+
+    This stops:
+    1. All running issue agents
+    2. The manager agent (agent 0)
+
+    Use 'agenttree run' to start everything again.
+
+    Examples:
+        agenttree stop-all            # Stop all agents
+    """
+    from agenttree.state import list_active_agents, stop_agent
+    from agenttree.tmux import session_exists, kill_session
+
+    config = load_config()
+
+    # Stop all issue agents
+    agents = list_active_agents()
+    stopped_count = 0
+    for agent in agents:
+        console.print(f"[cyan]Stopping agent for issue #{agent.issue_id}...[/cyan]")
+        if stop_agent(agent.issue_id, agent.host, quiet=True):
+            stopped_count += 1
+            console.print(f"[green]✓ Stopped agent for #{agent.issue_id}[/green]")
+
+    # Stop manager agent
+    manager_session = f"{config.project}-controller-000"
+    if session_exists(manager_session):
+        console.print(f"[cyan]Stopping manager agent...[/cyan]")
+        kill_session(manager_session)
+        console.print(f"[green]✓ Stopped manager[/green]")
+
+    console.print(f"\n[bold green]✓ Shutdown complete: {stopped_count} agents stopped[/bold green]")
+
+
 # controller-start and controller-stop commands removed
 # Controller is now agent 0 - use: agenttree start 0, agenttree kill 0
 
@@ -1327,6 +1453,11 @@ def issue() -> None:
     help="Starting stage for the issue (default: define)"
 )
 @click.option(
+    "--flow", "-f",
+    default="default",
+    help="Workflow flow for this issue (default: 'default')"
+)
+@click.option(
     "--problem",
     required=True,
     help="Problem statement (fills problem.md) - required, min 50 chars"
@@ -1356,6 +1487,7 @@ def issue_create(
     priority: str,
     label: tuple,
     stage: str,
+    flow: str,
     problem: str,
     context: Optional[str],
     solutions: Optional[str],
@@ -1396,6 +1528,15 @@ def issue_create(
         console.print("[dim]Provide enough context for an agent to understand the issue.[/dim]")
         sys.exit(1)
 
+    # Validate flow exists in config
+    config = load_config()
+    if flow not in config.flows:
+        available_flows = list(config.flows.keys())
+        console.print(f"[red]Error: Flow '{flow}' not found in configuration[/red]")
+        if available_flows:
+            console.print(f"[dim]Available flows: {', '.join(available_flows)}[/dim]")
+        sys.exit(1)
+
     dependencies = list(depends_on) if depends_on else None
 
     # If dependencies are specified, check if they're all met
@@ -1430,6 +1571,7 @@ def issue_create(
             priority=Priority(priority),
             labels=list(label) if label else None,
             stage=effective_stage,
+            flow=flow,
             problem=problem,
             context=context,
             solutions=solutions,
@@ -1437,7 +1579,7 @@ def issue_create(
         )
         console.print(f"[green]✓ Created issue {issue.id}: {issue.title}[/green]")
         console.print(f"[dim]  _agenttree/issues/{issue.id}-{issue.slug}/[/dim]")
-        console.print(f"[dim]  Stage: {issue.stage}[/dim]")
+        console.print(f"[dim]  Stage: {issue.stage} | Flow: {issue.flow}[/dim]")
         if issue.dependencies:
             console.print(f"[dim]  Dependencies: {', '.join(issue.dependencies)}[/dim]")
 
@@ -1633,6 +1775,38 @@ def issue_show(issue_id: str, as_json: bool, field_name: Optional[str]) -> None:
             console.print(f"  • {entry.timestamp[:10]} → {stage_str}{agent_str}")
 
     console.print(f"\n[dim]Directory: {issue_dir}[/dim]")
+
+
+@issue.command("set-priority")
+@click.argument("issue_id")
+@click.argument("priority", type=click.Choice([p.value for p in Priority]))
+def issue_set_priority(issue_id: str, priority: str) -> None:
+    """Set the priority of an issue.
+
+    Examples:
+        agenttree issue set-priority 001 high
+        agenttree issue set-priority 42 critical
+    """
+    from agenttree.issues import update_issue_priority
+
+    issue = get_issue_func(issue_id)
+    if not issue:
+        console.print(f"[red]Issue {issue_id} not found[/red]")
+        sys.exit(1)
+
+    updated = update_issue_priority(issue.id, Priority(priority))
+    if not updated:
+        console.print(f"[red]Failed to update priority[/red]")
+        sys.exit(1)
+
+    priority_style = {
+        "critical": "red",
+        "high": "yellow",
+        "medium": "cyan",
+        "low": "green",
+    }.get(priority, "white")
+
+    console.print(f"[green]✓[/green] Priority set to [{priority_style}]{priority}[/{priority_style}] for issue #{issue.id}")
 
 
 @issue.command("doc")
@@ -1895,18 +2069,19 @@ def stage_next(issue_id: Optional[str], reassess: bool) -> None:
         # Determine if this is a takeover (not starting from beginning)
         is_takeover = issue.stage not in (BACKLOG, DEFINE)
 
-        # Load and display overview for context
-        overview = load_overview(
+        # Load and display persona for context
+        persona = load_persona(
+            agent_type="developer",  # TODO: Get from host config
             issue=issue,
             is_takeover=is_takeover,
             current_stage=issue.stage,
             current_substage=issue.substage,
         )
-        if overview:
+        if persona:
             console.print(f"\n{'='*60}")
-            console.print(f"[bold cyan]AGENTTREE OVERVIEW[/bold cyan]")
+            console.print(f"[bold cyan]AGENT PERSONA[/bold cyan]")
             console.print(f"{'='*60}\n")
-            console.print(overview)
+            console.print(persona)
 
             # Add takeover context message
             if is_takeover:
@@ -1943,7 +2118,7 @@ def stage_next(issue_id: Optional[str], reassess: bool) -> None:
     else:
         # Calculate next stage
         next_stage, next_substage, is_human_review = get_next_stage(
-            issue.stage, issue.substage
+            issue.stage, issue.substage, issue.flow
         )
 
     # Check if we're already at the next stage (no change)
@@ -2064,7 +2239,7 @@ def approve_issue(issue_id: str, skip_approval: bool) -> None:
         sys.exit(1)
 
     # Calculate next stage
-    next_stage, next_substage, _ = get_next_stage(issue.stage, issue.substage)
+    next_stage, next_substage, _ = get_next_stage(issue.stage, issue.substage, issue.flow)
 
     # Execute exit hooks
     from_stage = issue.stage
@@ -2718,7 +2893,7 @@ def hooks_check(issue_id: str, event: str) -> None:
 
     if event in ("post_start", "both"):
         # For post_start, show what would run on NEXT stage
-        next_stage, next_substage, _ = get_next_stage(issue.stage, issue.substage)
+        next_stage, next_substage, _ = get_next_stage(issue.stage, issue.substage, issue.flow)
         if next_stage:
             next_stage_config = config.get_stage(next_stage)
             if next_stage_config:
@@ -2839,10 +3014,10 @@ def rollback_issue(
         console.print("[dim]Rollback is for going backwards in the workflow.[/dim]")
         sys.exit(1)
 
-    # Cannot rollback to terminal stages
+    # Cannot rollback to redirect_only stages (they're not in normal progression)
     target_stage_config = config.get_stage(stage_name)
-    if target_stage_config and target_stage_config.terminal:
-        console.print(f"[red]Cannot rollback to terminal stage '{stage_name}'[/red]")
+    if target_stage_config and target_stage_config.redirect_only:
+        console.print(f"[red]Cannot rollback to redirect-only stage '{stage_name}'[/red]")
         sys.exit(1)
 
     # Determine first substage of target stage
@@ -3095,7 +3270,6 @@ def cleanup_command(
     # Get all issues for reference
     all_issues = list_issues_func()
     issue_by_id = {i.id: i for i in all_issues}
-    terminal_stages = {ACCEPTED, NOT_DOING}
 
     console.print("[bold]Scanning for stale resources...[/bold]\n")
 
@@ -3130,26 +3304,29 @@ def cleanup_command(
 
             if not issue:
                 reason = "issue not found"
-            elif issue.stage in terminal_stages:
-                reason = f"issue in {issue.stage} stage"
-            elif issue.stage == BACKLOG:
-                # Check for uncommitted changes
-                status_result = subprocess.run(
-                    ["git", "status", "--porcelain"],
-                    cwd=wt_path,
-                    capture_output=True,
-                    text=True,
-                )
-                if not status_result.stdout.strip():
-                    reason = "backlogged with no changes"
+            elif config.is_parking_lot(issue.stage):
+                # Parking lot stages may have worktrees cleaned up
+                if issue.stage == BACKLOG:
+                    # For backlog, keep worktree if there are uncommitted changes
+                    status_result = subprocess.run(
+                        ["git", "status", "--porcelain"],
+                        cwd=wt_path,
+                        capture_output=True,
+                        text=True,
+                    )
+                    if not status_result.stdout.strip():
+                        reason = "backlogged with no changes"
+                    else:
+                        is_edge_case = True
+                        edge_cases.append({
+                            "type": "worktree",
+                            "path": str(wt_path),
+                            "issue_id": issue_id,
+                            "reason": "backlogged but has uncommitted changes",
+                        })
                 else:
-                    is_edge_case = True
-                    edge_cases.append({
-                        "type": "worktree",
-                        "path": str(wt_path),
-                        "issue_id": issue_id,
-                        "reason": "backlogged but has uncommitted changes",
-                    })
+                    # Other parking lots (accepted, not_doing) always clean up
+                    reason = f"issue in {issue.stage} stage"
 
             if reason:
                 stale_worktrees.append({
@@ -3201,7 +3378,8 @@ def cleanup_command(
                 issue = issue_by_id.get(branch_issue_id)
                 if not issue:
                     reason = "issue not found"
-                elif issue.stage in terminal_stages:
+                elif config.is_parking_lot(issue.stage) and issue.stage != BACKLOG:
+                    # Clean branches for done/abandoned stages, but keep backlog branches
                     reason = f"issue in {issue.stage} stage"
 
             if reason:
@@ -3242,7 +3420,8 @@ def cleanup_command(
             issue = issue_by_id.get(issue_id)
             if not issue:
                 stale_sessions.append(session.name)
-            elif issue.stage in terminal_stages:
+            elif config.is_parking_lot(issue.stage):
+                # Parking lot stages shouldn't have active sessions
                 stale_sessions.append(session.name)
             # Active agent check
             elif not get_active_agent(issue_id):
@@ -3254,41 +3433,32 @@ def cleanup_command(
                     "reason": "session exists but no active agent registered",
                 })
 
-    # 4. Find stale containers
+    # 4. Find stale containers (orphans not tracked in state.yaml)
     if containers:
         console.print("[dim]Checking containers...[/dim]")
 
+        from agenttree.container import list_running_containers
+        from agenttree.state import list_active_agents
+
         runtime = get_container_runtime()
         if runtime.runtime:
-            # List running containers
             try:
-                if runtime.runtime == "container":
-                    result = subprocess.run(
-                        ["container", "list"],
-                        capture_output=True,
-                        text=True,
-                    )
-                else:
-                    result = subprocess.run(
-                        [runtime.runtime, "ps", "--format", "{{.Names}}"],
-                        capture_output=True,
-                        text=True,
-                    )
+                # Get all running containers
+                running_containers = list_running_containers()
 
-                container_names = result.stdout.strip().split("\n") if result.stdout.strip() else []
+                # Get container IDs tracked in state.yaml
+                tracked_agents = list_active_agents()
+                tracked_container_ids = {a.container for a in tracked_agents}
 
-                for name in container_names:
-                    if not name:
-                        continue
-                    # Check if it's an agenttree container
-                    if config.project in name.lower() or "agenttree" in name.lower():
-                        # Try to find associated issue
-                        # Container names often include worktree path
+                # Find orphans: running but not tracked
+                for container_id in running_containers:
+                    if container_id not in tracked_container_ids:
                         stale_containers.append({
-                            "name": name,
+                            "name": container_id,
                             "runtime": runtime.runtime,
+                            "reason": "running but not tracked in state",
                         })
-            except subprocess.CalledProcessError:
+            except Exception:
                 pass
 
     # Print summary

@@ -158,8 +158,13 @@ def agenttree_config() -> dict[str, Any]:
                 "pre_completion": [{"pr_approved": {}}]
             },
             {
+                "name": "knowledge_base",
+                "host": "agent",
+                "skill": "knowledge_base.md"
+            },
+            {
                 "name": "accepted",
-                "terminal": True,
+                "is_parking_lot": True,
                 "host": "controller",
                 "post_start": [
                     {"merge_pr": {}},
@@ -167,7 +172,7 @@ def agenttree_config() -> dict[str, Any]:
                     {"start_blocked_issues": {}}
                 ]
             },
-            {"name": "not_doing", "terminal": True}
+            {"name": "not_doing", "is_parking_lot": True, "redirect_only": True}
         ]
     }
 

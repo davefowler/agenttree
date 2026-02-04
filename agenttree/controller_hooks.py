@@ -44,6 +44,7 @@ DEFAULT_POST_SYNC_HOOKS: list[dict[str, Any]] = [
     {"check_custom_agent_stages": {}},
     {"check_ci_status": {}},
     {"check_merged_prs": {}},
+    {"check_stalled_agents": {"threshold_min": 15}},  # Nudge agents stalled >15 min
 ]
 
 

@@ -301,7 +301,7 @@ This is the approach section with content.
         assert len(errors) == 1
         assert "No PR number" in errors[0]
 
-    def test_create_file_action(self, tmp_path):
+    def test_create_file_action(self, tmp_path, monkeypatch):
         """Should create file from template."""
         from agenttree.hooks import run_builtin_validator
 
@@ -310,12 +310,14 @@ This is the approach section with content.
         templates_dir.mkdir(parents=True)
         (templates_dir / "review.md").write_text("# Review Template")
 
-        with patch.object(Path, 'cwd', return_value=tmp_path):
-            issue_dir = tmp_path / "issue"
-            issue_dir.mkdir()
-            hook = {"type": "create_file", "template": "review.md", "dest": "review.md"}
+        # Use monkeypatch.chdir to actually change the working directory
+        monkeypatch.chdir(tmp_path)
 
-            errors = run_builtin_validator(issue_dir, hook)
+        issue_dir = tmp_path / "issue"
+        issue_dir.mkdir()
+        hook = {"type": "create_file", "template": "review.md", "dest": "review.md"}
+
+        errors = run_builtin_validator(issue_dir, hook)
 
         # Note: The create_file action uses absolute path from _agenttree/templates
         # This test verifies the hook runs without errors
