@@ -62,7 +62,7 @@ hosts:
 "on":
   # Fires once when `agenttree run` starts
   startup:
-    - start_controller
+    - start_manager
     - auto_start_agents
   
   # Fires every interval_s seconds
@@ -71,7 +71,7 @@ hosts:
     actions:
       - sync
       - push_pending_branches: {}
-      - check_controller_stages: {}
+      - check_manager_stages: {}
       - check_custom_agent_stages: {}
       - check_stalled_agents: { min_interval_s: 60 }
       - check_ci_status: { min_interval_s: 120 }
