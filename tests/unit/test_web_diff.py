@@ -171,12 +171,12 @@ index 1234567..abcdefg 100644
     def test_get_diff_large_output_truncated(
         self, mock_crud, mock_run, mock_exists, client, mock_issue_with_worktree
     ):
-        """Test diff output is truncated at 100KB with warning."""
+        """Test diff output is truncated at 200KB with warning."""
         mock_crud.get_issue.return_value = mock_issue_with_worktree
         mock_exists.return_value = True
 
-        # Create output larger than 100KB
-        large_diff = "+" + "x" * 150_000  # 150KB of content
+        # Create output larger than 200KB
+        large_diff = "+" + "x" * 250_000  # 250KB of content
 
         mock_run.side_effect = [
             Mock(returncode=0, stdout=large_diff, stderr=""),  # git diff
@@ -188,7 +188,7 @@ index 1234567..abcdefg 100644
         assert response.status_code == 200
         data = response.json()
         assert data["truncated"] is True
-        assert len(data["diff"]) <= 102_400  # 100KB limit
+        assert len(data["diff"]) <= 204_800  # 200KB limit
 
     @patch("agenttree.web.app.Path.exists")
     @patch("agenttree.web.app.issue_crud")
