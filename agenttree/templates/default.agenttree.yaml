@@ -175,8 +175,21 @@ stages:
               section: Critical Issues
               expect: empty
 
-  # Optional: Add independent_code_review stage here for AI-driven code review
-  # before human review. See agenttree documentation for advanced stage configs.
+  # ADVANCED FEATURE: independent_code_review stages (not in default template)
+  # ----------------------------------------------------------------------------------
+  # The independent_code_review and address_independent_review stages provide AI-driven
+  # code review before human review. These are intentionally excluded from the default
+  # template because:
+  #   1. They require a custom "review" host with specific container/model configuration
+  #   2. They add complexity that most projects don't need initially
+  #   3. This default template is designed to work out-of-the-box for any project
+  #
+  # To enable AI-driven code review, add the following to your .agenttree.yaml:
+  #   - A "review" host configuration under the hosts section
+  #   - The independent_code_review and address_independent_review stages
+  #   - Update the default flow to include these stages
+  #
+  # See agenttree documentation for advanced stage configuration examples.
 
   - name: implementation_review
     human_review: true
