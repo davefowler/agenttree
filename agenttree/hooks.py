@@ -2652,14 +2652,16 @@ def run_resource_cleanup(dry_run: bool = False, log_file: str | None = None) -> 
     # 3. Find stale tmux sessions
     try:
         all_sessions = list_sessions()
-        project_prefix = f"{config.project}-issue-"
 
         for session in all_sessions:
-            if not session.name.startswith(project_prefix):
+            if not config.is_project_session(session.name):
                 continue
 
-            suffix = session.name[len(project_prefix):]
-            issue_id = suffix.split("-")[0]
+            # Extract issue ID from session name (format: project-role-id)
+            parts = session.name.split("-")
+            if len(parts) < 3:
+                continue
+            issue_id = parts[-1]  # ID is always the last part
 
             issue = issue_by_id.get(issue_id)
             reason = None

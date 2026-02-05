@@ -112,8 +112,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Auto-start controller if not running (fallback for direct server start)
     from agenttree.tmux import session_exists
     config = load_config()
-    controller_session = f"{config.project}-controller-000"
-    if not session_exists(controller_session):
+    manager_session = config.get_manager_tmux_session()
+    if not session_exists(manager_session):
         subprocess.Popen(
             ["uv", "run", "agenttree", "start", "0"],
             stdout=subprocess.DEVNULL,
@@ -265,13 +265,11 @@ class AgentManager:
         """Check if tmux session exists for an issue-bound agent.
 
         Note: Controller is agent 0, so _check_issue_tmux_session("000") checks controller.
+        Uses config.get_issue_session_patterns() for consistent naming.
         """
         active = self._get_active_sessions()
-        # Check all naming patterns: issue, agent, and controller (for agent 0)
-        issue_name = f"{_config.project}-issue-{issue_id}"
-        agent_name = f"{_config.project}-agent-{issue_id}"
-        controller_name = f"{_config.project}-controller-{issue_id}"
-        return issue_name in active or agent_name in active or controller_name in active
+        patterns = _config.get_issue_session_patterns(issue_id)
+        return any(name in active for name in patterns)
 
 
 # Global agent manager - will be initialized in startup
@@ -798,14 +796,10 @@ async def agent_tmux(
     config = load_config()
     # Pad issue number to 3 digits to match tmux session naming
     padded_num = agent_num.zfill(3)
-    # Try all session naming patterns: -issue-, -agent-, and -controller- (for agent 0)
-    session_names = [
-        f"{config.project}-issue-{padded_num}",
-        f"{config.project}-agent-{padded_num}",
-        f"{config.project}-controller-{padded_num}",
-    ]
+    # Use config for consistent session naming
+    session_names = config.get_issue_session_patterns(padded_num)
 
-    # Capture tmux output - try both session name patterns
+    # Capture tmux output - try all session name patterns
     claude_status = "unknown"
     session_name = None
     result = None
@@ -871,14 +865,10 @@ async def send_to_agent(
     # Pad issue number to 3 digits to match tmux session naming
     padded_num = agent_num.zfill(3)
 
-    # Try all session naming patterns to find the active one
+    # Find the active session using config patterns
     from agenttree.tmux import session_exists
-    session_names = [
-        f"{config.project}-controller-{padded_num}",  # Controller first (for agent 0)
-        f"{config.project}-issue-{padded_num}",
-        f"{config.project}-agent-{padded_num}",
-    ]
-    session_name = next((n for n in session_names if session_exists(n)), session_names[1])
+    session_patterns = config.get_issue_session_patterns(padded_num)
+    session_name = next((n for n in session_patterns if session_exists(n)), session_patterns[0])
 
     # Send message - result will appear in tmux output on next poll
     result = send_message(session_name, message)
@@ -1229,9 +1219,15 @@ async def rebase_issue(
 
     config = load_config()
     padded_id = issue_id.zfill(3)
-    session_name = f"{config.project}-issue-{padded_id}"
+    
+    # Find active session using config patterns
+    session_name = None
+    for pattern in config.get_issue_session_patterns(padded_id):
+        if session_exists(pattern):
+            session_name = pattern
+            break
 
-    if session_exists(session_name):
+    if session_name:
         notification = (
             "Your branch has been rebased onto the latest main. "
             "Please review the recent changes and update your work if needed. "
