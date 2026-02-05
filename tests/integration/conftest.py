@@ -172,7 +172,7 @@ def agenttree_config() -> dict[str, Any]:
                     {"start_blocked_issues": {}}
                 ]
             },
-            {"name": "not_doing", "is_parking_lot": True}
+            {"name": "not_doing", "is_parking_lot": True, "redirect_only": True}
         ]
     }
 

@@ -536,6 +536,9 @@ class TmuxManager:
             except (ValueError, TypeError):
                 pass  # Skip port exposure if issue_id is not a valid number
 
+        # Generate container name: agenttree-{project}-{issue_id}
+        container_name = f"agenttree-{self.config.project}-{issue_id}"
+
         container_cmd = container_runtime.build_run_command(
             worktree_path=worktree_path,
             ai_tool=tool_name,
@@ -543,6 +546,7 @@ class TmuxManager:
             model=resolved_model,
             role=role,
             port=port,
+            container_name=container_name,
         )
 
         # Join command for shell execution
