@@ -695,11 +695,16 @@ class TestAgentManager:
         """Test checking if tmux session exists for issue."""
         mock_run.return_value = Mock(
             returncode=0,
-            stdout="myproject-issue-001\n"
+            stdout="myproject-developer-001\n"
         )
 
         with patch("agenttree.web.app._config") as mock_config:
             mock_config.project = "myproject"
+            mock_config.get_issue_session_patterns.return_value = [
+                "myproject-developer-001",
+                "myproject-reviewer-001",
+                "myproject-issue-001",
+            ]
             manager = AgentManager()
             manager._active_sessions = None  # Reset cache
 
