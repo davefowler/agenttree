@@ -76,11 +76,10 @@ async def heartbeat_loop(interval: int = 10) -> None:
     """
     global _heartbeat_count
     from agenttree.events import fire_event, HEARTBEAT
-    
+
     agents_dir = Path.cwd() / "_agenttree"
-    
+
     while True:
-        # Sync repo (pull changes from remote)
         try:
             _heartbeat_count += 1
             # Run fire_event in executor to avoid blocking event loop
