@@ -104,9 +104,9 @@ class TestConfig:
     def test_get_tmux_session_name(self) -> None:
         """Test getting tmux session name for an agent."""
         config = Config(project="myapp")
-        # Standardized on -issue- naming pattern
-        assert config.get_tmux_session_name(1) == "myapp-issue-1"
-        assert config.get_tmux_session_name(3) == "myapp-issue-3"
+        # Standardized on -developer- naming pattern
+        assert config.get_tmux_session_name(1) == "myapp-developer-1"
+        assert config.get_tmux_session_name(3) == "myapp-developer-3"
 
     def test_get_tool_config(self) -> None:
         """Test getting tool configuration."""
