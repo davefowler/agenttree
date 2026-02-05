@@ -225,7 +225,8 @@ def fire_event(
     try:
         config = load_config()
         raw_config = config.model_dump() if hasattr(config, "model_dump") else {}
-        on_config = raw_config.get("on", {})
+        # Note: .get("on", {}) returns None if key exists with None value
+        on_config = raw_config.get("on") or {}
     except Exception as e:
         results["errors"].append(f"Failed to load config: {e}")
         results["success"] = False
