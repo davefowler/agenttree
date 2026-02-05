@@ -303,7 +303,21 @@ def stop_agent(issue_id: str, role: str = "developer", quiet: bool = False) -> b
             kill_session(session_name)
             stopped_something = True
             if not quiet:
+<<<<<<< Updated upstream
                 console.print(f"[dim]  Stopped tmux session: {session_name}[/dim]")
+=======
+                console.print(f"[dim]  Stopped serve session: {serve_session_name}[/dim]")
+    except Exception as e:
+        if not quiet:
+            console.print(f"[yellow]  Warning: Could not stop serve session: {e}[/yellow]")
+
+    # 2. Kill agent tmux session
+    try:
+        if session_exists(agent.tmux_session):
+            kill_session(agent.tmux_session)
+            if not quiet:
+                console.print(f"[dim]  Stopped tmux session: {agent.tmux_session}[/dim]")
+>>>>>>> Stashed changes
     except Exception as e:
         if not quiet:
             console.print(f"[yellow]  Warning: Could not stop tmux session: {e}[/yellow]")

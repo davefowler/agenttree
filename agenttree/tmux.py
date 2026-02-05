@@ -645,6 +645,26 @@ class TmuxManager:
         # Create tmux session running the container
         create_session(session_name, worktree_path, container_cmd_str)
 
+<<<<<<< Updated upstream
+=======
+        # Start serve session if serve command is configured and port is available
+        serve_command = self.config.commands.get("serve")
+        if serve_command and port:
+            serve_session_name = f"{self.config.project}-serve-{issue_id}"
+            try:
+                # Kill existing serve session if it exists (for agent restarts)
+                if session_exists(serve_session_name):
+                    kill_session(serve_session_name)
+                # Build command with PORT env var
+                serve_cmd = f"PORT={port} {serve_command}"
+                create_session(serve_session_name, worktree_path, serve_cmd)
+            except subprocess.CalledProcessError as e:
+                # Serve session failure should not block agent startup
+                # Log to stderr for debugging (non-blocking)
+                import sys
+                print(f"[warning] Could not start serve session: {e}", file=sys.stderr)
+
+>>>>>>> Stashed changes
         # Wait for Claude CLI prompt before sending startup message
         if wait_for_prompt(session_name, prompt_char="❯", timeout=180.0):
             # Build issue-specific startup prompt based on state
