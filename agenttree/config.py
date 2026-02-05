@@ -338,19 +338,73 @@ class Config(BaseModel):
         Returns:
             Tmux session name
         """
-        # Standardized on -issue- naming pattern
-        return f"{self.project}-issue-{agent_num}"
+        return f"{self.project}-developer-{agent_num}"
 
-    def get_issue_tmux_session(self, issue_id: str) -> str:
+    def get_issue_tmux_session(self, issue_id: str, role: str = "developer") -> str:
         """Get tmux session name for an issue-bound agent.
+
+        Args:
+            issue_id: Issue ID
+            role: Agent role - "developer", "reviewer", or "manager"
+
+        Returns:
+            Tmux session name like "agenttree-developer-128"
+        """
+        return f"{self.project}-{role}-{issue_id}"
+
+    def get_manager_tmux_session(self) -> str:
+        """Get tmux session name for the manager agent.
+
+        Returns:
+            Session name like "agenttree-manager-000"
+        """
+        return f"{self.project}-manager-000"
+
+    def get_issue_session_patterns(self, issue_id: str) -> list[str]:
+        """Get all possible tmux session names for an issue.
+
+        Used for checking if any session exists (handles legacy patterns).
 
         Args:
             issue_id: Issue ID
 
         Returns:
-            Tmux session name
+            List of possible session names, current patterns first
         """
-        return f"{self.project}-issue-{issue_id}"
+        patterns = [
+            f"{self.project}-developer-{issue_id}",
+            f"{self.project}-reviewer-{issue_id}",
+        ]
+        # Special case for manager
+        if issue_id == "000":
+            patterns.insert(0, f"{self.project}-manager-000")
+        # Legacy patterns for backwards compatibility
+        patterns.extend([
+            f"{self.project}-issue-{issue_id}",
+            f"{self.project}-agent-{issue_id}",
+            f"{self.project}-controller-{issue_id}",
+        ])
+        return patterns
+
+    def is_project_session(self, session_name: str) -> bool:
+        """Check if a session name belongs to this project.
+        
+        Args:
+            session_name: Tmux session name to check
+            
+        Returns:
+            True if session belongs to this project
+        """
+        prefixes = [
+            f"{self.project}-developer-",
+            f"{self.project}-reviewer-",
+            f"{self.project}-manager-",
+            # Legacy patterns
+            f"{self.project}-issue-",
+            f"{self.project}-agent-",
+            f"{self.project}-controller-",
+        ]
+        return any(session_name.startswith(p) for p in prefixes)
 
     def get_issue_container_name(self, issue_id: str) -> str:
         """Get container name for an issue-bound agent.

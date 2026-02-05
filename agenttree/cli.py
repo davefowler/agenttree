@@ -358,7 +358,7 @@ def _start_manager(
     from agenttree.tmux import session_exists
 
     tmux_manager = TmuxManager(config)
-    session_name = f"{config.project}-manager-000"
+    session_name = config.get_manager_tmux_session()
 
     # Check if manager already running
     if session_exists(session_name) and not force:
@@ -822,7 +822,7 @@ def attach(issue_id: str, role: str) -> None:
 
     # Special handling for manager (agent 0)
     if issue_id_normalized == "0":
-        session_name = f"{config.project}-manager-000"
+        session_name = config.get_manager_tmux_session()
         if not session_exists(session_name):
             console.print("[red]Error: Manager not running[/red]")
             console.print("[yellow]Start it with: agenttree start 0[/yellow]")
@@ -879,7 +879,7 @@ def output(issue_id: str, role: str, lines: int) -> None:
 
     # Special handling for manager (agent 0)
     if issue_id_normalized == "0":
-        session_name = f"{config.project}-manager-000"
+        session_name = config.get_manager_tmux_session()
         if not session_exists(session_name):
             console.print("[red]Error: Manager not running[/red]")
             sys.exit(1)
@@ -933,7 +933,7 @@ def send(issue_id: str, message: str, role: str, interrupt: bool) -> None:
 
     # Special handling for manager (agent 0)
     if issue_id_normalized == "0":
-        session_name = f"{config.project}-manager-000"
+        session_name = config.get_manager_tmux_session()
         if not session_exists(session_name):
             console.print("[red]Error: Manager not running[/red]")
             console.print("[yellow]Start it with: agenttree start 0[/yellow]")
@@ -1035,7 +1035,7 @@ def stop(issue_id: str, role: str, all_roles: bool) -> None:
 
     # Special handling for manager (agent 0)
     if issue_id_normalized == "0":
-        session_name = f"{config.project}-manager-000"
+        session_name = config.get_manager_tmux_session()
         if not session_exists(session_name):
             console.print("[yellow]Manager not running[/yellow]")
             return
@@ -1298,7 +1298,7 @@ def stop_all(verbose: bool) -> None:
             console.print(f"[yellow]Warning: {error}[/yellow]")
     
     # Also stop the manager agent (not stopped by stop_all_agents)
-    manager_session = f"{config.project}-manager-000"
+    manager_session = config.get_manager_tmux_session()
     if session_exists(manager_session):
         console.print(f"[cyan]Stopping manager agent...[/cyan]")
         kill_session(manager_session)
@@ -1958,14 +1958,48 @@ def issue_check_deps() -> None:
 # Stage Transition Commands
 # =============================================================================
 
+
+def _show_system_sessions(config: "AgentTreeConfig") -> None:
+    """Show controller/manager and other system tmux sessions."""
+    from agenttree.tmux import session_exists, list_sessions
+    
+    # Get all project sessions
+    prefix = f"{config.project}-"
+    all_sessions = list_sessions()
+    project_sessions = [s for s in all_sessions if s.name.startswith(prefix)]
+    
+    # Separate manager sessions from issue agents
+    manager_session = config.get_manager_tmux_session()
+    system_sessions = []
+    
+    for session in project_sessions:
+        # Check if this is a manager/controller session (ends with -000)
+        if session.name.endswith("-000"):
+            system_sessions.append(session)
+    
+    if not system_sessions:
+        console.print("[dim]No controller/manager sessions running[/dim]")
+        return
+    
+    console.print("[bold]System Sessions:[/bold]")
+    for session in system_sessions:
+        # Extract role from session name (e.g., "agenttree-manager-000" -> "manager")
+        parts = session.name.split("-")
+        role = parts[-2] if len(parts) >= 3 else "unknown"
+        status_str = "[green]running[/green]"
+        console.print(f"  {role:12} {session.name:30} {status_str}")
+
+
 @main.command("status")
 @click.option("--issue", "-i", "issue_id", help="Issue ID (if not in agent context)")
-def stage_status(issue_id: Optional[str]) -> None:
+@click.option("--all", "-a", "show_all", is_flag=True, help="Show all sessions including controller/manager")
+def stage_status(issue_id: Optional[str], show_all: bool) -> None:
     """Show current issue and stage status.
 
     Examples:
         agenttree status
         agenttree status --issue 001
+        agenttree status --all  # Also show controller/manager sessions
     """
     # Try to get issue from argument or agent context
     if not issue_id:
@@ -2028,7 +2062,7 @@ def stage_status(issue_id: Optional[str]) -> None:
                 time_str = "?"
             
             # Check if agent tmux session is running
-            session_name = f"{config.project}-developer-{active_issue.id}"
+            session_name = config.get_issue_tmux_session(active_issue.id, "developer")
             agent_str = "[green]run[/green]" if session_exists(session_name) else "[red]dead[/red]"
             
             # Check if waiting on human review
@@ -2038,6 +2072,12 @@ def stage_status(issue_id: Optional[str]) -> None:
             table.add_row(active_issue.id, active_issue.title[:40], stage_str, time_str, agent_str, wait_str)
 
         console.print(table)
+        
+        # Show controller/manager sessions if --all flag
+        if show_all:
+            console.print()
+            _show_system_sessions(config)
+        
         return
 
     issue = get_issue_func(issue_id)
@@ -3490,16 +3530,16 @@ def cleanup_command(
         console.print("[dim]Checking tmux sessions...[/dim]")
 
         all_sessions_list = list_sessions()
-        project_prefix = f"{config.project}-issue-"
 
         for session in all_sessions_list:
-            if not session.name.startswith(project_prefix):
+            if not config.is_project_session(session.name):
                 continue
 
-            # Extract issue ID from session name
-            suffix = session.name[len(project_prefix):]
-            # Could be just ID or ID-host
-            issue_id = suffix.split("-")[0]
+            # Extract issue ID from session name (format: project-role-id)
+            parts = session.name.split("-")
+            if len(parts) < 3:
+                continue
+            issue_id = parts[-1]  # ID is always the last part
 
             issue = issue_by_id.get(issue_id)
             if not issue:
