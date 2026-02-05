@@ -76,11 +76,10 @@ async def heartbeat_loop(interval: int = 10) -> None:
     """
     global _heartbeat_count
     from agenttree.events import fire_event, HEARTBEAT
-    
+
     agents_dir = Path.cwd() / "_agenttree"
-    
+
     while True:
-        # Sync repo (pull changes from remote)
         try:
             _heartbeat_count += 1
             # Run fire_event in executor to avoid blocking event loop
@@ -322,6 +321,7 @@ def convert_issue_to_web(issue: issue_crud.Issue, load_dependents: bool = False)
         updated_at=datetime.fromisoformat(issue.updated.replace("Z", "+00:00")),
         dependencies=dependencies,
         dependents=dependents,
+        processing=issue.processing,
     )
 
 
@@ -945,9 +945,14 @@ async def get_agent_status(
     padded_id = issue_id.zfill(3)
     tmux_active = agent_manager._check_issue_tmux_session(padded_id)
 
+    # Get processing state from issue
+    issue = issue_crud.get_issue(padded_id, sync=False)
+    processing = issue.processing if issue else None
+
     return {
         "tmux_active": tmux_active,
-        "status": "running" if tmux_active else "off"
+        "status": "running" if tmux_active else "off",
+        "processing": processing,
     }
 
 
@@ -1025,6 +1030,7 @@ async def approve_issue(
     Runs the proper workflow: executes exit hooks, advances to next stage,
     executes enter hooks. Only works from human review stages.
     """
+    import asyncio
     from agenttree.config import load_config
     from agenttree.hooks import execute_exit_hooks, execute_enter_hooks, ValidationError, StageRedirect
 
@@ -1044,46 +1050,56 @@ async def approve_issue(
     config = load_config()
     next_stage, next_substage, _ = config.get_next_stage(issue.stage, issue.substage, issue.flow)
 
-    # Execute exit hooks (validation)
     try:
-        execute_exit_hooks(issue, issue.stage, issue.substage)
-    except StageRedirect as redirect:
-        # Redirect to a different stage instead of normal next stage
-        next_stage = redirect.target_stage
-        next_substage = None
-    except ValidationError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        # Set processing state for exit hooks
+        issue_crud.set_processing(issue_id_normalized, "exit")
 
-    # Update issue stage
-    updated = issue_crud.update_issue_stage(issue_id_normalized, next_stage, next_substage)
-    if not updated:
-        raise HTTPException(status_code=500, detail="Failed to update")
+        # Execute exit hooks (validation)
+        try:
+            await asyncio.to_thread(execute_exit_hooks, issue, issue.stage, issue.substage)
+        except StageRedirect as redirect:
+            # Redirect to a different stage instead of normal next stage
+            next_stage = redirect.target_stage
+            next_substage = None
+        except ValidationError as e:
+            raise HTTPException(status_code=400, detail=str(e))
 
-    # Note: We intentionally DON'T call update_session_stage here because that would
-    # sync last_stage with issue.stage, defeating the stage mismatch detection.
-    # When the agent runs `next`, is_restart() will detect session.last_stage != issue.stage
-    # and show them the current stage instructions instead of advancing.
+        # Update issue stage
+        updated = await asyncio.to_thread(issue_crud.update_issue_stage, issue_id_normalized, next_stage, next_substage)
+        if not updated:
+            raise HTTPException(status_code=500, detail="Failed to update")
 
-    # Execute enter hooks
-    try:
-        execute_enter_hooks(updated, next_stage, next_substage)
-    except Exception:
-        pass  # Enter hooks shouldn't block
+        # Note: We intentionally DON'T call update_session_stage here because that would
+        # sync last_stage with issue.stage, defeating the stage mismatch detection.
+        # When the agent runs `next`, is_restart() will detect session.last_stage != issue.stage
+        # and show them the current stage instructions instead of advancing.
 
-    # Notify agent to continue (if active)
-    try:
-        from agenttree.state import get_active_agent
-        from agenttree.tmux import send_message, session_exists
+        # Set processing state for enter hooks
+        issue_crud.set_processing(issue_id_normalized, "enter")
 
-        agent = get_active_agent(issue_id_normalized)
-        if agent and agent.tmux_session:
-            if session_exists(agent.tmux_session):
-                message = "Your work was approved! Run `agenttree next` for instructions."
-                send_message(agent.tmux_session, message)
-    except Exception:
-        pass  # Agent notification is best-effort
+        # Execute enter hooks
+        try:
+            await asyncio.to_thread(execute_enter_hooks, updated, next_stage, next_substage)
+        except Exception:
+            pass  # Enter hooks shouldn't block
 
-    return {"ok": True}
+        # Notify agent to continue (if active)
+        try:
+            from agenttree.state import get_active_agent
+            from agenttree.tmux import send_message, session_exists
+
+            agent = get_active_agent(issue_id_normalized)
+            if agent and agent.tmux_session:
+                if session_exists(agent.tmux_session):
+                    message = "Your work was approved! Run `agenttree next` for instructions."
+                    send_message(agent.tmux_session, message)
+        except Exception:
+            pass  # Agent notification is best-effort
+
+        return {"ok": True}
+    finally:
+        # Always clear processing state
+        issue_crud.set_processing(issue_id_normalized, None)
 
 
 @app.post("/api/issues")

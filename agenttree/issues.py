@@ -79,6 +79,9 @@ class Issue(BaseModel):
 
     custom_agent_spawned: Optional[str] = None  # Stage name where custom agent was spawned
 
+    # Processing state: "exit", "enter", or None (not processing)
+    processing: Optional[str] = None
+
 
 def slugify(text: str) -> str:
     """Convert text to a URL-friendly slug."""
@@ -807,6 +810,39 @@ def update_issue_metadata(
     sync_agents_repo(agents_path, pull_only=False, commit_message=msg)
 
     return issue
+
+
+def set_processing(issue_id: str, processing_state: str | None) -> bool:
+    """Set or clear the processing state for an issue.
+
+    Used to indicate that hooks are currently running on an issue.
+    Pass None to clear the processing state after hooks complete.
+    Does NOT sync to remote - processing state is transient and local only.
+
+    Args:
+        issue_id: Issue ID
+        processing_state: Processing state to set (e.g., "exit", "enter"), or None to clear
+
+    Returns:
+        True if successful, False if issue not found
+    """
+    issue_dir = get_issue_dir(issue_id)
+    if not issue_dir:
+        return False
+
+    yaml_path = issue_dir / "issue.yaml"
+    if not yaml_path.exists():
+        return False
+
+    with open(yaml_path) as f:
+        data = yaml.safe_load(f)
+
+    data["processing"] = processing_state
+
+    with open(yaml_path, "w") as f:
+        yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+
+    return True
 
 
 def update_issue_priority(issue_id: str, priority: Priority) -> Optional[Issue]:
