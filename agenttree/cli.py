@@ -237,10 +237,10 @@ def upgrade() -> None:
         console.print(f"  cd {agents_path} && git push origin main")
 
 
-@main.command()
+@main.command(hidden=True)
 @click.argument("agent_numbers", nargs=-1, type=int, required=True)
 def setup(agent_numbers: tuple) -> None:
-    """Set up worktrees for agents."""
+    """Set up worktrees for agents (internal command)."""
     repo_path = Path.cwd()
     config = load_config(repo_path)
 
@@ -1065,16 +1065,6 @@ def stop(issue_id: str, role: str, all_roles: bool) -> None:
     stop_agent(actual_id, role)
 
 
-# Alias for backwards compatibility - just invokes stop
-@main.command(name="kill", hidden=True)
-@click.argument("issue_id", type=str)
-@click.option("--role", default="developer", help="Agent role (default: developer)")
-@click.pass_context
-def kill_alias(ctx: click.Context, issue_id: str, role: str) -> None:
-    """Alias for 'stop' command (use 'agenttree stop' instead)."""
-    ctx.invoke(stop, issue_id=issue_id, role=role, all_roles=False)
-
-
 @main.group()
 def notes() -> None:
     """Manage agents repository notes and documentation."""
@@ -1161,44 +1151,30 @@ def notes_archive(agent_num: int) -> None:
 @click.option("--host", default="127.0.0.1", help="Host to bind to")
 @click.option("--port", default=8080, type=int, help="Port to bind to")
 @click.option("--config", type=click.Path(exists=True), help="Path to config file")
-def web(host: str, port: int, config: Optional[str]) -> None:
-    """Start the web dashboard for monitoring agents.
+def serve(host: str, port: int, config: Optional[str]) -> None:
+    """Start the AgentTree server (web dashboard + background syncs).
+
+    This is the main manager process that:
+    - Provides the web dashboard for monitoring agents
+    - Syncs the _agenttree repo periodically
+    - Spawns agents for issues in agent stages
+    - Runs hooks for manager stages
 
     The dashboard provides:
     - Real-time agent status monitoring
     - Live tmux output streaming
     - Task start via web UI
     - Command execution for agents
-    """
-    from agenttree.web.app import run_server
 
-    console.print(f"[cyan]Starting AgentTree dashboard at http://{host}:{port}[/cyan]")
-    console.print("[dim]Press Ctrl+C to stop[/dim]\n")
-
-    config_path = Path(config) if config else None
-    run_server(host=host, port=port, config_path=config_path)
-
-
-@main.command()
-@click.option("--host", default="127.0.0.1", help="Host to bind to")
-@click.option("--port", default=8080, type=int, help="Port to bind to")
-def serve(host: str, port: int) -> None:
-    """Start the AgentTree server (runs syncs, spawns agents).
-
-    This is the main manager process that:
-    - Syncs the _agenttree repo periodically
-    - Spawns agents for issues in agent stages
-    - Runs hooks for manager stages
-    - Provides the web dashboard
-
-    Use 'agenttree start' to run this in a tmux session.
+    Use 'agenttree run' to also auto-start agents.
     """
     from agenttree.web.app import run_server
 
     console.print(f"[cyan]Starting AgentTree server at http://{host}:{port}[/cyan]")
     console.print("[dim]Press Ctrl+C to stop[/dim]\n")
 
-    run_server(host=host, port=port)
+    config_path = Path(config) if config else None
+    run_server(host=host, port=port, config_path=config_path)
 
 
 @main.command()
@@ -2671,11 +2647,11 @@ def shutdown_issue(
 # Agent Context Commands
 # =============================================================================
 
-@main.command("context-init")
+@main.command("context-init", hidden=True)
 @click.option("--agent", "-a", "agent_num", type=int, help="Agent number (reads from .env if not provided)")
 @click.option("--port", "-p", "port", type=int, help="Agent port (derived from agent number if not provided)")
 def context_init(agent_num: Optional[int], port: Optional[int]) -> None:
-    """Initialize agent context in current worktree.
+    """Initialize agent context in current worktree (internal command).
 
     This command:
     1. Clones the _agenttree repo into the current directory
@@ -3723,7 +3699,7 @@ def _cleanup_ai_review(edge_cases: list[dict], config: Config) -> None:
     """
     from agenttree.tmux import session_exists, send_keys
 
-    manager_session = f"{config.project}-manager"
+    manager_session = config.get_manager_tmux_session()
 
     if not session_exists(manager_session):
         console.print("[yellow]Manager agent not running - skipping AI review[/yellow]")
