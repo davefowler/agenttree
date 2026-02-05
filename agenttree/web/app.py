@@ -1084,7 +1084,7 @@ async def approve_issue(
         try:
             await asyncio.to_thread(execute_enter_hooks, updated, next_stage, next_substage)
         except Exception:
-            logger.debug("Enter hooks failed (non-blocking)", exc_info=True)
+            logger.warning("Enter hooks failed (non-blocking)", exc_info=True)
 
         # Notify agent to continue (if active)
         try:
