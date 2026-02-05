@@ -22,6 +22,96 @@ class TmuxSession:
     attached: bool
 
 
+# =============================================================================
+# Session Naming - Single Source of Truth
+# =============================================================================
+
+def get_issue_session_name(project: str, issue_id: str, role: str = "developer") -> str:
+    """Get the tmux session name for an issue agent.
+    
+    Args:
+        project: Project name (from config.project)
+        issue_id: Issue ID (e.g., "128" or "000" for manager)
+        role: Agent role - "developer", "reviewer", or "manager"
+    
+    Returns:
+        Session name like "agenttree-developer-128"
+    """
+    return f"{project}-{role}-{issue_id}"
+
+
+def get_manager_session_name(project: str) -> str:
+    """Get the tmux session name for the manager agent.
+    
+    Args:
+        project: Project name (from config.project)
+    
+    Returns:
+        Session name like "agenttree-manager-000"
+    """
+    return f"{project}-manager-000"
+
+
+def check_issue_session_exists(project: str, issue_id: str) -> bool:
+    """Check if any tmux session exists for an issue.
+    
+    Checks all role patterns (developer, reviewer) and legacy patterns.
+    
+    Args:
+        project: Project name
+        issue_id: Issue ID
+        
+    Returns:
+        True if any session exists for this issue
+    """
+    # Current patterns
+    patterns = [
+        f"{project}-developer-{issue_id}",
+        f"{project}-reviewer-{issue_id}",
+        # Legacy patterns for backwards compatibility
+        f"{project}-issue-{issue_id}",
+        f"{project}-agent-{issue_id}",
+    ]
+    # Special case for manager (issue_id "000")
+    if issue_id == "000":
+        patterns.insert(0, f"{project}-manager-000")
+        patterns.append(f"{project}-controller-000")
+    
+    return any(session_exists(name) for name in patterns)
+
+
+def find_issue_session(project: str, issue_id: str) -> str | None:
+    """Find the active tmux session name for an issue.
+    
+    Args:
+        project: Project name
+        issue_id: Issue ID
+        
+    Returns:
+        Session name if found, None otherwise
+    """
+    # Current patterns (checked first)
+    patterns = [
+        f"{project}-developer-{issue_id}",
+        f"{project}-reviewer-{issue_id}",
+    ]
+    # Special case for manager
+    if issue_id == "000":
+        patterns.insert(0, f"{project}-manager-000")
+    
+    # Legacy patterns (checked last)
+    patterns.extend([
+        f"{project}-issue-{issue_id}",
+        f"{project}-agent-{issue_id}",
+        f"{project}-controller-{issue_id}",
+    ])
+    
+    for name in patterns:
+        if session_exists(name):
+            return name
+    return None
+
+
 def session_exists(session_name: str) -> bool:
     """Check if a tmux session exists.
 
@@ -669,6 +759,4 @@ class TmuxManager:
             List of issue agent sessions
         """
         all_sessions = list_sessions()
-        project_prefix = f"{self.config.project}-issue-"
-
-        return [s for s in all_sessions if s.name.startswith(project_prefix)]
+        return [s for s in all_sessions if self.config.is_project_session(s.name)]

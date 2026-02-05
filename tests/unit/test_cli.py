@@ -19,6 +19,8 @@ def mock_config():
     config = MagicMock()
     config.project = "testproject"
     config.get_tmux_session_name.return_value = "agent-42"
+    config.get_manager_tmux_session.return_value = "testproject-manager-000"
+    config.get_issue_tmux_session.return_value = "testproject-developer-042"
     # Add flows dict for flow validation in issue create
     config.flows = {"default": MagicMock()}
     return config
