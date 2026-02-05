@@ -148,12 +148,14 @@ def auto_start_agents(agents_dir: Path, **kwargs: Any) -> None:
 
 @register_action("stop_all_agents")
 def stop_all_agents(agents_dir: Path, **kwargs: Any) -> None:
-    """Stop all running agents including orphaned sessions.
+    """Stop all running agents including orphaned sessions and containers.
     
     Args:
         agents_dir: Path to _agenttree directory
     """
     import subprocess
+    import re
+    import time
     from agenttree.config import load_config
     from agenttree.tmux import kill_session
     
@@ -169,17 +171,50 @@ def stop_all_agents(agents_dir: Path, **kwargs: Any) -> None:
     
     if result.returncode != 0:
         console.print("[dim]No tmux sessions running[/dim]")
+        # Still clean up containers in case there are orphans
+        from agenttree.state import cleanup_all_agenttree_containers
+        cleanup_all_agenttree_containers(quiet=True)
+        console.print(f"[green]✓ Stopped 0 agent(s)[/green]")
         return
     
     sessions = result.stdout.strip().split("\n")
     stopped = 0
     
+    # Step 1: Kill all tmux sessions first (fast)
     for session in sessions:
-        # Kill all sessions with our project prefix (except manager, handled separately)
         if session.startswith(prefix) and not session.endswith("-manager-000"):
             kill_session(session)
             stopped += 1
             console.print(f"[dim]Stopped {session}[/dim]")
+    
+    # Step 2: Wait for containers to begin stopping
+    if stopped > 0:
+        time.sleep(2.0)
+    
+    # Step 3: Clean up all agenttree containers with multiple passes
+    # Apple Container deletion can take a long time - retry until all are gone
+    from agenttree.container import get_container_runtime
+    from agenttree.state import cleanup_all_agenttree_containers
+    
+    runtime = get_container_runtime()
+    total_removed = 0
+    
+    for attempt in range(5):  # Up to 5 passes
+        removed = cleanup_all_agenttree_containers(quiet=True)
+        total_removed += removed
+        
+        if removed == 0:
+            # Check if there are still containers that weren't ready to delete
+            containers = runtime.list_all()
+            remaining = [c for c in containers if c["name"].startswith("agenttree-") or "agenttree" in c.get("image", "")]
+            if remaining:
+                time.sleep(3.0)  # Wait for containers to finish transitioning
+                continue
+            break  # No containers remaining
+        time.sleep(2.0)  # Wait between passes
+    
+    if total_removed > 0:
+        console.print(f"[dim]Cleaned up {total_removed} container(s)[/dim]")
     
     console.print(f"[green]✓ Stopped {stopped} agent(s)[/green]")
 

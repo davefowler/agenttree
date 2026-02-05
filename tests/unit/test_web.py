@@ -39,6 +39,7 @@ def mock_issue():
     mock.updated = "2024-01-01T00:00:00Z"
     mock.dependencies = []
     mock.priority = Priority.MEDIUM
+    mock.processing = None
     return mock
 
 
@@ -59,6 +60,7 @@ def mock_review_issue():
     mock.updated = "2024-01-01T00:00:00Z"
     mock.dependencies = []
     mock.priority = Priority.MEDIUM
+    mock.processing = None
     return mock
 
 
@@ -471,13 +473,10 @@ class TestApproveIssueEndpoint:
         data = response.json()
         assert data["ok"] is True
 
-        # Verify exit hooks were called synchronously
+        # Verify hooks were called
         mock_exit.assert_called_once()
-        # Verify stage was updated (the step right before background task is created)
+        mock_enter.assert_called_once()
         mock_crud.update_issue_stage.assert_called_once()
-        # Enter hooks run in background task via asyncio.create_task with
-        # _background_tasks tracking. Background task completion is async and
-        # verified separately in test_approve_enter_hooks_run_in_background.
 
     @patch("agenttree.state.get_active_agent")
     @patch("agenttree.hooks.execute_enter_hooks")
@@ -555,55 +554,32 @@ class TestApproveIssueEndpoint:
         assert response.status_code == 500
         assert "Failed to update" in response.json()["detail"]
 
-    @patch("agenttree.hooks.execute_exit_hooks")
-    @patch("agenttree.config.load_config")
-    @patch("agenttree.web.app.issue_crud")
-    def test_approve_issue_succeeds_with_active_agent(
-        self, mock_crud, mock_config, mock_exit, client, mock_review_issue
-    ):
-        """Test approve succeeds when there's an active agent.
-
-        Note: Agent notification now runs in a background task (fire-and-forget),
-        so we only verify the API returns success. The notification is best-effort.
-        """
-        mock_crud.get_issue.return_value = mock_review_issue
-        mock_crud.update_issue_stage.return_value = mock_review_issue
-        mock_config.return_value.get_next_stage.return_value = ("accepted", None, True)
-
-        response = client.post("/api/issues/002/approve")
-
-        assert response.status_code == 200
-        assert response.json()["ok"] is True
-
-
-class TestApproveBackgroundTask:
-    """Tests for the background task in the approve endpoint."""
-
+    @patch("agenttree.tmux.send_message")
+    @patch("agenttree.tmux.session_exists")
     @patch("agenttree.state.get_active_agent")
     @patch("agenttree.hooks.execute_enter_hooks")
     @patch("agenttree.hooks.execute_exit_hooks")
     @patch("agenttree.config.load_config")
     @patch("agenttree.web.app.issue_crud")
-    def test_approve_creates_background_task(
+    def test_approve_issue_notifies_agent(
         self, mock_crud, mock_config, mock_exit, mock_enter, mock_get_agent,
-        client, mock_review_issue
+        mock_session_exists, mock_send, client, mock_review_issue
     ):
-        """Verify approve creates a background task for enter hooks."""
-        from agenttree.web.app import _background_tasks
+        """Test approve notifies active agent."""
         mock_crud.get_issue.return_value = mock_review_issue
         mock_crud.update_issue_stage.return_value = mock_review_issue
-        mock_get_agent.return_value = None
         mock_config.return_value.get_next_stage.return_value = ("accepted", None, True)
 
-        tasks_before = len(_background_tasks)
+        mock_agent = Mock()
+        mock_agent.tmux_session = "test-session"
+        mock_get_agent.return_value = mock_agent
+        mock_session_exists.return_value = True
 
         response = client.post("/api/issues/002/approve")
-        assert response.status_code == 200
 
-        # Verify exit hooks were called synchronously
-        mock_exit.assert_called_once()
-        # Verify stage was updated (happens right before background task creation)
-        mock_crud.update_issue_stage.assert_called_once()
+        assert response.status_code == 200
+        mock_send.assert_called_once()
+        assert "approved" in mock_send.call_args[0][1].lower()
 
 
 class TestRebaseIssueEndpoint:
