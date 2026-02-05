@@ -553,37 +553,26 @@ class TestApproveIssueEndpoint:
         assert response.status_code == 500
         assert "Failed to update" in response.json()["detail"]
 
-    @patch("agenttree.web.app.asyncio.create_task")
     @patch("agenttree.hooks.execute_enter_hooks")
     @patch("agenttree.hooks.execute_exit_hooks")
     @patch("agenttree.config.load_config")
     @patch("agenttree.web.app.issue_crud")
     def test_approve_issue_notifies_agent(
-        self, mock_crud, mock_config, mock_exit, mock_enter, mock_create_task,
+        self, mock_crud, mock_config, mock_exit, mock_enter,
         client, mock_review_issue
     ):
-        """Test approve creates background task for notification."""
-        import asyncio
-
+        """Test approve runs enter hooks after stage update."""
         mock_crud.get_issue.return_value = mock_review_issue
         mock_crud.update_issue_stage.return_value = mock_review_issue
         mock_config.return_value.get_next_stage.return_value = ("accepted", None, True)
 
-        # Capture the coroutine passed to create_task
-        captured_coro = None
-        def capture_coro(coro):
-            nonlocal captured_coro
-            captured_coro = coro
-            # Return a real task that does nothing (for the fire-and-forget pattern)
-            return asyncio.get_event_loop().create_task(asyncio.sleep(0))
-        mock_create_task.side_effect = capture_coro
-
         response = client.post("/api/issues/002/approve")
 
         assert response.status_code == 200
-        # Verify a background task was scheduled for enter hooks and notification
-        assert captured_coro is not None
-        mock_create_task.assert_called_once()
+        # Verify exit hooks were called (synchronous validation)
+        mock_exit.assert_called_once()
+        # Verify enter hooks were called (synchronous, within try/finally)
+        mock_enter.assert_called_once()
 
 
 class TestRebaseIssueEndpoint:
