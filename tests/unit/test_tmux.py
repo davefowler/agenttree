@@ -436,17 +436,19 @@ class TestTmuxManager:
         mock_exists.assert_called_once_with("issue-42")
 
     def test_list_issue_sessions(self, mock_config):
-        """Should filter sessions by project-issue prefix."""
+        """Should filter sessions by project prefix using is_project_session."""
         from agenttree.tmux import TmuxManager, TmuxSession
 
-        # list_issue_sessions uses config.project to build prefix
+        # list_issue_sessions uses config.is_project_session to filter
         mock_config.project = "myproject"
+        # Configure is_project_session to match project sessions
+        mock_config.is_project_session.side_effect = lambda name: name.startswith("myproject-")
 
         manager = TmuxManager(mock_config)
 
         test_sessions = [
-            TmuxSession(name="myproject-issue-042", windows=1, attached=False),
-            TmuxSession(name="myproject-issue-043", windows=1, attached=False),
+            TmuxSession(name="myproject-developer-042", windows=1, attached=False),
+            TmuxSession(name="myproject-developer-043", windows=1, attached=False),
             TmuxSession(name="other-session", windows=1, attached=False),
         ]
 
@@ -454,8 +456,8 @@ class TestTmuxManager:
             result = manager.list_issue_sessions()
 
         assert len(result) == 2
-        assert result[0].name == "myproject-issue-042"
-        assert result[1].name == "myproject-issue-043"
+        assert result[0].name == "myproject-developer-042"
+        assert result[1].name == "myproject-developer-043"
 
 
 class TestStartController:
