@@ -3539,6 +3539,11 @@ def rollback_issue(
     is_flag=True,
     help="Ask manager AI to review edge cases before cleanup"
 )
+@click.option(
+    "--aggressive",
+    is_flag=True,
+    help="Aggressively clean ALL agenttree containers (including legacy/unnamed)"
+)
 def cleanup_command(
     dry_run: bool,
     force: bool,
@@ -3547,6 +3552,7 @@ def cleanup_command(
     sessions: bool,
     containers: bool,
     ai_review: bool,
+    aggressive: bool,
 ) -> None:
     """Clean up dead worktrees, branches, tmux sessions, and containers.
 
@@ -3566,6 +3572,7 @@ def cleanup_command(
         agenttree cleanup --force            # Clean without prompts
         agenttree cleanup --no-branches      # Skip branch cleanup
         agenttree cleanup --ai-review        # Ask manager AI about edge cases
+        agenttree cleanup --aggressive       # Remove ALL agenttree containers
     """
     from agenttree.worktree import list_worktrees, remove_worktree
     from agenttree.tmux import list_sessions, kill_session
@@ -3761,24 +3768,55 @@ def cleanup_command(
 
         runtime = get_container_runtime()
         if runtime.runtime:
-            try:
-                # Get all running containers
-                running_containers = list_running_containers()
+            if aggressive:
+                # Aggressive mode: find ALL agenttree containers (by name OR image)
+                try:
+                    import json
+                    result = subprocess.run(
+                        [runtime.runtime, "list", "--format", "json"],
+                        capture_output=True, text=True, timeout=60,
+                    )
+                    if result.returncode == 0:
+                        all_containers = json.loads(result.stdout) if result.stdout.strip() else []
+                        prefix = f"agenttree-{config.project}-"
+                        for c in all_containers:
+                            # Handle Apple Container's nested JSON structure
+                            cfg = c.get("configuration", {})
+                            name = cfg.get("name") or c.get("name", "")
+                            uuid = cfg.get("id") or c.get("uuid", "")
+                            image_info = cfg.get("image", {})
+                            image = image_info.get("reference", "") if isinstance(image_info, dict) else c.get("image", "")
+                            
+                            if name.startswith(prefix) or name.startswith("agenttree-") or "agenttree" in image:
+                                stale_containers.append({
+                                    "name": name or uuid[:12] if uuid else "unknown",
+                                    "uuid": uuid,
+                                    "runtime": runtime.runtime,
+                                    "reason": "agenttree container",
+                                })
+                        console.print(f"[dim]Found {len(stale_containers)} agenttree containers[/dim]")
+                except Exception as e:
+                    console.print(f"[yellow]Warning: Could not scan containers: {e}[/yellow]")
+            else:
+                # Normal mode: only find orphans not tracked in state
+                try:
+                    # Get all running containers
+                    running_containers = list_running_containers()
 
-                # Get container IDs tracked in state.yaml
-                tracked_agents = list_active_agents()
-                tracked_container_ids = {a.container for a in tracked_agents}
+                    # Get container IDs tracked in state.yaml
+                    tracked_agents = list_active_agents()
+                    tracked_container_ids = {a.container for a in tracked_agents}
 
-                # Find orphans: running but not tracked
-                for container_id in running_containers:
-                    if container_id not in tracked_container_ids:
-                        stale_containers.append({
-                            "name": container_id,
-                            "runtime": runtime.runtime,
-                            "reason": "running but not tracked in state",
-                        })
-            except Exception:
-                pass
+                    # Find orphans: running but not tracked
+                    for container_id in running_containers:
+                        if container_id not in tracked_container_ids:
+                            stale_containers.append({
+                                "name": container_id,
+                                "runtime": runtime.runtime,
+                                "reason": "running but not tracked in state",
+                            })
+                except Exception:
+                    pass
 
     # Print summary
     console.print("\n[bold]Cleanup Summary:[/bold]\n")
@@ -3870,29 +3908,20 @@ def cleanup_command(
         except Exception as e:
             console.print(f"[red]✗ Failed to kill session {session_name}: {e}[/red]")
 
-    # Stop containers
+    # Stop and delete containers using the abstraction
+    runtime = get_container_runtime()
     for container in stale_containers:
-        try:
-            runtime = get_container_runtime()
-            if not runtime.runtime:
-                console.print(f"[yellow]✗ No container runtime to stop: {container['name']}[/yellow]")
-                continue
-            if runtime.runtime == "container":
-                subprocess.run(
-                    ["container", "stop", container["name"]],
-                    check=True,
-                    capture_output=True,
-                )
-            else:
-                subprocess.run(
-                    [runtime.runtime, "stop", container["name"]],
-                    check=True,
-                    capture_output=True,
-                )
+        if not runtime.runtime:
+            console.print(f"[yellow]✗ No container runtime: {container['name']}[/yellow]")
+            continue
+        # Use uuid if available (for Apple Container), otherwise name
+        container_ref = container.get("uuid") or container["name"]
+        runtime.stop(container_ref)
+        if runtime.delete(container_ref):
             console.print(f"[green]✓ Stopped container: {container['name']}[/green]")
             cleaned_count += 1
-        except subprocess.CalledProcessError as e:
-            console.print(f"[red]✗ Failed to stop container {container['name']}: {e}[/red]")
+        else:
+            console.print(f"[red]✗ Failed to delete container {container['name']}[/red]")
 
     console.print(f"\n[green]✓ Cleaned up {cleaned_count} items[/green]")
 
@@ -3958,6 +3987,203 @@ def tui_command() -> None:
 
     app = TUIApp()
     app.run()
+
+
+# ============================================================================
+# Container Management Commands
+# ============================================================================
+
+@main.group("containers")
+def containers_group() -> None:
+    """Manage agenttree containers.
+    
+    Commands for listing, stopping, and cleaning up containers.
+    Works with Apple Container, Docker, and Podman.
+    """
+    pass
+
+
+@containers_group.command("list")
+@click.option("--all", "-a", "show_all", is_flag=True, help="Show all containers (not just agenttree)")
+@click.option("--json", "output_json", is_flag=True, help="Output as JSON")
+def containers_list(show_all: bool, output_json: bool) -> None:
+    """List agenttree containers.
+    
+    Examples:
+        agenttree containers list           # List agenttree containers
+        agenttree containers list --all     # List all containers  
+        agenttree containers list --json    # Output as JSON
+    """
+    from agenttree.container import get_container_runtime
+    
+    runtime = get_container_runtime()
+    if not runtime.runtime:
+        console.print("[red]No container runtime available[/red]")
+        sys.exit(1)
+    
+    config = load_config()
+    containers = runtime.list_all()
+    
+    if not show_all:
+        # Filter to agenttree containers
+        project_prefix = f"agenttree-{config.project}-"
+        containers = [
+            c for c in containers 
+            if c["name"].startswith(project_prefix) or 
+               c["name"].startswith("agenttree-") or
+               "agenttree" in c.get("image", "")
+        ]
+    
+    if output_json:
+        import json
+        click.echo(json.dumps(containers, indent=2))
+        return
+    
+    if not containers:
+        console.print("[dim]No containers found[/dim]")
+        return
+    
+    console.print(f"[bold]Containers ({len(containers)}):[/bold]")
+    console.print(f"  Runtime: {runtime.runtime}")
+    console.print()
+    
+    for c in containers:
+        status_color = "green" if c["status"] == "running" else "yellow"
+        console.print(f"  [{status_color}]{c['status']:10}[/{status_color}] {c['name']}")
+
+
+@containers_group.command("stop")
+@click.argument("container_name")
+def containers_stop(container_name: str) -> None:
+    """Stop a container by name.
+    
+    Examples:
+        agenttree containers stop agenttree-myproject-123
+    """
+    from agenttree.container import get_container_runtime
+    
+    runtime = get_container_runtime()
+    if not runtime.runtime:
+        console.print("[red]No container runtime available[/red]")
+        sys.exit(1)
+    
+    console.print(f"Stopping {container_name}...")
+    if runtime.stop(container_name):
+        console.print(f"[green]✓ Stopped {container_name}[/green]")
+    else:
+        console.print(f"[red]✗ Failed to stop {container_name}[/red]")
+        sys.exit(1)
+
+
+@containers_group.command("delete")
+@click.argument("container_name")
+def containers_delete(container_name: str) -> None:
+    """Delete a container by name.
+    
+    Examples:
+        agenttree containers delete agenttree-myproject-123
+    """
+    from agenttree.container import get_container_runtime
+    
+    runtime = get_container_runtime()
+    if not runtime.runtime:
+        console.print("[red]No container runtime available[/red]")
+        sys.exit(1)
+    
+    # Stop first, then delete
+    runtime.stop(container_name)
+    if runtime.delete(container_name):
+        console.print(f"[green]✓ Deleted {container_name}[/green]")
+    else:
+        console.print(f"[red]✗ Failed to delete {container_name}[/red]")
+        sys.exit(1)
+
+
+@containers_group.command("cleanup")
+@click.option("--dry-run", is_flag=True, help="Show what would be removed without removing")
+@click.option("--force", "-f", is_flag=True, help="Skip confirmation prompt")
+def containers_cleanup(dry_run: bool, force: bool) -> None:
+    """Remove all agenttree containers for this project.
+    
+    Stops and deletes all containers matching the project prefix
+    or having "agenttree" in the image name.
+    
+    Examples:
+        agenttree containers cleanup             # Cleanup with confirmation
+        agenttree containers cleanup --dry-run   # Preview what would be removed
+        agenttree containers cleanup --force     # Skip confirmation
+    """
+    from agenttree.container import get_container_runtime
+    
+    runtime = get_container_runtime()
+    if not runtime.runtime:
+        console.print("[red]No container runtime available[/red]")
+        sys.exit(1)
+    
+    config = load_config()
+    project_prefix = f"agenttree-{config.project}-"
+    
+    containers = runtime.list_all()
+    to_remove = [
+        c for c in containers 
+        if c["name"].startswith(project_prefix) or 
+           c["name"].startswith("agenttree-") or
+           "agenttree" in c.get("image", "")
+    ]
+    
+    if not to_remove:
+        console.print("[green]✓ No agenttree containers to clean up[/green]")
+        return
+    
+    console.print(f"[bold]Found {len(to_remove)} container(s) to remove:[/bold]")
+    for c in to_remove:
+        status_color = "green" if c["status"] == "running" else "yellow"
+        console.print(f"  [{status_color}]{c['status']:10}[/{status_color}] {c['name']}")
+    
+    if dry_run:
+        console.print("\n[dim]Dry run - no changes made[/dim]")
+        return
+    
+    if not force:
+        if not click.confirm("\nProceed with cleanup?"):
+            console.print("[dim]Cancelled[/dim]")
+            return
+    
+    console.print()
+    removed = 0
+    for c in to_remove:
+        runtime.stop(c["name"])
+        if runtime.delete(c["name"]):
+            console.print(f"[green]✓ Removed {c['name']}[/green]")
+            removed += 1
+        else:
+            console.print(f"[red]✗ Failed to remove {c['name']}[/red]")
+    
+    console.print(f"\n[green]✓ Removed {removed} container(s)[/green]")
+
+
+@containers_group.command("runtime")
+def containers_runtime() -> None:
+    """Show container runtime information.
+    
+    Displays which container runtime is available and its status.
+    """
+    from agenttree.container import get_container_runtime
+    
+    runtime = get_container_runtime()
+    
+    console.print("[bold]Container Runtime:[/bold]")
+    if runtime.runtime:
+        console.print(f"  Runtime: {runtime.runtime}")
+        
+        # Check if system is running
+        if runtime.ensure_system_running():
+            console.print(f"  Status: [green]running[/green]")
+        else:
+            console.print(f"  Status: [red]not running[/red]")
+    else:
+        console.print(f"  Runtime: [red]none available[/red]")
+        console.print(f"\n  {runtime.get_recommended_action()}")
 
 
 if __name__ == "__main__":

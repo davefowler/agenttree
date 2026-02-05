@@ -39,6 +39,7 @@ def mock_issue():
     mock.updated = "2024-01-01T00:00:00Z"
     mock.dependencies = []
     mock.priority = Priority.MEDIUM
+    mock.processing = None
     return mock
 
 
@@ -59,6 +60,7 @@ def mock_review_issue():
     mock.updated = "2024-01-01T00:00:00Z"
     mock.dependencies = []
     mock.priority = Priority.MEDIUM
+    mock.processing = None
     return mock
 
 
