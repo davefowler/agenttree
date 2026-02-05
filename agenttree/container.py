@@ -182,6 +182,7 @@ class ContainerRuntime:
         model: Optional[str] = None,
         role: str = "developer",
         port: Optional[int] = None,
+        container_name: Optional[str] = None,
     ) -> List[str]:
         """Build the container run command.
 
@@ -191,10 +192,11 @@ class ContainerRuntime:
             dangerous: Whether to run in dangerous mode (skip permissions)
             image: Container image to use
             additional_args: Additional arguments for the container
-            agent_num: Agent number for container naming
+            agent_num: Agent number for container naming (deprecated, use container_name)
             model: Model to use (e.g., "opus", "sonnet"). Defaults to CLI default.
             role: Agent role (e.g., "developer", "reviewer"). Defaults to "developer".
             port: Dev server port to expose (e.g., 9001). If provided, adds -p port:port mapping.
+            container_name: Explicit container name (e.g., "agenttree-issue-123-developer")
 
         Returns:
             Command list
@@ -222,8 +224,11 @@ class ContainerRuntime:
             "/workspace",
         ]
 
-        # Name container for persistence (can restart without re-auth)
-        if agent_num is not None:
+        # Name container for easier cleanup and tracking
+        # Prefer explicit container_name, fall back to agent_num-based name
+        if container_name:
+            cmd.extend(["--name", container_name])
+        elif agent_num is not None:
             cmd.extend(["--name", f"agenttree-agent-{agent_num}"])
 
         # Expose dev server port if configured
@@ -362,6 +367,163 @@ class ContainerRuntime:
         else:
             return "Install Docker or a compatible container runtime"
 
+    def stop(self, container_id: str, timeout: int = 180) -> bool:
+        """Stop a container by name or ID.
+
+        Args:
+            container_id: Container name or ID
+            timeout: Timeout in seconds (Apple Containers can be slow)
+
+        Returns:
+            True if stopped successfully
+        """
+        if not self.runtime:
+            return False
+        try:
+            result = subprocess.run(
+                [self.runtime, "stop", container_id],
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=False,
+            )
+            return result.returncode == 0
+        except subprocess.TimeoutExpired:
+            return False
+        except Exception:
+            return False
+
+    def delete(self, container_id: str, timeout: int = 180) -> bool:
+        """Delete a container by name or ID.
+
+        Args:
+            container_id: Container name or ID
+            timeout: Timeout in seconds (Apple Containers can be slow)
+
+        Returns:
+            True if deleted successfully
+        """
+        if not self.runtime:
+            return False
+        try:
+            # Docker uses 'rm', Apple Container uses 'delete'
+            cmd = "rm" if self.runtime in ("docker", "podman") else "delete"
+            result = subprocess.run(
+                [self.runtime, cmd, container_id],
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=False,
+            )
+            return result.returncode == 0
+        except subprocess.TimeoutExpired:
+            return False
+        except Exception:
+            return False
+
+    def list_all(self, filter_prefix: str | None = None) -> list[dict]:
+        """List all containers with optional name filter.
+
+        Args:
+            filter_prefix: Optional prefix to filter container names/IDs
+
+        Returns:
+            List of container info dicts with keys: id, name, status, image
+        """
+        if not self.runtime:
+            return []
+
+        try:
+            import json
+
+            if self.runtime == "container":
+                # Apple Container
+                result = subprocess.run(
+                    ["container", "list", "--format", "json"],
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+                if result.returncode != 0:
+                    return []
+
+                raw = json.loads(result.stdout) if result.stdout.strip() else []
+                containers = []
+                for c in raw:
+                    config = c.get("configuration", {})
+                    container_id = config.get("id", "")
+                    image_info = config.get("image", {})
+                    image = image_info.get("reference", "") if isinstance(image_info, dict) else ""
+                    
+                    if filter_prefix and not container_id.startswith(filter_prefix):
+                        continue
+                    
+                    containers.append({
+                        "id": container_id,
+                        "name": container_id,  # Apple Container uses id as name
+                        "status": c.get("status", "unknown"),
+                        "image": image,
+                    })
+                return containers
+            else:
+                # Docker/Podman
+                cmd = [self.runtime, "ps", "-a", "--format", "json"]
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+                if result.returncode != 0:
+                    return []
+
+                containers = []
+                # Docker outputs one JSON object per line
+                for line in result.stdout.strip().splitlines():
+                    if not line:
+                        continue
+                    c = json.loads(line)
+                    name = c.get("Names", "")
+                    
+                    if filter_prefix and not name.startswith(filter_prefix):
+                        continue
+                    
+                    containers.append({
+                        "id": c.get("ID", ""),
+                        "name": name,
+                        "status": c.get("State", "unknown"),
+                        "image": c.get("Image", ""),
+                    })
+                return containers
+
+        except Exception:
+            return []
+
+    def cleanup_by_prefix(self, prefix: str, quiet: bool = False) -> int:
+        """Stop and delete all containers matching a name prefix.
+
+        Args:
+            prefix: Container name prefix to match (e.g., "agenttree-myproject-")
+            quiet: Suppress output if True
+
+        Returns:
+            Number of containers removed
+        """
+        if not self.runtime:
+            return 0
+
+        containers = self.list_all()
+        removed = 0
+
+        for c in containers:
+            name = c.get("name", "") or c.get("id", "")
+            image = c.get("image", "")
+            
+            # Match by prefix or by agenttree in image name
+            if name.startswith(prefix) or (prefix.startswith("agenttree") and "agenttree" in image):
+                self.stop(name)
+                if self.delete(name):
+                    removed += 1
+                    if not quiet:
+                        print(f"Removed: {name}")
+
+        return removed
+
 
 # Global container runtime instance
 _runtime: Optional[ContainerRuntime] = None
@@ -472,19 +634,20 @@ def stop_container_by_id(container_id: str) -> bool:
         True if stopped successfully, False otherwise
     """
     runtime = get_container_runtime()
-    if not runtime.runtime:
-        return False
+    return runtime.stop(container_id)
 
-    try:
-        result = subprocess.run(
-            [runtime.runtime, "stop", container_id],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        return result.returncode == 0
-    except Exception:
-        return False
+
+def delete_container(container_id: str) -> bool:
+    """Delete a container by its name or ID.
+
+    Args:
+        container_id: Container name or ID
+
+    Returns:
+        True if deleted successfully, False otherwise
+    """
+    runtime = get_container_runtime()
+    return runtime.delete(container_id)
 
 
 def list_running_containers() -> list[str]:
