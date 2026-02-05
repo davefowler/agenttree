@@ -228,6 +228,9 @@ stages:
           to_stage: independent_code_review
 
   # UI review stage - only runs when needs_ui_review is true
+  # condition: Jinja2 expression evaluated against issue fields.
+  #   Truthy result = run stage, falsy/undefined = skip stage.
+  #   Syntax errors in the expression will raise an error.
   - name: ui_review
     condition: "{{ needs_ui_review }}"
     host: agent
