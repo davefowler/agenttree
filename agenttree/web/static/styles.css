@@ -1062,6 +1062,7 @@ button[disabled] {
    ============================================== */
 
 .agent-chat-panel {
+    position: relative;
     width: 350px;
     flex-shrink: 0;
     background: var(--bg-secondary);
@@ -1078,6 +1079,32 @@ button[disabled] {
     opacity: 0;
     overflow: hidden;
     margin-left: 0;
+}
+
+/* Resize handle for panels */
+.resize-handle {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 6px;
+    height: 100%;
+    cursor: col-resize;
+    z-index: 10;
+}
+
+.resize-handle:hover,
+.resize-handle.dragging {
+    background: rgba(168, 213, 186, 0.3);
+}
+
+.agent-chat-panel.collapsed .resize-handle,
+.manager-panel.collapsed .resize-handle {
+    display: none;
+}
+
+/* Hide resize handle on mobile */
+.mobile-container .resize-handle {
+    display: none;
 }
 
 .agent-chat-header {

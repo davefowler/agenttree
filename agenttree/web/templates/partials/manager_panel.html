@@ -1,5 +1,6 @@
 <!-- Manager panel - right-side overlay for manager agent (agent 0) -->
 <div class="manager-panel" id="manager-panel">
+    <div class="resize-handle"></div>
     <div class="manager-panel-header">
         <h4>Manager</h4>
         <button class="manager-panel-close" onclick="toggleManagerPanel()" title="Close panel">&times;</button>
@@ -16,6 +17,7 @@
         {% include "partials/tmux_chat.html" %}
     </div>
 </div>
+<script src="/static/panel-resize.js"></script>
 <script>
 (function() {
     // Prevent duplicate initialization
@@ -26,9 +28,18 @@
     window.toggleManagerPanel = function() {
         const panel = document.getElementById('manager-panel');
         if (panel) {
+            const wasCollapsed = panel.classList.contains('collapsed');
             panel.classList.toggle('collapsed');
             const isOpen = !panel.classList.contains('collapsed');
             localStorage.setItem('managerPanelOpen', isOpen ? '1' : '0');
+
+            // Restore saved width when expanding
+            if (wasCollapsed && isOpen) {
+                const savedWidth = localStorage.getItem('managerPanelWidth');
+                if (savedWidth) {
+                    panel.style.width = savedWidth + 'px';
+                }
+            }
 
             // If opening, refresh the tmux output
             if (isOpen) {
@@ -81,6 +92,8 @@
         if (isOpen) {
             checkManagerStatus();
         }
+        // Initialize resize functionality
+        initPanelResize(panel, 'managerPanelWidth', 400);
     }
 
     // Poll manager status every 10 seconds when panel is open
