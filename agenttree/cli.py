@@ -1511,6 +1511,11 @@ def issue() -> None:
     is_flag=True,
     help="Skip auto-starting an agent for this issue"
 )
+@click.option(
+    "--needs-ui-review",
+    is_flag=True,
+    help="Mark issue as needing UI review (ui_review stage will run)"
+)
 @click.pass_context
 def issue_create(
     ctx: click.Context,
@@ -1524,6 +1529,7 @@ def issue_create(
     solutions: Optional[str],
     depends_on: tuple,
     no_start: bool,
+    needs_ui_review: bool,
 ) -> None:
     """Create a new issue and auto-start an agent.
 
@@ -1607,6 +1613,7 @@ def issue_create(
             context=context,
             solutions=solutions,
             dependencies=dependencies,
+            needs_ui_review=needs_ui_review,
         )
         console.print(f"[green]✓ Created issue {issue.id}: {issue.title}[/green]")
         console.print(f"[dim]  _agenttree/issues/{issue.id}-{issue.slug}/[/dim]")
@@ -1952,7 +1959,7 @@ def issue_check_deps() -> None:
 # =============================================================================
 
 
-def _show_system_sessions(config: "AgentTreeConfig") -> None:
+def _show_system_sessions(config: "Config") -> None:
     """Show controller/manager and other system tmux sessions."""
     from agenttree.tmux import session_exists, list_sessions
     
@@ -2234,9 +2241,10 @@ def stage_next(issue_id: Optional[str], reassess: bool) -> None:
         next_substage = None
         is_human_review = False
     else:
-        # Calculate next stage
+        # Calculate next stage, passing flow and issue context for condition evaluation
+        issue_context = issue.model_dump(mode="json")
         next_stage, next_substage, is_human_review = get_next_stage(
-            issue.stage, issue.substage, issue.flow
+            issue.stage, issue.substage, issue.flow, issue_context=issue_context
         )
 
     # Check if we're already at the next stage (no change)
@@ -2356,8 +2364,9 @@ def approve_issue(issue_id: str, skip_approval: bool) -> None:
         console.print(f"[dim]Human review stages: {', '.join(human_review_stages)}[/dim]")
         sys.exit(1)
 
-    # Calculate next stage
-    next_stage, next_substage, _ = get_next_stage(issue.stage, issue.substage, issue.flow)
+    # Calculate next stage, passing flow and issue context for condition evaluation
+    issue_context = issue.model_dump(mode="json")
+    next_stage, next_substage, _ = get_next_stage(issue.stage, issue.substage, issue.flow, issue_context=issue_context)
 
     # Execute exit hooks
     from_stage = issue.stage
@@ -2892,7 +2901,7 @@ def sync_command() -> None:
         agenttree sync
     """
     from agenttree.agents_repo import sync_agents_repo
-    from agenttree.controller_hooks import run_post_controller_hooks
+    from agenttree.manager_hooks import run_post_manager_hooks
     from agenttree.issues import get_agenttree_path
 
     console.print("[dim]Syncing agents repository...[/dim]")
@@ -2904,9 +2913,9 @@ def sync_command() -> None:
     else:
         console.print("[yellow]Sync completed with warnings[/yellow]")
 
-    # Run controller hooks (stall detection, CI checks, etc.)
-    console.print("[dim]Running controller hooks...[/dim]")
-    run_post_controller_hooks(agents_path)
+    # Run manager hooks (stall detection, CI checks, etc.)
+    console.print("[dim]Running manager hooks...[/dim]")
+    run_post_manager_hooks(agents_path)
 
 
 # =============================================================================
@@ -3016,7 +3025,8 @@ def hooks_check(issue_id: str, event: str) -> None:
 
     if event in ("post_start", "both"):
         # For post_start, show what would run on NEXT stage
-        next_stage, next_substage, _ = get_next_stage(issue.stage, issue.substage, issue.flow)
+        issue_context = issue.model_dump(mode="json")
+        next_stage, next_substage, _ = get_next_stage(issue.stage, issue.substage, issue.flow, issue_context=issue_context)
         if next_stage:
             next_stage_config = config.get_stage(next_stage)
             if next_stage_config:

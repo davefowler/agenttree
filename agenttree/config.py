@@ -1,9 +1,13 @@
 """Configuration management for AgentTree."""
 
+import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Union
 import yaml
+from jinja2 import Template, UndefinedError
 from pydantic import BaseModel, ConfigDict, Field
+
+logger = logging.getLogger(__name__)
 
 
 class ToolConfig(BaseModel):
@@ -138,6 +142,7 @@ class StageConfig(BaseModel):
     human_review: bool = False    # Requires human approval to exit
     is_parking_lot: bool = False  # No agent auto-starts here (backlog, accepted, not_doing)
     redirect_only: bool = False   # Only reachable via StageRedirect, skipped in normal progression
+    condition: str | None = None  # Jinja expression - skip stage when false
     role: str = "developer"       # Who executes this stage: "developer" (in container) or "manager" (host)
     review_doc: str | None = None  # Document to show by default when viewing issue in this stage
     substages: Dict[str, SubstageConfig] = Field(default_factory=dict)
@@ -202,6 +207,33 @@ class SecurityConfig(BaseModel):
 
     # Reserved for future security settings
     # Containers are always required - this is not configurable
+
+
+def evaluate_condition(condition: str, context: dict) -> bool:
+    """Evaluate a Jinja condition expression.
+
+    Args:
+        condition: Jinja template string (e.g., "{{ needs_ui_review }}")
+        context: Dictionary of context variables for template rendering
+
+    Returns:
+        True if condition evaluates to truthy value, False otherwise.
+
+    Raises:
+        TemplateSyntaxError: If the Jinja template has invalid syntax (config bug).
+    """
+    try:
+        template = Template(condition)
+        result = template.render(**context)
+        # Jinja renders to string, so check for truthy string values
+        # Empty string, "False", "false", "None", "none", "0" are falsy
+        result = result.strip().lower()
+        if result in ("", "false", "none", "0"):
+            return False
+        return bool(result)
+    except UndefinedError:
+        # Missing context variable - treat as falsy (skip the stage)
+        return False
 
 
 class Config(BaseModel):
@@ -737,6 +769,7 @@ class Config(BaseModel):
         current_stage: str,
         current_substage: Optional[str] = None,
         flow: str = "default",
+        issue_context: dict | None = None,
     ) -> tuple[str, Optional[str], bool]:
         """Calculate the next stage/substage.
 
@@ -744,6 +777,7 @@ class Config(BaseModel):
             current_stage: Current stage name
             current_substage: Current substage (if any)
             flow: Flow name to use for stage progression (default: "default")
+            issue_context: Optional dict of issue context for condition evaluation
 
         Returns:
             Tuple of (next_stage, next_substage, is_human_review)
@@ -764,9 +798,10 @@ class Config(BaseModel):
             except ValueError:
                 pass  # substage not found, move to next stage
 
-        # Move to next stage (skip redirect_only stages)
+        # Move to next stage (skip redirect_only stages and stages with false conditions)
         # Use the flow's stage order instead of global stages
         stage_names = self.get_flow_stage_names(flow)
+        context = issue_context or {}
         try:
             stage_idx = stage_names.index(current_stage)
             # Look for next non-redirect_only stage
@@ -777,6 +812,10 @@ class Config(BaseModel):
                     # Skip redirect_only stages in normal progression
                     if next_stage.redirect_only:
                         continue
+                    # Skip stages with condition that evaluates to false
+                    if next_stage.condition:
+                        if not evaluate_condition(next_stage.condition, context):
+                            continue
                     next_substages = next_stage.substage_order()
                     next_substage = next_substages[0] if next_substages else None
                     return next_stage_name, next_substage, next_stage.human_review

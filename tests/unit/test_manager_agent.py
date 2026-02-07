@@ -217,3 +217,77 @@ class TestLogStall:
         assert "detected_at" in stall
 
 
+class TestStallNotification:
+    """Test stall notification cooldown logic."""
+
+    def test_should_notify_first_time(self, tmp_path: Path):
+        """First notification for an issue/stage should always fire."""
+        from agenttree.manager_agent import should_notify_stall
+
+        assert should_notify_stall(tmp_path, "042", "implement.code") is True
+
+    def test_should_not_notify_within_cooldown(self, tmp_path: Path):
+        """Should skip notification if recently notified."""
+        from agenttree.manager_agent import should_notify_stall, mark_stall_notified
+
+        mark_stall_notified(tmp_path, "042", "implement.code")
+        assert should_notify_stall(tmp_path, "042", "implement.code", cooldown_min=10) is False
+
+    def test_should_notify_after_cooldown_expires(self, tmp_path: Path):
+        """Should notify again after cooldown period has passed."""
+        from agenttree.manager_agent import should_notify_stall
+
+        # Write a stale timestamp (20 min ago)
+        logs_dir = tmp_path / "controller_logs"
+        logs_dir.mkdir(parents=True)
+        state_file = logs_dir / "stall_notifications.yaml"
+        now = datetime.now(timezone.utc)
+        old_time = (now - timedelta(minutes=20)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        state_file.write_text(yaml.dump({"042:implement.code": old_time}))
+
+        assert should_notify_stall(tmp_path, "042", "implement.code", cooldown_min=10) is True
+
+    def test_should_notify_different_stage(self, tmp_path: Path):
+        """Notification for a different stage should fire even if another was recent."""
+        from agenttree.manager_agent import should_notify_stall, mark_stall_notified
+
+        mark_stall_notified(tmp_path, "042", "implement.code")
+        assert should_notify_stall(tmp_path, "042", "implement.debug") is True
+
+    def test_mark_stall_creates_state_file(self, tmp_path: Path):
+        """mark_stall_notified should create state file and directory."""
+        from agenttree.manager_agent import mark_stall_notified
+
+        mark_stall_notified(tmp_path, "042", "implement.code")
+
+        state_file = tmp_path / "controller_logs" / "stall_notifications.yaml"
+        assert state_file.exists()
+        with open(state_file) as f:
+            data = yaml.safe_load(f)
+        assert "042:implement.code" in data
+
+    def test_mark_stall_preserves_other_entries(self, tmp_path: Path):
+        """mark_stall_notified should preserve existing entries."""
+        from agenttree.manager_agent import mark_stall_notified
+
+        mark_stall_notified(tmp_path, "042", "implement.code")
+        mark_stall_notified(tmp_path, "043", "research.explore")
+
+        state_file = tmp_path / "controller_logs" / "stall_notifications.yaml"
+        with open(state_file) as f:
+            data = yaml.safe_load(f)
+        assert "042:implement.code" in data
+        assert "043:research.explore" in data
+
+    def test_should_notify_with_malformed_timestamp(self, tmp_path: Path):
+        """Malformed timestamp in state file should not block notification."""
+        from agenttree.manager_agent import should_notify_stall
+
+        logs_dir = tmp_path / "controller_logs"
+        logs_dir.mkdir(parents=True)
+        state_file = logs_dir / "stall_notifications.yaml"
+        state_file.write_text(yaml.dump({"042:implement.code": "not-a-date"}))
+
+        assert should_notify_stall(tmp_path, "042", "implement.code") is True
+
+
