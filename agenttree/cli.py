@@ -1959,7 +1959,7 @@ def issue_check_deps() -> None:
 # =============================================================================
 
 
-def _show_system_sessions(config: "AgentTreeConfig") -> None:
+def _show_system_sessions(config: "Config") -> None:
     """Show controller/manager and other system tmux sessions."""
     from agenttree.tmux import session_exists, list_sessions
     
