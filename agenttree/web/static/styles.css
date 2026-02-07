@@ -373,7 +373,7 @@ button[disabled] {
 .file-tabs {
     display: flex;
     gap: 0;
-    overflow-x: auto;
+    overflow: hidden;
     padding: 0;
 }
 
@@ -392,6 +392,11 @@ button[disabled] {
     background: var(--bg-card-alt);
     margin-right: 2px;
     border-radius: 3px 3px 0 0;
+    /* Allow shrinking to fit container */
+    flex-shrink: 1;
+    min-width: 60px;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .file-tab:hover {
@@ -403,6 +408,7 @@ button[disabled] {
     color: var(--text-accent);
     border-top-color: var(--text-accent);
     background: var(--bg-card);
+    flex-shrink: 0; /* Keep active tab fully visible */
 }
 
 .no-files {

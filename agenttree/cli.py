@@ -1952,7 +1952,7 @@ def issue_check_deps() -> None:
 # =============================================================================
 
 
-def _show_system_sessions(config: "AgentTreeConfig") -> None:
+def _show_system_sessions(config: Config) -> None:
     """Show controller/manager and other system tmux sessions."""
     from agenttree.tmux import session_exists, list_sessions
     
@@ -3520,16 +3520,32 @@ def cleanup_command(
         console.print("[dim]Checking tmux sessions...[/dim]")
 
         all_sessions_list = list_sessions()
+        # Check all session naming patterns: issue, agent, review, controller
+        session_prefixes = [
+            f"{config.project}-issue-",
+            f"{config.project}-agent-",
+            f"{config.project}-review-",
+            f"{config.project}-controller-",
+        ]
 
         for session in all_sessions_list:
-            if not config.is_project_session(session.name):
+            # Find matching prefix
+            matched_prefix = None
+            for prefix in session_prefixes:
+                if session.name.startswith(prefix):
+                    matched_prefix = prefix
+                    break
+            if not matched_prefix:
                 continue
 
-            # Extract issue ID from session name (format: project-role-id)
-            parts = session.name.split("-")
-            if len(parts) < 3:
+            # Extract issue ID from session name
+            suffix = session.name[len(matched_prefix):]
+            # Could be just ID or ID-host
+            issue_id = suffix.split("-")[0]
+
+            # Skip controller (issue 000)
+            if issue_id == "000":
                 continue
-            issue_id = parts[-1]  # ID is always the last part
 
             issue = issue_by_id.get(issue_id)
             if not issue:
