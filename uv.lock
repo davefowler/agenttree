@@ -14,9 +14,12 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "click" },
+    { name = "fastapi" },
     { name = "filelock" },
+    { name = "httpx" },
     { name = "jinja2" },
     { name = "pydantic" },
+    { name = "python-multipart" },
     { name = "pyyaml" },
     { name = "rich" },
 ]
@@ -80,8 +83,10 @@ requires-dist = [
     { name = "black", marker = "extra == 'dev'", specifier = ">=23.0.0" },
     { name = "chromadb", marker = "extra == 'ml'", specifier = ">=0.4.0" },
     { name = "click", specifier = ">=8.1.0" },
+    { name = "fastapi", specifier = ">=0.128.0" },
     { name = "fastapi", marker = "extra == 'web'", specifier = ">=0.109.0" },
     { name = "filelock", specifier = ">=3.0.0" },
+    { name = "httpx", specifier = ">=0.28.1" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.26.0" },
     { name = "jinja2", specifier = ">=3.1.0" },
     { name = "jinja2", marker = "extra == 'web'", specifier = ">=3.1.0" },
@@ -90,6 +95,7 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.0.0" },
     { name = "pytest-mock", marker = "extra == 'dev'", specifier = ">=3.10.0" },
+    { name = "python-multipart", specifier = ">=0.0.21" },
     { name = "python-multipart", marker = "extra == 'web'", specifier = ">=0.0.6" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "rich", specifier = ">=13.0.0" },

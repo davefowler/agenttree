@@ -165,7 +165,7 @@ def agenttree_config() -> dict[str, Any]:
             {
                 "name": "accepted",
                 "is_parking_lot": True,
-                "host": "manager",
+                "role": "manager",
                 "post_start": [
                     {"merge_pr": {}},
                     {"cleanup_agent": {}},
