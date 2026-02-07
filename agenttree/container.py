@@ -9,6 +9,81 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 
+# =============================================================================
+# Low-level Container Command Helpers (DRY wrappers for runtime differences)
+# =============================================================================
+# These take explicit runtime string for use in functions that don't have
+# a ContainerRuntime instance. For high-level API, use stop_container(),
+# delete_container() etc. defined later in this file.
+
+
+def _get_delete_cmd(runtime: str) -> str:
+    """Get the delete/remove command for the given runtime.
+    
+    Docker/Podman use 'rm', Apple Container uses 'delete'.
+    """
+    return "rm" if runtime in ("docker", "podman") else "delete"
+
+
+def _run_stop(runtime: str, container_name: str, timeout: int = 5) -> bool:
+    """Stop a container (low-level, takes runtime string).
+    
+    Args:
+        runtime: Container runtime command (docker, container, podman)
+        container_name: Name of the container to stop
+        timeout: Timeout in seconds
+        
+    Returns:
+        True if stopped successfully or already stopped, False on error
+    """
+    result = subprocess.run(
+        [runtime, "stop", container_name],
+        capture_output=True,
+        timeout=timeout,
+    )
+    return result.returncode == 0
+
+
+def _run_delete(runtime: str, container_name: str, timeout: int = 5) -> bool:
+    """Delete/remove a container (low-level, takes runtime string).
+    
+    Args:
+        runtime: Container runtime command (docker, container, podman)
+        container_name: Name of the container to delete
+        timeout: Timeout in seconds
+        
+    Returns:
+        True if deleted successfully or didn't exist, False on error
+    """
+    delete_cmd = _get_delete_cmd(runtime)
+    result = subprocess.run(
+        [runtime, delete_cmd, container_name],
+        capture_output=True,
+        timeout=timeout,
+    )
+    return result.returncode == 0
+
+
+def cleanup_container(runtime: str, container_name: str) -> None:
+    """Stop and delete a container (best effort, ignores errors).
+    
+    Use this when you need to ensure a container is gone before starting a new one.
+    Takes runtime string for use in standalone functions.
+    
+    Note: Apple Container can be very slow (10-60s per operation).
+    """
+    # Apple Container is slow, Docker/Podman are fast
+    timeout = 60 if runtime == "container" else 10
+    try:
+        _run_stop(runtime, container_name, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        pass
+    try:
+        _run_delete(runtime, container_name, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        pass
+
+
 def get_git_worktree_info(worktree_path: Path) -> Tuple[Optional[Path], Optional[Path]]:
     """Get git directory info for a worktree.
 
@@ -183,6 +258,7 @@ class ContainerRuntime:
         role: str = "developer",
         port: Optional[int] = None,
         container_name: Optional[str] = None,
+        force_api_key: bool = False,
     ) -> List[str]:
         """Build the container run command.
 
@@ -197,6 +273,7 @@ class ContainerRuntime:
             role: Agent role (e.g., "developer", "reviewer"). Defaults to "developer".
             port: Dev server port to expose (e.g., 9001). If provided, adds -p port:port mapping.
             container_name: Explicit container name (e.g., "agenttree-issue-123-developer")
+            force_api_key: Force API key mode (skip OAuth subscription)
 
         Returns:
             Command list
@@ -284,9 +361,17 @@ class ContainerRuntime:
             return None
 
         # OAuth token for subscription auth (from `claude setup-token`)
-        oauth_token = get_credential("CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN")
-        if oauth_token:
-            cmd.extend(["-e", f"CLAUDE_CODE_OAUTH_TOKEN={oauth_token}"])
+        # Skip OAuth when force_api_key is True to use API key instead
+        if not force_api_key:
+            oauth_token = get_credential("CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN")
+            if oauth_token:
+                cmd.extend(["-e", f"CLAUDE_CODE_OAUTH_TOKEN={oauth_token}"])
+
+        # Always pass API key into container if available (for rate limit fallback)
+        # This allows switching to API key mode without restarting container
+        api_key = get_credential("ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY")
+        if api_key:
+            cmd.extend(["-e", f"ANTHROPIC_API_KEY={api_key}"])
 
         # Set container indicator env var for reliable container detection
         cmd.extend(["-e", "AGENTTREE_CONTAINER=1"])
@@ -406,16 +491,7 @@ class ContainerRuntime:
         if not self.runtime:
             return False
         try:
-            # Docker uses 'rm', Apple Container uses 'delete'
-            cmd = "rm" if self.runtime in ("docker", "podman") else "delete"
-            result = subprocess.run(
-                [self.runtime, cmd, container_id],
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                check=False,
-            )
-            return result.returncode == 0
+            return _run_delete(self.runtime, container_id, timeout=timeout)
         except subprocess.TimeoutExpired:
             return False
         except Exception:
@@ -696,3 +772,205 @@ def list_running_containers() -> list[str]:
 
     except (subprocess.TimeoutExpired, subprocess.SubprocessError, json.JSONDecodeError):
         return []
+
+
+def get_api_key_suffix(api_key: str) -> str:
+    """Extract the suffix of an API key for Claude's approval system.
+    
+    Claude stores the last 20 characters of the API key.
+    
+    Args:
+        api_key: Full API key
+        
+    Returns:
+        The suffix portion used for approval tracking
+    """
+    return api_key[-20:]
+
+
+def preapprove_api_key_in_container(
+    runtime: str,
+    container_name: str,
+    api_key: str,
+) -> bool:
+    """Pre-approve an API key in the container's Claude config.
+    
+    Claude Code prompts to confirm API key usage on first run.
+    By pre-populating the approval in ~/.claude.json, we skip this prompt.
+    
+    Args:
+        runtime: Container runtime command (docker, container, podman)
+        container_name: Name of the running container
+        api_key: The API key to approve
+        
+    Returns:
+        True if successful
+    """
+    key_suffix = get_api_key_suffix(api_key)
+    
+    # Python script to update or create the config
+    python_script = f'''
+import json
+import os
+
+config_path = os.path.expanduser("~/.claude.json")
+config = {{"customApiKeyResponses": {{"approved": [], "rejected": []}}, "bypassPermissionsModeAccepted": True, "hasCompletedOnboarding": True}}
+
+if os.path.exists(config_path):
+    try:
+        with open(config_path) as f:
+            config = json.load(f)
+    except:
+        pass
+
+# Ensure the structure exists
+if "customApiKeyResponses" not in config:
+    config["customApiKeyResponses"] = {{"approved": [], "rejected": []}}
+if "approved" not in config["customApiKeyResponses"]:
+    config["customApiKeyResponses"]["approved"] = []
+if "rejected" not in config["customApiKeyResponses"]:
+    config["customApiKeyResponses"]["rejected"] = []
+
+# Add key to approved list, remove from rejected if present
+key_suffix = "{key_suffix}"
+if key_suffix not in config["customApiKeyResponses"]["approved"]:
+    config["customApiKeyResponses"]["approved"].append(key_suffix)
+if key_suffix in config["customApiKeyResponses"]["rejected"]:
+    config["customApiKeyResponses"]["rejected"].remove(key_suffix)
+
+# Pre-accept bypass permissions mode
+config["bypassPermissionsModeAccepted"] = True
+config["hasCompletedOnboarding"] = True
+
+with open(config_path, "w") as f:
+    json.dump(config, f, indent=2)
+print("OK")
+'''
+    
+    try:
+        result = subprocess.run(
+            [runtime, "exec", container_name, "python3", "-c", python_script],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        return result.returncode == 0 and "OK" in result.stdout
+    except (subprocess.TimeoutExpired, subprocess.SubprocessError):
+        return False
+
+
+def start_container_detached(
+    runtime: str,
+    container_name: str,
+    worktree_path: Path,
+    image: str = "agenttree-agent:latest",
+    port: int | None = None,
+    api_key: str | None = None,
+) -> bool:
+    """Start a container in detached mode (not running claude yet).
+    
+    This allows us to configure the container before starting Claude.
+    
+    Args:
+        runtime: Container runtime command
+        container_name: Name for the container
+        worktree_path: Path to mount as /workspace
+        image: Container image
+        port: Optional port to expose
+        api_key: Optional API key to pass as env var
+        
+    Returns:
+        True if container started successfully
+    """
+    # Clean up any existing container with this name
+    cleanup_container(runtime, container_name)
+    
+    home = Path.home()
+    abs_path = worktree_path.resolve()
+    
+    cmd = [
+        runtime,
+        "run",
+        "-d",  # Detached mode
+        "--name", container_name,
+        "-v", f"{abs_path}:/workspace",
+        "-w", "/workspace",
+    ]
+    
+    # Mount git directories for worktrees
+    main_git_dir, worktree_git_dir = get_git_worktree_info(abs_path)
+    if main_git_dir and main_git_dir.exists():
+        cmd.extend(["-v", f"{main_git_dir}:{main_git_dir}"])
+        main_repo_dir = main_git_dir.parent
+        agenttrees_dir = main_repo_dir / "_agenttree"
+        if agenttrees_dir.exists():
+            cmd.extend(["-v", f"{agenttrees_dir}:/workspace/_agenttree"])
+    
+    # Mount claude config directory
+    claude_config_dir = home / ".claude"
+    if claude_config_dir.exists():
+        cmd.extend(["-v", f"{claude_config_dir}:/home/agent/.claude-host:ro"])
+    
+    # Expose port if specified
+    if port:
+        cmd.extend(["-p", f"{port}:{port}"])
+    
+    # Pass API key
+    if api_key:
+        cmd.extend(["-e", f"ANTHROPIC_API_KEY={api_key}"])
+    
+    # Container indicator env vars
+    cmd.extend(["-e", "AGENTTREE_CONTAINER=1"])
+    
+    cmd.append(image)
+    cmd.append("sleep")
+    cmd.append("infinity")
+    
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        if result.returncode != 0:
+            return False
+        
+        # Wait for container to be ready (can accept exec commands)
+        import time
+        for _ in range(60):  # Wait up to 60 seconds
+            check = subprocess.run(
+                [runtime, "exec", container_name, "echo", "ready"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if check.returncode == 0:
+                return True
+            time.sleep(1)
+        return False
+    except (subprocess.TimeoutExpired, subprocess.SubprocessError):
+        return False
+
+
+def build_container_exec_claude_command(
+    runtime: str,
+    container_name: str,
+    model: str,
+    dangerous: bool = True,
+) -> str:
+    """Build the command to exec claude inside a running container.
+    
+    Args:
+        runtime: Container runtime command  
+        container_name: Name of the running container
+        model: Model to use
+        dangerous: Whether to skip permission prompts
+        
+    Returns:
+        Command string for running in tmux
+    """
+    cmd_parts = [runtime, "exec", "-it", container_name, "claude"]
+    
+    if model:
+        cmd_parts.extend(["--model", model])
+    
+    if dangerous:
+        cmd_parts.append("--dangerously-skip-permissions")
+    
+    return " ".join(cmd_parts)

@@ -2,9 +2,9 @@
 
 ## ⛔ NEVER merge your own PRs without explicit approval. Create PR → request `@cursoragent review` → WAIT for review → ASK before merging.
 
-## ⛔ NEVER USE RAW TMUX COMMANDS
+## ⛔ NEVER USE RAW TMUX OR CONTAINER COMMANDS
 
-**Use `agenttree` CLI instead of tmux. ALWAYS.**
+**Use `agenttree` CLI instead of tmux/container. ALWAYS.**
 
 | ❌ DON'T | ✅ DO |
 |----------|-------|
@@ -13,8 +13,14 @@
 | `tmux send-keys` | `agenttree send <id> "msg"` |
 | `tmux kill-session` | `agenttree stop <id>` |
 | `tmux has-session` | `agenttree status` |
+| `container run ...` | `agenttree start <id>` |
+| `container exec ...` | `agenttree attach <id>` |
+| `container list` | `agenttree status` |
+| `container stop/delete` | `agenttree stop <id>` |
 
-Raw tmux commands bypass the workflow, break state tracking, and cause bugs. The CLI handles everything properly.
+Raw tmux/container commands bypass the workflow, break state tracking, and cause bugs. The CLI handles everything properly.
+
+**If you find yourself about to type `tmux` or `container`, STOP. Find the agenttree command instead.**
 
 ## Tech Stack
 
@@ -110,6 +116,7 @@ from agenttree.hooks import ValidationError
 - Use fixtures defined in `tests/conftest.py`
 - Mock external dependencies (git, docker, filesystem)
 - Aim for high coverage on core workflow logic
+- **`@pytest.mark.local_only`** — Mark tests that need Playwright, tmux, Apple Containers, or other tools unavailable in CI. CI runs with `-m "not local_only"` to skip them. Use this for browser tests, visual regression tests, and anything requiring a real display or local daemon.
 
 ## Frontend Development
 
