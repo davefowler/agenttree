@@ -705,6 +705,13 @@ class TestAgentManager:
 
         with patch("agenttree.web.app._config") as mock_config:
             mock_config.project = "myproject"
+            mock_config.get_issue_session_patterns.return_value = [
+                "myproject-developer-001",
+                "myproject-reviewer-001",
+                "myproject-issue-001",
+                "myproject-agent-001",
+                "myproject-controller-001"
+            ]
             manager = AgentManager()
             manager._active_sessions = None  # Reset cache
 
