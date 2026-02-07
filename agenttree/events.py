@@ -341,7 +341,7 @@ def get_heartbeat_interval(agents_dir: Path | None = None) -> int:
         heartbeat_config = on_config.get("heartbeat", {})
         
         if isinstance(heartbeat_config, dict):
-            return heartbeat_config.get("interval_s", 10)
+            return int(heartbeat_config.get("interval_s", 10))
         
         # Fall back to refresh_interval for backwards compatibility
         return getattr(config, "refresh_interval", 10)

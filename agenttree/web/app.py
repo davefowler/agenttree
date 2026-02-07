@@ -208,7 +208,7 @@ def verify_credentials(credentials: Optional[HTTPBasicCredentials] = Depends(sec
             headers={"WWW-Authenticate": "Basic"},
         )
 
-    return credentials.username
+    return str(credentials.username)
 
 
 # Favicon routes
