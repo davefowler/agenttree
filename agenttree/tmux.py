@@ -632,8 +632,9 @@ class TmuxManager:
         container_name = f"agenttree-{self.config.project}-{issue_id}"
         
         # Clean up any existing container with this name (from previous runs)
-        from agenttree.container import cleanup_container
-        cleanup_container(container_runtime.runtime, container_name)
+        if container_runtime.runtime:
+            from agenttree.container import cleanup_container
+            cleanup_container(container_runtime.runtime, container_name)
 
         container_cmd = container_runtime.build_run_command(
             worktree_path=worktree_path,

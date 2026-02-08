@@ -382,9 +382,14 @@ def _update_issue_stage_direct(yaml_path: Path, data: dict, new_stage: str, new_
     import yaml as yaml_module
 
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    old_stage = data.get("stage")
     data["stage"] = new_stage
     data["substage"] = new_substage
     data["updated"] = now
+
+    # Clear ci_escalated flag when moving out of implementation_review
+    if old_stage == "implementation_review" and new_stage != "implementation_review":
+        data["ci_escalated"] = False
 
     # Add history entry
     if "history" not in data:

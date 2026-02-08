@@ -139,6 +139,7 @@ def auto_start_agents(agents_dir: Path, **kwargs: Any) -> None:
             ["agenttree", "start", issue.id, "--skip-preflight"],
             capture_output=True,
             text=True,
+            timeout=120,  # Container startup can be slow
         )
         if result.returncode == 0:
             started += 1
@@ -167,6 +168,7 @@ def stop_all_agents(agents_dir: Path, **kwargs: Any) -> None:
         ["tmux", "list-sessions", "-F", "#{session_name}"],
         capture_output=True,
         text=True,
+        timeout=10,
     )
     
     if result.returncode != 0:
@@ -800,6 +802,7 @@ def check_rate_limits(agents_dir: Path, **kwargs: Any) -> None:
                         ["agenttree", "start", str(issue_id), "--skip-preflight", "--force"],
                         capture_output=True,
                         text=True,
+                        timeout=120,  # Container startup can be slow
                     )
                     if result.returncode == 0:
                         restarted += 1

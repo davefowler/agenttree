@@ -150,6 +150,41 @@ The `_agenttree/` directory is a **separate git repository** that stores all AI 
 - The workflow supports both local and containerized agent execution
 - Hooks can be configured in `.agenttree.yaml` for stage transitions
 
+## Creating Pull Requests
+
+**Multiple agents often work on the same branch.** Before creating a PR, always check for ALL changes in the branch, not just your own work.
+
+### PR Creation Checklist
+
+1. **Run `git diff main...HEAD --stat`** to see ALL files changed in the branch
+2. **Look for changes you didn't make** - another agent may have added features
+3. **Include ALL features in the PR description** - reviewers will reject "out of scope" changes if not documented
+4. **Group related changes** under clear headings in the Summary section
+
+### PR Description Template
+
+```markdown
+## Summary
+
+### [Your Feature Name]
+- Bullet points for your changes
+
+### [Other Feature Name] (if other changes exist)
+- Bullet points for changes made by other agents
+- Note: "Added by parallel work on this branch"
+
+## Test plan
+- [ ] Tests for your feature
+- [ ] Tests for other features (if applicable)
+```
+
+### Why This Matters
+
+The automated reviewer will flag undocumented changes as "out of scope" and request they be removed. By documenting ALL branch changes upfront, you prevent:
+- False "dead code" reports (code used by undocumented features)
+- Requests to split into multiple PRs
+- Rejection of legitimate work
+
 ## Use CLI Commands, Not Manual Operations
 
 **Always use `agenttree` CLI commands** instead of manually editing YAML files or doing things "under the hood":

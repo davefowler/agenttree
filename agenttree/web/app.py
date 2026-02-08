@@ -1436,6 +1436,7 @@ async def switch_to_api_key_mode(
             ["agenttree", "start", str(issue_id), "--api-key", "--skip-preflight", "--force"],
             capture_output=True,
             text=True,
+            timeout=120,  # Container startup can be slow
         )
         if result.returncode == 0:
             restarted += 1
