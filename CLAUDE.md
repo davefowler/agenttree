@@ -200,7 +200,7 @@ The automated reviewer will flag undocumented changes as "out of scope" and requ
 
 **Why:** CLI commands run the proper hooks and workflow logic. Manually editing `issue.yaml` or using raw commands bypasses hooks, breaks notifications, and causes state inconsistencies.
 
-**Important:** 
+**Important:**
 - Use `agenttree output <id>` to check on agents, NOT raw tmux commands like `tmux capture-pane`
 - Use `agenttree status` to see all agents and their states, NOT `tmux list-sessions`
 - Use `agenttree start/stop/send` to manage agents, NOT direct tmux commands

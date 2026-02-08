@@ -295,7 +295,19 @@ def stop_agent(issue_id: str, role: str = "developer", quiet: bool = False) -> b
         from rich.console import Console
         console = Console()
 
-    # 1. Kill tmux session if it exists
+    # 1. Kill serve session (if it exists) - runs on host, not in container
+    try:
+        from agenttree.tmux import kill_session, session_exists
+        serve_session_name = f"{config.project}-serve-{issue_id}"
+        if session_exists(serve_session_name):
+            kill_session(serve_session_name)
+            if not quiet:
+                console.print(f"[dim]  Stopped serve session: {serve_session_name}[/dim]")
+    except (subprocess.CalledProcessError, FileNotFoundError, OSError) as e:
+        if not quiet:
+            console.print(f"[yellow]  Warning: Could not stop serve session: {e}[/yellow]")
+
+    # 2. Kill tmux session if it exists
     try:
         from agenttree.tmux import kill_session, session_exists
         session_name = f"{config.project}-{role}-{issue_id}"
@@ -308,7 +320,7 @@ def stop_agent(issue_id: str, role: str = "developer", quiet: bool = False) -> b
         if not quiet:
             console.print(f"[yellow]  Warning: Could not stop tmux session: {e}[/yellow]")
 
-    # 2. Stop container by name (fast and reliable)
+    # 3. Stop container by name (fast and reliable)
     try:
         from agenttree.container import get_container_runtime
 
