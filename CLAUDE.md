@@ -33,7 +33,7 @@ Raw tmux/container commands bypass the workflow, break state tracking, and cause
 
 ## Architecture
 
-- CLI entry point: `agenttree/cli.py`
+- CLI entry point: `agenttree/cli/`
 - Hook system (stage transitions): `agenttree/hooks.py`
 - Issue management: `agenttree/issues.py`
 - Agent repository: `agenttree/agents_repo.py`
