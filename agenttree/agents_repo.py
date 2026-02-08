@@ -688,7 +688,7 @@ def check_ci_status(agents_dir: Path) -> int:
             if agent_running and agent:
                 try:
                     message = f"CI failed for PR #{pr_number} (attempt {ci_bounce_count + 1}/{max_ci_bounces}). See ci_feedback.md for details. Run `agenttree next` after fixing."
-                    tmux_manager.send_message_to_issue(agent.tmux_session, message)
+                    tmux_manager.send_message_to_issue(agent.tmux_session, message, interrupt=False)
                     console.print(f"[green]✓ Notified agent for issue #{issue_id}[/green]")
                 except Exception as e:
                     console.print(f"[yellow]Could not notify agent: {e}[/yellow]")

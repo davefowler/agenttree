@@ -69,7 +69,7 @@ class TestConfigFlows:
         stages = [
             StageConfig(name="backlog"),
             StageConfig(name="define"),
-            StageConfig(name="accepted", terminal=True),
+            StageConfig(name="accepted", is_parking_lot=True),
         ]
         config = Config(stages=stages)  # No flows defined
 
@@ -86,7 +86,7 @@ class TestGetNextStageWithFlows:
             StageConfig(name="define"),
             StageConfig(name="research"),
             StageConfig(name="plan"),
-            StageConfig(name="accepted", terminal=True),
+            StageConfig(name="accepted", is_parking_lot=True),
         ]
         default_flow = FlowConfig(name="default", stages=["define", "research", "plan", "accepted"])
         config = Config(stages=stages, flows={"default": default_flow})
@@ -101,7 +101,7 @@ class TestGetNextStageWithFlows:
             StageConfig(name="research"),
             StageConfig(name="plan"),
             StageConfig(name="implement"),
-            StageConfig(name="accepted", terminal=True),
+            StageConfig(name="accepted", is_parking_lot=True),
         ]
         default_flow = FlowConfig(name="default", stages=["define", "research", "plan", "implement", "accepted"])
         quick_flow = FlowConfig(name="quick", stages=["define", "implement", "accepted"])
@@ -119,7 +119,7 @@ class TestGetNextStageWithFlows:
         """Test get_next_stage stays at terminal stage."""
         stages = [
             StageConfig(name="define"),
-            StageConfig(name="accepted", terminal=True),
+            StageConfig(name="accepted", is_parking_lot=True),
         ]
         flow = FlowConfig(name="default", stages=["define", "accepted"])
         config = Config(stages=stages, flows={"default": flow})

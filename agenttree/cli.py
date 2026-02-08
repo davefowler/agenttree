@@ -1000,7 +1000,7 @@ def send(issue_id: str, message: str, role: str, interrupt: bool) -> None:
         if ensure_agent_running():
             agent = get_active_agent(issue_id_normalized, role)
             if agent:
-                result = tmux_manager.send_message_to_issue(agent.tmux_session, message)
+                result = tmux_manager.send_message_to_issue(agent.tmux_session, message, interrupt=False)
                 if result == "sent":
                     console.print(f"[green]✓ Sent message to issue #{agent.issue_id}{role_label}[/green]")
                     return
@@ -1931,7 +1931,7 @@ def issue_check_deps() -> None:
 # =============================================================================
 
 
-def _show_system_sessions(config: "AgentTreeConfig") -> None:
+def _show_system_sessions(config: "Config") -> None:
     """Show controller/manager and other system tmux sessions."""
     from agenttree.tmux import session_exists, list_sessions
     
@@ -2387,7 +2387,7 @@ def approve_issue(issue_id: str, skip_approval: bool) -> None:
         tmux_manager = TmuxManager(config)
         if tmux_manager.is_issue_running(agent.tmux_session):
             message = "Your work was approved! Run `agenttree next` for instructions."
-            tmux_manager.send_message_to_issue(agent.tmux_session, message)
+            tmux_manager.send_message_to_issue(agent.tmux_session, message, interrupt=False)
             console.print(f"[green]✓ Notified agent to continue[/green]")
 
 
@@ -2879,7 +2879,7 @@ def sync_command() -> None:
         agenttree sync
     """
     from agenttree.agents_repo import sync_agents_repo
-    from agenttree.controller_hooks import run_post_controller_hooks
+    from agenttree.manager_hooks import run_post_manager_hooks
     from agenttree.issues import get_agenttree_path
 
     console.print("[dim]Syncing agents repository...[/dim]")
@@ -2891,9 +2891,9 @@ def sync_command() -> None:
     else:
         console.print("[yellow]Sync completed with warnings[/yellow]")
 
-    # Run controller hooks (stall detection, CI checks, etc.)
-    console.print("[dim]Running controller hooks...[/dim]")
-    run_post_controller_hooks(agents_path)
+    # Run manager hooks (stall detection, CI checks, etc.)
+    console.print("[dim]Running manager hooks...[/dim]")
+    run_post_manager_hooks(agents_path)
 
 
 # =============================================================================
