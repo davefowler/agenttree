@@ -382,9 +382,14 @@ def _update_issue_stage_direct(yaml_path: Path, data: dict, new_stage: str, new_
     import yaml as yaml_module
 
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    old_stage = data.get("stage")
     data["stage"] = new_stage
     data["substage"] = new_substage
     data["updated"] = now
+
+    # Clear ci_escalated flag when moving out of implementation_review
+    if old_stage == "implementation_review" and new_stage != "implementation_review":
+        data["ci_escalated"] = False
 
     # Add history entry
     if "history" not in data:
@@ -619,12 +624,33 @@ def check_ci_status(agents_dir: Path) -> int:
                     feedback_content += f"### From @{comment.author}\n\n"
                     feedback_content += f"{comment.body}\n\n"
 
-            feedback_content += "\n---\n\nPlease fix these issues and run `agenttree next` to re-submit.\n"
-
             feedback_file = issue_dir / "ci_feedback.md"
+
+            # Count how many times CI has already bounced this issue back
+            history = data.get("history", [])
+            ci_bounce_count = sum(
+                1 for i, entry in enumerate(history)
+                if entry.get("stage") == "implement" and entry.get("substage") == "debug"
+                and i > 0 and history[i - 1].get("stage") == "implementation_review"
+            )
+
+            max_ci_bounces = 3
+            if ci_bounce_count >= max_ci_bounces:
+                # Circuit breaker: stop looping, escalate to human review
+                feedback_content += f"\n---\n\n## ⛔ CI has failed {ci_bounce_count} times. Escalated to human review.\n"
+                feedback_content += "\nThe agent could not resolve these CI failures after multiple attempts.\n"
+                feedback_file.write_text(feedback_content)
+
+                console.print(f"[red]CI failed {ci_bounce_count}x for issue #{issue_id} — escalating to human review[/red]")
+                data["ci_escalated"] = True
+                _update_issue_stage_direct(issue_yaml, data, "implementation_review", "review")
+                issues_notified += 1
+                continue
+
+            feedback_content += "\n---\n\nPlease fix these issues and run `agenttree next` to re-submit.\n"
             feedback_file.write_text(feedback_content)
 
-            console.print(f"[yellow]CI failed for PR #{pr_number}, notifying issue #{issue_id}[/yellow]")
+            console.print(f"[yellow]CI failed for PR #{pr_number} (attempt {ci_bounce_count + 1}/{max_ci_bounces}), notifying issue #{issue_id}[/yellow]")
 
             # Transition issue back to implement.debug stage for CI fix
             _update_issue_stage_direct(issue_yaml, data, "implement", "debug")
@@ -661,7 +687,7 @@ def check_ci_status(agents_dir: Path) -> int:
             # Send notification to running agent
             if agent_running and agent:
                 try:
-                    message = f"CI failed for PR #{pr_number}. See ci_feedback.md for details. Run `agenttree next` after fixing."
+                    message = f"CI failed for PR #{pr_number} (attempt {ci_bounce_count + 1}/{max_ci_bounces}). See ci_feedback.md for details. Run `agenttree next` after fixing."
                     tmux_manager.send_message_to_issue(agent.tmux_session, message)
                     console.print(f"[green]✓ Notified agent for issue #{issue_id}[/green]")
                 except Exception as e:

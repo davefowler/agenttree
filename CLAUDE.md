@@ -2,9 +2,9 @@
 
 ## ⛔ NEVER merge your own PRs without explicit approval. Create PR → request `@cursoragent review` → WAIT for review → ASK before merging.
 
-## ⛔ NEVER USE RAW TMUX COMMANDS
+## ⛔ NEVER USE RAW TMUX OR CONTAINER COMMANDS
 
-**Use `agenttree` CLI instead of tmux. ALWAYS.**
+**Use `agenttree` CLI instead of tmux/container. ALWAYS.**
 
 | ❌ DON'T | ✅ DO |
 |----------|-------|
@@ -13,8 +13,14 @@
 | `tmux send-keys` | `agenttree send <id> "msg"` |
 | `tmux kill-session` | `agenttree stop <id>` |
 | `tmux has-session` | `agenttree status` |
+| `container run ...` | `agenttree start <id>` |
+| `container exec ...` | `agenttree attach <id>` |
+| `container list` | `agenttree status` |
+| `container stop/delete` | `agenttree stop <id>` |
 
-Raw tmux commands bypass the workflow, break state tracking, and cause bugs. The CLI handles everything properly.
+Raw tmux/container commands bypass the workflow, break state tracking, and cause bugs. The CLI handles everything properly.
+
+**If you find yourself about to type `tmux` or `container`, STOP. Find the agenttree command instead.**
 
 ## Tech Stack
 
@@ -110,6 +116,7 @@ from agenttree.hooks import ValidationError
 - Use fixtures defined in `tests/conftest.py`
 - Mock external dependencies (git, docker, filesystem)
 - Aim for high coverage on core workflow logic
+- **`@pytest.mark.local_only`** — Mark tests that need Playwright, tmux, Apple Containers, or other tools unavailable in CI. CI runs with `-m "not local_only"` to skip them. Use this for browser tests, visual regression tests, and anything requiring a real display or local daemon.
 
 ## Frontend Development
 
@@ -142,6 +149,41 @@ The `_agenttree/` directory is a **separate git repository** that stores all AI 
 ### Other Notes
 - The workflow supports both local and containerized agent execution
 - Hooks can be configured in `.agenttree.yaml` for stage transitions
+
+## Creating Pull Requests
+
+**Multiple agents often work on the same branch.** Before creating a PR, always check for ALL changes in the branch, not just your own work.
+
+### PR Creation Checklist
+
+1. **Run `git diff main...HEAD --stat`** to see ALL files changed in the branch
+2. **Look for changes you didn't make** - another agent may have added features
+3. **Include ALL features in the PR description** - reviewers will reject "out of scope" changes if not documented
+4. **Group related changes** under clear headings in the Summary section
+
+### PR Description Template
+
+```markdown
+## Summary
+
+### [Your Feature Name]
+- Bullet points for your changes
+
+### [Other Feature Name] (if other changes exist)
+- Bullet points for changes made by other agents
+- Note: "Added by parallel work on this branch"
+
+## Test plan
+- [ ] Tests for your feature
+- [ ] Tests for other features (if applicable)
+```
+
+### Why This Matters
+
+The automated reviewer will flag undocumented changes as "out of scope" and request they be removed. By documenting ALL branch changes upfront, you prevent:
+- False "dead code" reports (code used by undocumented features)
+- Requests to split into multiple PRs
+- Rejection of legitimate work
 
 ## Use CLI Commands, Not Manual Operations
 

@@ -82,6 +82,9 @@ class Issue(BaseModel):
     # Processing state: "exit", "enter", or None (not processing)
     processing: Optional[str] = None
 
+    # Set when CI fails too many times and issue is escalated to human review
+    ci_escalated: bool = False
+
 
 def slugify(text: str) -> str:
     """Convert text to a URL-friendly slug."""

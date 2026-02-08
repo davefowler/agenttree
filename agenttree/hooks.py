@@ -868,7 +868,10 @@ def run_builtin_validator(
                         )
 
     elif hook_type == "pr_approved":
-        skip_approval = kwargs.get("skip_pr_approval", False)
+        # Check both explicit kwarg and config setting
+        from agenttree.config import load_config as _load_config
+        _cfg = _load_config()
+        skip_approval = kwargs.get("skip_pr_approval", False) or _cfg.allow_self_approval
         if skip_approval:
             console.print(f"[dim]Skipping PR approval check (--skip-approval)[/dim]")
         elif pr_number is None:
@@ -1960,26 +1963,40 @@ def get_commits_behind_main(worktree_dir: Optional[str]) -> int:
     Returns:
         Number of commits behind main, or 0 if unable to determine
     """
+    _, behind = get_commits_ahead_behind_main(worktree_dir)
+    return behind
+
+
+def get_commits_ahead_behind_main(worktree_dir: Optional[str]) -> tuple[int, int]:
+    """Get the number of commits ahead and behind local main.
+
+    Args:
+        worktree_dir: Path to the worktree directory
+
+    Returns:
+        Tuple of (ahead, behind) counts
+    """
     if not worktree_dir:
-        return 0
+        return 0, 0
 
     worktree_path = Path(worktree_dir)
     if not worktree_path.exists():
-        return 0
+        return 0, 0
 
     try:
         result = subprocess.run(
-            ["git", "-C", str(worktree_path), "rev-list", "--count", "HEAD..main"],
+            ["git", "-C", str(worktree_path), "rev-list", "--left-right", "--count", "HEAD...main"],
             capture_output=True,
             text=True,
             timeout=10,
         )
-
         if result.returncode == 0:
-            return int(result.stdout.strip())
-        return 0
+            parts = result.stdout.strip().split()
+            if len(parts) == 2:
+                return int(parts[0]), int(parts[1])
+        return 0, 0
     except (subprocess.TimeoutExpired, ValueError, Exception):
-        return 0
+        return 0, 0
 
 
 def rebase_issue_branch(issue_id: str) -> tuple[bool, str]:
@@ -2359,9 +2376,38 @@ def ensure_pr_for_issue(issue_id: str) -> bool:
             timeout=30,
         )
 
-    # Push the branch from the worktree
+    # Squash all branch commits into one clean commit before pushing.
+    # Agent restarts create WIP + merge commits that bloat the PR.
+    subprocess.run(
+        ["git", "-C", str(worktree_path), "fetch", "origin", "main"],
+        capture_output=True, timeout=30,
+    )
+    merge_base = subprocess.run(
+        ["git", "-C", str(worktree_path), "merge-base", "HEAD", "origin/main"],
+        capture_output=True, text=True, timeout=10,
+    )
+    if merge_base.returncode == 0:
+        base_sha = merge_base.stdout.strip()
+        commit_count = subprocess.run(
+            ["git", "-C", str(worktree_path), "rev-list", "--count", f"{base_sha}..HEAD"],
+            capture_output=True, text=True, timeout=10,
+        )
+        count = int(commit_count.stdout.strip()) if commit_count.returncode == 0 else 0
+        if count > 1:
+            console.print(f"[dim]Squashing {count} commits into 1 for clean PR...[/dim]")
+            subprocess.run(
+                ["git", "-C", str(worktree_path), "reset", "--soft", base_sha],
+                capture_output=True, timeout=10,
+            )
+            subprocess.run(
+                ["git", "-C", str(worktree_path), "commit", "-m",
+                 f"Issue #{issue_id}: {issue.title}"],
+                capture_output=True, text=True, timeout=30,
+            )
+
+    # Push the branch from the worktree (force-with-lease since squash rewrites history)
     result = subprocess.run(
-        ["git", "-C", str(worktree_path), "push", "-u", "origin", issue.branch],
+        ["git", "-C", str(worktree_path), "push", "--force-with-lease", "-u", "origin", issue.branch],
         capture_output=True,
         text=True
     )

@@ -21,9 +21,15 @@
                     </button>
                 </div>
             </div>
+            {% if issue.ci_escalated %}
+            <div class="ci-escalated-banner">CI has failed repeatedly — agent could not resolve. Needs human attention.</div>
+            {% endif %}
             <div class="detail-meta-row">
                 <div class="detail-meta">
-                    <span>Stage: {{ issue.stage.replace('_', ' ').title() if issue.stage is string else issue.stage.value.replace('_', ' ').title() }}</span>
+                    <span>Stage: {{ (issue.stage if issue.stage is string else issue.stage.value) | stage_name }}</span>
+                    {% if issue.substage %}
+                    <span class="substage-pill">{{ issue.substage | replace('_', ' ') | title }}</span>
+                    {% endif %}
                     <span>Priority:
                         <select class="priority-select" onchange="updatePriority('{{ issue.number }}', this.value, this)">
                             <option value="low" {% if issue.priority == 'low' %}selected{% endif %}>Low</option>
@@ -56,8 +62,9 @@
                     {% set stage_value = issue.stage if issue.stage is string else issue.stage.value %}
                     {% if issue.tmux_active and commits_behind is defined and commits_behind > 0 %}
                     <button class="btn btn-rebase"
-                            onclick="rebaseIssue('{{ issue.number }}', this)">
-                        Rebase ({{ commits_behind }} behind)
+                            onclick="rebaseIssue('{{ issue.number }}', this)"
+                            title="{{ commits_ahead | default(0) }} ahead, {{ commits_behind }} behind main">
+                        Rebase ({{ commits_ahead | default(0) }}a/{{ commits_behind }}b)
                     </button>
                     {% endif %}
                     {% if stage_value not in ['not_doing', 'accepted'] %}
@@ -251,7 +258,6 @@ async function approveIssue(issueNumber, btn) {
     }
 
     try {
-        // Wait for the approve request to complete (hooks run synchronously)
         const response = await fetch(`/api/issues/${issueNumber}/approve`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'}

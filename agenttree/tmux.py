@@ -587,6 +587,7 @@ class TmuxManager:
         role: str = "developer",
         has_merge_conflicts: bool = False,
         is_restart: bool = False,
+        force_api_key: bool = False,
     ) -> bool:
         """Start an issue-bound agent in a container within a tmux session.
 
@@ -600,6 +601,7 @@ class TmuxManager:
             role: Agent role for the stage (e.g., "developer", "reviewer")
             has_merge_conflicts: Whether there are unresolved merge conflicts
             is_restart: Whether this is a restart (worktree already existed)
+            force_api_key: Force API key mode (skip OAuth subscription)
 
         Returns:
             True if agent started successfully, False if startup failed
@@ -628,6 +630,11 @@ class TmuxManager:
 
         # Generate container name: agenttree-{project}-{issue_id}
         container_name = f"agenttree-{self.config.project}-{issue_id}"
+        
+        # Clean up any existing container with this name (from previous runs)
+        if container_runtime.runtime:
+            from agenttree.container import cleanup_container
+            cleanup_container(container_runtime.runtime, container_name)
 
         container_cmd = container_runtime.build_run_command(
             worktree_path=worktree_path,
@@ -637,6 +644,7 @@ class TmuxManager:
             role=role,
             port=port,
             container_name=container_name,
+            force_api_key=force_api_key,
         )
 
         # Join command for shell execution

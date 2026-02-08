@@ -392,12 +392,14 @@ def _start_manager(
 @click.option("--role", default="developer", help="Agent role (default: developer)")
 @click.option("--force", is_flag=True, help="Force start even if agent already exists")
 @click.option("--skip-preflight", is_flag=True, help="Skip preflight environment checks")
+@click.option("--api-key", is_flag=True, help="Force API key mode (skip OAuth subscription)")
 def start_agent(
     issue_id: str,
     tool: Optional[str],
     role: str,
     force: bool,
     skip_preflight: bool,
+    api_key: bool,
 ) -> None:
     """Start an agent for an issue (creates container + worktree).
 
@@ -571,6 +573,7 @@ def start_agent(
         role=role,
         has_merge_conflicts=has_merge_conflicts,
         is_restart=is_restart,
+        force_api_key=api_key,
     )
 
     if not start_success:
@@ -2034,9 +2037,14 @@ def stage_status(issue_id: Optional[str], show_all: bool) -> None:
             session_name = config.get_issue_tmux_session(active_issue.id, "developer")
             agent_str = "[green]run[/green]" if session_exists(session_name) else "[red]dead[/red]"
             
-            # Check if waiting on human review
+            # Check if waiting on human review or CI escalated
             stage_config = config.get_stage(active_issue.stage)
-            wait_str = "[yellow]human[/yellow]" if stage_config and stage_config.role == "manager" else ""
+            if active_issue.ci_escalated:
+                wait_str = "[red]CI FAIL[/red]"
+            elif stage_config and stage_config.role == "manager":
+                wait_str = "[yellow]human[/yellow]"
+            else:
+                wait_str = ""
             
             table.add_row(active_issue.id, active_issue.title[:40], stage_str, time_str, agent_str, wait_str)
 
@@ -2335,11 +2343,14 @@ def approve_issue(issue_id: str, skip_approval: bool) -> None:
     # Calculate next stage
     next_stage, next_substage, _ = get_next_stage(issue.stage, issue.substage, issue.flow)
 
+    # Skip PR approval when config allows self-approval or user passes --skip-approval
+    skip_pr_approval = skip_approval or approve_config.allow_self_approval
+
     # Execute exit hooks
     from_stage = issue.stage
     from_substage = issue.substage
     try:
-        execute_exit_hooks(issue, from_stage, from_substage, skip_pr_approval=skip_approval)
+        execute_exit_hooks(issue, from_stage, from_substage, skip_pr_approval=skip_pr_approval)
     except StageRedirect as redirect:
         # Redirect to a different stage instead of normal next stage
         console.print(f"[yellow]Redirecting to {redirect.target_stage}: {redirect.reason}[/yellow]")

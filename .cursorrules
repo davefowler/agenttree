@@ -1,14 +1,23 @@
 # AgentTree Project Rules
 
-## ⛔ NEVER USE RAW TMUX COMMANDS
+## ⛔ NEVER USE RAW TMUX OR CONTAINER COMMANDS
 
-Use `agenttree` CLI instead of tmux:
-- `agenttree status` NOT `tmux list-sessions`
-- `agenttree output <id>` NOT `tmux capture-pane`
-- `agenttree send <id> "msg"` NOT `tmux send-keys`
-- `agenttree stop <id>` NOT `tmux kill-session`
+**ALWAYS use `agenttree` CLI commands. NEVER use raw tmux or container commands unless the CLI literally cannot do what you need.**
 
-Raw tmux bypasses workflow and breaks state tracking.
+| ❌ NEVER DO THIS | ✅ ALWAYS DO THIS |
+|------------------|-------------------|
+| `tmux list-sessions` | `agenttree status` |
+| `tmux capture-pane` | `agenttree output <id>` |
+| `tmux send-keys` | `agenttree send <id> "msg"` |
+| `tmux kill-session` | `agenttree stop <id>` |
+| `container run ...` | `agenttree start <id>` |
+| `container exec ...` | `agenttree attach <id>` |
+| `container list` | `agenttree status` |
+| `container stop` | `agenttree stop <id>` |
+
+Raw tmux/container commands bypass workflow, break state tracking, and cause bugs. The CLI handles everything properly.
+
+**If you find yourself typing `tmux` or `container`, STOP and find the agenttree command instead.**
 
 ## Documentation Structure
 

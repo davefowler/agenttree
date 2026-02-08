@@ -138,25 +138,6 @@ class TestStopCommand:
         assert result.exit_code == 0
         mock_stop.assert_called_once_with("42", "developer")
 
-    def test_kill_alias_works(self, cli_runner, mock_config):
-        """kill command should work as an alias for stop."""
-        from agenttree.cli import main
-
-        mock_agent = MagicMock()
-        mock_agent.tmux_session = "agent-42"
-        mock_agent.issue_id = "42"
-        mock_agent.role = "agent"
-
-        with patch("agenttree.cli.load_config", return_value=mock_config):
-            with patch("agenttree.state.get_active_agent", return_value=mock_agent):
-                with patch("agenttree.state.stop_agent", return_value=True) as mock_stop:
-                    with patch("agenttree.cli.get_issue_func", return_value=None):
-                        result = cli_runner.invoke(main, ["kill", "42"])
-
-        assert result.exit_code == 0
-        mock_stop.assert_called_once_with("42", "developer")
-
-
 class TestAttachCommand:
     """Tests for the attach command."""
 
