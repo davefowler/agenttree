@@ -1664,7 +1664,6 @@ def execute_enter_hooks(issue: "Issue", stage: str, substage: Optional[str] = No
         "issue_id": issue.id,
         "issue_title": issue.title,
         "branch": issue.branch or "",
-        "stage": stage,
         "substage": substage or "",
         "issue": issue,  # Pass issue object for cleanup_agent and start_blocked_issues hooks
     }
