@@ -1136,10 +1136,12 @@ async def approve_issue(
         issue_crud.set_processing(issue_id_normalized, "enter")
 
         # Execute enter hooks
+        import logging
+        log = logging.getLogger("agenttree.web")
         try:
             await asyncio.to_thread(execute_enter_hooks, updated, next_stage, next_substage)
-        except Exception:
-            pass  # Enter hooks shouldn't block
+        except Exception as e:
+            log.warning("Enter hooks failed for issue %s: %s", issue_id_normalized, e)
 
         # Notify agent to continue (if active)
         try:
@@ -1150,9 +1152,9 @@ async def approve_issue(
             if agent and agent.tmux_session:
                 if session_exists(agent.tmux_session):
                     message = "Your work was approved! Run `agenttree next` for instructions."
-                    send_message(agent.tmux_session, message)
-        except Exception:
-            pass  # Agent notification is best-effort
+                    await asyncio.to_thread(send_message, agent.tmux_session, message)
+        except Exception as e:
+            log.warning("Agent notification failed for issue %s: %s", issue_id_normalized, e)
 
         return {"ok": True}
     finally:
