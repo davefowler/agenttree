@@ -454,18 +454,21 @@ class TestApproveIssueEndpoint:
     """Tests for approve issue endpoint."""
 
     @patch("agenttree.state.get_active_agent")
-    @patch("agenttree.hooks.execute_enter_hooks")
-    @patch("agenttree.hooks.execute_exit_hooks")
+    @patch("agenttree.api.transition_issue")
     @patch("agenttree.config.load_config")
     @patch("agenttree.web.app.issue_crud")
     def test_approve_issue_at_implementation_review(
-        self, mock_crud, mock_config, mock_exit, mock_enter, mock_get_agent,
+        self, mock_crud, mock_config, mock_transition, mock_get_agent,
         client, mock_review_issue
     ):
         """Test approving issue at implementation_review stage."""
         mock_crud.get_issue.return_value = mock_review_issue
-        mock_crud.update_issue_stage.return_value = mock_review_issue
         mock_get_agent.return_value = None
+
+        updated = MagicMock()
+        updated.stage = "accepted"
+        updated.substage = None
+        mock_transition.return_value = updated
 
         # Mock config.get_next_stage
         mock_config.return_value.get_next_stage.return_value = ("accepted", None, True)
@@ -476,25 +479,25 @@ class TestApproveIssueEndpoint:
         data = response.json()
         assert data["ok"] is True
 
-        # Verify exit hooks were called (synchronous validation)
-        mock_exit.assert_called_once()
-        mock_enter.assert_called_once()
-        mock_crud.update_issue_stage.assert_called_once()
+        # Verify transition_issue was called
+        mock_transition.assert_called_once()
 
     @patch("agenttree.state.get_active_agent")
-    @patch("agenttree.hooks.execute_enter_hooks")
-    @patch("agenttree.hooks.execute_exit_hooks")
+    @patch("agenttree.api.transition_issue")
     @patch("agenttree.config.load_config")
     @patch("agenttree.web.app.issue_crud")
     def test_approve_issue_at_plan_review(
-        self, mock_crud, mock_config, mock_exit, mock_enter, mock_get_agent,
+        self, mock_crud, mock_config, mock_transition, mock_get_agent,
         client, mock_issue
     ):
         """Test approving issue at plan_review stage."""
         mock_issue.stage = "plan_review"
         mock_crud.get_issue.return_value = mock_issue
-        mock_crud.update_issue_stage.return_value = mock_issue
         mock_get_agent.return_value = None
+
+        updated = MagicMock()
+        updated.stage = "implement"
+        mock_transition.return_value = updated
 
         mock_config.return_value.get_next_stage.return_value = ("implement", None, True)
 
@@ -523,60 +526,64 @@ class TestApproveIssueEndpoint:
 
         assert response.status_code == 404
 
-    @patch("agenttree.hooks.execute_exit_hooks")
+    @patch("agenttree.api.transition_issue")
     @patch("agenttree.config.load_config")
     @patch("agenttree.web.app.issue_crud")
     def test_approve_issue_exit_hook_validation_fails(
-        self, mock_crud, mock_config, mock_exit, client, mock_review_issue
+        self, mock_crud, mock_config, mock_transition, client, mock_review_issue
     ):
         """Test approve fails when exit hook validation fails."""
         from agenttree.hooks import ValidationError
 
         mock_crud.get_issue.return_value = mock_review_issue
         mock_config.return_value.get_next_stage.return_value = ("accepted", None, True)
-        mock_exit.side_effect = ValidationError("PR not ready")
+        mock_transition.side_effect = ValidationError("PR not ready")
 
         response = client.post("/api/issues/002/approve")
 
         assert response.status_code == 400
         assert "PR not ready" in response.json()["detail"]
 
-    @patch("agenttree.hooks.execute_exit_hooks")
+    @patch("agenttree.api.transition_issue")
     @patch("agenttree.config.load_config")
     @patch("agenttree.web.app.issue_crud")
     def test_approve_issue_update_fails(
-        self, mock_crud, mock_config, mock_exit, client, mock_review_issue
+        self, mock_crud, mock_config, mock_transition, client, mock_review_issue
     ):
-        """Test approve returns 500 when stage update fails."""
+        """Test approve returns 500 when transition_issue raises RuntimeError."""
         mock_crud.get_issue.return_value = mock_review_issue
-        mock_crud.update_issue_stage.return_value = None  # Update failed
         mock_config.return_value.get_next_stage.return_value = ("accepted", None, True)
+        mock_transition.side_effect = RuntimeError("Failed to update issue #2 to accepted")
 
         response = client.post("/api/issues/002/approve")
 
         assert response.status_code == 500
-        assert "Failed to update" in response.json()["detail"]
 
-    @patch("agenttree.hooks.execute_enter_hooks")
-    @patch("agenttree.hooks.execute_exit_hooks")
+    @patch("agenttree.state.get_active_agent")
+    @patch("agenttree.api.transition_issue")
     @patch("agenttree.config.load_config")
     @patch("agenttree.web.app.issue_crud")
-    def test_approve_issue_notifies_agent(
-        self, mock_crud, mock_config, mock_exit, mock_enter,
+    def test_approve_issue_calls_transition(
+        self, mock_crud, mock_config, mock_transition, mock_get_agent,
         client, mock_review_issue
     ):
-        """Test approve runs enter hooks after stage update."""
+        """Test approve calls transition_issue with correct args."""
         mock_crud.get_issue.return_value = mock_review_issue
-        mock_crud.update_issue_stage.return_value = mock_review_issue
+        mock_get_agent.return_value = None
+        updated = MagicMock()
+        updated.stage = "accepted"
+        mock_transition.return_value = updated
         mock_config.return_value.get_next_stage.return_value = ("accepted", None, True)
+        mock_config.return_value.allow_self_approval = False
 
         response = client.post("/api/issues/002/approve")
 
         assert response.status_code == 200
-        # Verify exit hooks were called (synchronous validation)
-        mock_exit.assert_called_once()
-        # Verify enter hooks were called (synchronous, within try/finally)
-        mock_enter.assert_called_once()
+        mock_transition.assert_called_once_with(
+            "2", "accepted", None,
+            skip_pr_approval=False,
+            trigger="web",
+        )
 
 
 class TestRebaseIssueEndpoint:

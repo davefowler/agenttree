@@ -675,8 +675,7 @@ def _action_merge_pr(pr_number: Optional[int], **kwargs: Any) -> None:
         RuntimeError: If merge fails for non-conflict reasons.
     """
     if pr_number is None:
-        console.print("[yellow]No PR to merge[/yellow]")
-        return
+        raise RuntimeError("No PR number provided for merge")
 
     # If in container, skip - host will handle
     if is_running_in_container():
@@ -2410,7 +2409,10 @@ def ensure_pr_for_issue(issue_id: str) -> bool:
         issue_id: Issue ID to create PR for
 
     Returns:
-        True if PR was created or already exists, False on failure
+        True if PR was created or already exists
+
+    Raises:
+        RuntimeError: If issue not found, no branch, worktree missing, push or PR creation fails
     """
     from agenttree.issues import get_issue, update_issue_metadata
     from agenttree.github import create_pr
@@ -2420,15 +2422,15 @@ def ensure_pr_for_issue(issue_id: str) -> bool:
 
     issue = get_issue(issue_id)
     if not issue:
-        return False
+        raise RuntimeError(f"Issue #{issue_id} not found")
 
     # Already has PR - idempotent
     if issue.pr_number:
         return True
 
-    # Need branch info (silently skip if not started yet)
+    # Need branch info
     if not issue.branch:
-        return False
+        raise RuntimeError(f"Issue #{issue_id} has no branch")
 
     # Find the worktree for this issue
     # Prefer stored worktree_dir, fall back to path guessing
@@ -2449,8 +2451,7 @@ def ensure_pr_for_issue(issue_id: str) -> bool:
                 break
 
     if not worktree_path or not worktree_path.exists():
-        console.print(f"[yellow]Worktree not found for issue #{issue_id}[/yellow]")
-        return False
+        raise RuntimeError(f"Worktree not found for issue #{issue_id}")
 
     console.print(f"[dim]Creating PR for issue #{issue_id} from host...[/dim]")
 
@@ -2527,8 +2528,7 @@ def ensure_pr_for_issue(issue_id: str) -> bool:
     )
 
     if result.returncode != 0:
-        console.print(f"[red]Failed to push: {result.stderr}[/red]")
-        return False
+        raise RuntimeError(f"Failed to push branch for issue #{issue_id}: {result.stderr.strip()}")
 
     # Create PR with link back to issue
     title = f"[Issue {issue.id}] {issue.title}"
@@ -2592,8 +2592,7 @@ def ensure_pr_for_issue(issue_id: str) -> bool:
                 update_issue_metadata(issue.id, pr_number=pr_number, pr_url=pr_url)
                 console.print(f"[green]✓ PR #{pr_number} already exists for issue #{issue_id}[/green]")
                 return True
-        console.print(f"[red]Failed to create PR: {e}[/red]")
-        return False
+        raise RuntimeError(f"Failed to create PR for issue #{issue_id}: {e}") from e
 
 
 def cleanup_issue_agent(issue: Issue) -> None:
