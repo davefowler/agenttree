@@ -195,7 +195,8 @@ def stop_all() -> None:
     Examples:
         agenttree stop-all            # Stop all agents
     """
-    from agenttree.state import list_active_agents, stop_agent
+    from agenttree.state import list_active_agents
+    from agenttree.api import stop_agent
     from agenttree.tmux import session_exists, kill_session
 
     config = load_config()

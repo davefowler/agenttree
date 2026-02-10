@@ -20,6 +20,7 @@ from agenttree.hooks import (
 from agenttree.issues import (
     list_issues as list_issues_func,
     get_next_stage,
+    get_issue_context,
     update_issue_stage,
     update_issue_metadata,
     load_skill,
@@ -235,9 +236,10 @@ def stage_next(issue_id: str | None, reassess: bool) -> None:
         next_substage = None
         is_human_review = False
     else:
-        # Calculate next stage
+        # Calculate next stage (pass issue context for condition evaluation)
+        issue_ctx = get_issue_context(issue, include_docs=False)
         next_stage, next_substage, is_human_review = get_next_stage(
-            issue.stage, issue.substage, issue.flow
+            issue.stage, issue.substage, issue.flow, issue_context=issue_ctx
         )
 
     # Check if we're already at the next stage (no change)
@@ -318,6 +320,24 @@ def stage_next(issue_id: str | None, reassess: bool) -> None:
         console.print(skill)
 
 
+def _notify_agent_of_redirect(issue_id: str, redirect: StageRedirect) -> None:
+    """Send a message to the developer agent about a redirect (e.g., merge conflict)."""
+    from agenttree.state import get_active_agent
+
+    agent = get_active_agent(issue_id)
+    if agent:
+        config = load_config()
+        tmux_manager = TmuxManager(config)
+        if tmux_manager.is_issue_running(agent.tmux_session):
+            message = f"Issue redirected: {redirect.reason} Run `agenttree next` for instructions."
+            tmux_manager.send_message_to_issue(agent.tmux_session, message, interrupt=True)
+            console.print(f"[green]✓ Notified developer agent to handle redirect[/green]")
+        else:
+            console.print(f"[yellow]Developer agent not running. Start with: agenttree start {issue_id}[/yellow]")
+    else:
+        console.print(f"[yellow]No active agent. Start with: agenttree start {issue_id}[/yellow]")
+
+
 @click.command("approve")
 @click.argument("issue_id", type=str)
 @click.option("--skip-approval", is_flag=True, help="Skip PR approval check (useful if you're the PR author)")
@@ -356,8 +376,11 @@ def approve_issue(issue_id: str, skip_approval: bool) -> None:
         console.print(f"[dim]Human review stages: {', '.join(human_review_stages)}[/dim]")
         sys.exit(1)
 
-    # Calculate next stage
-    next_stage, next_substage, _ = get_next_stage(issue.stage, issue.substage, issue.flow)
+    # Calculate next stage (pass issue context for condition evaluation)
+    issue_ctx = get_issue_context(issue, include_docs=False)
+    next_stage, next_substage, _ = get_next_stage(
+        issue.stage, issue.substage, issue.flow, issue_context=issue_ctx
+    )
 
     # Execute exit hooks
     from_stage = issue.stage
@@ -384,7 +407,22 @@ def approve_issue(issue_id: str, skip_approval: bool) -> None:
     # sync last_stage, defeating the stage mismatch detection in is_restart()
 
     # Execute enter hooks (after stage updated)
-    execute_enter_hooks(updated, next_stage, next_substage)
+    # StageRedirect can happen here (e.g., merge conflict → redirect to developer)
+    try:
+        execute_enter_hooks(updated, next_stage, next_substage)
+    except StageRedirect as redirect:
+        console.print(f"[yellow]Post-hook redirect: {redirect.reason}[/yellow]")
+        redirect_stage = redirect.target_stage
+        redirect_substage = redirect.target_substage
+        redirected = update_issue_stage(issue_id_normalized, redirect_stage, redirect_substage)
+        if redirected:
+            stage_str = redirect_stage
+            if redirect_substage:
+                stage_str += f".{redirect_substage}"
+            console.print(f"[yellow]Issue #{issue.id} redirected to {stage_str}[/yellow]")
+            # Notify developer agent to handle (e.g., rebase)
+            _notify_agent_of_redirect(issue_id_normalized, redirect)
+        return
 
     stage_str = next_stage
     if next_substage:
@@ -541,7 +579,7 @@ def shutdown_issue(
     repo_path = Path.cwd()
 
     # Stop ALL agents for this issue FIRST to avoid race conditions with worktree operations
-    from agenttree.state import stop_all_agents_for_issue
+    from agenttree.api import stop_all_agents_for_issue
     count = stop_all_agents_for_issue(issue_id_normalized, quiet=True)
     if count > 0:
         console.print(f"[dim]Stopped {count} agent(s) for issue #{issue.id}[/dim]")

@@ -1,9 +1,13 @@
 """Configuration management for AgentTree."""
 
+import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Union
 import yaml
+from jinja2 import Template, UndefinedError
 from pydantic import BaseModel, ConfigDict, Field
+
+logger = logging.getLogger(__name__)
 
 
 class ToolConfig(BaseModel):
@@ -43,8 +47,8 @@ class RoleConfig(BaseModel):
 
     # AI agent settings (only for AI roles, not manager)
     tool: Optional[str] = None  # AI tool to use (e.g., "claude", "codex")
-    model: Optional[str] = None  # Explicit model (e.g., "opus"). Overrides model_tier.
-    model_tier: Optional[str] = None  # Tier name (e.g., "high", "medium", "low") → resolved via model_tiers
+    model: str | None = None  # Explicit model (e.g., "opus"). Overrides model_tier.
+    model_tier: str | None = None  # Tier name (e.g., "high", "medium", "low") → resolved via model_tiers
     skill: Optional[str] = None  # Skill file path for custom agents
 
     # Process to run (for manager, this could be "agenttree watch")
@@ -122,8 +126,8 @@ class SubstageConfig(BaseModel):
     output: Optional[str] = None  # Document created by this substage
     output_optional: bool = False  # If True, missing output file doesn't error
     skill: Optional[str] = None   # Override skill file path
-    model: Optional[str] = None   # Explicit model (overrides model_tier and stage model)
-    model_tier: Optional[str] = None  # Tier name (e.g., "high") → resolved via model_tiers
+    model: str | None = None   # Explicit model (overrides model_tier and stage model)
+    model_tier: str | None = None  # Tier name (e.g., "high") → resolved via model_tiers
     redirect_only: bool = False   # Only reachable via StageRedirect, skipped in normal progression
     validators: list[str] = Field(default_factory=list)  # Legacy format
     pre_completion: list[dict] = Field(default_factory=list)  # Hooks before completing
@@ -137,11 +141,12 @@ class StageConfig(BaseModel):
     output: Optional[str] = None  # Document created by this stage
     output_optional: bool = False  # If True, missing output file doesn't error
     skill: Optional[str] = None   # Override skill file path
-    model: Optional[str] = None   # Explicit model (overrides model_tier)
-    model_tier: Optional[str] = None  # Tier name (e.g., "high") → resolved via model_tiers
+    model: str | None = None   # Explicit model (overrides model_tier)
+    model_tier: str | None = None  # Tier name (e.g., "high") → resolved via model_tiers
     human_review: bool = False    # Requires human approval to exit
     is_parking_lot: bool = False  # No agent auto-starts here (backlog, accepted, not_doing)
     redirect_only: bool = False   # Only reachable via StageRedirect, skipped in normal progression
+    condition: str | None = None  # Jinja expression - skip stage when false
     role: str = "developer"       # Who executes this stage: "developer", "manager", or custom role name
     review_doc: str | None = None  # Document to show by default when viewing issue in this stage
     substages: Dict[str, SubstageConfig] = Field(default_factory=dict)
@@ -208,12 +213,39 @@ class SecurityConfig(BaseModel):
     # Containers are always required - this is not configurable
 
 
+def evaluate_condition(condition: str, context: dict) -> bool:
+    """Evaluate a Jinja condition expression.
+
+    Args:
+        condition: Jinja template string (e.g., "{{ needs_ui_review }}")
+        context: Dictionary of context variables for template rendering
+
+    Returns:
+        True if condition evaluates to truthy value, False otherwise.
+
+    Raises:
+        TemplateSyntaxError: If the Jinja template has invalid syntax (config bug).
+    """
+    try:
+        template = Template(condition)
+        result = template.render(**context)
+        # Jinja renders to string, so check for truthy string values
+        # Empty string, "False", "false", "None", "none", "0" are falsy
+        result = result.strip().lower()
+        if result in ("", "false", "none", "0"):
+            return False
+        return bool(result)
+    except UndefinedError:
+        # Missing context variable - treat as falsy (skip the stage)
+        return False
+
+
 class RateLimitFallbackConfig(BaseModel):
     """Configuration for automatic rate limit fallback to API key mode.
-    
+
     When Claude Code Max subscription hits its usage limit, this feature
     automatically switches agents to API key mode until the limit resets.
-    
+
     Example:
         rate_limit_fallback:
           enabled: true
@@ -221,7 +253,7 @@ class RateLimitFallbackConfig(BaseModel):
           model: claude-sonnet-4-20250514
           switch_back_buffer_min: 5
     """
-    
+
     enabled: bool = False  # Off by default
     api_key_env: str = "ANTHROPIC_API_KEY"  # Name of env var (NOT the key itself!)
     model: str = "claude-sonnet-4-20250514"  # Cheaper model for API mode
@@ -239,11 +271,7 @@ class Config(BaseModel):
     port_range: str = "9001-9099"
     default_tool: str = "claude"
     default_model: str = "opus"  # Model to use for Claude CLI (opus, sonnet)
-    model_tiers: Dict[str, str] = Field(default_factory=lambda: {
-        "high": "opus",
-        "medium": "sonnet",
-        "low": "haiku",
-    })
+    model_tiers: dict[str, str] = Field(default_factory=dict)  # Tier name -> model name mapping
     refresh_interval: int = 10
     tools: Dict[str, ToolConfig] = Field(default_factory=dict)
     roles: Dict[str, RoleConfig] = Field(default_factory=dict)  # Role configurations
@@ -393,7 +421,7 @@ class Config(BaseModel):
         Returns:
             Container name
         """
-        return f"{self.project}-issue-{issue_id}"
+        return f"agenttree-{self.project}-{issue_id}"
 
     def get_tool_config(self, tool_name: str) -> ToolConfig:
         """Get configuration for a tool.
@@ -656,12 +684,12 @@ class Config(BaseModel):
                 configs.append(rc)
 
         for cfg in configs:
-            m = getattr(cfg, "model", None)
+            m: str | None = getattr(cfg, "model", None)
             if m:
                 return m
-            t = getattr(cfg, "model_tier", None)
-            if t:
-                return tiers.get(t, t)
+            t: str | None = getattr(cfg, "model_tier", None)
+            if t and t in tiers:
+                return tiers[t]
 
         return self.default_model
 
@@ -747,6 +775,7 @@ class Config(BaseModel):
         current_stage: str,
         current_substage: Optional[str] = None,
         flow: str = "default",
+        issue_context: dict | None = None,
     ) -> tuple[str, Optional[str], bool]:
         """Calculate the next stage/substage.
 
@@ -754,6 +783,7 @@ class Config(BaseModel):
             current_stage: Current stage name
             current_substage: Current substage (if any)
             flow: Flow name to use for stage progression (default: "default")
+            issue_context: Optional dict of issue context for condition evaluation
 
         Returns:
             Tuple of (next_stage, next_substage, is_human_review)
@@ -779,9 +809,10 @@ class Config(BaseModel):
             except ValueError:
                 pass  # substage not found, move to next stage
 
-        # Move to next stage (skip redirect_only stages)
+        # Move to next stage (skip redirect_only stages and stages with false conditions)
         # Use the flow's stage order instead of global stages
         stage_names = self.get_flow_stage_names(flow)
+        context = issue_context or {}
         try:
             stage_idx = stage_names.index(current_stage)
             # Look for next non-redirect_only stage
@@ -792,6 +823,10 @@ class Config(BaseModel):
                     # Skip redirect_only stages in normal progression
                     if next_stage.redirect_only:
                         continue
+                    # Skip stages with condition that evaluates to false
+                    if next_stage.condition:
+                        if not evaluate_condition(next_stage.condition, context):
+                            continue
                     next_substages = next_stage.substage_order()
                     next_substage = next_substages[0] if next_substages else None
                     return next_stage_name, next_substage, next_stage.human_review

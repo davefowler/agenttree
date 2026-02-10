@@ -75,6 +75,11 @@ def issue() -> None:
     is_flag=True,
     help="Skip auto-starting an agent for this issue"
 )
+@click.option(
+    "--needs-ui-review",
+    is_flag=True,
+    help="If set, ui_review stage will run for this issue"
+)
 @click.pass_context
 def issue_create(
     ctx: click.Context,
@@ -88,6 +93,7 @@ def issue_create(
     solutions: str | None,
     depends_on: tuple,
     no_start: bool,
+    needs_ui_review: bool,
 ) -> None:
     """Create a new issue and auto-start an agent.
 
@@ -174,6 +180,7 @@ def issue_create(
             context=context,
             solutions=solutions,
             dependencies=dependencies,
+            needs_ui_review=needs_ui_review,
         )
         console.print(f"[green]✓ Created issue {issue.id}: {issue.title}[/green]")
         console.print(f"[dim]  _agenttree/issues/{issue.id}-{issue.slug}/[/dim]")

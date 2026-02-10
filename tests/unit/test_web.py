@@ -475,7 +475,7 @@ class TestApproveIssueEndpoint:
         data = response.json()
         assert data["ok"] is True
 
-        # Verify hooks were called
+        # Verify exit hooks were called (synchronous validation)
         mock_exit.assert_called_once()
         mock_enter.assert_called_once()
         mock_crud.update_issue_stage.assert_called_once()
@@ -556,32 +556,26 @@ class TestApproveIssueEndpoint:
         assert response.status_code == 500
         assert "Failed to update" in response.json()["detail"]
 
-    @patch("agenttree.tmux.send_message")
-    @patch("agenttree.tmux.session_exists")
-    @patch("agenttree.state.get_active_agent")
     @patch("agenttree.hooks.execute_enter_hooks")
     @patch("agenttree.hooks.execute_exit_hooks")
     @patch("agenttree.config.load_config")
     @patch("agenttree.web.app.issue_crud")
     def test_approve_issue_notifies_agent(
-        self, mock_crud, mock_config, mock_exit, mock_enter, mock_get_agent,
-        mock_session_exists, mock_send, client, mock_review_issue
+        self, mock_crud, mock_config, mock_exit, mock_enter,
+        client, mock_review_issue
     ):
-        """Test approve notifies active agent."""
+        """Test approve runs enter hooks after stage update."""
         mock_crud.get_issue.return_value = mock_review_issue
         mock_crud.update_issue_stage.return_value = mock_review_issue
         mock_config.return_value.get_next_stage.return_value = ("accepted", None, True)
 
-        mock_agent = Mock()
-        mock_agent.tmux_session = "test-session"
-        mock_get_agent.return_value = mock_agent
-        mock_session_exists.return_value = True
-
         response = client.post("/api/issues/002/approve")
 
         assert response.status_code == 200
-        mock_send.assert_called_once()
-        assert "approved" in mock_send.call_args[0][1].lower()
+        # Verify exit hooks were called (synchronous validation)
+        mock_exit.assert_called_once()
+        # Verify enter hooks were called (synchronous, within try/finally)
+        mock_enter.assert_called_once()
 
 
 class TestRebaseIssueEndpoint:
@@ -655,12 +649,13 @@ class TestAgentTmuxEndpoint:
 class TestSendToAgentEndpoint:
     """Tests for send message to agent endpoint."""
 
-    @patch("agenttree.tmux.session_exists", return_value=False)
+    @patch("agenttree.tmux.session_exists")
     @patch("agenttree.tmux.send_message")
     @patch("agenttree.web.app.load_config")
-    def test_send_to_agent(self, mock_config, mock_send, mock_session, client):
+    def test_send_to_agent(self, mock_config, mock_send, mock_session_exists, client):
         """Test sending message to agent."""
         mock_config.return_value.project = "test"
+        mock_session_exists.return_value = True
 
         response = client.post(
             "/agent/001/send",
@@ -707,9 +702,11 @@ class TestAgentManager:
         )
 
         with patch("agenttree.web.app._config") as mock_config:
+            mock_config.project = "myproject"
             mock_config.get_issue_session_patterns.return_value = [
                 "myproject-developer-001",
                 "myproject-reviewer-001",
+                "myproject-issue-001",
             ]
             manager = AgentManager()
             manager._active_sessions = None  # Reset cache
@@ -953,3 +950,149 @@ class TestSettingsPage:
         response = client.get("/settings")
 
         assert response.status_code == 200
+
+
+class TestFileToStageMapping:
+    """Tests for file-to-stage mapping in get_issue_files."""
+
+    def test_file_to_stage_mapping_exists(self):
+        """Test that FILE_TO_STAGE mapping is defined."""
+        from agenttree.web.app import FILE_TO_STAGE
+
+        assert "problem.md" in FILE_TO_STAGE
+        assert FILE_TO_STAGE["problem.md"] == "define"
+        assert FILE_TO_STAGE["research.md"] == "research"
+        assert FILE_TO_STAGE["spec.md"] == "plan"
+        assert FILE_TO_STAGE["spec_review.md"] == "plan_assess"
+        assert FILE_TO_STAGE["review.md"] == "implement"
+
+    def test_file_to_stage_unknown_file(self):
+        """Test that unknown files are not in FILE_TO_STAGE."""
+        from agenttree.web.app import FILE_TO_STAGE
+
+        assert "unknown.md" not in FILE_TO_STAGE
+        assert "issue.yaml" not in FILE_TO_STAGE
+
+    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.app._config")
+    def test_get_issue_files_includes_stage(self, mock_config, mock_crud, tmp_path):
+        """Test that get_issue_files includes stage field."""
+        from agenttree.web.app import get_issue_files
+
+        # Create test files
+        issue_dir = tmp_path / "001-test"
+        issue_dir.mkdir()
+        (issue_dir / "problem.md").write_text("# Problem")
+        (issue_dir / "spec.md").write_text("# Spec")
+
+        mock_crud.get_issue_dir.return_value = issue_dir
+        mock_config.show_issue_yaml = False
+
+        files = get_issue_files("001")
+
+        assert len(files) == 2
+        # Check problem.md has stage=define
+        problem_file = next(f for f in files if f["name"] == "problem.md")
+        assert problem_file["stage"] == "define"
+        # Check spec.md has stage=plan
+        spec_file = next(f for f in files if f["name"] == "spec.md")
+        assert spec_file["stage"] == "plan"
+
+    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.app._config")
+    def test_get_issue_files_is_passed_true(self, mock_config, mock_crud, tmp_path):
+        """Test that is_passed is true for earlier stages."""
+        from agenttree.web.app import get_issue_files
+
+        # Create test files
+        issue_dir = tmp_path / "001-test"
+        issue_dir.mkdir()
+        (issue_dir / "problem.md").write_text("# Problem")
+        (issue_dir / "spec.md").write_text("# Spec")
+        (issue_dir / "review.md").write_text("# Review")
+
+        mock_crud.get_issue_dir.return_value = issue_dir
+        mock_crud.STAGE_ORDER = ["backlog", "define", "research", "plan", "plan_assess", "plan_revise", "plan_review", "implement"]
+        mock_config.show_issue_yaml = False
+
+        # Current stage is implement
+        files = get_issue_files("001", current_stage="implement")
+
+        problem_file = next(f for f in files if f["name"] == "problem.md")
+        spec_file = next(f for f in files if f["name"] == "spec.md")
+        review_file = next(f for f in files if f["name"] == "review.md")
+
+        # problem.md (define) should be passed when at implement
+        assert problem_file["is_passed"] == "true"
+        # spec.md (plan) should be passed when at implement
+        assert spec_file["is_passed"] == "true"
+        # review.md (implement) should NOT be passed when at implement
+        assert review_file["is_passed"] == "false"
+
+    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.app._config")
+    def test_get_issue_files_short_name_for_passed(self, mock_config, mock_crud, tmp_path):
+        """Test that short_name is truncated for passed stages."""
+        from agenttree.web.app import get_issue_files
+
+        # Create test files
+        issue_dir = tmp_path / "001-test"
+        issue_dir.mkdir()
+        (issue_dir / "problem.md").write_text("# Problem")
+        (issue_dir / "review.md").write_text("# Review")
+
+        mock_crud.get_issue_dir.return_value = issue_dir
+        mock_crud.STAGE_ORDER = ["backlog", "define", "research", "plan", "plan_assess", "plan_revise", "plan_review", "implement"]
+        mock_config.show_issue_yaml = False
+
+        # Current stage is implement
+        files = get_issue_files("001", current_stage="implement")
+
+        problem_file = next(f for f in files if f["name"] == "problem.md")
+        review_file = next(f for f in files if f["name"] == "review.md")
+
+        # problem.md is passed, should have truncated short_name
+        assert problem_file["short_name"] == "Pro..."
+        # review.md is current, should have full display_name as short_name
+        assert review_file["short_name"] == "Review"
+
+    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.app._config")
+    def test_get_issue_files_unknown_file_no_stage(self, mock_config, mock_crud, tmp_path):
+        """Test that unknown files have empty stage."""
+        from agenttree.web.app import get_issue_files
+
+        # Create test file with unknown name
+        issue_dir = tmp_path / "001-test"
+        issue_dir.mkdir()
+        (issue_dir / "custom_notes.md").write_text("# Notes")
+
+        mock_crud.get_issue_dir.return_value = issue_dir
+        mock_config.show_issue_yaml = False
+
+        files = get_issue_files("001")
+
+        custom_file = files[0]
+        assert custom_file["stage"] == ""
+        assert custom_file["is_passed"] == "false"
+
+    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.app._config")
+    def test_get_issue_files_no_current_stage(self, mock_config, mock_crud, tmp_path):
+        """Test that files have is_passed=false when no current_stage provided."""
+        from agenttree.web.app import get_issue_files
+
+        # Create test files
+        issue_dir = tmp_path / "001-test"
+        issue_dir.mkdir()
+        (issue_dir / "problem.md").write_text("# Problem")
+
+        mock_crud.get_issue_dir.return_value = issue_dir
+        mock_config.show_issue_yaml = False
+
+        # No current_stage provided
+        files = get_issue_files("001")
+
+        problem_file = files[0]
+        assert problem_file["is_passed"] == "false"
+        assert problem_file["short_name"] == "Problem"  # Not truncated

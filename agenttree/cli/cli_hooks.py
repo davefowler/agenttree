@@ -7,7 +7,7 @@ import click
 from agenttree.cli._utils import console, get_issue_func, normalize_issue_id
 from agenttree.config import load_config
 from agenttree.hooks import parse_hook, is_running_in_container
-from agenttree.issues import get_next_stage
+from agenttree.issues import get_next_stage, get_issue_context
 
 
 @click.group("hooks")
@@ -109,7 +109,10 @@ def hooks_check(issue_id: str, event: str) -> None:
 
     if event in ("post_start", "both"):
         # For post_start, show what would run on NEXT stage
-        next_stage, next_substage, _ = get_next_stage(issue.stage, issue.substage, issue.flow)
+        issue_ctx = get_issue_context(issue, include_docs=False)
+        next_stage, next_substage, _ = get_next_stage(
+            issue.stage, issue.substage, issue.flow, issue_context=issue_ctx
+        )
         if next_stage:
             next_stage_config = config.get_stage(next_stage)
             if next_stage_config:

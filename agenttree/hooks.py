@@ -259,6 +259,7 @@ Configure in .agenttree.yaml under manager_hooks:
 Built-in manager hooks:
     push_pending_branches - Push any local branches with unpushed commits
     check_manager_stages - Process issues in manager-owned stages
+    ensure_review_branches - Create missing PRs and rebase branches in implementation_review
     check_custom_agent_stages - Spawn custom agents for issues in custom agent stages
     check_merged_prs - Detect externally merged PRs and update issue status
 
@@ -306,6 +307,7 @@ Manager hooks (for post-sync operations):
 
 import re
 import subprocess
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -346,6 +348,27 @@ class StageRedirect(Exception):
         super().__init__(f"Redirect to stage {target}: {reason}")
 
 
+def _extract_markdown_section(content: str, section: str) -> tuple[bool, str]:
+    """Extract section content from markdown, supporting ## and ### headers.
+
+    Finds content between a section header (## or ###) and the next same-level
+    or higher header, or end of file.
+
+    Args:
+        content: The full markdown content to search
+        section: The section name to find (without # prefix)
+
+    Returns:
+        Tuple of (found, section_content) where found is True if section exists
+        and section_content is the text between the header and next header/EOF.
+    """
+    pattern = rf'^##[#]?\s*{re.escape(section)}.*?\n(.*?)(?=\n##[#]? |\Z)'
+    match = re.search(pattern, content, re.MULTILINE | re.DOTALL)
+    if match:
+        return True, match.group(1)
+    return False, ""
+
+
 # =============================================================================
 # Hook Type Registry
 # =============================================================================
@@ -363,8 +386,8 @@ HOOK_TYPES = {
     "loop_check",  # Review loop: count iterations and fail if max exceeded
     "rollback",  # Review loop: programmatic rollback to earlier stage
     # Manager hooks (run on post-sync)
-    "push_pending_branches", "check_manager_stages", "check_merged_prs",
-    "check_ci_status", "check_custom_agent_stages",
+    "push_pending_branches", "check_manager_stages", "ensure_review_branches",
+    "check_merged_prs", "check_ci_status", "check_custom_agent_stages",
 }
 
 # =============================================================================
@@ -598,17 +621,59 @@ def _action_create_pr(issue_dir: Path, issue_id: str = "", issue_title: str = ""
     2. Host sync calls check_manager_stages()
     3. For issues in manager stages, host runs post_start hooks
     4. This hook (create_pr) calls ensure_pr_for_issue() to create the PR
+
+    Raises:
+        RuntimeError: If PR creation fails (prevents silent progression without a PR).
     """
     if not issue_id:
-        console.print(f"[yellow]create_pr hook: no issue_id provided[/yellow]")
-        return
+        raise RuntimeError("create_pr hook: no issue_id provided")
 
-    # Delegate to ensure_pr_for_issue which handles the actual PR creation
-    ensure_pr_for_issue(issue_id)
+    if not ensure_pr_for_issue(issue_id):
+        raise RuntimeError(f"Failed to create PR for issue #{issue_id}. Will retry on next heartbeat.")
+
+
+def _try_update_pr_branch(pr_number: int) -> bool:
+    """Try to update a PR branch by merging base branch into it.
+
+    Uses GitHub API to merge the base branch (main) into the PR head branch.
+    This resolves simple merge situations without needing manual intervention.
+
+    Returns:
+        True if branch was updated (or already up to date), False on conflict.
+    """
+    try:
+        result = subprocess.run(
+            ["gh", "api", "-X", "PUT",
+             f"repos/{{owner}}/{{repo}}/pulls/{pr_number}/update-branch",
+             "-f", "expected_head_oid="],
+            capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode == 0:
+            console.print(f"[dim]Branch updated with latest main[/dim]")
+            time.sleep(3)  # Give GitHub a moment to process
+            return True
+        # 422 = conflicts, 409 = already up to date
+        if "merge conflict" in result.stderr.lower() or "conflict" in result.stderr.lower():
+            return False
+        # Already up to date is fine
+        return True
+    except Exception:
+        return True  # Best-effort; proceed to merge attempt anyway
 
 
 def _action_merge_pr(pr_number: Optional[int], **kwargs: Any) -> None:
-    """Merge PR for an issue (action hook helper)."""
+    """Merge PR for an issue. Tries to update branch first, redirects on conflict.
+
+    Flow:
+        1. Try to merge directly
+        2. If merge fails (likely conflicts): try updating branch from main
+        3. If update succeeds: retry merge
+        4. If conflicts: raise StageRedirect so developer can rebase
+
+    Raises:
+        StageRedirect: If PR has merge conflicts that need developer intervention.
+        RuntimeError: If merge fails for non-conflict reasons.
+    """
     if pr_number is None:
         console.print("[yellow]No PR to merge[/yellow]")
         return
@@ -623,8 +688,38 @@ def _action_merge_pr(pr_number: Optional[int], **kwargs: Any) -> None:
 
     config = load_config()
 
+    # First attempt: try to merge directly
     console.print(f"[dim]Merging PR #{pr_number}...[/dim]")
-    merge_pr(pr_number, method=config.merge_strategy)
+    try:
+        merge_pr(pr_number, method=config.merge_strategy)
+    except RuntimeError as e:
+        error_msg = str(e).lower()
+        is_conflict = any(word in error_msg for word in ("conflict", "not mergeable", "merge blocked"))
+
+        if not is_conflict:
+            raise  # Non-conflict errors fail loudly
+
+        # Conflict: try updating branch from main first
+        console.print(f"[yellow]Merge blocked - trying to update branch from main...[/yellow]")
+        if _try_update_pr_branch(pr_number):
+            # Branch updated, retry merge
+            try:
+                merge_pr(pr_number, method=config.merge_strategy)
+            except RuntimeError:
+                # Still can't merge after update - redirect to developer
+                raise StageRedirect(
+                    target_stage="implement",
+                    target_substage="code",
+                    reason=f"PR #{pr_number} can't be merged after branch update. Developer needs to rebase on main.",
+                )
+        else:
+            # Can't auto-update (real conflicts) - redirect to developer
+            raise StageRedirect(
+                target_stage="implement",
+                target_substage="code",
+                reason=f"PR #{pr_number} has merge conflicts. Developer needs to rebase on main.",
+            )
+
     console.print(f"[green]✓ PR #{pr_number} merged[/green]")
 
     # Run post_merge hooks
@@ -731,16 +826,11 @@ def run_builtin_validator(
             section = params["section"]
             expect = params["expect"]
 
-            # Find section content (between ## or ### Section and next same-level or higher header or end)
-            # Accepts both H2 (##) and H3 (###) section headers
-            # The lookahead stops at "\n## " or "\n### " followed by a letter/word (not "#")
-            pattern = rf'^##[#]?\s*{re.escape(section)}.*?\n(.*?)(?=\n##[#]? [A-Za-z]|\Z)'
-            section_match = re.search(pattern, content, re.MULTILINE | re.DOTALL)
+            found, section_content = _extract_markdown_section(content, section)
 
-            if not section_match:
+            if not found:
                 errors.append(f"Section '{section}' not found in {params['file']}")
             else:
-                section_content = section_match.group(1)
                 # Remove HTML comments
                 section_content = re.sub(r'<!--.*?-->', '', section_content, flags=re.DOTALL)
 
@@ -792,13 +882,11 @@ def run_builtin_validator(
             content = file_path.read_text()
 
             if section:
-                # Find section content
-                pattern = rf'^##\s*{re.escape(section)}.*?\n(.*?)(?=\n## [A-Za-z]|\Z)'
-                section_match = re.search(pattern, content, re.MULTILINE | re.DOTALL)
-                if not section_match:
+                found, section_content = _extract_markdown_section(content, section)
+                if not found:
                     errors.append(f"Section '{section}' not found in {params['file']}")
                 else:
-                    content = section_match.group(1)
+                    content = section_content
 
             # Count words (split on whitespace, filter empty)
             words = [w for w in content.split() if w.strip()]
@@ -818,13 +906,11 @@ def run_builtin_validator(
             errors.append(f"File '{params['file']}' not found for has_list_items check")
         else:
             content = file_path.read_text()
-            pattern = rf'^##\s*{re.escape(section)}.*?\n(.*?)(?=\n## [A-Za-z]|\Z)'
-            section_match = re.search(pattern, content, re.MULTILINE | re.DOTALL)
+            found, section_content = _extract_markdown_section(content, section)
 
-            if not section_match:
+            if not found:
                 errors.append(f"Section '{section}' not found in {params['file']}")
             else:
-                section_content = section_match.group(1)
                 # Count list items (lines starting with - or *)
                 list_items = re.findall(r'^\s*[-*]\s+\S', section_content, re.MULTILINE)
                 if len(list_items) < min_items:
@@ -842,16 +928,15 @@ def run_builtin_validator(
             errors.append(f"File '{params['file']}' not found for contains check")
         else:
             content = file_path.read_text()
-            pattern = rf'^##\s*{re.escape(section)}.*?\n(.*?)(?=\n## [A-Za-z]|\Z)'
-            section_match = re.search(pattern, content, re.MULTILINE | re.DOTALL)
+            found, section_content = _extract_markdown_section(content, section)
 
-            if not section_match:
+            if not found:
                 errors.append(f"Section '{section}' not found in {params['file']}")
             else:
-                section_content = section_match.group(1).strip()
+                section_content = section_content.strip()
                 # Check if any of the values appear in the section
-                found = any(v.lower() in section_content.lower() for v in values)
-                if not found:
+                value_found = any(v.lower() in section_content.lower() for v in values)
+                if not value_found:
                     errors.append(
                         f"Section '{section}' must contain one of: {', '.join(values)}"
                     )
@@ -1080,8 +1165,11 @@ def run_builtin_validator(
 
     elif hook_type == "merge_pr":
         # Merge PR on transition to accepted
+        # StageRedirect propagates (e.g., conflict → redirect to developer)
         try:
             _action_merge_pr(pr_number, **kwargs)
+        except StageRedirect:
+            raise  # Let redirect propagate to caller
         except Exception as e:
             errors.append(f"Failed to merge PR: {e}")
 
@@ -1224,6 +1312,12 @@ def run_builtin_validator(
         agents_dir = kwargs.get("agents_dir")
         if agents_dir:
             check_manager_stages(agents_dir)
+
+    elif hook_type == "ensure_review_branches":
+        from agenttree.agents_repo import ensure_review_branches
+        agents_dir = kwargs.get("agents_dir")
+        if agents_dir:
+            ensure_review_branches(agents_dir)
 
     elif hook_type == "check_merged_prs":
         from agenttree.agents_repo import check_merged_prs
@@ -1438,7 +1532,7 @@ def run_hook(
         if hook_type == "run":
             # Shell command hook
             errors = run_command_hook(context_dir, params, **kwargs)
-        elif hook_type in ("push_pending_branches", "check_manager_stages", "check_merged_prs", "check_custom_agent_stages"):
+        elif hook_type in ("push_pending_branches", "check_manager_stages", "ensure_review_branches", "check_merged_prs", "check_custom_agent_stages"):
             # Manager hooks need agents_dir - use from kwargs if provided, otherwise context_dir
             if "agents_dir" not in kwargs:
                 kwargs["agents_dir"] = context_dir
@@ -1624,13 +1718,13 @@ def execute_exit_hooks(issue: "Issue", stage: str, substage: Optional[str] = Non
 
 
 def execute_enter_hooks(issue: "Issue", stage: str, substage: Optional[str] = None) -> None:
-    """Execute post_start hooks for a stage/substage. Logs warnings but doesn't block.
+    """Execute post_start hooks for a stage/substage.
 
-    This is the config-driven replacement for execute_post_hooks.
+    Non-critical errors are logged as warnings. Critical failures (like merge conflicts)
+    raise StageRedirect so the issue can be routed back for developer intervention.
 
     Hook execution order: substage → stage (inner to outer).
     When entering the FIRST substage, runs substage hooks first, then stage-level hooks.
-    This ensures stage-level setup (like create_pr) runs when entering a stage with substages.
 
     For manager stages (role: manager), hooks are skipped when running in a container.
     The host will execute them via check_manager_stages() during sync.
@@ -1639,6 +1733,9 @@ def execute_enter_hooks(issue: "Issue", stage: str, substage: Optional[str] = No
         issue: Issue that was transitioned
         stage: New stage name
         substage: New substage name (optional)
+
+    Raises:
+        StageRedirect: If a hook needs to route the issue elsewhere (e.g., merge conflict).
     """
     from agenttree.config import load_config
     from agenttree.issues import get_issue_dir
@@ -2409,9 +2506,22 @@ def ensure_pr_for_issue(issue_id: str) -> bool:
                 capture_output=True, text=True, timeout=30,
             )
 
+    # Detect the actual branch in the worktree (issue.branch may be stale/wrong)
+    actual_branch_result = subprocess.run(
+        ["git", "-C", str(worktree_path), "rev-parse", "--abbrev-ref", "HEAD"],
+        capture_output=True, text=True, timeout=10,
+    )
+    actual_branch = actual_branch_result.stdout.strip() if actual_branch_result.returncode == 0 else ""
+    push_branch = actual_branch or issue.branch
+
+    if actual_branch and actual_branch != issue.branch:
+        console.print(f"[yellow]Branch mismatch: issue says '{issue.branch}', worktree is on '{actual_branch}'. Using worktree branch.[/yellow]")
+        # Fix stored branch name
+        update_issue_metadata(issue_id, branch=actual_branch)
+
     # Push the branch from the worktree (force-with-lease since squash rewrites history)
     result = subprocess.run(
-        ["git", "-C", str(worktree_path), "push", "--force-with-lease", "-u", "origin", issue.branch],
+        ["git", "-C", str(worktree_path), "push", "--force-with-lease", "-u", "origin", push_branch],
         capture_output=True,
         text=True
     )
@@ -2453,7 +2563,7 @@ def ensure_pr_for_issue(issue_id: str) -> bool:
     body += f"---\n🤖 Generated with [Claude Code](https://claude.com/claude-code)"
 
     try:
-        pr = create_pr(title=title, body=body, branch=issue.branch, base="main")
+        pr = create_pr(title=title, body=body, branch=push_branch, base="main")
         update_issue_metadata(issue.id, pr_number=pr.number, pr_url=pr.url)
         console.print(f"[green]✓ PR #{pr.number} created for issue #{issue_id}[/green]")
 
@@ -2495,7 +2605,7 @@ def cleanup_issue_agent(issue: Issue) -> None:
     Args:
         issue: Issue that was transitioned to accepted
     """
-    from agenttree.state import stop_all_agents_for_issue
+    from agenttree.api import stop_all_agents_for_issue
 
     # Stop all agents for this issue (handles tmux, container, and state cleanup)
     count = stop_all_agents_for_issue(issue.id)
