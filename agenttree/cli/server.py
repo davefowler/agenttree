@@ -38,8 +38,13 @@ def _start_manager(
         sys.exit(1)
 
     tool_name = tool or config.default_tool
+    # Resolve model through standard chain: stage → role → default
+    # Manager has no stage, so this picks up the role model (e.g., sonnet)
+    model_name = config.model_for("manager", role="manager")
+
     console.print(f"[green]Starting manager agent...[/green]")
     console.print(f"[dim]Tool: {tool_name}[/dim]")
+    console.print(f"[dim]Model: {model_name}[/dim]")
     console.print(f"[dim]Session: {session_name}[/dim]")
 
     # Start manager on host (not in container)
@@ -47,6 +52,7 @@ def _start_manager(
         session_name=session_name,
         repo_path=repo_path,
         tool_name=tool_name,
+        model=model_name,
     )
 
     console.print(f"\n[bold]Manager ready[/bold]")

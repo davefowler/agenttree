@@ -178,8 +178,8 @@ def start_agent(
 
     # Start agent in tmux (always in container)
     tool_name = tool or config.default_tool
-    # Resolve model from stage config (substage → stage → default)
-    model_name = config.model_for(issue.stage, issue.substage)
+    # Resolve model: substage → stage → role → default
+    model_name = config.model_for(issue.stage, issue.substage, role=role)
     runtime = get_container_runtime()
 
     if not runtime.is_available():
