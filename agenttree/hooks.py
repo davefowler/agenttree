@@ -346,6 +346,27 @@ class StageRedirect(Exception):
         super().__init__(f"Redirect to stage {target}: {reason}")
 
 
+def _extract_markdown_section(content: str, section: str) -> tuple[bool, str]:
+    """Extract section content from markdown, supporting ## and ### headers.
+
+    Finds content between a section header (## or ###) and the next same-level
+    or higher header, or end of file.
+
+    Args:
+        content: The full markdown content to search
+        section: The section name to find (without # prefix)
+
+    Returns:
+        Tuple of (found, section_content) where found is True if section exists
+        and section_content is the text between the header and next header/EOF.
+    """
+    pattern = rf'^##[#]?\s*{re.escape(section)}.*?\n(.*?)(?=\n##[#]? |\Z)'
+    match = re.search(pattern, content, re.MULTILINE | re.DOTALL)
+    if match:
+        return True, match.group(1)
+    return False, ""
+
+
 # =============================================================================
 # Hook Type Registry
 # =============================================================================
@@ -731,16 +752,11 @@ def run_builtin_validator(
             section = params["section"]
             expect = params["expect"]
 
-            # Find section content (between ## or ### Section and next same-level or higher header or end)
-            # Accepts both H2 (##) and H3 (###) section headers
-            # The lookahead stops at "\n## " or "\n### " followed by a letter/word (not "#")
-            pattern = rf'^##[#]?\s*{re.escape(section)}.*?\n(.*?)(?=\n##[#]? [A-Za-z]|\Z)'
-            section_match = re.search(pattern, content, re.MULTILINE | re.DOTALL)
+            found, section_content = _extract_markdown_section(content, section)
 
-            if not section_match:
+            if not found:
                 errors.append(f"Section '{section}' not found in {params['file']}")
             else:
-                section_content = section_match.group(1)
                 # Remove HTML comments
                 section_content = re.sub(r'<!--.*?-->', '', section_content, flags=re.DOTALL)
 
@@ -792,13 +808,11 @@ def run_builtin_validator(
             content = file_path.read_text()
 
             if section:
-                # Find section content
-                pattern = rf'^##\s*{re.escape(section)}.*?\n(.*?)(?=\n## [A-Za-z]|\Z)'
-                section_match = re.search(pattern, content, re.MULTILINE | re.DOTALL)
-                if not section_match:
+                found, section_content = _extract_markdown_section(content, section)
+                if not found:
                     errors.append(f"Section '{section}' not found in {params['file']}")
                 else:
-                    content = section_match.group(1)
+                    content = section_content
 
             # Count words (split on whitespace, filter empty)
             words = [w for w in content.split() if w.strip()]
@@ -818,13 +832,11 @@ def run_builtin_validator(
             errors.append(f"File '{params['file']}' not found for has_list_items check")
         else:
             content = file_path.read_text()
-            pattern = rf'^##\s*{re.escape(section)}.*?\n(.*?)(?=\n## [A-Za-z]|\Z)'
-            section_match = re.search(pattern, content, re.MULTILINE | re.DOTALL)
+            found, section_content = _extract_markdown_section(content, section)
 
-            if not section_match:
+            if not found:
                 errors.append(f"Section '{section}' not found in {params['file']}")
             else:
-                section_content = section_match.group(1)
                 # Count list items (lines starting with - or *)
                 list_items = re.findall(r'^\s*[-*]\s+\S', section_content, re.MULTILINE)
                 if len(list_items) < min_items:
@@ -842,16 +854,15 @@ def run_builtin_validator(
             errors.append(f"File '{params['file']}' not found for contains check")
         else:
             content = file_path.read_text()
-            pattern = rf'^##\s*{re.escape(section)}.*?\n(.*?)(?=\n## [A-Za-z]|\Z)'
-            section_match = re.search(pattern, content, re.MULTILINE | re.DOTALL)
+            found, section_content = _extract_markdown_section(content, section)
 
-            if not section_match:
+            if not found:
                 errors.append(f"Section '{section}' not found in {params['file']}")
             else:
-                section_content = section_match.group(1).strip()
+                section_content = section_content.strip()
                 # Check if any of the values appear in the section
-                found = any(v.lower() in section_content.lower() for v in values)
-                if not found:
+                value_found = any(v.lower() in section_content.lower() for v in values)
+                if not value_found:
                     errors.append(
                         f"Section '{section}' must contain one of: {', '.join(values)}"
                     )

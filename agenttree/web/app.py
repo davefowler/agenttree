@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.base import BaseHTTPMiddleware
 from pathlib import Path
+import logging
 import subprocess
 import secrets
 import os
@@ -1136,12 +1137,10 @@ async def approve_issue(
         issue_crud.set_processing(issue_id_normalized, "enter")
 
         # Execute enter hooks
-        import logging
-        log = logging.getLogger("agenttree.web")
         try:
             await asyncio.to_thread(execute_enter_hooks, updated, next_stage, next_substage)
         except Exception as e:
-            log.warning("Enter hooks failed for issue %s: %s", issue_id_normalized, e)
+            logger.warning("Enter hooks failed for issue %s: %s", issue_id_normalized, e)
 
         # Notify agent to continue (if active)
         try:
@@ -1154,7 +1153,7 @@ async def approve_issue(
                     message = "Your work was approved! Run `agenttree next` for instructions."
                     await asyncio.to_thread(send_message, agent.tmux_session, message)
         except Exception as e:
-            log.warning("Agent notification failed for issue %s: %s", issue_id_normalized, e)
+            logger.warning("Agent notification failed for issue %s: %s", issue_id_normalized, e)
 
         return {"ok": True}
     except HTTPException:
