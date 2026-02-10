@@ -86,7 +86,7 @@ def start_manager(agents_dir: Path, **kwargs: Any) -> None:
     from agenttree.tmux import session_exists
     
     config = load_config()
-    manager_session = f"{config.project}-manager-000"
+    manager_session = config.get_manager_tmux_session()
     
     if session_exists(manager_session):
         console.print("[dim]Manager already running[/dim]")
@@ -129,7 +129,7 @@ def auto_start_agents(agents_dir: Path, **kwargs: Any) -> None:
     
     for issue in issues:
         # Fast check using session_exists instead of slow get_active_agent
-        session_name = f"{config.project}-developer-{issue.id}"
+        session_name = config.get_issue_tmux_session(issue.id, "developer")
         if session_exists(session_name):
             console.print(f"[dim]Issue #{issue.id} already has an agent[/dim]")
             continue
@@ -174,8 +174,8 @@ def stop_all_agents(agents_dir: Path, **kwargs: Any) -> None:
     if result.returncode != 0:
         console.print("[dim]No tmux sessions running[/dim]")
         # Still clean up containers in case there are orphans
-        from agenttree.state import cleanup_all_agenttree_containers
-        cleanup_all_agenttree_containers(quiet=True)
+        from agenttree.api import cleanup_all_with_retry
+        cleanup_all_with_retry(quiet=True)
         console.print(f"[green]✓ Stopped 0 agent(s)[/green]")
         return
     
@@ -195,28 +195,8 @@ def stop_all_agents(agents_dir: Path, **kwargs: Any) -> None:
     
     # Step 3: Clean up all agenttree containers with multiple passes
     # Apple Container deletion can take a long time - retry until all are gone
-    from agenttree.container import get_container_runtime
-    from agenttree.state import cleanup_all_agenttree_containers
-    
-    runtime = get_container_runtime()
-    total_removed = 0
-    
-    for attempt in range(5):  # Up to 5 passes
-        removed = cleanup_all_agenttree_containers(quiet=True)
-        total_removed += removed
-        
-        if removed == 0:
-            # Check if there are still containers that weren't ready to delete
-            containers = runtime.list_all()
-            remaining = [c for c in containers if c["name"].startswith("agenttree-") or "agenttree" in c.get("image", "")]
-            if remaining:
-                time.sleep(3.0)  # Wait for containers to finish transitioning
-                continue
-            break  # No containers remaining
-        time.sleep(2.0)  # Wait between passes
-    
-    if total_removed > 0:
-        console.print(f"[dim]Cleaned up {total_removed} container(s)[/dim]")
+    from agenttree.api import cleanup_all_with_retry
+    cleanup_all_with_retry(max_passes=5, delay_s=2.0, quiet=True)
     
     console.print(f"[green]✓ Stopped {stopped} agent(s)[/green]")
 
@@ -304,7 +284,7 @@ def check_stalled_agents(
     from agenttree.tmux import session_exists, send_message, is_claude_running
     
     config = load_config()
-    manager_session = f"{config.project}-manager-000"
+    manager_session = config.get_manager_tmux_session()
     
     # Get active issues (not backlog/accepted/not_doing)
     issues = [
@@ -317,7 +297,7 @@ def check_stalled_agents(
     
     for issue in issues:
         # Build session name directly (fast) instead of get_active_agent (slow)
-        session_name = f"{config.project}-developer-{issue.id}"
+        session_name = config.get_issue_tmux_session(issue.id, "developer")
         
         # Check if session exists
         if not session_exists(session_name):
@@ -680,7 +660,7 @@ def switch_agent_to_api_key(
     claude_cmd = f"claude --model {model} --dangerously-skip-permissions"
     
     # For containerized agents, we need to exec into the container
-    container_name = f"agenttree-{config.project}-{issue_id}"
+    container_name = config.get_issue_container_name(issue_id)
     
     # Create new tmux session that execs into the container
     exec_cmd = f"docker exec -it {container_name} {claude_cmd} 2>/dev/null || container exec -it {container_name} {claude_cmd}"
@@ -740,8 +720,8 @@ def switch_agent_to_oauth(
     
     # Build new claude command with -r to resume API key session (tested to work!)
     claude_cmd = f"claude -r --model {model} --dangerously-skip-permissions"
-    
-    container_name = f"agenttree-{config.project}-{issue_id}"
+
+    container_name = config.get_issue_container_name(issue_id)
     
     # Note: We unset ANTHROPIC_API_KEY to force oauth mode
     exec_cmd = f"docker exec -it {container_name} sh -c 'unset ANTHROPIC_API_KEY && {claude_cmd}' 2>/dev/null || container exec -it {container_name} sh -c 'unset ANTHROPIC_API_KEY && {claude_cmd}'"

@@ -2495,7 +2495,7 @@ def cleanup_issue_agent(issue: Issue) -> None:
     Args:
         issue: Issue that was transitioned to accepted
     """
-    from agenttree.state import stop_all_agents_for_issue
+    from agenttree.api import stop_all_agents_for_issue
 
     # Stop all agents for this issue (handles tmux, container, and state cleanup)
     count = stop_all_agents_for_issue(issue.id)
