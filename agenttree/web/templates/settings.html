@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Settings - AgentTree</title>
+    <link rel="stylesheet" href="/static/styles.css?v=9">
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+</head>
+<body>
+    {% include 'partials/header.html' %}
+
+    <div class="settings-container">
+        <div class="settings-header">
+            <h2>Settings</h2>
+            <p class="settings-description">Configure AgentTree project settings. Changes to most settings require a server restart to take effect.</p>
+        </div>
+
+        {% if saved %}
+        <div class="settings-saved-message">
+            Settings saved successfully. Restart the server for changes to take effect.
+        </div>
+        {% endif %}
+
+        <form method="POST" action="/settings" class="settings-form">
+            <!-- Appearance Section -->
+            <div class="settings-section">
+                <h3>Appearance</h3>
+                <div class="settings-group">
+                    <div class="setting-item">
+                        <label class="setting-label">Theme</label>
+                        <p class="setting-description">Choose light or dark mode (saved in browser)</p>
+                        <div class="theme-toggle-group">
+                            <button type="button" class="theme-btn" data-theme="light" onclick="setTheme('light')">
+                                Light
+                            </button>
+                            <button type="button" class="theme-btn" data-theme="dark" onclick="setTheme('dark')">
+                                Dark
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Agent Settings Section -->
+            <div class="settings-section">
+                <h3>Agent Defaults</h3>
+                <div class="settings-group">
+                    <div class="setting-item">
+                        <label class="setting-label" for="default_tool">{{ settings.default_tool.label }}</label>
+                        <p class="setting-description">{{ settings.default_tool.description }}</p>
+                        <select name="default_tool" id="default_tool" class="setting-select">
+                            {% for tool in options.default_tool %}
+                            <option value="{{ tool }}" {{ 'selected' if values.default_tool == tool else '' }}>{{ tool }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="setting-item">
+                        <label class="setting-label" for="default_model">{{ settings.default_model.label }}</label>
+                        <p class="setting-description">{{ settings.default_model.description }}</p>
+                        <select name="default_model" id="default_model" class="setting-select">
+                            {% for model in options.default_model %}
+                            <option value="{{ model }}" {{ 'selected' if values.default_model == model else '' }}>{{ model }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="setting-item">
+                        <label class="setting-checkbox">
+                            <input type="checkbox" name="save_tmux_history" {{ 'checked' if values.save_tmux_history else '' }}>
+                            <span class="checkbox-label">{{ settings.save_tmux_history.label }}</span>
+                        </label>
+                        <p class="setting-description">{{ settings.save_tmux_history.description }}</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Workflow Settings Section -->
+            <div class="settings-section">
+                <h3>Workflow</h3>
+                <div class="settings-group">
+                    <div class="setting-item">
+                        <label class="setting-checkbox">
+                            <input type="checkbox" name="allow_self_approval" {{ 'checked' if values.allow_self_approval else '' }}>
+                            <span class="checkbox-label">{{ settings.allow_self_approval.label }}</span>
+                        </label>
+                        <p class="setting-description">{{ settings.allow_self_approval.description }}</p>
+                    </div>
+                    <div class="setting-item">
+                        <label class="setting-checkbox">
+                            <input type="checkbox" name="show_issue_yaml" {{ 'checked' if values.show_issue_yaml else '' }}>
+                            <span class="checkbox-label">{{ settings.show_issue_yaml.label }}</span>
+                        </label>
+                        <p class="setting-description">{{ settings.show_issue_yaml.description }}</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Display Settings Section -->
+            <div class="settings-section">
+                <h3>Display</h3>
+                <div class="settings-group">
+                    <div class="setting-item">
+                        <label class="setting-label" for="refresh_interval">{{ settings.refresh_interval.label }}</label>
+                        <p class="setting-description">{{ settings.refresh_interval.description }}</p>
+                        <input type="number" name="refresh_interval" id="refresh_interval"
+                               class="setting-input" min="1" max="300"
+                               value="{{ values.refresh_interval or 10 }}">
+                    </div>
+                </div>
+            </div>
+
+            <div class="settings-actions">
+                <a href="/kanban" class="btn">Cancel</a>
+                <button type="submit" class="btn btn-primary">Save Settings</button>
+            </div>
+        </form>
+    </div>
+
+    <script>
+        // Theme handling (client-side only)
+        function setTheme(theme) {
+            document.documentElement.setAttribute('data-theme', theme);
+            localStorage.setItem('theme', theme);
+            updateThemeButtons(theme);
+        }
+
+        function updateThemeButtons(theme) {
+            document.querySelectorAll('.theme-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.theme === theme);
+            });
+        }
+
+        // Initialize theme buttons on load
+        (function() {
+            const savedTheme = localStorage.getItem('theme') || 'light';
+            document.documentElement.setAttribute('data-theme', savedTheme);
+            updateThemeButtons(savedTheme);
+        })();
+    </script>
+</body>
+</html>
