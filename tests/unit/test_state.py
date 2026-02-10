@@ -116,10 +116,10 @@ class TestStopAgentServeSession:
         mock_config.project = "myproject"
         mock_config.get_issue_tmux_session.return_value = "myproject-developer-042"
 
-        with patch("agenttree.api.load_config", return_value=mock_config), \
-             patch("agenttree.api.session_exists", return_value=True), \
-             patch("agenttree.api.kill_session") as mock_kill, \
-             patch("agenttree.api.get_container_runtime") as mock_runtime:
+        with patch("agenttree.config.load_config", return_value=mock_config), \
+             patch("agenttree.tmux.session_exists", return_value=True), \
+             patch("agenttree.tmux.kill_session") as mock_kill, \
+             patch("agenttree.container.get_container_runtime") as mock_runtime:
             mock_runtime.return_value.runtime = None
             result = stop_agent("042", quiet=True)
 
@@ -135,10 +135,10 @@ class TestStopAgentServeSession:
         mock_config.project = "myproject"
         mock_config.get_issue_tmux_session.return_value = "myproject-developer-042"
 
-        with patch("agenttree.api.load_config", return_value=mock_config), \
-             patch("agenttree.api.session_exists", side_effect=lambda name: name == "myproject-developer-042"), \
-             patch("agenttree.api.kill_session") as mock_kill, \
-             patch("agenttree.api.get_container_runtime") as mock_runtime:
+        with patch("agenttree.config.load_config", return_value=mock_config), \
+             patch("agenttree.tmux.session_exists", side_effect=lambda name: name == "myproject-developer-042"), \
+             patch("agenttree.tmux.kill_session") as mock_kill, \
+             patch("agenttree.container.get_container_runtime") as mock_runtime:
             mock_runtime.return_value.runtime = None
             result = stop_agent("042", quiet=True)
 
@@ -157,10 +157,10 @@ class TestStopAgentServeSession:
         mock_config.project = "myproject"
         mock_config.get_issue_tmux_session.return_value = "myproject-developer-042"
 
-        with patch("agenttree.api.load_config", return_value=mock_config), \
-             patch("agenttree.api.session_exists", side_effect=session_exists_side_effect), \
-             patch("agenttree.api.kill_session") as mock_kill, \
-             patch("agenttree.api.get_container_runtime") as mock_runtime:
+        with patch("agenttree.config.load_config", return_value=mock_config), \
+             patch("agenttree.tmux.session_exists", side_effect=session_exists_side_effect), \
+             patch("agenttree.tmux.kill_session") as mock_kill, \
+             patch("agenttree.container.get_container_runtime") as mock_runtime:
             mock_runtime.return_value.runtime = None
             result = stop_agent("042", quiet=True)
 

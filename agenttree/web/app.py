@@ -120,14 +120,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     config = load_config()
     manager_session = config.get_manager_tmux_session()
     if not session_exists(manager_session):
-        subprocess.Popen(
-            ["uv", "run", "agenttree", "start", "0"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            cwd=Path.cwd(),
-            start_new_session=True
-        )
-        print("✓ Started manager agent")
+        try:
+            from agenttree.api import start_controller
+
+            await asyncio.to_thread(start_controller, quiet=True)
+            print("✓ Started controller agent")
+        except Exception as e:
+            print(f"⚠ Could not start controller: {e}")
     else:
         print("✓ Manager already running")
 
@@ -1003,17 +1002,18 @@ async def start_issue(
     issue_id: str,
     user: Optional[str] = Depends(get_current_user)
 ) -> dict:
-    """Start an agent to work on an issue (calls agenttree start)."""
+    """Start an agent to work on an issue."""
+    import asyncio
+    from agenttree.api import start_agent, IssueNotFoundError, AgentStartError
+
     try:
-        # Use --force to restart stalled agents (tmux dead but state exists)
-        subprocess.Popen(
-            ["uv", "run", "agenttree", "start", issue_id, "--force"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            cwd=Path.cwd(),
-            start_new_session=True  # Detach from parent process
-        )
-        return {"ok": True, "status": f"Starting agent for issue #{issue_id}..."}
+        # Use force=True to restart stalled agents (tmux dead but state exists)
+        await asyncio.to_thread(start_agent, issue_id, force=True, quiet=True)
+        return {"ok": True, "status": f"Started agent for issue #{issue_id}"}
+    except IssueNotFoundError:
+        raise HTTPException(status_code=404, detail=f"Issue #{issue_id} not found")
+    except AgentStartError as e:
+        raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1263,6 +1263,9 @@ async def create_issue_api(
     if not title:
         title = "(untitled)"
 
+    import asyncio
+    from agenttree.api import start_agent
+
     try:
         issue = issue_crud.create_issue(
             title=title,
@@ -1271,13 +1274,11 @@ async def create_issue_api(
         )
 
         # Auto-start agent for the new issue
-        subprocess.Popen(
-            ["uv", "run", "agenttree", "start", issue.id],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            cwd=Path.cwd(),
-            start_new_session=True  # Detach from parent process
-        )
+        try:
+            await asyncio.to_thread(start_agent, issue.id, quiet=True)
+        except Exception as e:
+            # Log but don't fail - issue was created, agent start is optional
+            print(f"Warning: Could not auto-start agent for issue #{issue.id}: {e}")
 
         return {"ok": True, "issue_id": issue.id, "title": issue.title}
     except Exception as e:
