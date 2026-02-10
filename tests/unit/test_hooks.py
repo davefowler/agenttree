@@ -1900,7 +1900,6 @@ class TestCleanupIssueAgent:
     def test_no_agent_to_cleanup(self):
         """Should print message when no agents to cleanup."""
         from agenttree.hooks import cleanup_issue_agent
-        import agenttree.state
 
         issue = Issue(
             id="001",
@@ -1911,14 +1910,13 @@ class TestCleanupIssueAgent:
             stage=ACCEPTED,
         )
 
-        with patch.object(agenttree.state, 'stop_all_agents_for_issue', return_value=0) as mock_stop:
+        with patch("agenttree.api.stop_all_agents_for_issue", return_value=0) as mock_stop:
             cleanup_issue_agent(issue)
             mock_stop.assert_called_once_with("001")
 
     def test_cleanup_delegates_to_stop_all_agents(self):
         """Should delegate to stop_all_agents_for_issue."""
         from agenttree.hooks import cleanup_issue_agent
-        import agenttree.state
 
         issue = Issue(
             id="042",
@@ -1929,7 +1927,7 @@ class TestCleanupIssueAgent:
             stage=ACCEPTED,
         )
 
-        with patch.object(agenttree.state, 'stop_all_agents_for_issue', return_value=2) as mock_stop:
+        with patch("agenttree.api.stop_all_agents_for_issue", return_value=2) as mock_stop:
             cleanup_issue_agent(issue)
             mock_stop.assert_called_once_with("042")
 
@@ -2185,30 +2183,13 @@ class TestRunHostHooks:
 class TestCursorReviewRemoved:
     """Tests verifying hardcoded Cursor review is removed."""
 
-    @patch('agenttree.hooks.is_running_in_container', return_value=False)
-    @patch('agenttree.hooks.push_branch_to_remote')
-    @patch('agenttree.github.create_pr')
-    @patch('agenttree.issues.update_issue_metadata')
-    @patch('agenttree.hooks.get_current_branch', return_value='test-branch')
-    @patch('agenttree.hooks.has_uncommitted_changes', return_value=False)
-    @patch('agenttree.config.load_config')
+    @patch('agenttree.hooks.ensure_pr_for_issue', return_value=True)
     @patch('subprocess.run')
     def test_no_hardcoded_cursor_comment(
-        self, mock_subprocess, mock_load_config, mock_uncommitted, mock_branch,
-        mock_update, mock_create_pr, mock_push, mock_container
+        self, mock_subprocess, mock_ensure_pr
     ):
         """_action_create_pr should NOT make hardcoded cursor review comment."""
         from agenttree.hooks import _action_create_pr
-        from agenttree.config import Config, HooksConfig
-
-        mock_pr = MagicMock()
-        mock_pr.number = 123
-        mock_pr.url = "https://github.com/owner/repo/pull/123"
-        mock_create_pr.return_value = mock_pr
-
-        # No hooks configured
-        mock_config = Config(hooks=HooksConfig())
-        mock_load_config.return_value = mock_config
 
         _action_create_pr(Path("/tmp"), issue_id="001", issue_title="Test")
 
@@ -2217,6 +2198,63 @@ class TestCursorReviewRemoved:
             args = call[0][0] if call[0] else call[1].get('args', [])
             if isinstance(args, list) and "gh" in args and "comment" in args:
                 assert "@cursor" not in str(args), "Hardcoded cursor comment found!"
+
+
+class TestCreatePrRaisesOnFailure:
+    """Tests that _action_create_pr raises when PR creation fails."""
+
+    def test_raises_when_no_issue_id(self):
+        """Should raise RuntimeError when no issue_id provided."""
+        from agenttree.hooks import _action_create_pr
+
+        with pytest.raises(RuntimeError, match="no issue_id"):
+            _action_create_pr(Path("/tmp"), issue_id="")
+
+    @patch('agenttree.hooks.ensure_pr_for_issue', return_value=False)
+    def test_raises_when_ensure_pr_fails(self, mock_ensure):
+        """Should raise RuntimeError when ensure_pr_for_issue returns False."""
+        from agenttree.hooks import _action_create_pr
+
+        with pytest.raises(RuntimeError, match="Failed to create PR"):
+            _action_create_pr(Path("/tmp"), issue_id="042")
+
+    @patch('agenttree.hooks.ensure_pr_for_issue', return_value=True)
+    def test_no_error_when_pr_created(self, mock_ensure):
+        """Should not raise when ensure_pr_for_issue succeeds."""
+        from agenttree.hooks import _action_create_pr
+
+        # Should not raise
+        _action_create_pr(Path("/tmp"), issue_id="042")
+
+
+class TestNoPrAtReviewStage:
+    """Tests for validators when pr_number is None (no PR created)."""
+
+    def test_ci_check_errors_without_pr(self, tmp_path):
+        """ci_check should return error when pr_number is None."""
+        from agenttree.hooks import run_builtin_validator
+
+        errors = run_builtin_validator(
+            tmp_path,
+            {"ci_check": {}},
+            pr_number=None,
+        )
+        assert any("No PR number" in e for e in errors)
+
+    @patch('agenttree.config.load_config')
+    def test_pr_approved_errors_without_pr(self, mock_load_config, tmp_path):
+        """pr_approved should return error when pr_number is None and self-approval disabled."""
+        from agenttree.hooks import run_builtin_validator
+        from agenttree.config import Config
+
+        mock_load_config.return_value = Config(allow_self_approval=False)
+
+        errors = run_builtin_validator(
+            tmp_path,
+            {"pr_approved": {}},
+            pr_number=None,
+        )
+        assert any("No PR number" in e for e in errors)
 
 
 class TestCICheckHook:

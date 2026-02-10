@@ -43,8 +43,8 @@ class RoleConfig(BaseModel):
 
     # AI agent settings (only for AI roles, not manager)
     tool: Optional[str] = None  # AI tool to use (e.g., "claude", "codex")
-    model: Optional[str] = None  # Explicit model (e.g., "opus"). Overrides model_tier.
-    model_tier: Optional[str] = None  # Tier name (e.g., "high", "medium", "low") → resolved via model_tiers
+    model: str | None = None  # Explicit model (e.g., "opus"). Overrides model_tier.
+    model_tier: str | None = None  # Tier name (e.g., "high", "medium", "low") → resolved via model_tiers
     skill: Optional[str] = None  # Skill file path for custom agents
 
     # Process to run (for manager, this could be "agenttree watch")
@@ -122,8 +122,8 @@ class SubstageConfig(BaseModel):
     output: Optional[str] = None  # Document created by this substage
     output_optional: bool = False  # If True, missing output file doesn't error
     skill: Optional[str] = None   # Override skill file path
-    model: Optional[str] = None   # Explicit model (overrides model_tier and stage model)
-    model_tier: Optional[str] = None  # Tier name (e.g., "high") → resolved via model_tiers
+    model: str | None = None   # Explicit model (overrides model_tier and stage model)
+    model_tier: str | None = None  # Tier name (e.g., "high") → resolved via model_tiers
     redirect_only: bool = False   # Only reachable via StageRedirect, skipped in normal progression
     validators: list[str] = Field(default_factory=list)  # Legacy format
     pre_completion: list[dict] = Field(default_factory=list)  # Hooks before completing
@@ -137,8 +137,8 @@ class StageConfig(BaseModel):
     output: Optional[str] = None  # Document created by this stage
     output_optional: bool = False  # If True, missing output file doesn't error
     skill: Optional[str] = None   # Override skill file path
-    model: Optional[str] = None   # Explicit model (overrides model_tier)
-    model_tier: Optional[str] = None  # Tier name (e.g., "high") → resolved via model_tiers
+    model: str | None = None   # Explicit model (overrides model_tier)
+    model_tier: str | None = None  # Tier name (e.g., "high") → resolved via model_tiers
     human_review: bool = False    # Requires human approval to exit
     is_parking_lot: bool = False  # No agent auto-starts here (backlog, accepted, not_doing)
     redirect_only: bool = False   # Only reachable via StageRedirect, skipped in normal progression
@@ -239,11 +239,7 @@ class Config(BaseModel):
     port_range: str = "9001-9099"
     default_tool: str = "claude"
     default_model: str = "opus"  # Model to use for Claude CLI (opus, sonnet)
-    model_tiers: Dict[str, str] = Field(default_factory=lambda: {
-        "high": "opus",
-        "medium": "sonnet",
-        "low": "haiku",
-    })
+    model_tiers: dict[str, str] = Field(default_factory=dict)  # Tier name -> model name mapping
     refresh_interval: int = 10
     tools: Dict[str, ToolConfig] = Field(default_factory=dict)
     roles: Dict[str, RoleConfig] = Field(default_factory=dict)  # Role configurations
@@ -393,7 +389,7 @@ class Config(BaseModel):
         Returns:
             Container name
         """
-        return f"{self.project}-issue-{issue_id}"
+        return f"agenttree-{self.project}-{issue_id}"
 
     def get_tool_config(self, tool_name: str) -> ToolConfig:
         """Get configuration for a tool.
@@ -656,12 +652,12 @@ class Config(BaseModel):
                 configs.append(rc)
 
         for cfg in configs:
-            m = getattr(cfg, "model", None)
+            m: str | None = getattr(cfg, "model", None)
             if m:
                 return m
-            t = getattr(cfg, "model_tier", None)
-            if t:
-                return tiers.get(t, t)
+            t: str | None = getattr(cfg, "model_tier", None)
+            if t and t in tiers:
+                return tiers[t]
 
         return self.default_model
 
