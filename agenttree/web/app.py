@@ -1135,11 +1135,31 @@ async def approve_issue(
         # Set processing state for enter hooks
         issue_crud.set_processing(issue_id_normalized, "enter")
 
-        # Execute enter hooks
+        # Execute enter hooks (may redirect on merge conflict etc.)
         import logging
         log = logging.getLogger("agenttree.web")
         try:
             await asyncio.to_thread(execute_enter_hooks, updated, next_stage, next_substage)
+        except StageRedirect as redirect:
+            # Merge conflict or similar - redirect issue to developer
+            log.warning("Enter hooks redirected issue %s to %s: %s",
+                        issue_id_normalized, redirect.target_stage, redirect.reason)
+            from agenttree.issues import update_issue_stage as _update_stage
+            redirect_stage = redirect.target_stage
+            redirect_substage = redirect.target_substage
+            await asyncio.to_thread(_update_stage, issue_id_normalized, redirect_stage, redirect_substage)
+            # Notify developer agent
+            try:
+                from agenttree.state import get_active_agent
+                from agenttree.tmux import send_message, session_exists
+                agent = get_active_agent(issue_id_normalized)
+                if agent and agent.tmux_session and session_exists(agent.tmux_session):
+                    msg = f"Issue redirected: {redirect.reason} Run `agenttree next` for instructions."
+                    await asyncio.to_thread(send_message, agent.tmux_session, msg)
+            except Exception:
+                pass  # Best-effort notification
+            stage_str = redirect_stage + (f".{redirect_substage}" if redirect_substage else "")
+            return {"ok": True, "redirected": True, "stage": stage_str, "reason": redirect.reason}
         except Exception as e:
             log.warning("Enter hooks failed for issue %s: %s", issue_id_normalized, e)
 

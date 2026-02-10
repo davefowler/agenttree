@@ -191,7 +191,7 @@ def check_manager_stages(agents_dir: Path) -> int:
         Number of issues processed
     """
     # Bail early if running in a container - host operations only
-    from agenttree.hooks import is_running_in_container, execute_enter_hooks
+    from agenttree.hooks import is_running_in_container, execute_enter_hooks, StageRedirect
     from agenttree.config import load_config
     from agenttree.issues import Issue
 
@@ -233,15 +233,33 @@ def check_manager_stages(agents_dir: Path) -> int:
                 if hooks_executed_stage == stage:
                     continue
 
-                # Mark hooks as executed BEFORE running them to prevent infinite loop
+                # Set flag to "running" to prevent re-entry during hook execution
                 # (hooks may call sync_agents_repo which calls check_manager_stages)
-                data["manager_hooks_executed"] = stage
+                data["manager_hooks_executed"] = f"{stage}:running"
                 with open(issue_yaml, "w") as f:
                     yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
 
                 issue = Issue(**data)
-                # Execute the post_start hooks for this stage (host side)
-                execute_enter_hooks(issue, stage, data.get("substage"))
+
+                try:
+                    execute_enter_hooks(issue, stage, data.get("substage"))
+                except StageRedirect as redirect:
+                    # Hook wants to redirect (e.g., merge conflict → developer)
+                    from agenttree.issues import update_issue_stage
+                    update_issue_stage(
+                        issue.id, redirect.target_stage, redirect.target_substage
+                    )
+                    # Clear the flag since we redirected away from this stage
+                    data["manager_hooks_executed"] = None
+                    with open(issue_yaml, "w") as f:
+                        yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
+                    processed += 1
+                    continue
+
+                # Hooks succeeded - mark as fully executed
+                data["manager_hooks_executed"] = stage
+                with open(issue_yaml, "w") as f:
+                    yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
 
                 processed += 1
 
