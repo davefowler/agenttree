@@ -36,6 +36,7 @@ def mock_issue():
     mock.dependencies = []
     mock.priority = Priority.MEDIUM
     mock.processing = None
+    mock.ci_escalated = False
     return mock
 
 
@@ -56,6 +57,7 @@ def mock_issue_with_agent():
     mock.dependencies = []
     mock.priority = Priority.MEDIUM
     mock.processing = None
+    mock.ci_escalated = False
     return mock
 
 

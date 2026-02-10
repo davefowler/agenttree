@@ -67,7 +67,7 @@ def review_loop_config() -> dict:
                 "human_review": True,
                 "role": "manager",
             },
-            {"name": "accepted", "terminal": True},
+            {"name": "accepted", "is_parking_lot": True},
         ],
     }
 

@@ -489,69 +489,45 @@ class TestPreflightCLI:
         assert result.exit_code == 0
         assert 'preflight' in result.output.lower() or 'environment' in result.output.lower()
 
-    def test_preflight_command_runs_checks(self):
+    @patch('agenttree.cli.setup.run_preflight')
+    def test_preflight_command_runs_checks(self, mock_run_preflight):
         """preflight command should run environment checks."""
         from agenttree.cli import main
         from click.testing import CliRunner
-        import agenttree.cli
-
-        runner = CliRunner()
-
-        # Save original and mock
-        original_run_preflight = agenttree.cli.run_preflight
         from agenttree.preflight import PreflightResult
 
-        def mock_run():
-            return [PreflightResult(name="test", passed=True, message="OK")]
+        mock_run_preflight.return_value = [PreflightResult(name="test", passed=True, message="OK")]
 
-        agenttree.cli.run_preflight = mock_run
+        runner = CliRunner()
+        result = runner.invoke(main, ['preflight'])
+        # Test passed if we got here and the result indicates success
+        assert "test" in result.output.lower() or result.exit_code == 0
 
-        try:
-            result = runner.invoke(main, ['preflight'])
-            # Test passed if we got here and the result indicates success
-            assert "test" in result.output.lower() or result.exit_code == 0
-        finally:
-            agenttree.cli.run_preflight = original_run_preflight
-
-    def test_preflight_command_exit_code_success(self):
+    @patch('agenttree.cli.setup.run_preflight')
+    def test_preflight_command_exit_code_success(self, mock_run_preflight):
         """preflight command should exit 0 when all checks pass."""
         from agenttree.cli import main
         from click.testing import CliRunner
-        import agenttree.cli
         from agenttree.preflight import PreflightResult
 
+        mock_run_preflight.return_value = [PreflightResult(name="test", passed=True, message="OK")]
+
         runner = CliRunner()
-        original = agenttree.cli.run_preflight
+        result = runner.invoke(main, ['preflight'])
+        assert result.exit_code == 0
 
-        def mock_run():
-            return [PreflightResult(name="test", passed=True, message="OK")]
-
-        agenttree.cli.run_preflight = mock_run
-        try:
-            result = runner.invoke(main, ['preflight'])
-            assert result.exit_code == 0
-        finally:
-            agenttree.cli.run_preflight = original
-
-    def test_preflight_command_exit_code_failure(self):
+    @patch('agenttree.cli.setup.run_preflight')
+    def test_preflight_command_exit_code_failure(self, mock_run_preflight):
         """preflight command should exit 1 when checks fail."""
         from agenttree.cli import main
         from click.testing import CliRunner
-        import agenttree.cli
         from agenttree.preflight import PreflightResult
 
+        mock_run_preflight.return_value = [PreflightResult(name="test", passed=False, message="Failed")]
+
         runner = CliRunner()
-        original = agenttree.cli.run_preflight
-
-        def mock_run():
-            return [PreflightResult(name="test", passed=False, message="Failed")]
-
-        agenttree.cli.run_preflight = mock_run
-        try:
-            result = runner.invoke(main, ['preflight'])
-            assert result.exit_code == 1
-        finally:
-            agenttree.cli.run_preflight = original
+        result = runner.invoke(main, ['preflight'])
+        assert result.exit_code == 1
 
 
 class TestStartCommandWithPreflight:
@@ -567,37 +543,25 @@ class TestStartCommandWithPreflight:
 
         assert '--skip-preflight' in result.output
 
-    def test_start_runs_preflight_by_default(self):
+    @patch('agenttree.cli.agents.run_preflight')
+    def test_start_runs_preflight_by_default(self, mock_run_preflight):
         """start should run preflight checks by default."""
         from agenttree.cli import main
         from click.testing import CliRunner
-        import agenttree.cli
-
-        runner = CliRunner()
-
-        # Save original and replace with mock
-        original_run_preflight = agenttree.cli.run_preflight
-
         from agenttree.preflight import PreflightResult
 
-        def mock_preflight():
-            return [PreflightResult(name="test", passed=False, message="Preflight check failed")]
+        mock_run_preflight.return_value = [PreflightResult(name="test", passed=False, message="Preflight check failed")]
 
-        agenttree.cli.run_preflight = mock_preflight
+        runner = CliRunner()
+        result = runner.invoke(main, ['start', '001'])
 
-        try:
-            result = runner.invoke(main, ['start', '001'])
+        # Should fail because preflight failed
+        assert result.exit_code != 0
+        # Output should mention preflight failure
+        assert "preflight" in result.output.lower() or "failed" in result.output.lower()
 
-            # Should fail because preflight failed
-            assert result.exit_code != 0
-            # Output should mention preflight failure
-            assert "preflight" in result.output.lower() or "failed" in result.output.lower()
-        finally:
-            # Restore original
-            agenttree.cli.run_preflight = original_run_preflight
-
-    @patch('agenttree.cli.run_preflight')
-    @patch('agenttree.issues.get_issue')
+    @patch('agenttree.cli.agents.run_preflight')
+    @patch('agenttree.cli.agents.get_issue_func')
     def test_start_skips_preflight_with_flag(
         self, mock_get_issue, mock_preflight
     ):

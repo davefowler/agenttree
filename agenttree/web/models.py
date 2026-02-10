@@ -59,6 +59,7 @@ class Issue(IssueBase):
     dependencies: List[int] = Field(default_factory=list)
     dependents: List[int] = Field(default_factory=list)
     processing: Optional[str] = None  # "exit", "enter", or None (not processing)
+    ci_escalated: bool = False  # CI failed too many times, escalated to human
 
     @property
     def is_review(self) -> bool:

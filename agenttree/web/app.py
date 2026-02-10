@@ -17,7 +17,7 @@ import secrets
 import os
 import re
 from typing import List, Dict, Optional, AsyncIterator, Callable, Awaitable
-from datetime import datetime
+from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 
 from agenttree import __version__
@@ -161,6 +161,30 @@ app.add_middleware(NoCacheMiddleware)
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 templates.env.globals["version"] = __version__
+
+# Short display names for stages (used in column headers, cards, etc.)
+STAGE_DISPLAY_NAMES: dict[str, str] = {
+    "implementation_review": "Imp Review",
+    "independent_code_review": "Code Review",
+    "address_independent_review": "Address Review",
+    "knowledge_base": "Knowledge Base",
+}
+
+
+def stage_display_name(value: str) -> str:
+    """Convert a stage slug to a human-readable display name."""
+    if isinstance(value, str):
+        if value in STAGE_DISPLAY_NAMES:
+            return STAGE_DISPLAY_NAMES[value]
+        return value.replace("_", " ").title()
+    # StageEnum
+    raw = value.value if hasattr(value, "value") else str(value)
+    if raw in STAGE_DISPLAY_NAMES:
+        return STAGE_DISPLAY_NAMES[raw]
+    return raw.replace("_", " ").title()
+
+
+templates.env.filters["stage_name"] = stage_display_name
 
 # Optional authentication (auto_error=False allows requests without credentials)
 security = HTTPBasic(auto_error=False)
@@ -320,6 +344,7 @@ def convert_issue_to_web(issue: issue_crud.Issue, load_dependents: bool = False)
         dependencies=dependencies,
         dependents=dependents,
         processing=issue.processing,
+        ci_escalated=issue.ci_escalated,
     )
 
 
@@ -390,12 +415,16 @@ async def kanban(
     user: Optional[str] = Depends(get_current_user)
 ) -> HTMLResponse:
     """Kanban board page."""
+    import os
+    from agenttree.actions import load_rate_limit_state
+    
     agent_manager.clear_session_cache()  # Fresh session data per request
     board = get_kanban_board(search=search)
 
     # If issue param provided, load issue detail for modal
     selected_issue = None
     files: list[dict[str, str]] = []
+    commits_ahead = 0
     commits_behind = 0
     default_doc: str | None = None
     if issue:
@@ -406,10 +435,32 @@ async def kanban(
             files = get_issue_files(issue, include_content=True)
             # Get default doc to show for this stage
             default_doc = get_default_doc(issue_obj.stage)
-            # Get commits behind for rebase button
+            # Get commits ahead/behind for rebase button
             if selected_issue.tmux_active and issue_obj.worktree_dir:
-                from agenttree.hooks import get_commits_behind_main
-                commits_behind = get_commits_behind_main(issue_obj.worktree_dir)
+                from agenttree.hooks import get_commits_ahead_behind_main
+                commits_ahead, commits_behind = get_commits_ahead_behind_main(issue_obj.worktree_dir)
+    
+    # Check rate limit status for warning banner
+    config = load_config()
+    agents_dir = Path("_agenttree")
+    rate_limit_state = load_rate_limit_state(agents_dir)
+    rate_limit_warning = None
+    
+    if rate_limit_state and rate_limit_state.get("rate_limited") and not rate_limit_state.get("dismissed"):
+        # Parse reset time for display
+        reset_time_str = rate_limit_state.get("reset_time", "")
+        try:
+            reset_time = datetime.fromisoformat(reset_time_str.replace("Z", "+00:00"))
+            reset_display = reset_time.strftime("%I:%M %p UTC")
+        except (ValueError, TypeError):
+            reset_display = "unknown"
+        
+        rate_limit_warning = {
+            "reset_time": reset_display,
+            "mode": rate_limit_state.get("mode", "subscription"),
+            "agent_count": len(rate_limit_state.get("affected_agents", [])),
+            "can_switch": bool(os.environ.get(config.rate_limit_fallback.api_key_env)),
+        }
 
     return templates.TemplateResponse(
         "kanban.html",
@@ -421,10 +472,12 @@ async def kanban(
             "selected_issue": selected_issue,
             "files": files,
             "default_doc": default_doc,
+            "commits_ahead": commits_ahead,
             "commits_behind": commits_behind,
             "chat_open": chat == "1",
             "search": search or "",
             "current_view": view or "nonempty",
+            "rate_limit_warning": rate_limit_warning,
         }
     )
 
@@ -685,6 +738,7 @@ async def flow(
 
     # Load all file contents upfront for selected issue
     files: list[dict[str, str]] = []
+    commits_ahead = 0
     commits_behind = 0
     default_doc: str | None = None
     if selected_issue and selected_issue_id:
@@ -694,10 +748,10 @@ async def flow(
         issue_obj = issue_crud.get_issue(selected_issue_id, sync=False)
         if issue_obj:
             default_doc = get_default_doc(issue_obj.stage)
-            # Get commits behind for rebase button
+            # Get commits ahead/behind for rebase button
             if selected_issue.tmux_active and issue_obj.worktree_dir:
-                from agenttree.hooks import get_commits_behind_main
-                commits_behind = get_commits_behind_main(issue_obj.worktree_dir)
+                from agenttree.hooks import get_commits_ahead_behind_main
+                commits_ahead, commits_behind = get_commits_ahead_behind_main(issue_obj.worktree_dir)
 
     return templates.TemplateResponse(
         "flow.html",
@@ -708,6 +762,7 @@ async def flow(
             "issue": selected_issue,  # issue_detail.html expects 'issue'
             "files": files,
             "default_doc": default_doc,
+            "commits_ahead": commits_ahead,
             "commits_behind": commits_behind,
             "active_page": "flow",
             "chat_open": chat == "1",
@@ -749,6 +804,7 @@ async def mobile(
 
     # Load all file contents upfront for selected issue
     files: list[dict[str, str]] = []
+    commits_ahead = 0
     commits_behind = 0
     default_doc: str | None = None
     if selected_issue and selected_issue_id:
@@ -757,8 +813,8 @@ async def mobile(
         if issue_obj:
             default_doc = get_default_doc(issue_obj.stage)
             if selected_issue.tmux_active and issue_obj.worktree_dir:
-                from agenttree.hooks import get_commits_behind_main
-                commits_behind = get_commits_behind_main(issue_obj.worktree_dir)
+                from agenttree.hooks import get_commits_ahead_behind_main
+                commits_ahead, commits_behind = get_commits_ahead_behind_main(issue_obj.worktree_dir)
 
     # Determine active tab: default to 'issues' if no issue, 'detail' if issue specified
     active_tab = tab if tab in ["issues", "detail", "chat"] else None
@@ -774,6 +830,7 @@ async def mobile(
             "issue": selected_issue,
             "files": files,
             "default_doc": default_doc,
+            "commits_ahead": commits_ahead,
             "commits_behind": commits_behind,
             "active_page": "mobile",
             "active_tab": active_tab,
@@ -1036,8 +1093,9 @@ async def approve_issue(
     if issue.stage not in HUMAN_REVIEW_STAGES:
         raise HTTPException(status_code=400, detail="Not at review stage")
 
-    # Calculate next stage
-    config = load_config()
+    # Load config from repo path (Path.cwd() can be wrong in uvicorn workers)
+    config_path = Path(os.environ["AGENTTREE_REPO_PATH"]) if os.environ.get("AGENTTREE_REPO_PATH") else None
+    config = load_config(config_path)
     next_stage, next_substage, _ = config.get_next_stage(issue.stage, issue.substage, issue.flow)
 
     try:
@@ -1046,7 +1104,13 @@ async def approve_issue(
 
         # Execute exit hooks (validation)
         try:
-            await asyncio.to_thread(execute_exit_hooks, issue, issue.stage, issue.substage)
+            await asyncio.to_thread(
+                execute_exit_hooks,
+                issue,
+                issue.stage,
+                issue.substage,
+                skip_pr_approval=config.allow_self_approval,
+            )
         except StageRedirect as redirect:
             # Redirect to a different stage instead of normal next stage
             next_stage = redirect.target_stage
@@ -1274,6 +1338,147 @@ async def health_check() -> dict:
     return {"status": "healthy", "service": "agenttree-web"}
 
 
+# =============================================================================
+# Rate Limit Endpoints
+# =============================================================================
+
+
+@app.get("/api/rate-limit-status")
+async def get_rate_limit_status(
+    user: Optional[str] = Depends(get_current_user)
+) -> dict:
+    """Get current rate limit status.
+    
+    Returns:
+        {
+            "rate_limited": bool,
+            "reset_time": str | None (ISO timestamp),
+            "mode": "subscription" | "api_key",
+            "affected_agents": list[{issue_id, session_name}],
+            "can_switch_to_api": bool (True if ANTHROPIC_API_KEY is set)
+        }
+    """
+    import os
+    from agenttree.actions import load_rate_limit_state
+    
+    config = load_config()
+    agents_dir = Path("_agenttree")
+    
+    state = load_rate_limit_state(agents_dir)
+    
+    # Check if API key is available for switching
+    api_key_available = bool(os.environ.get(config.rate_limit_fallback.api_key_env))
+    
+    if not state:
+        return {
+            "rate_limited": False,
+            "reset_time": None,
+            "mode": "subscription",
+            "affected_agents": [],
+            "can_switch_to_api": api_key_available,
+        }
+    
+    return {
+        "rate_limited": state.get("rate_limited", False),
+        "reset_time": state.get("reset_time"),
+        "mode": state.get("mode", "subscription"),
+        "affected_agents": state.get("affected_agents", []),
+        "can_switch_to_api": api_key_available,
+    }
+
+
+@app.post("/api/rate-limit/switch-to-api")
+async def switch_to_api_key_mode(
+    user: Optional[str] = Depends(get_current_user)
+) -> dict:
+    """Switch all rate-limited agents to API key mode.
+    
+    This is a manual trigger - user clicks button in UI when they want to
+    start paying API costs to unblock their agents.
+    """
+    import os
+    from agenttree.actions import load_rate_limit_state, save_rate_limit_state
+    
+    config = load_config()
+    agents_dir = Path("_agenttree")
+    
+    # Check if API key is available
+    api_key = os.environ.get(config.rate_limit_fallback.api_key_env)
+    if not api_key:
+        raise HTTPException(
+            status_code=400,
+            detail=f"API key not configured. Set {config.rate_limit_fallback.api_key_env} environment variable."
+        )
+    
+    # Load current state
+    state = load_rate_limit_state(agents_dir)
+    if not state or not state.get("rate_limited"):
+        raise HTTPException(
+            status_code=400,
+            detail="No rate limit currently detected"
+        )
+    
+    if state.get("mode") == "api_key":
+        raise HTTPException(
+            status_code=400,
+            detail="Already running in API key mode"
+        )
+    
+    # Restart all affected agents with --api-key flag
+    affected_agents = state.get("affected_agents", [])
+    restarted = 0
+    failed = []
+    
+    for agent_info in affected_agents:
+        issue_id = agent_info.get("issue_id")
+        if not issue_id:
+            continue
+        
+        result = subprocess.run(
+            ["agenttree", "start", str(issue_id), "--api-key", "--skip-preflight", "--force"],
+            capture_output=True,
+            text=True,
+            timeout=120,  # Container startup can be slow
+        )
+        if result.returncode == 0:
+            restarted += 1
+        else:
+            failed.append({"issue_id": issue_id, "error": result.stderr[:200]})
+    
+    # Update state to reflect API key mode
+    state["mode"] = "api_key"
+    state["switched_at"] = datetime.now(timezone.utc).isoformat()
+    save_rate_limit_state(agents_dir, state)
+    
+    return {
+        "ok": True,
+        "restarted": restarted,
+        "failed": failed,
+        "message": f"Switched {restarted} agent(s) to API key mode",
+    }
+
+
+@app.post("/api/rate-limit/dismiss")
+async def dismiss_rate_limit(
+    user: Optional[str] = Depends(get_current_user)
+) -> dict:
+    """Dismiss the rate limit warning without switching modes.
+    
+    Agents remain blocked but the UI warning is dismissed.
+    The auto-recovery will still trigger after reset time.
+    """
+    from agenttree.actions import load_rate_limit_state, save_rate_limit_state
+    
+    agents_dir = Path("_agenttree")
+    state = load_rate_limit_state(agents_dir)
+    
+    if state:
+        state["dismissed"] = True
+        save_rate_limit_state(agents_dir, state)
+    
+    return {"ok": True}
+
+
 def run_server(
     host: str = "0.0.0.0",
     port: int = 8080,
@@ -1292,6 +1497,8 @@ def run_server(
     try:
         config = load_config(config_path)
         repo_path = Path.cwd()
+        # Set env so uvicorn workers (which may have different cwd) can find config
+        os.environ["AGENTTREE_REPO_PATH"] = str(repo_path)
         worktree_manager = WorktreeManager(repo_path, config)
         agent_manager = AgentManager(worktree_manager)
         print(f"✓ Loaded config for project: {config.project}")

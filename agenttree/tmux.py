@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 from pathlib import Path
 from typing import List, Optional, TYPE_CHECKING
 from dataclasses import dataclass
@@ -587,6 +588,7 @@ class TmuxManager:
         role: str = "developer",
         has_merge_conflicts: bool = False,
         is_restart: bool = False,
+        force_api_key: bool = False,
     ) -> bool:
         """Start an issue-bound agent in a container within a tmux session.
 
@@ -600,6 +602,7 @@ class TmuxManager:
             role: Agent role for the stage (e.g., "developer", "reviewer")
             has_merge_conflicts: Whether there are unresolved merge conflicts
             is_restart: Whether this is a restart (worktree already existed)
+            force_api_key: Force API key mode (skip OAuth subscription)
 
         Returns:
             True if agent started successfully, False if startup failed
@@ -628,6 +631,11 @@ class TmuxManager:
 
         # Generate container name: agenttree-{project}-{issue_id}
         container_name = f"agenttree-{self.config.project}-{issue_id}"
+        
+        # Clean up any existing container with this name (from previous runs)
+        if container_runtime.runtime:
+            from agenttree.container import cleanup_container
+            cleanup_container(container_runtime.runtime, container_name)
 
         container_cmd = container_runtime.build_run_command(
             worktree_path=worktree_path,
@@ -637,6 +645,7 @@ class TmuxManager:
             role=role,
             port=port,
             container_name=container_name,
+            force_api_key=force_api_key,
         )
 
         # Join command for shell execution
@@ -644,6 +653,21 @@ class TmuxManager:
 
         # Create tmux session running the container
         create_session(session_name, worktree_path, container_cmd_str)
+
+        # Start serve session if serve command is configured and port is available
+        serve_command = self.config.commands.get("serve")
+        if serve_command and port:
+            serve_session_name = f"{self.config.project}-serve-{issue_id}"
+            try:
+                # Kill existing serve session if it exists (for agent restarts)
+                if session_exists(serve_session_name):
+                    kill_session(serve_session_name)
+                # Build command with PORT env var
+                serve_cmd = f"PORT={port} {serve_command}"
+                create_session(serve_session_name, worktree_path, serve_cmd)
+            except subprocess.CalledProcessError as e:
+                # Serve session failure should not block agent startup
+                print(f"[warning] Could not start serve session: {e}", file=sys.stderr)
 
         # Wait for Claude CLI prompt before sending startup message
         if wait_for_prompt(session_name, prompt_char="❯", timeout=180.0):

@@ -381,7 +381,7 @@ AgentTree automatically passes this OAuth token to containers.
 
 ```
 agenttree/
-├── cli.py              # CLI commands
+├── cli/                # CLI commands (organized by domain)
 ├── config.py           # Configuration management
 ├── worktree.py         # Git worktree operations
 ├── tmux.py             # Tmux session management
