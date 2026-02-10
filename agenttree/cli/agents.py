@@ -91,13 +91,21 @@ def start_agent(
 
     # Check if issue already has an active agent for this role
     existing_agent = get_active_agent(issue.id, role)
-    if existing_agent and not force:
-        console.print(f"[yellow]Issue #{issue.id} already has an active {role} agent[/yellow]")
-        console.print(f"  Container: {existing_agent.container}")
-        console.print(f"  Port: {existing_agent.port}")
-        console.print(f"\nUse --force to replace it, or attach with:")
-        console.print(f"  agenttree attach {issue.id}" + (f" --role {role}" if role != "developer" else ""))
-        sys.exit(1)
+    if existing_agent:
+        if not force:
+            console.print(f"[yellow]Issue #{issue.id} already has an active {role} agent[/yellow]")
+            console.print(f"  Container: {existing_agent.container}")
+            console.print(f"  Port: {existing_agent.port}")
+            console.print(f"\nUse --force to replace it, or attach with:")
+            console.print(f"  agenttree attach {issue.id}" + (f" --role {role}" if role != "developer" else ""))
+            sys.exit(1)
+        # --force: stop the existing agent before starting a new one
+        from agenttree.state import stop_agent
+        from agenttree.tmux import session_exists, kill_session
+        if session_exists(existing_agent.tmux_session):
+            kill_session(existing_agent.tmux_session)
+        stop_agent(issue.id, role)
+        console.print(f"[dim]Stopped existing {role} agent[/dim]")
 
     # Initialize managers
     tmux_manager = TmuxManager(config)
