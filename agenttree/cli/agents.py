@@ -100,11 +100,11 @@ def start_agent(
             console.print(f"  agenttree attach {issue.id}" + (f" --role {role}" if role != "developer" else ""))
             sys.exit(1)
         # --force: stop the existing agent before starting a new one
-        from agenttree.state import stop_agent
+        from agenttree.state import unregister_agent
         from agenttree.tmux import session_exists, kill_session
         if session_exists(existing_agent.tmux_session):
             kill_session(existing_agent.tmux_session)
-        stop_agent(issue.id, role)
+        unregister_agent(issue.id, role)
         console.print(f"[dim]Stopped existing {role} agent[/dim]")
 
     # Initialize managers
