@@ -6,12 +6,15 @@ Manages the _agenttree/ git repository (separate from main project).
 from __future__ import annotations
 
 import fcntl
+import logging
 import shutil
 import subprocess
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, TYPE_CHECKING
 import re
+
+log = logging.getLogger("agenttree.agents_repo")
 
 if TYPE_CHECKING:
     from agenttree.issues import Issue
@@ -249,6 +252,12 @@ def check_manager_stages(agents_dir: Path) -> int:
                     update_issue_stage(
                         issue.id, redirect.target_stage, redirect.target_substage
                     )
+                    # Notify agent about the redirect so it knows to act
+                    from agenttree.api import _notify_agent
+                    _notify_agent(
+                        issue.id,
+                        f"Issue redirected to {redirect.target_stage}: {redirect.reason}. Run `agenttree next` for instructions.",
+                    )
                     # Clear the flag since we redirected away from this stage
                     data["manager_hooks_executed"] = None
                     with open(issue_yaml, "w") as f:
@@ -263,7 +272,8 @@ def check_manager_stages(agents_dir: Path) -> int:
 
                 processed += 1
 
-        except Exception:
+        except Exception as e:
+            log.warning("Error processing manager hooks for %s: %s", issue_yaml.stem, e)
             continue
 
     return processed
@@ -515,12 +525,16 @@ def _update_issue_stage_direct(yaml_path: Path, data: dict, new_stage: str, new_
 
 
 def check_merged_prs(agents_dir: Path) -> int:
-    """Check for issues at implementation_review whose PRs were merged/closed externally.
+    """Check for issues with PRs that were merged/closed externally.
 
     If a human merges or closes a PR via GitHub UI or `gh pr merge` instead of
     using `agenttree approve`, this function detects it and advances the issue:
     - Merged PR → advances to `accepted`
     - Closed (not merged) PR → advances to `not_doing`
+
+    Checks ANY non-terminal issue that has a pr_number, not just implementation_review.
+    This handles cases where PRs are merged while the issue is still in implement,
+    code_review, or any other stage.
 
     Called from host during sync.
 
@@ -538,9 +552,16 @@ def check_merged_prs(agents_dir: Path) -> int:
     if not issues_dir.exists():
         return 0
 
+    import json
     import yaml
     from rich.console import Console
+    from agenttree.config import load_config
+
     console = Console()
+    config = load_config()
+
+    # Stages where the issue is already done - no need to check PR
+    parking_lot_stages = {s.name for s in config.stages if s.is_parking_lot}
 
     issues_advanced = 0
 
@@ -556,9 +577,12 @@ def check_merged_prs(agents_dir: Path) -> int:
             with open(issue_yaml) as f:
                 data = yaml.safe_load(f)
 
-            # Only check issues at implementation_review WITH a PR
-            if data.get("stage") != "implementation_review":
+            # Skip issues already in terminal/parking-lot stages
+            stage = data.get("stage", "")
+            if stage in parking_lot_stages:
                 continue
+
+            # Only check issues that have a PR
             pr_number = data.get("pr_number")
             if not pr_number:
                 continue
@@ -578,26 +602,23 @@ def check_merged_prs(agents_dir: Path) -> int:
             if result.returncode != 0:
                 continue
 
-            import json
             pr_data = json.loads(result.stdout)
-            state = pr_data.get("state", "").upper()
+            pr_state = pr_data.get("state", "").upper()
             merged_at = pr_data.get("mergedAt")
 
-            if state == "MERGED" or merged_at:
+            if pr_state == "MERGED" or merged_at:
                 # PR was merged externally - advance to accepted
-                console.print(f"[green]PR #{pr_number} was merged externally, advancing issue #{issue_id} to accepted[/green]")
+                console.print(f"[green]PR #{pr_number} was merged externally (issue was at {stage}), advancing issue #{issue_id} to accepted[/green]")
                 _update_issue_stage_direct(issue_yaml, data, "accepted", new_substage=None)
                 issues_advanced += 1
-                # Clean up the agent since we bypassed normal hooks
                 from agenttree.hooks import cleanup_issue_agent
                 from agenttree.issues import Issue
                 cleanup_issue_agent(Issue(**data))
-            elif state == "CLOSED":
+            elif pr_state == "CLOSED":
                 # PR was closed without merging - advance to not_doing
-                console.print(f"[yellow]PR #{pr_number} was closed without merge, advancing issue #{issue_id} to not_doing[/yellow]")
+                console.print(f"[yellow]PR #{pr_number} was closed without merge (issue was at {stage}), advancing issue #{issue_id} to not_doing[/yellow]")
                 _update_issue_stage_direct(issue_yaml, data, "not_doing", new_substage=None)
                 issues_advanced += 1
-                # Clean up the agent since we bypassed normal hooks
                 from agenttree.hooks import cleanup_issue_agent
                 from agenttree.issues import Issue
                 cleanup_issue_agent(Issue(**data))

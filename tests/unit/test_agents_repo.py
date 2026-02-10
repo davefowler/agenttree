@@ -762,31 +762,45 @@ class TestCheckMergedPrs:
         result = check_merged_prs(agents_dir)
         assert result == 0
 
+    @patch("agenttree.config.load_config")
     @patch("agenttree.hooks.is_running_in_container", return_value=False)
-    def test_check_merged_prs_skips_non_implementation_review(self, mock_container, agents_dir):
-        """Verify issues not at implementation_review are skipped."""
+    def test_check_merged_prs_skips_parking_lot_stages(self, mock_container, mock_config, agents_dir):
+        """Verify issues in parking-lot stages (accepted, not_doing) are skipped."""
         import yaml
         from agenttree.agents_repo import check_merged_prs
+        from agenttree.config import Config, StageConfig
+
+        mock_config.return_value = Config(stages=[
+            StageConfig(name="implement"),
+            StageConfig(name="accepted", is_parking_lot=True),
+        ])
 
         issue_dir = agents_dir / "issues" / "001"
         issue_dir.mkdir(parents=True)
 
-        # Issue at backlog stage
+        # Issue at accepted (parking lot) - should be skipped even with PR
         with open(issue_dir / "issue.yaml", "w") as f:
             yaml.safe_dump({
                 "id": "001",
-                "stage": "backlog",
+                "stage": "accepted",
                 "pr_number": 123,
             }, f)
 
         result = check_merged_prs(agents_dir)
         assert result == 0
 
+    @patch("agenttree.config.load_config")
     @patch("agenttree.hooks.is_running_in_container", return_value=False)
-    def test_check_merged_prs_skips_issues_without_pr(self, mock_container, agents_dir):
+    def test_check_merged_prs_skips_issues_without_pr(self, mock_container, mock_config, agents_dir):
         """Verify issues without PR number are skipped."""
         import yaml
         from agenttree.agents_repo import check_merged_prs
+        from agenttree.config import Config, StageConfig
+
+        mock_config.return_value = Config(stages=[
+            StageConfig(name="implement"),
+            StageConfig(name="accepted", is_parking_lot=True),
+        ])
 
         issue_dir = agents_dir / "issues" / "001"
         issue_dir.mkdir(parents=True)
@@ -794,7 +808,7 @@ class TestCheckMergedPrs:
         with open(issue_dir / "issue.yaml", "w") as f:
             yaml.safe_dump({
                 "id": "001",
-                "stage": "implementation_review",
+                "stage": "implement",
                 # No pr_number
             }, f)
 
@@ -803,14 +817,21 @@ class TestCheckMergedPrs:
 
     @patch("subprocess.run")
     @patch("agenttree.hooks.cleanup_issue_agent")
+    @patch("agenttree.config.load_config")
     @patch("agenttree.hooks.is_running_in_container", return_value=False)
     def test_check_merged_prs_advances_merged_pr_to_accepted(
-        self, mock_container, mock_cleanup, mock_run, agents_dir, issue_at_implementation_review_with_pr
+        self, mock_container, mock_config, mock_cleanup, mock_run, agents_dir, issue_at_implementation_review_with_pr
     ):
         """Verify merged PR advances issue to accepted."""
         import yaml
         import json
         from agenttree.agents_repo import check_merged_prs
+        from agenttree.config import Config, StageConfig
+
+        mock_config.return_value = Config(stages=[
+            StageConfig(name="implementation_review"),
+            StageConfig(name="accepted", is_parking_lot=True),
+        ])
 
         issue_dir, _ = issue_at_implementation_review_with_pr
 
@@ -834,14 +855,21 @@ class TestCheckMergedPrs:
 
     @patch("subprocess.run")
     @patch("agenttree.hooks.cleanup_issue_agent")
+    @patch("agenttree.config.load_config")
     @patch("agenttree.hooks.is_running_in_container", return_value=False)
     def test_check_merged_prs_advances_closed_pr_to_not_doing(
-        self, mock_container, mock_cleanup, mock_run, agents_dir, issue_at_implementation_review_with_pr
+        self, mock_container, mock_config, mock_cleanup, mock_run, agents_dir, issue_at_implementation_review_with_pr
     ):
         """Verify closed (not merged) PR advances issue to not_doing."""
         import yaml
         import json
         from agenttree.agents_repo import check_merged_prs
+        from agenttree.config import Config, StageConfig
+
+        mock_config.return_value = Config(stages=[
+            StageConfig(name="implementation_review"),
+            StageConfig(name="accepted", is_parking_lot=True),
+        ])
 
         issue_dir, _ = issue_at_implementation_review_with_pr
 
@@ -864,14 +892,21 @@ class TestCheckMergedPrs:
         mock_cleanup.assert_called_once()
 
     @patch("subprocess.run")
+    @patch("agenttree.config.load_config")
     @patch("agenttree.hooks.is_running_in_container", return_value=False)
     def test_check_merged_prs_ignores_open_pr(
-        self, mock_container, mock_run, agents_dir, issue_at_implementation_review_with_pr
+        self, mock_container, mock_config, mock_run, agents_dir, issue_at_implementation_review_with_pr
     ):
         """Verify open PR does not advance issue."""
         import yaml
         import json
         from agenttree.agents_repo import check_merged_prs
+        from agenttree.config import Config, StageConfig
+
+        mock_config.return_value = Config(stages=[
+            StageConfig(name="implementation_review"),
+            StageConfig(name="accepted", is_parking_lot=True),
+        ])
 
         issue_dir, _ = issue_at_implementation_review_with_pr
 
@@ -891,13 +926,20 @@ class TestCheckMergedPrs:
         assert data["stage"] == "implementation_review"
 
     @patch("subprocess.run")
+    @patch("agenttree.config.load_config")
     @patch("agenttree.hooks.is_running_in_container", return_value=False)
     def test_check_merged_prs_handles_gh_failure(
-        self, mock_container, mock_run, agents_dir, issue_at_implementation_review_with_pr
+        self, mock_container, mock_config, mock_run, agents_dir, issue_at_implementation_review_with_pr
     ):
         """Verify gh CLI failure is handled gracefully."""
         import yaml
         from agenttree.agents_repo import check_merged_prs
+        from agenttree.config import Config, StageConfig
+
+        mock_config.return_value = Config(stages=[
+            StageConfig(name="implementation_review"),
+            StageConfig(name="accepted", is_parking_lot=True),
+        ])
 
         issue_dir, _ = issue_at_implementation_review_with_pr
 
@@ -914,13 +956,20 @@ class TestCheckMergedPrs:
         assert data["stage"] == "implementation_review"
 
     @patch("subprocess.run")
+    @patch("agenttree.config.load_config")
     @patch("agenttree.hooks.is_running_in_container", return_value=False)
     def test_check_merged_prs_handles_timeout(
-        self, mock_container, mock_run, agents_dir, issue_at_implementation_review_with_pr
+        self, mock_container, mock_config, mock_run, agents_dir, issue_at_implementation_review_with_pr
     ):
         """Verify timeout is handled gracefully."""
         import yaml
         from agenttree.agents_repo import check_merged_prs
+        from agenttree.config import Config, StageConfig
+
+        mock_config.return_value = Config(stages=[
+            StageConfig(name="implementation_review"),
+            StageConfig(name="accepted", is_parking_lot=True),
+        ])
 
         issue_dir, _ = issue_at_implementation_review_with_pr
 
@@ -930,6 +979,55 @@ class TestCheckMergedPrs:
         result = check_merged_prs(agents_dir)
 
         assert result == 0
+
+    @patch("subprocess.run")
+    @patch("agenttree.hooks.cleanup_issue_agent")
+    @patch("agenttree.config.load_config")
+    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    def test_check_merged_prs_catches_merged_pr_at_implement_stage(
+        self, mock_container, mock_config, mock_cleanup, mock_run, agents_dir
+    ):
+        """Verify merged PR at implement (not just implementation_review) advances to accepted."""
+        import yaml
+        import json
+        from agenttree.agents_repo import check_merged_prs
+        from agenttree.config import Config, StageConfig
+
+        mock_config.return_value = Config(stages=[
+            StageConfig(name="implement"),
+            StageConfig(name="implementation_review"),
+            StageConfig(name="accepted", is_parking_lot=True),
+        ])
+
+        issue_dir = agents_dir / "issues" / "099"
+        issue_dir.mkdir(parents=True)
+
+        with open(issue_dir / "issue.yaml", "w") as f:
+            yaml.safe_dump({
+                "id": "099",
+                "slug": "099-test",
+                "title": "Test",
+                "stage": "implement",
+                "substage": "code",
+                "pr_number": 555,
+                "branch": "issue-099",
+                "worktree_dir": "/tmp/worktree-099",
+                "created": "2024-01-01T00:00:00Z",
+            }, f)
+
+        mock_run.return_value = Mock(
+            returncode=0,
+            stdout=json.dumps({"state": "MERGED", "mergedAt": "2024-01-01T00:00:00Z"})
+        )
+
+        result = check_merged_prs(agents_dir)
+
+        assert result == 1
+
+        with open(issue_dir / "issue.yaml") as f:
+            data = yaml.safe_load(f)
+        assert data["stage"] == "accepted"
+        mock_cleanup.assert_called_once()
 
 
 @pytest.mark.usefixtures("host_environment")
