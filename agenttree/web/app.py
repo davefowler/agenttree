@@ -19,6 +19,7 @@ import re
 from typing import List, Dict, Optional, AsyncIterator, Callable, Awaitable
 from datetime import datetime, timezone
 from contextlib import asynccontextmanager
+import logging
 
 from agenttree import __version__
 from agenttree.config import load_config, Config
@@ -29,6 +30,9 @@ _config: Config = load_config()
 from agenttree import issues as issue_crud
 from agenttree.agents_repo import sync_agents_repo
 from agenttree.web.models import StageEnum, KanbanBoard, Issue as WebIssue, IssueMoveRequest, PriorityUpdateRequest
+
+# Module-level logger for web app
+logger = logging.getLogger("agenttree.web")
 
 # Pattern to match Claude Code's input prompt separator line
 # The separator is a line of U+2500 (BOX DRAWINGS LIGHT HORIZONTAL) characters: ─
@@ -228,7 +232,7 @@ def verify_credentials(credentials: Optional[HTTPBasicCredentials] = Depends(sec
             headers={"WWW-Authenticate": "Basic"},
         )
 
-    return credentials.username
+    return str(credentials.username)
 
 
 # Favicon routes
