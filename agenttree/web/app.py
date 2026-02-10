@@ -558,7 +558,7 @@ def get_issue_files(
                 file_stage_index = issue_crud.STAGE_ORDER.index(file_stage)
                 is_passed = file_stage_index < current_stage_index
             except ValueError:
-                pass  # File stage not in STAGE_ORDER
+                pass  # File stage not in STAGE_ORDER, leave is_passed as False
 
         # Generate short_name for passed stages (first 3 chars + "...")
         short_name = display_name
