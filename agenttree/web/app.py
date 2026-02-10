@@ -968,7 +968,7 @@ async def stop_issue(
 ) -> dict:
     """Stop an agent working on an issue (kills tmux, stops container, cleans up state)."""
     import asyncio
-    from agenttree.state import stop_all_agents_for_issue
+    from agenttree.api import stop_all_agents_for_issue
 
     try:
         padded_id = issue_id.zfill(3)

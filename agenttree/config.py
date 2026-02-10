@@ -405,7 +405,7 @@ class Config(BaseModel):
         Returns:
             Container name
         """
-        return f"{self.project}-issue-{issue_id}"
+        return f"agenttree-{self.project}-{issue_id}"
 
     def get_tool_config(self, tool_name: str) -> ToolConfig:
         """Get configuration for a tool.
