@@ -2183,30 +2183,13 @@ class TestRunHostHooks:
 class TestCursorReviewRemoved:
     """Tests verifying hardcoded Cursor review is removed."""
 
-    @patch('agenttree.hooks.is_running_in_container', return_value=False)
-    @patch('agenttree.hooks.push_branch_to_remote')
-    @patch('agenttree.github.create_pr')
-    @patch('agenttree.issues.update_issue_metadata')
-    @patch('agenttree.hooks.get_current_branch', return_value='test-branch')
-    @patch('agenttree.hooks.has_uncommitted_changes', return_value=False)
-    @patch('agenttree.config.load_config')
+    @patch('agenttree.hooks.ensure_pr_for_issue', return_value=True)
     @patch('subprocess.run')
     def test_no_hardcoded_cursor_comment(
-        self, mock_subprocess, mock_load_config, mock_uncommitted, mock_branch,
-        mock_update, mock_create_pr, mock_push, mock_container
+        self, mock_subprocess, mock_ensure_pr
     ):
         """_action_create_pr should NOT make hardcoded cursor review comment."""
         from agenttree.hooks import _action_create_pr
-        from agenttree.config import Config, HooksConfig
-
-        mock_pr = MagicMock()
-        mock_pr.number = 123
-        mock_pr.url = "https://github.com/owner/repo/pull/123"
-        mock_create_pr.return_value = mock_pr
-
-        # No hooks configured
-        mock_config = Config(hooks=HooksConfig())
-        mock_load_config.return_value = mock_config
 
         _action_create_pr(Path("/tmp"), issue_id="001", issue_title="Test")
 
