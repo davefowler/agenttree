@@ -241,6 +241,8 @@ def start_agent(
 
     # Get deterministic port using config method
     port = config.get_port_for_issue(issue.id)
+    if port is None:
+        raise AgentStartError(issue.id, f"Could not derive port for issue #{issue.id}")
     if not quiet:
         console.print(f"[dim]Using port: {port} (derived from issue #{issue.id})[/dim]")
 
@@ -294,22 +296,6 @@ def start_agent(
 
     if not quiet:
         console.print(f"[green]✓ Started {tool_name} in container[/green]")
-
-    # For Apple Containers, look up the UUID
-    if runtime.get_runtime_name() == "container":
-        from agenttree.state import update_agent_container_id
-
-        for _ in range(10):
-            time.sleep(0.5)
-            container_uuid = find_container_by_worktree(worktree_path)
-            if container_uuid:
-                update_agent_container_id(issue.id, container_uuid, host)
-                if not quiet:
-                    console.print(f"[dim]Container UUID: {container_uuid[:12]}...[/dim]")
-                break
-        else:
-            if not quiet:
-                console.print(f"[yellow]Warning: Could not find container UUID for cleanup tracking[/yellow]")
 
     if not quiet:
         console.print(f"\n[bold]Agent{role_label} ready for issue #{issue.id}[/bold]")
