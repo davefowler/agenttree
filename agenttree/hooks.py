@@ -598,13 +598,15 @@ def _action_create_pr(issue_dir: Path, issue_id: str = "", issue_title: str = ""
     2. Host sync calls check_manager_stages()
     3. For issues in manager stages, host runs post_start hooks
     4. This hook (create_pr) calls ensure_pr_for_issue() to create the PR
+
+    Raises:
+        RuntimeError: If PR creation fails (prevents silent progression without a PR).
     """
     if not issue_id:
-        console.print(f"[yellow]create_pr hook: no issue_id provided[/yellow]")
-        return
+        raise RuntimeError("create_pr hook: no issue_id provided")
 
-    # Delegate to ensure_pr_for_issue which handles the actual PR creation
-    ensure_pr_for_issue(issue_id)
+    if not ensure_pr_for_issue(issue_id):
+        raise RuntimeError(f"Failed to create PR for issue #{issue_id}. Will retry on next heartbeat.")
 
 
 def _action_merge_pr(pr_number: Optional[int], **kwargs: Any) -> None:
@@ -2409,9 +2411,22 @@ def ensure_pr_for_issue(issue_id: str) -> bool:
                 capture_output=True, text=True, timeout=30,
             )
 
+    # Detect the actual branch in the worktree (issue.branch may be stale/wrong)
+    actual_branch_result = subprocess.run(
+        ["git", "-C", str(worktree_path), "rev-parse", "--abbrev-ref", "HEAD"],
+        capture_output=True, text=True, timeout=10,
+    )
+    actual_branch = actual_branch_result.stdout.strip() if actual_branch_result.returncode == 0 else ""
+    push_branch = actual_branch or issue.branch
+
+    if actual_branch and actual_branch != issue.branch:
+        console.print(f"[yellow]Branch mismatch: issue says '{issue.branch}', worktree is on '{actual_branch}'. Using worktree branch.[/yellow]")
+        # Fix stored branch name
+        update_issue_metadata(issue_id, branch=actual_branch)
+
     # Push the branch from the worktree (force-with-lease since squash rewrites history)
     result = subprocess.run(
-        ["git", "-C", str(worktree_path), "push", "--force-with-lease", "-u", "origin", issue.branch],
+        ["git", "-C", str(worktree_path), "push", "--force-with-lease", "-u", "origin", push_branch],
         capture_output=True,
         text=True
     )
@@ -2453,7 +2468,7 @@ def ensure_pr_for_issue(issue_id: str) -> bool:
     body += f"---\n🤖 Generated with [Claude Code](https://claude.com/claude-code)"
 
     try:
-        pr = create_pr(title=title, body=body, branch=issue.branch, base="main")
+        pr = create_pr(title=title, body=body, branch=push_branch, base="main")
         update_issue_metadata(issue.id, pr_number=pr.number, pr_url=pr.url)
         console.print(f"[green]✓ PR #{pr.number} created for issue #{issue_id}[/green]")
 

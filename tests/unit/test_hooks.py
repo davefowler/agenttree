@@ -2217,6 +2217,63 @@ class TestCursorReviewRemoved:
                 assert "@cursor" not in str(args), "Hardcoded cursor comment found!"
 
 
+class TestCreatePrRaisesOnFailure:
+    """Tests that _action_create_pr raises when PR creation fails."""
+
+    def test_raises_when_no_issue_id(self):
+        """Should raise RuntimeError when no issue_id provided."""
+        from agenttree.hooks import _action_create_pr
+
+        with pytest.raises(RuntimeError, match="no issue_id"):
+            _action_create_pr(Path("/tmp"), issue_id="")
+
+    @patch('agenttree.hooks.ensure_pr_for_issue', return_value=False)
+    def test_raises_when_ensure_pr_fails(self, mock_ensure):
+        """Should raise RuntimeError when ensure_pr_for_issue returns False."""
+        from agenttree.hooks import _action_create_pr
+
+        with pytest.raises(RuntimeError, match="Failed to create PR"):
+            _action_create_pr(Path("/tmp"), issue_id="042")
+
+    @patch('agenttree.hooks.ensure_pr_for_issue', return_value=True)
+    def test_no_error_when_pr_created(self, mock_ensure):
+        """Should not raise when ensure_pr_for_issue succeeds."""
+        from agenttree.hooks import _action_create_pr
+
+        # Should not raise
+        _action_create_pr(Path("/tmp"), issue_id="042")
+
+
+class TestNoPrAtReviewStage:
+    """Tests for validators when pr_number is None (no PR created)."""
+
+    def test_ci_check_errors_without_pr(self, tmp_path):
+        """ci_check should return error when pr_number is None."""
+        from agenttree.hooks import run_builtin_validator
+
+        errors = run_builtin_validator(
+            tmp_path,
+            {"ci_check": {}},
+            pr_number=None,
+        )
+        assert any("No PR number" in e for e in errors)
+
+    @patch('agenttree.config.load_config')
+    def test_pr_approved_errors_without_pr(self, mock_load_config, tmp_path):
+        """pr_approved should return error when pr_number is None and self-approval disabled."""
+        from agenttree.hooks import run_builtin_validator
+        from agenttree.config import Config
+
+        mock_load_config.return_value = Config(allow_self_approval=False)
+
+        errors = run_builtin_validator(
+            tmp_path,
+            {"pr_approved": {}},
+            pr_number=None,
+        )
+        assert any("No PR number" in e for e in errors)
+
+
 class TestCICheckHook:
     """Tests for ci_check hook type."""
 

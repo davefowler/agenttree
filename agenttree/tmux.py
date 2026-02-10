@@ -63,11 +63,17 @@ def create_session(
 ) -> None:
     """Create a new tmux session.
 
+    Kills any pre-existing session with the same name first.
+
     Args:
         session_name: Name for the new session
         working_dir: Working directory for the session
         start_command: Optional command to run in the session
     """
+    # Clean up stale session if one exists (e.g. from a crashed agent)
+    if session_exists(session_name):
+        kill_session(session_name)
+
     cmd = [
         "tmux",
         "new-session",
@@ -537,13 +543,20 @@ class TmuxManager:
             except (ValueError, TypeError):
                 pass  # Skip port exposure if issue_id is not a valid number
 
-        # Generate container name using config method
-        container_name = self.config.get_issue_container_name(issue_id)
-        
-        # Clean up any existing container with this name (from previous runs)
+        # Generate container name with timestamp suffix to avoid Apple Container
+        # mDNS hostname collisions (hostname lingers after container delete).
+        import time
+        base_container_name = self.config.get_issue_container_name(issue_id)
+        suffix = int(time.time()) % 10000
+        container_name = f"{base_container_name}-{suffix}"
+
+        # Clean up any existing containers with this base name pattern
         if container_runtime.runtime:
             from agenttree.container import cleanup_container
+            # Clean up the exact name (unlikely to exist with timestamp, but safe)
             cleanup_container(container_runtime.runtime, container_name)
+            # Clean up the old-style name (no suffix) from previous runs
+            cleanup_container(container_runtime.runtime, base_container_name)
 
         container_cmd = container_runtime.build_run_command(
             worktree_path=worktree_path,
