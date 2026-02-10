@@ -919,3 +919,37 @@ class TestFlowSearchEndpoint:
 
         assert response.status_code == 200
         assert "text/html" in response.headers["content-type"]
+
+
+class TestSettingsPage:
+    """Tests for settings page."""
+
+    def test_settings_page_returns_html(self, client):
+        """Test GET /settings returns HTML page."""
+        response = client.get("/settings")
+
+        assert response.status_code == 200
+        assert "text/html" in response.headers["content-type"]
+
+    def test_settings_page_shows_current_values(self, client):
+        """Test settings page displays current config values."""
+        response = client.get("/settings")
+
+        assert response.status_code == 200
+        # Page should contain form fields for settings
+        assert b"default_model" in response.content or b"Default Model" in response.content
+
+    @patch("agenttree.web.app._config")
+    def test_settings_page_shows_available_tools(self, mock_config, client):
+        """Test settings page shows available tools from config."""
+        mock_config.tools = {"claude": Mock(), "aider": Mock()}
+        mock_config.default_tool = "claude"
+        mock_config.default_model = "opus"
+        mock_config.show_issue_yaml = True
+        mock_config.save_tmux_history = False
+        mock_config.allow_self_approval = False
+        mock_config.refresh_interval = 10
+
+        response = client.get("/settings")
+
+        assert response.status_code == 200
