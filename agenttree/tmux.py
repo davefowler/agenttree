@@ -27,30 +27,6 @@ class TmuxSession:
 # Session Naming - Single Source of Truth
 # =============================================================================
 
-def get_issue_session_name(project: str, issue_id: str, role: str = "developer") -> str:
-    """Get the tmux session name for an issue agent.
-    
-    Args:
-        project: Project name (from config.project)
-        issue_id: Issue ID (e.g., "128" or "000" for manager)
-        role: Agent role - "developer", "reviewer", or "manager"
-    
-    Returns:
-        Session name like "agenttree-developer-128"
-    """
-    return f"{project}-{role}-{issue_id}"
-
-
-def get_manager_session_name(project: str) -> str:
-    """Get the tmux session name for the manager agent.
-    
-    Args:
-        project: Project name (from config.project)
-    
-    Returns:
-        Session name like "agenttree-manager-000"
-    """
-    return f"{project}-manager-000"
 
 
 # Session name slugs in priority order: {project}-{slug}-{issue_id}
@@ -561,8 +537,8 @@ class TmuxManager:
             except (ValueError, TypeError):
                 pass  # Skip port exposure if issue_id is not a valid number
 
-        # Generate container name: agenttree-{project}-{issue_id}
-        container_name = f"agenttree-{self.config.project}-{issue_id}"
+        # Generate container name using config method
+        container_name = self.config.get_issue_container_name(issue_id)
         
         # Clean up any existing container with this name (from previous runs)
         if container_runtime.runtime:

@@ -131,7 +131,7 @@ class TestStopCommand:
 
         with patch("agenttree.cli.agents.load_config", return_value=mock_config):
             with patch("agenttree.state.get_active_agent", return_value=mock_agent):
-                with patch("agenttree.state.stop_agent", return_value=True) as mock_stop:
+                with patch("agenttree.api.stop_agent", return_value=True) as mock_stop:
                     with patch("agenttree.cli.agents.get_issue_func", return_value=None):
                         result = cli_runner.invoke(main, ["stop", "42"])
 
@@ -526,7 +526,7 @@ class TestShutdownCommand:
         with patch("agenttree.cli.workflow.is_running_in_container", return_value=False):
             with patch("agenttree.cli.workflow.load_config", return_value=mock_config):
                 with patch("agenttree.cli.workflow.get_issue_func", return_value=mock_issue):
-                    with patch("agenttree.state.stop_all_agents_for_issue", side_effect=mock_stop_all_agents):
+                    with patch("agenttree.api.stop_all_agents_for_issue", side_effect=mock_stop_all_agents):
                         with patch("subprocess.run", side_effect=mock_subprocess_run):
                             with patch("agenttree.cli.workflow.update_issue_stage", return_value=mock_issue):
                                 with patch("agenttree.cli.workflow.delete_session"):
