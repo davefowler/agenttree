@@ -1900,7 +1900,6 @@ class TestCleanupIssueAgent:
     def test_no_agent_to_cleanup(self):
         """Should print message when no agents to cleanup."""
         from agenttree.hooks import cleanup_issue_agent
-        import agenttree.state
 
         issue = Issue(
             id="001",
@@ -1911,14 +1910,13 @@ class TestCleanupIssueAgent:
             stage=ACCEPTED,
         )
 
-        with patch.object(agenttree.state, 'stop_all_agents_for_issue', return_value=0) as mock_stop:
+        with patch("agenttree.api.stop_all_agents_for_issue", return_value=0) as mock_stop:
             cleanup_issue_agent(issue)
             mock_stop.assert_called_once_with("001")
 
     def test_cleanup_delegates_to_stop_all_agents(self):
         """Should delegate to stop_all_agents_for_issue."""
         from agenttree.hooks import cleanup_issue_agent
-        import agenttree.state
 
         issue = Issue(
             id="042",
@@ -1929,7 +1927,7 @@ class TestCleanupIssueAgent:
             stage=ACCEPTED,
         )
 
-        with patch.object(agenttree.state, 'stop_all_agents_for_issue', return_value=2) as mock_stop:
+        with patch("agenttree.api.stop_all_agents_for_issue", return_value=2) as mock_stop:
             cleanup_issue_agent(issue)
             mock_stop.assert_called_once_with("042")
 

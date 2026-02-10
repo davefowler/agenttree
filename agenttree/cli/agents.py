@@ -43,7 +43,6 @@ def start_agent(
     """
     from agenttree.state import (
         get_active_agent,
-        get_port_for_issue,
         create_agent_for_issue,
         get_issue_names,
     )
@@ -153,8 +152,7 @@ def start_agent(
             create_worktree(repo_path, worktree_path, names["branch"])
 
     # Get deterministic port from issue number
-    base_port = int(config.port_range.split("-")[0])
-    port = get_port_for_issue(issue.id, base_port=base_port)
+    port = config.get_port_for_issue(issue.id) or 9000 + (int(issue.id) % 1000)
     console.print(f"[dim]Using port: {port} (derived from issue #{issue.id})[/dim]")
 
     # Register agent in state
@@ -212,22 +210,7 @@ def start_agent(
 
     console.print(f"[green]✓ Started {tool_name} in container[/green]")
 
-    # For Apple Containers, look up the UUID and store it for cleanup
-    if runtime.get_runtime_name() == "container":
-        import time
-        from agenttree.container import find_container_by_worktree
-        from agenttree.state import update_agent_container_id
-
-        # Wait for container to start, then find its UUID
-        for _ in range(10):  # Try for up to 5 seconds
-            time.sleep(0.5)
-            container_uuid = find_container_by_worktree(worktree_path)
-            if container_uuid:
-                update_agent_container_id(issue.id, container_uuid, role)
-                console.print(f"[dim]Container UUID: {container_uuid[:12]}...[/dim]")
-                break
-        else:
-            console.print(f"[yellow]Warning: Could not find container UUID for cleanup tracking[/yellow]")
+    # Note: Container tracking is now handled dynamically by the state system
 
     console.print(f"\n[bold]Agent{role_label} ready for issue #{issue.id}[/bold]")
     console.print(f"  Container: {agent.container}")
@@ -653,7 +636,8 @@ def stop(issue_id: str, role: str, all_roles: bool) -> None:
         agenttree stop 23 --role reviewer  # Stop the review agent
         agenttree stop 23 --all        # Stop all agents for issue 23
     """
-    from agenttree.state import stop_agent, stop_all_agents_for_issue, get_active_agent
+    from agenttree.state import get_active_agent
+    from agenttree.api import stop_agent, stop_all_agents_for_issue
     from agenttree.tmux import session_exists, kill_session
 
     config = load_config()
