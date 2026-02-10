@@ -394,9 +394,11 @@ def check_stalled_agents(
         console.print(f"[dim]Stall state unchanged ({len(dead)} dead, {len(stalled)} stalled) - not re-alerting manager[/dim]")
         return
     
-    # Check if manager is running before sending notification
+    # Ensure manager is running before sending notification
     if not session_exists(manager_session):
-        console.print("[dim]Manager not running, wrote stalled.yaml only[/dim]")
+        console.print("[yellow]Manager not running, restarting...[/yellow]")
+        start_manager(agents_dir)
+        # Give it a moment to spin up - notification will reach it on next cycle
         return
     
     # Send brief notification pointing to file
@@ -469,7 +471,7 @@ def push_pending_branches(agents_dir: Path, **kwargs: Any) -> None:
 
 @register_action("check_manager_stages")
 def check_manager_stages(agents_dir: Path, **kwargs: Any) -> None:
-    """Process issues in controller-owned stages.
+    """Process issues in manager-owned stages.
     
     Args:
         agents_dir: Path to _agenttree directory
@@ -478,7 +480,7 @@ def check_manager_stages(agents_dir: Path, **kwargs: Any) -> None:
     
     count = do_check(agents_dir)
     if count > 0:
-        console.print(f"[dim]Processed {count} controller stage issue(s)[/dim]")
+        console.print(f"[dim]Processed {count} manager stage issue(s)[/dim]")
 
 
 @register_action("check_custom_agent_stages")
@@ -890,6 +892,7 @@ DEFAULT_EVENT_CONFIGS: dict[str, list[str] | dict[str, Any]] = {
         "interval_s": 10,
         "actions": [
             "sync",
+            {"start_manager": {"min_interval_s": 30}},  # Ensure manager stays alive
             {"push_pending_branches": {}},
             {"check_manager_stages": {}},
             {"check_custom_agent_stages": {}},

@@ -478,6 +478,7 @@ class TestApproveIssueEndpoint:
         # Verify hooks were called
         mock_exit.assert_called_once()
         mock_enter.assert_called_once()
+        mock_crud.update_issue_stage.assert_called_once()
 
     @patch("agenttree.state.get_active_agent")
     @patch("agenttree.hooks.execute_enter_hooks")
@@ -571,7 +572,6 @@ class TestApproveIssueEndpoint:
         mock_crud.update_issue_stage.return_value = mock_review_issue
         mock_config.return_value.get_next_stage.return_value = ("accepted", None, True)
 
-        # Mock active agent with tmux session
         mock_agent = Mock()
         mock_agent.tmux_session = "test-session"
         mock_get_agent.return_value = mock_agent
@@ -655,9 +655,10 @@ class TestAgentTmuxEndpoint:
 class TestSendToAgentEndpoint:
     """Tests for send message to agent endpoint."""
 
+    @patch("agenttree.tmux.session_exists", return_value=False)
     @patch("agenttree.tmux.send_message")
     @patch("agenttree.web.app.load_config")
-    def test_send_to_agent(self, mock_config, mock_send, client):
+    def test_send_to_agent(self, mock_config, mock_send, mock_session, client):
         """Test sending message to agent."""
         mock_config.return_value.project = "test"
 

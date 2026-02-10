@@ -5,7 +5,7 @@ from __future__ import annotations
 import subprocess
 import sys
 from pathlib import Path
-from typing import List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
 from dataclasses import dataclass
 
 from agenttree.config import Config
@@ -53,64 +53,13 @@ def get_manager_session_name(project: str) -> str:
     return f"{project}-manager-000"
 
 
-def check_issue_session_exists(project: str, issue_id: str) -> bool:
-    """Check if any tmux session exists for an issue.
-    
-    Checks all role patterns (developer, reviewer) and legacy patterns.
-    
-    Args:
-        project: Project name
-        issue_id: Issue ID
-        
-    Returns:
-        True if any session exists for this issue
-    """
-    # Current patterns
-    patterns = [
-        f"{project}-developer-{issue_id}",
-        f"{project}-reviewer-{issue_id}",
-        # Legacy patterns for backwards compatibility
-        f"{project}-issue-{issue_id}",
-        f"{project}-agent-{issue_id}",
-    ]
-    # Special case for manager (issue_id "000")
-    if issue_id == "000":
-        patterns.insert(0, f"{project}-manager-000")
-        patterns.append(f"{project}-controller-000")
-    
-    return any(session_exists(name) for name in patterns)
+# Session name slugs in priority order: {project}-{slug}-{issue_id}
+SESSION_SLUGS = ("manager", "developer", "reviewer", "issue", "agent")
 
 
-def find_issue_session(project: str, issue_id: str) -> str | None:
-    """Find the active tmux session name for an issue.
-    
-    Args:
-        project: Project name
-        issue_id: Issue ID
-        
-    Returns:
-        Session name if found, None otherwise
-    """
-    # Current patterns (checked first)
-    patterns = [
-        f"{project}-developer-{issue_id}",
-        f"{project}-reviewer-{issue_id}",
-    ]
-    # Special case for manager
-    if issue_id == "000":
-        patterns.insert(0, f"{project}-manager-000")
-    
-    # Legacy patterns (checked last)
-    patterns.extend([
-        f"{project}-issue-{issue_id}",
-        f"{project}-agent-{issue_id}",
-        f"{project}-controller-{issue_id}",
-    ])
-    
-    for name in patterns:
-        if session_exists(name):
-            return name
-    return None
+def get_session_patterns(project: str, issue_id: str) -> list[str]:
+    """All possible tmux session names for an issue, preferred first."""
+    return [f"{project}-{slug}-{issue_id}" for slug in SESSION_SLUGS]
 
 
 def session_exists(session_name: str) -> bool:
@@ -134,7 +83,7 @@ def session_exists(session_name: str) -> bool:
 
 
 def create_session(
-    session_name: str, working_dir: Path, start_command: Optional[str] = None
+    session_name: str, working_dir: Path, start_command: str | None = None
 ) -> None:
     """Create a new tmux session.
 
@@ -389,7 +338,7 @@ def wait_for_prompt(
     return False
 
 
-def list_sessions() -> List[TmuxSession]:
+def list_sessions() -> list[TmuxSession]:
     """List all tmux sessions.
 
     Returns:
@@ -455,23 +404,6 @@ class TmuxManager:
             Session name
         """
         return self.config.get_tmux_session_name(agent_num)
-
-    def start_agent(
-        self,
-        agent_num: int,
-        worktree_path: Path,
-        tool_name: str,
-        startup_script: Optional[Path] = None,
-    ) -> None:
-        """DEPRECATED: Use start_agent_in_container instead.
-        
-        This method is kept for backwards compatibility but will raise an error.
-        AgentTree requires containers - there is no non-container mode.
-        """
-        raise RuntimeError(
-            "start_agent() is deprecated. Use start_agent_in_container() instead. "
-            "AgentTree requires containers for security - there is no non-container mode."
-        )
 
     def start_agent_in_container(
         self,
@@ -562,7 +494,7 @@ class TmuxManager:
         session_name = self.get_session_name(agent_num)
         return session_exists(session_name)
 
-    def list_agent_sessions(self) -> List[TmuxSession]:
+    def list_agent_sessions(self) -> list[TmuxSession]:
         """List all agent tmux sessions.
 
         Returns:
@@ -702,6 +634,7 @@ class TmuxManager:
         session_name: str,
         repo_path: Path,
         tool_name: str,
+        model: str | None = None,
     ) -> None:
         """Start the manager agent on the host (not in a container).
 
@@ -711,6 +644,7 @@ class TmuxManager:
             session_name: Tmux session name (typically {project}-manager-000)
             repo_path: Path to the repository root
             tool_name: Name of the AI tool to use
+            model: Model to use (e.g., "sonnet", "opus"). If None, uses tool default.
         """
         # Kill existing session if it exists
         if session_exists(session_name):
@@ -722,6 +656,8 @@ class TmuxManager:
         # Build command to run the AI tool directly (not in container)
         # Manager runs on the host with full access
         ai_command = tool_config.command
+        if model:
+            ai_command = f"{ai_command} --model {model}"
 
         # Create tmux session running the AI tool
         create_session(session_name, repo_path, ai_command)
@@ -776,7 +712,7 @@ class TmuxManager:
         """
         return session_exists(session_name)
 
-    def list_issue_sessions(self) -> List[TmuxSession]:
+    def list_issue_sessions(self) -> list[TmuxSession]:
         """List all issue-bound agent tmux sessions.
 
         Returns:

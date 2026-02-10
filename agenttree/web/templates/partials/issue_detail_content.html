@@ -26,7 +26,7 @@
             {% endif %}
             <div class="detail-meta-row">
                 <div class="detail-meta">
-                    <span>Stage: {{ (issue.stage if issue.stage is string else issue.stage.value) | stage_name }}</span>
+                    <span>Stage: <span class="stage-tag">{{ (issue.stage if issue.stage is string else issue.stage.value) | stage_name }}</span></span>
                     {% if issue.substage %}
                     <span class="substage-pill">{{ issue.substage | replace('_', ' ') | title }}</span>
                     {% endif %}
@@ -285,7 +285,7 @@ async function approveIssue(issueNumber, btn) {
         }
     } catch (error) {
         console.error('Error approving:', error);
-        alert('Error approving issue');
+        alert(`Error approving issue: ${error.message || error}`);
         // Re-enable button and restore state
         btn.disabled = false;
         btn.textContent = 'Approve';

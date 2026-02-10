@@ -376,11 +376,11 @@ class TestStageTransitions:
         assert next_substage == "code"
         assert is_review is False
 
-    def test_get_next_stage_implement_code_review_to_address_review(self):
-        """implement.code_review -> implement.address_review"""
+    def test_get_next_stage_implement_code_review_skips_address_review(self):
+        """implement.code_review -> implement.wrapup (address_review is redirect_only)"""
         next_stage, next_substage, is_review = get_next_stage(IMPLEMENT, "code_review")
         assert next_stage == IMPLEMENT
-        assert next_substage == "address_review"
+        assert next_substage == "wrapup"
         assert is_review is False
 
     def test_get_next_stage_implement_to_wrapup(self):

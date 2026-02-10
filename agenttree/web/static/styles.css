@@ -394,7 +394,7 @@ button[disabled] {
 .file-tabs {
     display: flex;
     gap: 0;
-    overflow-x: auto;
+    overflow: hidden;
     padding: 0;
 }
 
@@ -413,6 +413,11 @@ button[disabled] {
     background: var(--bg-card-alt);
     margin-right: 2px;
     border-radius: 3px 3px 0 0;
+    /* Allow shrinking to fit container */
+    flex-shrink: 1;
+    min-width: 60px;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .file-tab:hover {
@@ -424,6 +429,7 @@ button[disabled] {
     color: var(--text-accent);
     border-top-color: var(--text-accent);
     background: var(--bg-card);
+    flex-shrink: 0; /* Keep active tab fully visible */
 }
 
 .no-files {
@@ -653,6 +659,14 @@ button[disabled] {
     font-size: 14px;
     color: var(--text-muted);
     flex-wrap: wrap;
+}
+
+.stage-tag {
+    display: inline-block;
+    border: 1px solid var(--text-accent);
+    border-radius: 4px;
+    padding: 1px 8px;
+    font-size: inherit;
 }
 
 .substage-pill {
@@ -1093,6 +1107,7 @@ button[disabled] {
    ============================================== */
 
 .agent-chat-panel {
+    position: relative;
     width: 350px;
     flex-shrink: 0;
     background: var(--bg-secondary);
@@ -1109,6 +1124,32 @@ button[disabled] {
     opacity: 0;
     overflow: hidden;
     margin-left: 0;
+}
+
+/* Resize handle for panels */
+.resize-handle {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 6px;
+    height: 100%;
+    cursor: col-resize;
+    z-index: 10;
+}
+
+.resize-handle:hover,
+.resize-handle.dragging {
+    background: rgba(168, 213, 186, 0.3);
+}
+
+.agent-chat-panel.collapsed .resize-handle,
+.manager-panel.collapsed .resize-handle {
+    display: none;
+}
+
+/* Hide resize handle on mobile */
+.mobile-container .resize-handle {
+    display: none;
 }
 
 .agent-chat-header {

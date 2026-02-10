@@ -162,7 +162,7 @@ class DependenciesCheck(PreflightCheck):
         """Check dependencies using uv."""
         try:
             result = subprocess.run(
-                ["uv", "sync", "--check"],
+                ["uv", "sync", "--check", "--inexact"],
                 capture_output=True,
                 text=True,
                 timeout=60,

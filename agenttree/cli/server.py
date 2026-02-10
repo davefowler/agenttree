@@ -38,8 +38,13 @@ def _start_manager(
         sys.exit(1)
 
     tool_name = tool or config.default_tool
+    # Resolve model through standard chain: stage → role → default
+    # Manager has no stage, so this picks up the role model (e.g., sonnet)
+    model_name = config.model_for("manager", role="manager")
+
     console.print(f"[green]Starting manager agent...[/green]")
     console.print(f"[dim]Tool: {tool_name}[/dim]")
+    console.print(f"[dim]Model: {model_name}[/dim]")
     console.print(f"[dim]Session: {session_name}[/dim]")
 
     # Start manager on host (not in container)
@@ -47,6 +52,7 @@ def _start_manager(
         session_name=session_name,
         repo_path=repo_path,
         tool_name=tool_name,
+        model=model_name,
     )
 
     console.print(f"\n[bold]Manager ready[/bold]")
@@ -84,10 +90,10 @@ def web(host: str, port: int, config_path: str | None) -> None:
 def serve(host: str, port: int) -> None:
     """Start the AgentTree server (runs syncs, spawns agents).
 
-    This is the main controller process that:
+    This is the main manager process that:
     - Syncs the _agenttree repo periodically
     - Spawns agents for issues in agent stages
-    - Runs hooks for controller stages
+    - Runs hooks for manager stages
     - Provides the web dashboard
 
     Use 'agenttree start' to run this in a tmux session.

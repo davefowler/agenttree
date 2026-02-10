@@ -43,8 +43,13 @@ class RoleConfig(BaseModel):
 
     # AI agent settings (only for AI roles, not manager)
     tool: Optional[str] = None  # AI tool to use (e.g., "claude", "codex")
+<<<<<<< HEAD
     model: Optional[str] = None  # Model to use (e.g., "opus", "gpt-5.2")
     model_tier: str | None = None  # Model tier (e.g., "high", "medium", "low") - resolved via model_tiers
+=======
+    model: Optional[str] = None  # Explicit model (e.g., "opus"). Overrides model_tier.
+    model_tier: Optional[str] = None  # Tier name (e.g., "high", "medium", "low") → resolved via model_tiers
+>>>>>>> origin/main
     skill: Optional[str] = None  # Skill file path for custom agents
 
     # Process to run (for manager, this could be "agenttree watch")
@@ -96,7 +101,7 @@ class OnConfig(BaseModel):
     Example:
         on:
           startup:
-            - start_controller
+            - start_manager
             - auto_start_agents
           
           heartbeat:
@@ -122,8 +127,14 @@ class SubstageConfig(BaseModel):
     output: Optional[str] = None  # Document created by this substage
     output_optional: bool = False  # If True, missing output file doesn't error
     skill: Optional[str] = None   # Override skill file path
+<<<<<<< HEAD
     model: Optional[str] = None   # Model to use for this substage (overrides stage model)
     model_tier: str | None = None  # Model tier (resolved via model_tiers)
+=======
+    model: Optional[str] = None   # Explicit model (overrides model_tier and stage model)
+    model_tier: Optional[str] = None  # Tier name (e.g., "high") → resolved via model_tiers
+    redirect_only: bool = False   # Only reachable via StageRedirect, skipped in normal progression
+>>>>>>> origin/main
     validators: list[str] = Field(default_factory=list)  # Legacy format
     pre_completion: list[dict] = Field(default_factory=list)  # Hooks before completing
     post_start: list[dict] = Field(default_factory=list)  # Hooks after starting
@@ -136,12 +147,17 @@ class StageConfig(BaseModel):
     output: Optional[str] = None  # Document created by this stage
     output_optional: bool = False  # If True, missing output file doesn't error
     skill: Optional[str] = None   # Override skill file path
+<<<<<<< HEAD
     model: Optional[str] = None   # Model to use for this stage (overrides default_model)
     model_tier: str | None = None  # Model tier (resolved via model_tiers)
+=======
+    model: Optional[str] = None   # Explicit model (overrides model_tier)
+    model_tier: Optional[str] = None  # Tier name (e.g., "high") → resolved via model_tiers
+>>>>>>> origin/main
     human_review: bool = False    # Requires human approval to exit
     is_parking_lot: bool = False  # No agent auto-starts here (backlog, accepted, not_doing)
     redirect_only: bool = False   # Only reachable via StageRedirect, skipped in normal progression
-    role: str = "developer"       # Who executes this stage: "developer" (in container) or "manager" (host)
+    role: str = "developer"       # Who executes this stage: "developer", "manager", or custom role name
     review_doc: str | None = None  # Document to show by default when viewing issue in this stage
     substages: Dict[str, SubstageConfig] = Field(default_factory=dict)
     pre_completion: list[dict] = Field(default_factory=list)  # Stage-level hooks before completing
@@ -238,7 +254,15 @@ class Config(BaseModel):
     port_range: str = "9001-9099"
     default_tool: str = "claude"
     default_model: str = "opus"  # Model to use for Claude CLI (opus, sonnet)
+<<<<<<< HEAD
     model_tiers: dict[str, str] = Field(default_factory=dict)  # Tier name -> model name mapping
+=======
+    model_tiers: Dict[str, str] = Field(default_factory=lambda: {
+        "high": "opus",
+        "medium": "sonnet",
+        "low": "haiku",
+    })
+>>>>>>> origin/main
     refresh_interval: int = 10
     tools: Dict[str, ToolConfig] = Field(default_factory=dict)
     roles: Dict[str, RoleConfig] = Field(default_factory=dict)  # Role configurations
@@ -357,7 +381,7 @@ class Config(BaseModel):
     def get_issue_session_patterns(self, issue_id: str) -> list[str]:
         """Get all possible tmux session names for an issue.
 
-        Used for checking if any session exists (handles legacy patterns).
+        Delegates to tmux.get_session_patterns() - the single source of truth.
 
         Args:
             issue_id: Issue ID
@@ -365,20 +389,8 @@ class Config(BaseModel):
         Returns:
             List of possible session names, current patterns first
         """
-        patterns = [
-            f"{self.project}-developer-{issue_id}",
-            f"{self.project}-reviewer-{issue_id}",
-        ]
-        # Special case for manager
-        if issue_id == "000":
-            patterns.insert(0, f"{self.project}-manager-000")
-        # Legacy patterns for backwards compatibility
-        patterns.extend([
-            f"{self.project}-issue-{issue_id}",
-            f"{self.project}-agent-{issue_id}",
-            f"{self.project}-controller-{issue_id}",
-        ])
-        return patterns
+        from agenttree.tmux import get_session_patterns
+        return get_session_patterns(self.project, issue_id)
 
     def is_project_session(self, session_name: str) -> bool:
         """Check if a session name belongs to this project.
@@ -389,16 +401,7 @@ class Config(BaseModel):
         Returns:
             True if session belongs to this project
         """
-        prefixes = [
-            f"{self.project}-developer-",
-            f"{self.project}-reviewer-",
-            f"{self.project}-manager-",
-            # Legacy patterns
-            f"{self.project}-issue-",
-            f"{self.project}-agent-",
-            f"{self.project}-controller-",
-        ]
-        return any(session_name.startswith(p) for p in prefixes)
+        return session_name.startswith(f"{self.project}-")
 
     def get_issue_container_name(self, issue_id: str) -> str:
         """Get container name for an issue-bound agent.
@@ -493,6 +496,7 @@ class Config(BaseModel):
                 description="Human-driven manager (runs on host)",
                 container=None,  # No container
                 process=None,  # Could be "agenttree watch" in future
+                model_tier="low",  # Manager just runs CLI commands
             ),
             "developer": RoleConfig(
                 name="developer",
@@ -649,9 +653,10 @@ class Config(BaseModel):
         # Fall back to stage output
         return stage.output
 
-    def model_for(self, stage_name: str, substage: Optional[str] = None) -> str:
-        """Get the model to use for a stage/substage.
+    def model_for(self, stage_name: str, substage: Optional[str] = None, role: Optional[str] = None) -> str:
+        """Get the model to use. Checks substage → stage → role → default.
 
+<<<<<<< HEAD
         Resolution order:
         1. Substage model (explicit model name)
         2. Substage tier lookup (via model_tiers)
@@ -665,11 +670,27 @@ class Config(BaseModel):
 
         Returns:
             Model name (e.g., "opus", "haiku", "sonnet")
+=======
+        At each level, explicit `model` beats `model_tier`.
+>>>>>>> origin/main
         """
-        stage = self.get_stage(stage_name)
-        if stage is None:
-            return self.default_model
+        tiers = self.model_tiers
 
+        # Check each config in priority order: substage, stage, role
+        configs: list[object] = []
+        stage = self.get_stage(stage_name)
+        if stage:
+            if substage:
+                sc = stage.get_substage(substage)
+                if sc:
+                    configs.append(sc)
+            configs.append(stage)
+        if role:
+            rc = self.get_role(role)
+            if rc:
+                configs.append(rc)
+
+<<<<<<< HEAD
         # Check substage first (model > tier)
         if substage:
             substage_config = stage.get_substage(substage)
@@ -688,6 +709,16 @@ class Config(BaseModel):
             return self.model_tiers[stage.model_tier]
 
         # Fall back to default model
+=======
+        for cfg in configs:
+            m = getattr(cfg, "model", None)
+            if m:
+                return m
+            t = getattr(cfg, "model_tier", None)
+            if t:
+                return tiers.get(t, t)
+
+>>>>>>> origin/main
         return self.default_model
 
     def validators_for(self, stage_name: str, substage: Optional[str] = None) -> list[str]:
@@ -793,9 +824,14 @@ class Config(BaseModel):
         if substages and current_substage:
             try:
                 idx = substages.index(current_substage)
-                if idx < len(substages) - 1:
-                    # Move to next substage
-                    return current_stage, substages[idx + 1], False
+                # Look for next non-redirect_only substage
+                for next_idx in range(idx + 1, len(substages)):
+                    next_sub_name = substages[next_idx]
+                    next_sub = stage_config.get_substage(next_sub_name)
+                    if next_sub and next_sub.redirect_only:
+                        continue  # Skip redirect_only substages in normal progression
+                    return current_stage, next_sub_name, False
+                # All remaining substages are redirect_only, move to next stage
             except ValueError:
                 pass  # substage not found, move to next stage
 

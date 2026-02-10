@@ -19,6 +19,7 @@ import re
 from typing import List, Dict, Optional, AsyncIterator, Callable, Awaitable
 from datetime import datetime, timezone
 from contextlib import asynccontextmanager
+import logging
 
 from agenttree import __version__
 from agenttree.config import load_config, Config
@@ -29,6 +30,9 @@ _config: Config = load_config()
 from agenttree import issues as issue_crud
 from agenttree.agents_repo import sync_agents_repo
 from agenttree.web.models import StageEnum, KanbanBoard, Issue as WebIssue, IssueMoveRequest, PriorityUpdateRequest
+
+# Module-level logger for web app
+logger = logging.getLogger("agenttree.web")
 
 # Pattern to match Claude Code's input prompt separator line
 # The separator is a line of U+2500 (BOX DRAWINGS LIGHT HORIZONTAL) characters: ─
@@ -94,10 +98,10 @@ async def heartbeat_loop(interval: int = 10) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    """FastAPI lifespan context - starts heartbeat and controller.
+    """FastAPI lifespan context - starts heartbeat and manager.
     
     Note: The startup event is fired by 'agenttree run' before starting the server.
-    This lifespan only handles the heartbeat loop and controller startup fallback.
+    This lifespan only handles the heartbeat loop and manager startup fallback.
     """
     global _heartbeat_task
 
@@ -109,7 +113,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     _heartbeat_task = asyncio.create_task(heartbeat_loop(interval))
     print(f"✓ Started heartbeat events (every {interval}s)")
 
-    # Auto-start controller if not running (fallback for direct server start)
+    # Auto-start manager if not running (fallback for direct server start)
     from agenttree.tmux import session_exists
     config = load_config()
     manager_session = config.get_manager_tmux_session()
@@ -121,9 +125,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             cwd=Path.cwd(),
             start_new_session=True
         )
-        print("✓ Started controller agent")
+        print("✓ Started manager agent")
     else:
-        print("✓ Controller already running")
+        print("✓ Manager already running")
 
     yield  # Server runs here
 
@@ -228,7 +232,7 @@ def verify_credentials(credentials: Optional[HTTPBasicCredentials] = Depends(sec
             headers={"WWW-Authenticate": "Basic"},
         )
 
-    return credentials.username
+    return str(credentials.username)
 
 
 # Favicon routes
@@ -288,7 +292,7 @@ class AgentManager:
     def _check_issue_tmux_session(self, issue_id: str) -> bool:
         """Check if tmux session exists for an issue-bound agent.
 
-        Note: Controller is agent 0, so _check_issue_tmux_session("000") checks controller.
+        Note: Manager is agent 0, so _check_issue_tmux_session("000") checks manager.
         Uses config.get_issue_session_patterns() for consistent naming.
         """
         active = self._get_active_sessions()
@@ -937,7 +941,7 @@ async def send_to_agent(
     return HTMLResponse("")
 
 
-# Controller routes removed - controller is now agent 0
+# Manager routes removed - manager is now agent 0
 # Use /agent/0/tmux, /agent/0/send, /api/issues/0/agent-status instead
 
 
@@ -1112,9 +1116,9 @@ async def approve_issue(
                 skip_pr_approval=config.allow_self_approval,
             )
         except StageRedirect as redirect:
-            # Redirect to a different stage instead of normal next stage
+            # Redirect to a different stage/substage instead of normal next
             next_stage = redirect.target_stage
-            next_substage = None
+            next_substage = redirect.target_substage
         except ValidationError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
@@ -1132,10 +1136,12 @@ async def approve_issue(
         issue_crud.set_processing(issue_id_normalized, "enter")
 
         # Execute enter hooks
+        import logging
+        log = logging.getLogger("agenttree.web")
         try:
             await asyncio.to_thread(execute_enter_hooks, updated, next_stage, next_substage)
-        except Exception:
-            pass  # Enter hooks shouldn't block
+        except Exception as e:
+            log.warning("Enter hooks failed for issue %s: %s", issue_id_normalized, e)
 
         # Notify agent to continue (if active)
         try:
@@ -1146,11 +1152,16 @@ async def approve_issue(
             if agent and agent.tmux_session:
                 if session_exists(agent.tmux_session):
                     message = "Your work was approved! Run `agenttree next` for instructions."
-                    send_message(agent.tmux_session, message)
-        except Exception:
-            pass  # Agent notification is best-effort
+                    await asyncio.to_thread(send_message, agent.tmux_session, message)
+        except Exception as e:
+            log.warning("Agent notification failed for issue %s: %s", issue_id_normalized, e)
 
         return {"ok": True}
+    except HTTPException:
+        raise  # Let FastAPI handle these with proper status codes
+    except Exception as e:
+        logger.exception(f"Error approving issue #{issue_id_normalized}")
+        raise HTTPException(status_code=500, detail=f"Internal error: {type(e).__name__}: {e}")
     finally:
         # Always clear processing state
         issue_crud.set_processing(issue_id_normalized, None)
