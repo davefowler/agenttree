@@ -25,14 +25,14 @@ class TestBuildRunCommand:
         worktree.mkdir()
         return worktree
 
-    def test_does_not_pass_anthropic_api_key(
+    def test_passes_anthropic_api_key_for_fallback(
         self, runtime: ContainerRuntime, tmp_worktree: Path
     ) -> None:
-        """Test that ANTHROPIC_API_KEY is NOT passed to containers.
+        """Test that ANTHROPIC_API_KEY IS passed to containers for rate limit fallback.
 
-        Even when ANTHROPIC_API_KEY is set in the environment, it should
-        not be included in the container command. Only CLAUDE_CODE_OAUTH_TOKEN
-        should be used for container authentication.
+        Both ANTHROPIC_API_KEY and CLAUDE_CODE_OAUTH_TOKEN are passed when available,
+        allowing agents to switch between subscription and API key modes without
+        restarting the container.
         """
         with patch.dict(os.environ, {
             'ANTHROPIC_API_KEY': 'sk-ant-api03-test-key',
@@ -44,9 +44,9 @@ class TestBuildRunCommand:
         # Convert to string for easier searching
         cmd_str = ' '.join(cmd)
 
-        # ANTHROPIC_API_KEY should NOT be in the command
-        assert 'ANTHROPIC_API_KEY' not in cmd_str
-        assert 'sk-ant-api03-test-key' not in cmd_str
+        # Both auth methods should be passed for flexible mode switching
+        assert 'ANTHROPIC_API_KEY=sk-ant-api03-test-key' in cmd_str
+        assert 'CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-test-token' in cmd_str
 
     def test_passes_oauth_token_when_set(
         self, runtime: ContainerRuntime, tmp_worktree: Path

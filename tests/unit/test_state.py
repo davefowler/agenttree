@@ -4,6 +4,7 @@ Note: State is now derived dynamically from tmux sessions.
 register_agent(), unregister_agent(), save_state() are no-ops.
 """
 
+import subprocess
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
@@ -17,6 +18,7 @@ from agenttree.state import (
     unregister_agent,
     get_active_agent,
     list_active_agents,
+    stop_agent,
     ActiveAgent,
     _parse_tmux_session_name,
 )
@@ -165,6 +167,65 @@ class TestDynamicState:
         issue_ids = {a.issue_id for a in agents}
         assert "042" in issue_ids
         assert "043" in issue_ids
+
+
+class TestStopAgentServeSession:
+    """Tests for serve session cleanup in stop_agent()."""
+
+    def test_stop_agent_kills_serve_session(self):
+        """stop_agent should kill the serve session before the agent session."""
+        mock_config = MagicMock()
+        mock_config.project = "myproject"
+
+        with patch("agenttree.state.load_config", return_value=mock_config), \
+             patch("agenttree.tmux.session_exists", return_value=True), \
+             patch("agenttree.tmux.kill_session") as mock_kill, \
+             patch("agenttree.container.get_container_runtime") as mock_runtime:
+            mock_runtime.return_value.runtime = None
+            result = stop_agent("042", quiet=True)
+
+        assert result is True
+        # Serve session should be killed
+        mock_kill.assert_any_call("myproject-serve-042")
+        # Agent session should also be killed
+        mock_kill.assert_any_call("myproject-developer-042")
+
+    def test_stop_agent_skips_serve_when_no_session(self):
+        """stop_agent should skip serve cleanup when session doesn't exist."""
+        mock_config = MagicMock()
+        mock_config.project = "myproject"
+
+        with patch("agenttree.state.load_config", return_value=mock_config), \
+             patch("agenttree.tmux.session_exists", side_effect=lambda name: name == "myproject-developer-042"), \
+             patch("agenttree.tmux.kill_session") as mock_kill, \
+             patch("agenttree.container.get_container_runtime") as mock_runtime:
+            mock_runtime.return_value.runtime = None
+            result = stop_agent("042", quiet=True)
+
+        assert result is True
+        # Only agent session should be killed, not serve session
+        mock_kill.assert_called_once_with("myproject-developer-042")
+
+    def test_stop_agent_serve_failure_does_not_block(self):
+        """If serve session cleanup fails, agent stop should continue."""
+        def session_exists_side_effect(name):
+            if name == "myproject-serve-042":
+                raise subprocess.CalledProcessError(1, "tmux")
+            return True
+
+        mock_config = MagicMock()
+        mock_config.project = "myproject"
+
+        with patch("agenttree.state.load_config", return_value=mock_config), \
+             patch("agenttree.tmux.session_exists", side_effect=session_exists_side_effect), \
+             patch("agenttree.tmux.kill_session") as mock_kill, \
+             patch("agenttree.container.get_container_runtime") as mock_runtime:
+            mock_runtime.return_value.runtime = None
+            result = stop_agent("042", quiet=True)
+
+        assert result is True
+        # Agent session should still be killed despite serve failure
+        mock_kill.assert_called_once_with("myproject-developer-042")
 
 
 class TestLegacyStatePath:

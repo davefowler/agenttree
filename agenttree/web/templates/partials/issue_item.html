@@ -25,11 +25,14 @@ Optional:
             {% endif %}
         </div>
         {% if show_stage %}
-        <span class="issue-stage-label {% if issue.is_review %}needs-approval{% endif %}">{% if issue.substage %}{{ issue.substage | replace('_', ' ') | title }}{% else %}{{ issue.stage.value | replace('_', ' ') | title }}{% endif %}</span>
+        <span class="issue-stage-label {% if issue.is_review %}needs-approval{% endif %}">{% if issue.substage %}{{ issue.substage | replace('_', ' ') | title }}{% else %}{{ issue.stage.value | stage_name }}{% endif %}</span>
         {% endif %}
     </div>
     <div class="issue-title">{{ issue.title }}</div>
     <div class="issue-badges">
+        {% if issue.ci_escalated %}
+        <span class="badge badge-ci-failed" title="CI failed repeatedly — needs human attention">CI FAILED</span>
+        {% endif %}
         {% for label in issue.labels[:2] %}
         {% if not label.startswith('stage-') %}
         <span class="badge">{{ label }}</span>

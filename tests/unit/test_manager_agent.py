@@ -215,5 +215,3 @@ class TestLogStall:
         assert stall["nudge_sent"] == "You seem stuck. Try running agenttree next."
         assert stall["escalation_needed"] is False
         assert "detected_at" in stall
-
-

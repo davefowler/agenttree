@@ -59,4 +59,4 @@ _agenttree
 _agenttree/
 
 # Claude session persistence (per-worktree)
-.claude-sessions*/
+.claude-session*/

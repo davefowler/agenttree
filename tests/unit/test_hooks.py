@@ -285,21 +285,29 @@ This is the approach section with content.
         mock_result.returncode = 1
         mock_result.stderr = "Can not approve your own pull request"
 
-        with patch('agenttree.hooks.get_pr_approval_status', return_value=False):
-            with patch('agenttree.hooks.subprocess.run', return_value=mock_result):
-                hook = {"type": "pr_approved"}
-                errors = run_builtin_validator(tmp_path, hook, pr_number=123)
-                assert len(errors) == 1
-                assert "approve" in errors[0].lower()
+        mock_cfg = MagicMock()
+        mock_cfg.allow_self_approval = False
+
+        with patch('agenttree.config.load_config', return_value=mock_cfg):
+            with patch('agenttree.hooks.get_pr_approval_status', return_value=False):
+                with patch('agenttree.hooks.subprocess.run', return_value=mock_result):
+                    hook = {"type": "pr_approved"}
+                    errors = run_builtin_validator(tmp_path, hook, pr_number=123)
+                    assert len(errors) == 1
+                    assert "approve" in errors[0].lower()
 
     def test_pr_approved_no_pr_number(self, tmp_path):
         """Should return error when no PR number available."""
         from agenttree.hooks import run_builtin_validator
 
-        hook = {"type": "pr_approved"}
-        errors = run_builtin_validator(tmp_path, hook, pr_number=None)
-        assert len(errors) == 1
-        assert "No PR number" in errors[0]
+        mock_cfg = MagicMock()
+        mock_cfg.allow_self_approval = False
+
+        with patch('agenttree.config.load_config', return_value=mock_cfg):
+            hook = {"type": "pr_approved"}
+            errors = run_builtin_validator(tmp_path, hook, pr_number=None)
+            assert len(errors) == 1
+            assert "No PR number" in errors[0]
 
     def test_create_file_action(self, tmp_path, monkeypatch):
         """Should create file from template."""

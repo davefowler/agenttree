@@ -204,6 +204,26 @@ class SecurityConfig(BaseModel):
     # Containers are always required - this is not configurable
 
 
+class RateLimitFallbackConfig(BaseModel):
+    """Configuration for automatic rate limit fallback to API key mode.
+    
+    When Claude Code Max subscription hits its usage limit, this feature
+    automatically switches agents to API key mode until the limit resets.
+    
+    Example:
+        rate_limit_fallback:
+          enabled: true
+          api_key_env: ANTHROPIC_API_KEY
+          model: claude-sonnet-4-20250514
+          switch_back_buffer_min: 5
+    """
+    
+    enabled: bool = False  # Off by default
+    api_key_env: str = "ANTHROPIC_API_KEY"  # Name of env var (NOT the key itself!)
+    model: str = "claude-sonnet-4-20250514"  # Cheaper model for API mode
+    switch_back_buffer_min: int = 5  # Minutes after reset to wait before switching back
+
+
 class Config(BaseModel):
     """AgentTree configuration."""
 
@@ -229,6 +249,8 @@ class Config(BaseModel):
     manager: ManagerConfig = Field(default_factory=ManagerConfig)
     show_issue_yaml: bool = True  # Show issue.yaml in web UI file tabs
     on: Optional[OnConfig] = None  # Event-driven hooks configuration
+    rate_limit_fallback: RateLimitFallbackConfig = Field(default_factory=RateLimitFallbackConfig)
+    allow_self_approval: bool = False  # Skip PR approval check when approving own PRs (solo projects)
 
     def get_port_for_agent(self, agent_num: int) -> int:
         """Get port number for a specific agent.

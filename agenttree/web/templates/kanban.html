@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Kanban - AgentTree</title>
-    <link rel="stylesheet" href="/static/styles.css?v=8">
+    <link rel="stylesheet" href="/static/styles.css?v=9">
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <!-- diff2html for code diff rendering -->
@@ -14,11 +14,40 @@
 <body>
     {% include 'partials/header.html' %}
 
+    <!-- Rate limit warning banner -->
+    {% if rate_limit_warning %}
+    <div id="rate-limit-banner" class="rate-limit-banner{% if rate_limit_warning.mode == 'api_key' %} api-mode{% endif %}">
+        <div class="banner-content">
+            {% if rate_limit_warning.mode == 'subscription' %}
+            <span class="banner-icon">⚠️</span>
+            <span class="banner-text">
+                <strong>Rate limit reached!</strong>
+                {{ rate_limit_warning.agent_count }} agent(s) blocked until {{ rate_limit_warning.reset_time }}.
+            </span>
+            {% if rate_limit_warning.can_switch %}
+            <button class="banner-btn switch-btn" onclick="switchToApiMode()">
+                Switch to API Key Mode
+            </button>
+            {% else %}
+            <span class="banner-note">(Set ANTHROPIC_API_KEY to enable API fallback)</span>
+            {% endif %}
+            {% else %}
+            <span class="banner-icon">💰</span>
+            <span class="banner-text">
+                <strong>Running in API key mode</strong> (billable usage).
+                Will switch back to subscription at {{ rate_limit_warning.reset_time }}.
+            </span>
+            {% endif %}
+            <button class="banner-btn dismiss-btn" onclick="dismissRateLimitBanner()">×</button>
+        </div>
+    </div>
+    {% endif %}
+
     <div class="kanban-board">
         {% for stage in stages %}
         <div class="kanban-column" data-stage="{{ stage.value }}">
             <div class="column-header">
-                <span>{{ stage.value.replace('_', ' ').title() }}</span>
+                <span>{{ stage.value | stage_name }}</span>
                 <span class="column-count">{{ board.stages[stage]|length }}</span>
             </div>
             <div class="column-cards">
@@ -671,6 +700,62 @@ Possible solutions:
             }
         };
     })();
+
+    // === Rate Limit Banner Functions ===
+    async function switchToApiMode() {
+        const banner = document.getElementById('rate-limit-banner');
+        const switchBtn = banner.querySelector('.switch-btn');
+        if (switchBtn) {
+            switchBtn.textContent = 'Switching...';
+            switchBtn.disabled = true;
+        }
+
+        try {
+            const response = await fetch('/api/rate-limit/switch-to-api', {
+                method: 'POST'
+            });
+            const data = await response.json();
+
+            if (response.ok) {
+                // Update banner to show API mode
+                banner.classList.add('api-mode');
+                banner.querySelector('.banner-content').innerHTML = `
+                    <span class="banner-icon">💰</span>
+                    <span class="banner-text">
+                        <strong>Switched to API key mode</strong> - ${data.restarted} agent(s) restarted.
+                        Will auto-switch back to subscription when rate limit resets.
+                    </span>
+                    <button class="banner-btn dismiss-btn" onclick="dismissRateLimitBanner()">×</button>
+                `;
+                // Refresh the page after a short delay to show updated agent statuses
+                setTimeout(() => location.reload(), 2000);
+            } else {
+                alert('Failed to switch: ' + (data.detail || 'Unknown error'));
+                if (switchBtn) {
+                    switchBtn.textContent = 'Switch to API Key Mode';
+                    switchBtn.disabled = false;
+                }
+            }
+        } catch (error) {
+            console.error('Error switching to API mode:', error);
+            alert('Error switching modes: ' + error.message);
+            if (switchBtn) {
+                switchBtn.textContent = 'Switch to API Key Mode';
+                switchBtn.disabled = false;
+            }
+        }
+    }
+
+    async function dismissRateLimitBanner() {
+        const banner = document.getElementById('rate-limit-banner');
+        banner.style.display = 'none';
+
+        try {
+            await fetch('/api/rate-limit/dismiss', { method: 'POST' });
+        } catch (error) {
+            console.error('Error dismissing banner:', error);
+        }
+    }
     </script>
 </body>
 </html>

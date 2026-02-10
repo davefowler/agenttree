@@ -310,6 +310,27 @@ button[disabled] {
     color: var(--text-primary);
 }
 
+.badge-ci-failed {
+    background: #c44;
+    color: white;
+    font-weight: 600;
+    animation: pulse-red 2s ease-in-out infinite;
+}
+
+@keyframes pulse-red {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
+.ci-escalated-banner {
+    background: #c44;
+    color: white;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-weight: 600;
+    margin-bottom: 8px;
+}
+
 /* Priority badges */
 .priority-badge {
     padding: 2px 6px;
@@ -638,6 +659,16 @@ button[disabled] {
     font-size: 14px;
     color: var(--text-muted);
     flex-wrap: wrap;
+}
+
+.substage-pill {
+    display: inline-block;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 1px 8px;
+    font-size: 12px;
+    color: var(--text-accent);
+    background: var(--bg-tertiary);
 }
 
 .detail-meta .dependency-info,
@@ -2406,8 +2437,8 @@ button[disabled] {
     display: none;
 }
 
-/* Mobile file selector dropdown */
-.mobile-file-select {
+/* Mobile file selector dropdown - only visible inside mobile-container */
+.mobile-container .mobile-file-select {
     display: block;
     width: 100%;
     padding: 10px 12px;
@@ -2424,7 +2455,7 @@ button[disabled] {
     cursor: pointer;
 }
 
-.mobile-file-select:focus {
+.mobile-container .mobile-file-select:focus {
     outline: none;
     background-color: var(--bg-tertiary);
 }
@@ -2815,4 +2846,108 @@ button[disabled] {
 
 [data-theme="dark"] .stage-indicator:hover {
     background: var(--border-color);
+}
+
+/* =============================================================================
+   Rate Limit Warning Banner
+   ============================================================================= */
+
+.rate-limit-banner {
+    position: fixed;
+    top: 60px;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+    background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%);
+    color: #fff;
+    padding: 12px 20px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    animation: slideDown 0.3s ease-out;
+}
+
+.rate-limit-banner.api-mode {
+    background: linear-gradient(135deg, #4a9eff 0%, #2d7dd2 100%);
+}
+
+@keyframes slideDown {
+    from {
+        transform: translateY(-100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+.rate-limit-banner .banner-content {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    max-width: 1200px;
+    margin: 0 auto;
+    flex-wrap: wrap;
+}
+
+.rate-limit-banner .banner-icon {
+    font-size: 24px;
+}
+
+.rate-limit-banner .banner-text {
+    font-size: 15px;
+}
+
+.rate-limit-banner .banner-text strong {
+    font-weight: 700;
+}
+
+.rate-limit-banner .banner-btn {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.rate-limit-banner .banner-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.rate-limit-banner .banner-btn:active {
+    transform: translateY(0);
+}
+
+.rate-limit-banner .switch-btn {
+    background: #fff;
+    color: #d35400;
+}
+
+.rate-limit-banner .switch-btn:disabled {
+    opacity: 0.7;
+    cursor: wait;
+}
+
+.rate-limit-banner .dismiss-btn {
+    background: rgba(255, 255, 255, 0.2);
+    color: #fff;
+    font-size: 18px;
+    padding: 4px 12px;
+    line-height: 1;
+}
+
+.rate-limit-banner .dismiss-btn:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+.rate-limit-banner .banner-note {
+    font-size: 13px;
+    opacity: 0.9;
+}
+
+/* Adjust kanban board position when banner is shown */
+body:has(.rate-limit-banner) .kanban-board {
+    margin-top: 60px;
 }

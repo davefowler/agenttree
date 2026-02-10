@@ -30,6 +30,7 @@ dependencies = [
     "rich>=13.0.0",
     "filelock>=3.0.0",
     "jinja2>=3.1.0",
+    "httpx>=0.28.1",
 ]
 
 [project.optional-dependencies]
@@ -81,6 +82,9 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = "-v --cov=agenttree --cov-report=term-missing"
+markers = [
+    "local_only: tests that require local-only tools (Playwright, tmux, containers) and cannot run in CI",
+]
 
 [tool.black]
 line-length = 100
