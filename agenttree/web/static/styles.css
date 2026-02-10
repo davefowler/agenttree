@@ -661,6 +661,14 @@ button[disabled] {
     flex-wrap: wrap;
 }
 
+.stage-tag {
+    display: inline-block;
+    border: 1px solid var(--text-accent);
+    border-radius: 4px;
+    padding: 1px 8px;
+    font-size: inherit;
+}
+
 .substage-pill {
     display: inline-block;
     border: 1px solid var(--border-color);

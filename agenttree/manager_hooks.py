@@ -59,7 +59,7 @@ def run_post_manager_hooks(agents_dir: Path, verbose: bool = False) -> None:
     
     This function now checks if the new `on:` config is present. If so,
     it skips running hooks (the event system will handle them).
-    If only old `controller_hooks:` config is present, it runs the legacy hooks
+    If only old `manager_hooks:` config is present, it runs the legacy hooks
     with a deprecation warning.
 
     Args:

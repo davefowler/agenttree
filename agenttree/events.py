@@ -12,7 +12,7 @@ Events:
 Example config:
     on:
       startup:
-        - start_controller
+        - start_manager
         - auto_start_agents
       
       heartbeat:

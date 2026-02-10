@@ -191,7 +191,7 @@ class TestFireEvent:
         mock_config = MagicMock()
         mock_config.model_dump.return_value = {
             "on": {
-                "startup": ["start_controller", "auto_start_agents"]
+                "startup": ["start_manager", "auto_start_agents"]
             }
         }
         mock_load_config.return_value = mock_config

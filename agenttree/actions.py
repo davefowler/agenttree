@@ -471,7 +471,7 @@ def push_pending_branches(agents_dir: Path, **kwargs: Any) -> None:
 
 @register_action("check_manager_stages")
 def check_manager_stages(agents_dir: Path, **kwargs: Any) -> None:
-    """Process issues in controller-owned stages.
+    """Process issues in manager-owned stages.
     
     Args:
         agents_dir: Path to _agenttree directory
@@ -480,7 +480,7 @@ def check_manager_stages(agents_dir: Path, **kwargs: Any) -> None:
     
     count = do_check(agents_dir)
     if count > 0:
-        console.print(f"[dim]Processed {count} controller stage issue(s)[/dim]")
+        console.print(f"[dim]Processed {count} manager stage issue(s)[/dim]")
 
 
 @register_action("check_custom_agent_stages")

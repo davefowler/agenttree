@@ -474,7 +474,7 @@ class TestStartController:
         return config
 
     def test_start_manager_creates_session(self, mock_config, tmp_path):
-        """Should create a new tmux session for the controller."""
+        """Should create a new tmux session for the manager."""
         from agenttree.tmux import TmuxManager
 
         manager = TmuxManager(mock_config)
@@ -484,12 +484,12 @@ class TestStartController:
                 with patch("agenttree.tmux.wait_for_prompt", return_value=True):
                     with patch("agenttree.tmux.send_keys") as mock_send:
                         manager.start_manager(
-                            session_name="testproject-controller-000",
+                            session_name="testproject-manager-000",
                             repo_path=tmp_path,
                             tool_name="claude",
                         )
 
-        mock_create.assert_called_once_with("testproject-controller-000", tmp_path, "claude")
+        mock_create.assert_called_once_with("testproject-manager-000", tmp_path, "claude")
         mock_send.assert_called_once()
         # Verify the startup prompt loads manager skill file
         startup_prompt = mock_send.call_args[0][1]
@@ -506,12 +506,12 @@ class TestStartController:
                 with patch("agenttree.tmux.create_session"):
                     with patch("agenttree.tmux.wait_for_prompt", return_value=False):
                         manager.start_manager(
-                            session_name="testproject-controller-000",
+                            session_name="testproject-manager-000",
                             repo_path=tmp_path,
                             tool_name="claude",
                         )
 
-        mock_kill.assert_called_once_with("testproject-controller-000")
+        mock_kill.assert_called_once_with("testproject-manager-000")
 
     def test_start_manager_uses_correct_tool(self, mock_config, tmp_path):
         """Should use the configured AI tool command."""
@@ -528,7 +528,7 @@ class TestStartController:
             with patch("agenttree.tmux.create_session") as mock_create:
                 with patch("agenttree.tmux.wait_for_prompt", return_value=False):
                     manager.start_manager(
-                        session_name="testproject-controller-000",
+                        session_name="testproject-manager-000",
                         repo_path=tmp_path,
                         tool_name="custom",
                     )

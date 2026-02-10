@@ -35,8 +35,8 @@ tools:
 hosts:
   # Controller: Human-driven, runs on host machine (no container)
   # Runs the sync server which spawns agents and runs hooks
-  controller:
-    description: "Human-driven controller"
+  manager:
+    description: "Human-driven manager"
     process: "agenttree serve"  # Runs in tmux, handles syncs
 
   # Default AI agent: runs in container
@@ -169,7 +169,15 @@ stages:
               file: review.md
               section: Self-Review Checklist
               expect: all_checked
-      address_review: {}
+          # If Critical Issues section has content, redirect to address_review
+          # If empty, address_review is skipped (redirect_only) and we go straight to wrapup
+          - section_check:
+              file: review.md
+              section: Critical Issues
+              expect: empty
+              on_fail_substage: address_review
+      address_review:
+        redirect_only: true  # Only reached when code_review finds critical issues
       wrapup:
         pre_completion:
           - wrapup_verified: review.md
@@ -185,7 +193,7 @@ stages:
 
   # Independent code review by a specialized review agent (not the implementing agent)
   - name: independent_code_review
-    host: review  # Custom agent host - spawned by controller
+    role: review  # Custom agent role - spawned by manager
     output: independent_review.md
     skill: independent_review.md
     pre_completion:
@@ -203,7 +211,7 @@ stages:
   # Only reachable via StageRedirect when reviewer doesn't approve
   - name: address_independent_review
     redirect_only: true  # Not in normal progression, only via redirect
-    host: agent  # Back to the implementing agent
+    role: developer  # Back to the implementing agent
     output: independent_review_response.md
     skill: address_independent_review.md
     post_start:
@@ -230,7 +238,7 @@ stages:
   - name: implementation_review
     human_review: true
     review_doc: review.md
-    host: controller  # Host handles PR creation (agents can't push)
+    role: manager  # Manager handles PR creation (agents can't push)
     post_start:
       - create_pr:
     substages:
@@ -245,12 +253,12 @@ stages:
       - pr_approved:
 
   - name: knowledge_base
-    host: agent
+    role: developer
     skill: knowledge_base.md
 
   - name: accepted
     is_parking_lot: true
-    host: controller  # Host handles merge/cleanup (agents can't push)
+    role: manager  # Manager handles merge/cleanup (agents can't push)
     post_start:
       - merge_pr:
       - cleanup_agent:

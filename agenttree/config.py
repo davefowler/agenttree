@@ -96,7 +96,7 @@ class OnConfig(BaseModel):
     Example:
         on:
           startup:
-            - start_controller
+            - start_manager
             - auto_start_agents
           
           heartbeat:
@@ -124,6 +124,7 @@ class SubstageConfig(BaseModel):
     skill: Optional[str] = None   # Override skill file path
     model: Optional[str] = None   # Explicit model (overrides model_tier and stage model)
     model_tier: Optional[str] = None  # Tier name (e.g., "high") → resolved via model_tiers
+    redirect_only: bool = False   # Only reachable via StageRedirect, skipped in normal progression
     validators: list[str] = Field(default_factory=list)  # Legacy format
     pre_completion: list[dict] = Field(default_factory=list)  # Hooks before completing
     post_start: list[dict] = Field(default_factory=list)  # Hooks after starting
@@ -141,7 +142,7 @@ class StageConfig(BaseModel):
     human_review: bool = False    # Requires human approval to exit
     is_parking_lot: bool = False  # No agent auto-starts here (backlog, accepted, not_doing)
     redirect_only: bool = False   # Only reachable via StageRedirect, skipped in normal progression
-    role: str = "developer"       # Who executes this stage: "developer" (in container) or "manager" (host)
+    role: str = "developer"       # Who executes this stage: "developer", "manager", or custom role name
     review_doc: str | None = None  # Document to show by default when viewing issue in this stage
     substages: Dict[str, SubstageConfig] = Field(default_factory=dict)
     pre_completion: list[dict] = Field(default_factory=list)  # Stage-level hooks before completing
@@ -361,7 +362,7 @@ class Config(BaseModel):
     def get_issue_session_patterns(self, issue_id: str) -> list[str]:
         """Get all possible tmux session names for an issue.
 
-        Used for checking if any session exists (handles legacy patterns).
+        Delegates to tmux.get_session_patterns() - the single source of truth.
 
         Args:
             issue_id: Issue ID
@@ -369,20 +370,8 @@ class Config(BaseModel):
         Returns:
             List of possible session names, current patterns first
         """
-        patterns = [
-            f"{self.project}-developer-{issue_id}",
-            f"{self.project}-reviewer-{issue_id}",
-        ]
-        # Special case for manager
-        if issue_id == "000":
-            patterns.insert(0, f"{self.project}-manager-000")
-        # Legacy patterns for backwards compatibility
-        patterns.extend([
-            f"{self.project}-issue-{issue_id}",
-            f"{self.project}-agent-{issue_id}",
-            f"{self.project}-controller-{issue_id}",
-        ])
-        return patterns
+        from agenttree.tmux import get_session_patterns
+        return get_session_patterns(self.project, issue_id)
 
     def is_project_session(self, session_name: str) -> bool:
         """Check if a session name belongs to this project.
@@ -393,16 +382,7 @@ class Config(BaseModel):
         Returns:
             True if session belongs to this project
         """
-        prefixes = [
-            f"{self.project}-developer-",
-            f"{self.project}-reviewer-",
-            f"{self.project}-manager-",
-            # Legacy patterns
-            f"{self.project}-issue-",
-            f"{self.project}-agent-",
-            f"{self.project}-controller-",
-        ]
-        return any(session_name.startswith(p) for p in prefixes)
+        return session_name.startswith(f"{self.project}-")
 
     def get_issue_container_name(self, issue_id: str) -> str:
         """Get container name for an issue-bound agent.
@@ -788,9 +768,14 @@ class Config(BaseModel):
         if substages and current_substage:
             try:
                 idx = substages.index(current_substage)
-                if idx < len(substages) - 1:
-                    # Move to next substage
-                    return current_stage, substages[idx + 1], False
+                # Look for next non-redirect_only substage
+                for next_idx in range(idx + 1, len(substages)):
+                    next_sub_name = substages[next_idx]
+                    next_sub = stage_config.get_substage(next_sub_name)
+                    if next_sub and next_sub.redirect_only:
+                        continue  # Skip redirect_only substages in normal progression
+                    return current_stage, next_sub_name, False
+                # All remaining substages are redirect_only, move to next stage
             except ValueError:
                 pass  # substage not found, move to next stage
 

@@ -1232,7 +1232,7 @@ def is_restart(issue_id: str, current_stage: Optional[str] = None, current_subst
         return False  # No session = fresh start
 
     # Stage changed externally (e.g., human approval advanced us)
-    # This handles the case where controller moved us to a new stage
+    # This handles the case where manager moved us to a new stage
     if current_stage and session.last_stage != current_stage:
         return True
     if current_substage is not None and session.last_substage != current_substage:

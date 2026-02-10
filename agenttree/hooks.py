@@ -103,12 +103,22 @@ section_check:
             - "empty" - Section must be empty or contain only comments
             - "not_empty" - Section must have content
             - "all_checked" - All checkboxes must be checked [x]
+        on_fail_stage: str (optional) - Stage to redirect to on failure
+        on_fail_substage: str (optional) - Substage to redirect to on failure
+            (stays in current stage, redirects to the named substage)
 
     Example:
         - section_check:
             file: review.md
             section: Self-Review Checklist
             expect: all_checked
+
+        # Redirect to address_review substage if critical issues found
+        - section_check:
+            file: review.md
+            section: Critical Issues
+            expect: empty
+            on_fail_substage: address_review
 
 has_list_items:
     Check that a section has bullet list items (- or *).
@@ -323,15 +333,17 @@ class ValidationError(Exception):
 
 
 class StageRedirect(Exception):
-    """Raised when a hook failure should redirect to a different stage instead of blocking.
+    """Raised when a hook failure should redirect to a different stage/substage instead of blocking.
 
-    Used with on_fail_stage option in hooks.
+    Used with on_fail_stage and on_fail_substage options in hooks.
     """
 
-    def __init__(self, target_stage: str, reason: str = ""):
+    def __init__(self, target_stage: str, reason: str = "", target_substage: str | None = None):
         self.target_stage = target_stage
+        self.target_substage = target_substage
         self.reason = reason
-        super().__init__(f"Redirect to stage '{target_stage}': {reason}")
+        target = f"'{target_stage}.{target_substage}'" if target_substage else f"'{target_stage}'"
+        super().__init__(f"Redirect to stage {target}: {reason}")
 
 
 # =============================================================================
@@ -710,6 +722,8 @@ def run_builtin_validator(
 
     elif hook_type == "section_check":
         file_path = issue_dir / params["file"]
+        on_fail_stage = params.get("on_fail_stage")
+        on_fail_substage = params.get("on_fail_substage")
         if not file_path.exists():
             errors.append(f"File '{params['file']}' not found for section check")
         else:
@@ -730,28 +744,41 @@ def run_builtin_validator(
                 # Remove HTML comments
                 section_content = re.sub(r'<!--.*?-->', '', section_content, flags=re.DOTALL)
 
+                check_failed = False
+                fail_msg = ""
+
                 if expect == "empty":
                     # Check for list items
                     if re.search(r'^\s*[-*]\s+', section_content, re.MULTILINE):
-                        errors.append(
-                            f"Section '{section}' in {params['file']} is not empty"
-                        )
+                        check_failed = True
+                        fail_msg = f"Section '{section}' in {params['file']} is not empty"
                 elif expect == "not_empty":
                     # Check if section has content beyond whitespace
                     if not section_content.strip():
-                        errors.append(
-                            f"Section '{section}' in {params['file']} is empty"
-                        )
+                        check_failed = True
+                        fail_msg = f"Section '{section}' in {params['file']} is empty"
                 elif expect == "all_checked":
                     # Find unchecked checkboxes
                     unchecked = re.findall(r'-\s*\[\s*\]\s*(.*)', section_content)
                     if unchecked:
+                        check_failed = True
                         items = ", ".join(item.strip() for item in unchecked[:3])
                         if len(unchecked) > 3:
                             items += f" (and {len(unchecked) - 3} more)"
-                        errors.append(
-                            f"Unchecked items in '{section}': {items}"
+                        fail_msg = f"Unchecked items in '{section}': {items}"
+
+                if check_failed:
+                    if on_fail_substage:
+                        # Redirect to a substage within the current stage
+                        raise StageRedirect(
+                            kwargs.get("stage", ""),
+                            fail_msg,
+                            target_substage=on_fail_substage,
                         )
+                    elif on_fail_stage:
+                        raise StageRedirect(on_fail_stage, fail_msg)
+                    else:
+                        errors.append(fail_msg)
 
     elif hook_type == "min_words":
         # Check that a file or section has at least N words
@@ -1085,10 +1112,11 @@ def run_builtin_validator(
 
     elif hook_type == "checkbox_checked":
         # Check that a specific checkbox is marked in a markdown file
-        # Supports on_fail_stage for conditional routing
+        # Supports on_fail_stage/on_fail_substage for conditional routing
         file_path = issue_dir / params["file"]
         checkbox_text = params.get("checkbox", "")
         on_fail_stage = params.get("on_fail_stage")
+        on_fail_substage = params.get("on_fail_substage")
 
         if not file_path.exists():
             errors.append(f"File '{params['file']}' not found for checkbox check")
@@ -1104,14 +1132,17 @@ def run_builtin_validator(
                 pass
             elif re.search(unchecked_pattern, content):
                 # Checkbox exists but is unchecked
-                if on_fail_stage:
-                    # Raise redirect instead of error
+                fail_msg = f"Checkbox '{checkbox_text}' is not checked in {params['file']}"
+                if on_fail_substage:
                     raise StageRedirect(
-                        on_fail_stage,
-                        f"Checkbox '{checkbox_text}' is not checked in {params['file']}"
+                        kwargs.get("stage", ""),
+                        fail_msg,
+                        target_substage=on_fail_substage,
                     )
+                elif on_fail_stage:
+                    raise StageRedirect(on_fail_stage, fail_msg)
                 else:
-                    errors.append(f"Checkbox '{checkbox_text}' is not checked in {params['file']}")
+                    errors.append(fail_msg)
             else:
                 errors.append(f"Checkbox '{checkbox_text}' not found in {params['file']}")
 
@@ -1633,6 +1664,7 @@ def execute_enter_hooks(issue: "Issue", stage: str, substage: Optional[str] = No
         "issue_id": issue.id,
         "issue_title": issue.title,
         "branch": issue.branch or "",
+        "stage": stage,
         "substage": substage or "",
         "issue": issue,  # Pass issue object for cleanup_agent and start_blocked_issues hooks
     }

@@ -53,64 +53,13 @@ def get_manager_session_name(project: str) -> str:
     return f"{project}-manager-000"
 
 
-def check_issue_session_exists(project: str, issue_id: str) -> bool:
-    """Check if any tmux session exists for an issue.
-    
-    Checks all role patterns (developer, reviewer) and legacy patterns.
-    
-    Args:
-        project: Project name
-        issue_id: Issue ID
-        
-    Returns:
-        True if any session exists for this issue
-    """
-    # Current patterns
-    patterns = [
-        f"{project}-developer-{issue_id}",
-        f"{project}-reviewer-{issue_id}",
-        # Legacy patterns for backwards compatibility
-        f"{project}-issue-{issue_id}",
-        f"{project}-agent-{issue_id}",
-    ]
-    # Special case for manager (issue_id "000")
-    if issue_id == "000":
-        patterns.insert(0, f"{project}-manager-000")
-        patterns.append(f"{project}-controller-000")
-    
-    return any(session_exists(name) for name in patterns)
+# Session name slugs in priority order: {project}-{slug}-{issue_id}
+SESSION_SLUGS = ("manager", "developer", "reviewer", "issue", "agent")
 
 
-def find_issue_session(project: str, issue_id: str) -> str | None:
-    """Find the active tmux session name for an issue.
-    
-    Args:
-        project: Project name
-        issue_id: Issue ID
-        
-    Returns:
-        Session name if found, None otherwise
-    """
-    # Current patterns (checked first)
-    patterns = [
-        f"{project}-developer-{issue_id}",
-        f"{project}-reviewer-{issue_id}",
-    ]
-    # Special case for manager
-    if issue_id == "000":
-        patterns.insert(0, f"{project}-manager-000")
-    
-    # Legacy patterns (checked last)
-    patterns.extend([
-        f"{project}-issue-{issue_id}",
-        f"{project}-agent-{issue_id}",
-        f"{project}-controller-{issue_id}",
-    ])
-    
-    for name in patterns:
-        if session_exists(name):
-            return name
-    return None
+def get_session_patterns(project: str, issue_id: str) -> list[str]:
+    """All possible tmux session names for an issue, preferred first."""
+    return [f"{project}-{slug}-{issue_id}" for slug in SESSION_SLUGS]
 
 
 def session_exists(session_name: str) -> bool:

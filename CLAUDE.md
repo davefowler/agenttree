@@ -50,11 +50,11 @@ Raw tmux/container commands bypass the workflow, break state tracking, and cause
 
 ## Code Style
 
-- Use type hints for all function signatures (modern Python 3.10+ syntax)
+- Use type hints for all function signatures (modern Python 3.10+ syntax) — mypy strict mode enforces this, and untyped code blocks the pipeline at code_review
   - Use `list[str]` not `List[str]`, `dict[str, Any]` not `Dict[str, Any]`
   - Use `X | None` not `Optional[X]`, `X | Y` not `Union[X, Y]`
-- Follow existing patterns in the codebase
-- Tests should be in `tests/unit/` or `tests/integration/`
+- Follow existing patterns in the codebase — the independent reviewer checks for consistency and will send you back if you invent new conventions
+- Tests should be in `tests/unit/` or `tests/integration/` — tests outside these dirs won't be picked up by CI
 - Use descriptive variable names
 - Keep functions focused and single-purpose
 
@@ -112,28 +112,28 @@ from agenttree.hooks import ValidationError
 
 ## Testing
 
-- Write tests for new features and bug fixes
-- Use fixtures defined in `tests/conftest.py`
-- Mock external dependencies (git, docker, filesystem)
+- Write tests for new features and bug fixes — the code_review substage runs `uv run pytest` and rejects you if tests fail. Write them early to save yourself a round trip.
+- Use fixtures defined in `tests/conftest.py` — there are already fixtures for config, issues, and temp directories. Creating new ones when existing ones work is slop.
+- Mock external dependencies (git, docker, filesystem) — tests that hit real infrastructure pass locally but fail in CI, and then you get to debug a phantom failure. Fun.
 - Aim for high coverage on core workflow logic
-- **`@pytest.mark.local_only`** — Mark tests that need Playwright, tmux, Apple Containers, or other tools unavailable in CI. CI runs with `-m "not local_only"` to skip them. Use this for browser tests, visual regression tests, and anything requiring a real display or local daemon.
+- **`@pytest.mark.local_only`** — Mark tests that need Playwright, tmux, Apple Containers, or other tools unavailable in CI. CI runs with `-m "not local_only"` to skip them. Forget this marker and CI fails on every PR with an unhelpful "fixture not found" error.
 
 ## Frontend Development
 
 When working on web UI (HTML, CSS, templates):
-- **Use Playwright MCP to review your work** - Don't commit CSS/layout changes without visually verifying them
+- **Use Playwright MCP to review your work** — CSS bugs are invisible until someone looks at the page. The reviewer will look. You should look first.
 - Run the web server: `uv run python -m agenttree.web.app`
 - Use Playwright to screenshot pages: "use playwright to screenshot http://localhost:8080/kanban"
 - Check for layout issues, color contrast, responsive behavior
-- The web app uses a vintage green color palette - maintain consistency
+- The web app uses a vintage green color palette — maintain consistency. A rogue blue button on a green page is the kind of thing that makes designers cry and reviewers reject.
 
 ## Workflow
 
-1. Read existing code before making changes
-2. Run tests after changes: `uv run pytest`
-3. Type check before committing: `uv run mypy agenttree`
-4. Keep changes focused and avoid over-engineering
-5. Don't add features beyond what's requested
+1. Read existing code before making changes — the codebase already has patterns for most things. If you don't read first, you'll reinvent something that exists and the reviewer will send you back.
+2. Run tests after changes: `uv run pytest` — catching failures early saves a full code_review → address_review cycle.
+3. Type check before committing: `uv run mypy agenttree` — mypy runs in pre_completion hooks. Better to find the errors now than have the hook reject you after a 5-minute mypy run in a container.
+4. Keep changes focused and avoid over-engineering — the Anti-Slop rules aren't suggestions. The independent reviewer actively checks for unnecessary abstraction.
+5. Don't add features beyond what's requested — undocumented changes get flagged as "out of scope" in PR review and may be rejected entirely.
 
 ## Project-Specific Notes
 
