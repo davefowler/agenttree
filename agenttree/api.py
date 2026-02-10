@@ -559,7 +559,7 @@ def transition_issue(
                  issue_id, redirect.target_stage, redirect.reason)
         redirected = update_issue_stage(issue_id, redirect.target_stage, redirect.target_substage)
         if redirected:
-            _notify_agent(issue_id, f"Issue redirected to {redirect.target_stage}: {redirect.reason}. Run `agenttree next` for instructions.")
+            _notify_agent(issue_id, f"Issue redirected to {redirect.target_stage}: {redirect.reason}. Run `agenttree next` for instructions.", interrupt=True)
             return redirected
         raise RuntimeError(f"Failed to redirect issue #{issue_id} to {redirect.target_stage}")
     except Exception as e:
@@ -568,15 +568,21 @@ def transition_issue(
     return updated
 
 
-def _notify_agent(issue_id: str, message: str) -> None:
-    """Best-effort notify an active agent via tmux. Never raises."""
+def _notify_agent(issue_id: str, message: str, *, interrupt: bool = False) -> None:
+    """Best-effort notify an active agent via tmux. Never raises.
+
+    Args:
+        issue_id: The issue ID to notify
+        message: Message to send to the agent
+        interrupt: If True, send Ctrl+C first to interrupt current task
+    """
     try:
         from agenttree.state import get_active_agent
         from agenttree.tmux import send_message as tmux_send, session_exists as tmux_session_exists
 
         agent = get_active_agent(issue_id)
         if agent and agent.tmux_session and tmux_session_exists(agent.tmux_session):
-            tmux_send(agent.tmux_session, message)
+            tmux_send(agent.tmux_session, message, interrupt=interrupt)
             log.info("Notified agent for issue #%s", issue_id)
     except Exception as e:
         log.warning("Failed to notify agent for issue #%s: %s", issue_id, e)

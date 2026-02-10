@@ -840,7 +840,22 @@ class TestNotifyAgent:
 
             _notify_agent("42", "Test message")
 
-        mock_send.assert_called_once_with("testproj-dev-042", "Test message")
+        mock_send.assert_called_once_with("testproj-dev-042", "Test message", interrupt=False)
+
+    def test_notify_sends_with_interrupt(self):
+        """Sends message with interrupt=True when specified."""
+        from agenttree.api import _notify_agent
+
+        agent = MagicMock()
+        agent.tmux_session = "testproj-dev-042"
+
+        with patch("agenttree.state.get_active_agent", return_value=agent), \
+             patch("agenttree.tmux.session_exists", return_value=True), \
+             patch("agenttree.tmux.send_message") as mock_send:
+
+            _notify_agent("42", "Test message", interrupt=True)
+
+        mock_send.assert_called_once_with("testproj-dev-042", "Test message", interrupt=True)
 
     def test_notify_no_agent(self):
         """Does nothing if no active agent."""
