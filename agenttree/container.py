@@ -65,23 +65,52 @@ def _run_delete(runtime: str, container_name: str, timeout: int = 5) -> bool:
 
 
 def cleanup_container(runtime: str, container_name: str) -> None:
-    """Stop and delete a container (best effort, ignores errors).
+    """Stop and delete a container, waiting until it's actually gone.
     
     Use this when you need to ensure a container is gone before starting a new one.
     Takes runtime string for use in standalone functions.
     
-    Note: Apple Container can be very slow (10-60s per operation).
+    For Apple Container: stop can hang for minutes and the mDNS hostname lingers
+    after delete. We use short stop timeout, then delete, then verify + wait.
     """
-    # Apple Container is slow, Docker/Podman are fast
-    timeout = 60 if runtime == "container" else 10
-    try:
-        _run_stop(runtime, container_name, timeout=timeout)
-    except subprocess.TimeoutExpired:
-        pass
-    try:
-        _run_delete(runtime, container_name, timeout=timeout)
-    except subprocess.TimeoutExpired:
-        pass
+    import time
+
+    if runtime == "container":
+        # Apple Container: stop is very slow (can hang for minutes).
+        # Use a short timeout — if it doesn't stop quickly, delete will handle it.
+        try:
+            _run_stop(runtime, container_name, timeout=15)
+        except subprocess.TimeoutExpired:
+            pass
+        # Try delete (works even if stop timed out for stopped containers)
+        try:
+            _run_delete(runtime, container_name, timeout=60)
+        except subprocess.TimeoutExpired:
+            pass
+        # Verify container is gone, then wait for mDNS hostname to de-register
+        for _ in range(15):
+            result = subprocess.run(
+                [runtime, "inspect", container_name],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            # inspect returns [] for deleted containers, non-zero for unknown
+            stdout = result.stdout.strip()
+            if result.returncode != 0 or stdout == "[]":
+                time.sleep(5)
+                return
+            time.sleep(2)
+    else:
+        # Docker/Podman: fast and reliable
+        try:
+            _run_stop(runtime, container_name, timeout=10)
+        except subprocess.TimeoutExpired:
+            pass
+        try:
+            _run_delete(runtime, container_name, timeout=10)
+        except subprocess.TimeoutExpired:
+            pass
 
 
 def get_git_worktree_info(worktree_path: Path) -> Tuple[Optional[Path], Optional[Path]]:

@@ -11,52 +11,15 @@ from unittest.mock import patch, MagicMock
 import pytest
 
 from agenttree.state import (
-    load_state,
-    save_state,
-    get_port_for_issue,
-    register_agent,
     unregister_agent,
     get_active_agent,
     list_active_agents,
-    stop_agent,
     ActiveAgent,
     _parse_tmux_session_name,
 )
+from agenttree.api import stop_agent
 
 
-class TestDeterministicPorts:
-    """Tests for deterministic port allocation from issue ID."""
-
-    def test_get_port_for_issue_basic(self):
-        """Port should be base + issue_id % 1000."""
-        assert get_port_for_issue("001", base_port=9000) == 9001
-        assert get_port_for_issue("023", base_port=9000) == 9023
-        assert get_port_for_issue("100", base_port=9000) == 9100
-        assert get_port_for_issue("999", base_port=9000) == 9999
-
-    def test_get_port_for_issue_modulo_wrapping(self):
-        """Issues over 1000 should wrap around."""
-        # Issue 1001 should get same port as issue 1
-        assert get_port_for_issue("1001", base_port=9000) == 9001
-        assert get_port_for_issue("1023", base_port=9000) == 9023
-        assert get_port_for_issue("2045", base_port=9000) == 9045
-
-    def test_get_port_for_issue_custom_base(self):
-        """Should work with different base ports."""
-        assert get_port_for_issue("023", base_port=3000) == 3023
-        assert get_port_for_issue("023", base_port=8000) == 8023
-        assert get_port_for_issue("023", base_port=10000) == 10023
-
-    def test_get_port_for_issue_string_parsing(self):
-        """Should handle both padded and unpadded issue IDs."""
-        # Leading zeros shouldn't matter
-        assert get_port_for_issue("023", base_port=9000) == 9023
-        assert get_port_for_issue("23", base_port=9000) == 9023
-
-    def test_port_determinism(self):
-        """Same issue ID should always return same port."""
-        for _ in range(100):
-            assert get_port_for_issue("042", base_port=9000) == 9042
 
 
 class TestDynamicState:
@@ -84,31 +47,6 @@ class TestDynamicState:
         # Random session
         assert _parse_tmux_session_name("random-session", "agenttree") is None
 
-    def test_register_agent_is_noop(self):
-        """register_agent should be a no-op (tmux creation is registration)."""
-        agent = ActiveAgent(
-            issue_id="042",
-            role="developer",
-            container="test-container",
-            worktree=Path("/tmp/worktree"),
-            branch="test-branch",
-            port=9042,
-            tmux_session="test-session",
-            started="2024-01-01T00:00:00Z",
-        )
-        # Should not raise
-        register_agent(agent)
-
-    def test_save_state_is_noop(self):
-        """save_state should be a no-op."""
-        # Should not raise
-        save_state({"active_agents": {"test": "data"}})
-
-    def test_load_state_returns_empty_default(self):
-        """load_state should return empty default state."""
-        state = load_state()
-        assert "active_agents" in state
-        assert state["active_agents"] == {}
 
     @patch("agenttree.issues.get_issue")
     @patch("agenttree.state._get_tmux_sessions")
@@ -176,8 +114,9 @@ class TestStopAgentServeSession:
         """stop_agent should kill the serve session before the agent session."""
         mock_config = MagicMock()
         mock_config.project = "myproject"
+        mock_config.get_issue_tmux_session.return_value = "myproject-developer-042"
 
-        with patch("agenttree.state.load_config", return_value=mock_config), \
+        with patch("agenttree.config.load_config", return_value=mock_config), \
              patch("agenttree.tmux.session_exists", return_value=True), \
              patch("agenttree.tmux.kill_session") as mock_kill, \
              patch("agenttree.container.get_container_runtime") as mock_runtime:
@@ -194,8 +133,9 @@ class TestStopAgentServeSession:
         """stop_agent should skip serve cleanup when session doesn't exist."""
         mock_config = MagicMock()
         mock_config.project = "myproject"
+        mock_config.get_issue_tmux_session.return_value = "myproject-developer-042"
 
-        with patch("agenttree.state.load_config", return_value=mock_config), \
+        with patch("agenttree.config.load_config", return_value=mock_config), \
              patch("agenttree.tmux.session_exists", side_effect=lambda name: name == "myproject-developer-042"), \
              patch("agenttree.tmux.kill_session") as mock_kill, \
              patch("agenttree.container.get_container_runtime") as mock_runtime:
@@ -215,8 +155,9 @@ class TestStopAgentServeSession:
 
         mock_config = MagicMock()
         mock_config.project = "myproject"
+        mock_config.get_issue_tmux_session.return_value = "myproject-developer-042"
 
-        with patch("agenttree.state.load_config", return_value=mock_config), \
+        with patch("agenttree.config.load_config", return_value=mock_config), \
              patch("agenttree.tmux.session_exists", side_effect=session_exists_side_effect), \
              patch("agenttree.tmux.kill_session") as mock_kill, \
              patch("agenttree.container.get_container_runtime") as mock_runtime:
@@ -228,12 +169,3 @@ class TestStopAgentServeSession:
         mock_kill.assert_called_once_with("myproject-developer-042")
 
 
-class TestLegacyStatePath:
-    """Tests for legacy state path function."""
-
-    def test_get_state_path_returns_path(self):
-        """get_state_path should return a Path object."""
-        from agenttree.state import get_state_path
-        path = get_state_path()
-        assert isinstance(path, Path)
-        assert path.name == "state.yaml"

@@ -46,13 +46,20 @@ class TestCreateSession:
     """Tests for create_session function."""
 
     def test_create_session_basic(self, tmp_path):
-        """Should create a session in specified directory."""
+        """Should create a session in specified directory, killing stale session first."""
         from agenttree.tmux import create_session
 
         with patch("subprocess.run") as mock_run:
             create_session("test-session", tmp_path)
 
-        mock_run.assert_called_once_with(
+        # session_exists check + kill (if exists) + new-session
+        assert mock_run.call_count == 3
+        mock_run.assert_any_call(
+            ["tmux", "has-session", "-t", "test-session"],
+            check=True,
+            capture_output=True,
+        )
+        mock_run.assert_any_call(
             ["tmux", "new-session", "-d", "-s", "test-session", "-c", str(tmp_path)],
             check=True,
         )
@@ -64,8 +71,8 @@ class TestCreateSession:
         with patch("subprocess.run") as mock_run:
             create_session("test-session", tmp_path, start_command="echo hello")
 
-        # First call creates session, second sends command
-        assert mock_run.call_count == 3  # create + send-keys (literal) + send-keys (Enter)
+        # session_exists + kill + new-session + send-keys (literal) + send-keys (Enter)
+        assert mock_run.call_count == 5
 
 
 class TestKillSession:

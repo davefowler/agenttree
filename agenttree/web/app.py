@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.base import BaseHTTPMiddleware
 from pathlib import Path
+import logging
 import subprocess
 import secrets
 import os
@@ -435,7 +436,7 @@ async def kanban(
         if issue_obj:
             selected_issue = convert_issue_to_web(issue_obj, load_dependents=True)
             # Load all file contents upfront for CSS toggle tabs
-            files = get_issue_files(issue, include_content=True)
+            files = get_issue_files(issue, include_content=True, current_stage=issue_obj.stage)
             # Get default doc to show for this stage
             default_doc = get_default_doc(issue_obj.stage)
             # Get commits ahead/behind for rebase button
@@ -493,16 +494,40 @@ STAGE_FILE_ORDER = [
     "implementation.md",
 ]
 
+# Mapping of filenames to their associated workflow stage.
+# Note: Not all stages are in STAGE_ORDER (e.g., independent_code_review is a
+# separate review workflow). Files with stages not in STAGE_ORDER will get
+# stage-based colors but won't be marked as "passed" since they're outside
+# the main linear progression.
+FILE_TO_STAGE: dict[str, str] = {
+    "problem.md": "define",
+    "research.md": "research",
+    "spec.md": "plan",
+    "spec_review.md": "plan_assess",
+    "review.md": "implement",
+    "independent_review.md": "independent_code_review",
+    "feedback.md": "implement",
+}
 
-def get_issue_files(issue_id: str, include_content: bool = False) -> list[dict[str, str]]:
+
+def get_issue_files(
+    issue_id: str,
+    include_content: bool = False,
+    current_stage: str | None = None,
+) -> list[dict[str, str]]:
     """Get list of markdown files for an issue.
 
-    Returns list of dicts with keys: name, display_name, size, modified
+    Returns list of dicts with keys: name, display_name, size, modified, stage, is_passed, short_name
     If include_content=True, also includes 'content' key with file contents.
 
     Files are ordered by workflow stage (problem.md first, then spec.md, etc.),
     with any unknown files at the end sorted alphabetically.
     If config.show_issue_yaml is True, issue.yaml is included at the end.
+
+    Args:
+        issue_id: The issue ID to get files for
+        include_content: Whether to include file content
+        current_stage: Current stage of the issue (for calculating is_passed)
     """
     issue_dir = issue_crud.get_issue_dir(issue_id)
     if not issue_dir:
@@ -517,13 +542,37 @@ def get_issue_files(issue_id: str, include_content: bool = False) -> list[dict[s
             return (STAGE_FILE_ORDER.index(f.name), f.name)
         return (len(STAGE_FILE_ORDER), f.name)  # Unknown files sorted after known ones
 
+    # Get current stage index for is_passed calculation.
+    # Stages not in STAGE_ORDER (e.g., sub-workflows) won't have files marked as passed.
+    current_stage_index = -1
+    if current_stage and current_stage in issue_crud.STAGE_ORDER:
+        current_stage_index = issue_crud.STAGE_ORDER.index(current_stage)
+
     files: list[dict[str, str]] = []
     for f in sorted(file_list, key=file_sort_key):
+        display_name = f.stem.replace("_", " ").title()
+        file_stage = FILE_TO_STAGE.get(f.name)
+
+        # Calculate is_passed: file's stage is earlier than current stage.
+        # Files with stages not in STAGE_ORDER (sub-workflows) remain is_passed=False.
+        is_passed = False
+        if file_stage and current_stage_index >= 0 and file_stage in issue_crud.STAGE_ORDER:
+            file_stage_index = issue_crud.STAGE_ORDER.index(file_stage)
+            is_passed = file_stage_index < current_stage_index
+
+        # Generate short_name for passed stages (first 3 chars + "...")
+        short_name = display_name
+        if is_passed:
+            short_name = display_name[:3] + "..."
+
         file_info: dict[str, str] = {
             "name": f.name,
-            "display_name": f.stem.replace("_", " ").title(),
+            "display_name": display_name,
             "size": str(f.stat().st_size),
-            "modified": datetime.fromtimestamp(f.stat().st_mtime).isoformat()
+            "modified": datetime.fromtimestamp(f.stat().st_mtime).isoformat(),
+            "stage": file_stage or "",
+            "is_passed": str(is_passed).lower(),
+            "short_name": short_name,
         }
         if include_content:
             try:
@@ -540,7 +589,10 @@ def get_issue_files(issue_id: str, include_content: bool = False) -> list[dict[s
                 "name": "issue.yaml",
                 "display_name": "Issue YAML",
                 "size": str(issue_yaml.stat().st_size),
-                "modified": datetime.fromtimestamp(issue_yaml.stat().st_mtime).isoformat()
+                "modified": datetime.fromtimestamp(issue_yaml.stat().st_mtime).isoformat(),
+                "stage": "",
+                "is_passed": "false",
+                "short_name": "Issue YAML",
             }
             if include_content:
                 try:
@@ -745,11 +797,11 @@ async def flow(
     commits_behind = 0
     default_doc: str | None = None
     if selected_issue and selected_issue_id:
-        # Load all file contents upfront for CSS toggle tabs
-        files = get_issue_files(selected_issue_id, include_content=True)
-        # Get default doc to show for this stage
         issue_obj = issue_crud.get_issue(selected_issue_id, sync=False)
         if issue_obj:
+            # Load all file contents upfront for CSS toggle tabs
+            files = get_issue_files(selected_issue_id, include_content=True, current_stage=issue_obj.stage)
+            # Get default doc to show for this stage
             default_doc = get_default_doc(issue_obj.stage)
             # Get commits ahead/behind for rebase button
             if selected_issue.tmux_active and issue_obj.worktree_dir:
@@ -811,9 +863,9 @@ async def mobile(
     commits_behind = 0
     default_doc: str | None = None
     if selected_issue and selected_issue_id:
-        files = get_issue_files(selected_issue_id, include_content=True)
         issue_obj = issue_crud.get_issue(selected_issue_id, sync=False)
         if issue_obj:
+            files = get_issue_files(selected_issue_id, include_content=True, current_stage=issue_obj.stage)
             default_doc = get_default_doc(issue_obj.stage)
             if selected_issue.tmux_active and issue_obj.worktree_dir:
                 from agenttree.hooks import get_commits_ahead_behind_main
@@ -972,7 +1024,7 @@ async def stop_issue(
 ) -> dict:
     """Stop an agent working on an issue (kills tmux, stops container, cleans up state)."""
     import asyncio
-    from agenttree.state import stop_all_agents_for_issue
+    from agenttree.api import stop_all_agents_for_issue
 
     try:
         padded_id = issue_id.zfill(3)
@@ -1135,13 +1187,31 @@ async def approve_issue(
         # Set processing state for enter hooks
         issue_crud.set_processing(issue_id_normalized, "enter")
 
-        # Execute enter hooks
-        import logging
-        log = logging.getLogger("agenttree.web")
+        # Execute enter hooks (may redirect on merge conflict etc.)
         try:
             await asyncio.to_thread(execute_enter_hooks, updated, next_stage, next_substage)
+        except StageRedirect as redirect:
+            # Merge conflict or similar - redirect issue to developer
+            logger.warning("Enter hooks redirected issue %s to %s: %s",
+                        issue_id_normalized, redirect.target_stage, redirect.reason)
+            from agenttree.issues import update_issue_stage as _update_stage
+            redirect_stage = redirect.target_stage
+            redirect_substage = redirect.target_substage
+            await asyncio.to_thread(_update_stage, issue_id_normalized, redirect_stage, redirect_substage)
+            # Notify developer agent
+            try:
+                from agenttree.state import get_active_agent
+                from agenttree.tmux import send_message, session_exists
+                agent = get_active_agent(issue_id_normalized)
+                if agent and agent.tmux_session and session_exists(agent.tmux_session):
+                    msg = f"Issue redirected: {redirect.reason} Run `agenttree next` for instructions."
+                    await asyncio.to_thread(send_message, agent.tmux_session, msg)
+            except Exception:
+                pass  # Best-effort notification
+            stage_str = redirect_stage + (f".{redirect_substage}" if redirect_substage else "")
+            return {"ok": True, "redirected": True, "stage": stage_str, "reason": redirect.reason}
         except Exception as e:
-            log.warning("Enter hooks failed for issue %s: %s", issue_id_normalized, e)
+            logger.warning("Enter hooks failed for issue %s: %s", issue_id_normalized, e)
 
         # Notify agent to continue (if active)
         try:
@@ -1154,7 +1224,7 @@ async def approve_issue(
                     message = "Your work was approved! Run `agenttree next` for instructions."
                     await asyncio.to_thread(send_message, agent.tmux_session, message)
         except Exception as e:
-            log.warning("Agent notification failed for issue %s: %s", issue_id_normalized, e)
+            logger.warning("Agent notification failed for issue %s: %s", issue_id_normalized, e)
 
         return {"ok": True}
     except HTTPException:

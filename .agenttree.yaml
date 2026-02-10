@@ -238,6 +238,23 @@ stages:
       - rollback:
           to_stage: independent_code_review
 
+  # UI review stage - only runs when needs_ui_review is true
+  - name: ui_review
+    condition: "{{ needs_ui_review }}"
+    role: developer
+    output: ui_review.md
+    skill: ui_review.md
+    post_start:
+      - create_file:
+          template: ui_review.md
+          dest: ui_review.md
+    pre_completion:
+      - file_exists: ui_review.md
+      - section_check:
+          file: ui_review.md
+          section: Screenshots Reviewed
+          expect: not_empty
+
   - name: implementation_review
     human_review: true
     review_doc: review.md
@@ -288,6 +305,7 @@ flows:
       - implement
       - independent_code_review
       - address_independent_review
+      - ui_review
       - implementation_review
       - knowledge_base
       - accepted
@@ -298,6 +316,7 @@ flows:
       - backlog
       - define
       - implement
+      - ui_review
       - implementation_review
       - accepted
 
