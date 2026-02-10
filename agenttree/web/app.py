@@ -436,7 +436,7 @@ async def kanban(
         if issue_obj:
             selected_issue = convert_issue_to_web(issue_obj, load_dependents=True)
             # Load all file contents upfront for CSS toggle tabs
-            files = get_issue_files(issue, include_content=True)
+            files = get_issue_files(issue, include_content=True, current_stage=issue_obj.stage)
             # Get default doc to show for this stage
             default_doc = get_default_doc(issue_obj.stage)
             # Get commits ahead/behind for rebase button
@@ -494,16 +494,36 @@ STAGE_FILE_ORDER = [
     "implementation.md",
 ]
 
+# Mapping of filenames to their associated workflow stage
+FILE_TO_STAGE: dict[str, str] = {
+    "problem.md": "define",
+    "research.md": "research",
+    "spec.md": "plan",
+    "spec_review.md": "plan_assess",
+    "review.md": "implement",
+    "independent_review.md": "independent_code_review",
+    "feedback.md": "implement",
+}
 
-def get_issue_files(issue_id: str, include_content: bool = False) -> list[dict[str, str]]:
+
+def get_issue_files(
+    issue_id: str,
+    include_content: bool = False,
+    current_stage: str | None = None,
+) -> list[dict[str, str]]:
     """Get list of markdown files for an issue.
 
-    Returns list of dicts with keys: name, display_name, size, modified
+    Returns list of dicts with keys: name, display_name, size, modified, stage, is_passed, short_name
     If include_content=True, also includes 'content' key with file contents.
 
     Files are ordered by workflow stage (problem.md first, then spec.md, etc.),
     with any unknown files at the end sorted alphabetically.
     If config.show_issue_yaml is True, issue.yaml is included at the end.
+
+    Args:
+        issue_id: The issue ID to get files for
+        include_content: Whether to include file content
+        current_stage: Current stage of the issue (for calculating is_passed)
     """
     issue_dir = issue_crud.get_issue_dir(issue_id)
     if not issue_dir:
@@ -518,13 +538,41 @@ def get_issue_files(issue_id: str, include_content: bool = False) -> list[dict[s
             return (STAGE_FILE_ORDER.index(f.name), f.name)
         return (len(STAGE_FILE_ORDER), f.name)  # Unknown files sorted after known ones
 
+    # Get current stage index for is_passed calculation
+    current_stage_index = -1
+    if current_stage:
+        try:
+            current_stage_index = issue_crud.STAGE_ORDER.index(current_stage)
+        except ValueError:
+            pass  # Stage not in STAGE_ORDER, no files will be marked as passed
+
     files: list[dict[str, str]] = []
     for f in sorted(file_list, key=file_sort_key):
+        display_name = f.stem.replace("_", " ").title()
+        file_stage = FILE_TO_STAGE.get(f.name)
+
+        # Calculate is_passed: file's stage is earlier than current stage
+        is_passed = False
+        if file_stage and current_stage_index >= 0:
+            try:
+                file_stage_index = issue_crud.STAGE_ORDER.index(file_stage)
+                is_passed = file_stage_index < current_stage_index
+            except ValueError:
+                pass  # File stage not in STAGE_ORDER
+
+        # Generate short_name for passed stages (first 3 chars + "...")
+        short_name = display_name
+        if is_passed:
+            short_name = display_name[:3] + "..."
+
         file_info: dict[str, str] = {
             "name": f.name,
-            "display_name": f.stem.replace("_", " ").title(),
+            "display_name": display_name,
             "size": str(f.stat().st_size),
-            "modified": datetime.fromtimestamp(f.stat().st_mtime).isoformat()
+            "modified": datetime.fromtimestamp(f.stat().st_mtime).isoformat(),
+            "stage": file_stage or "",
+            "is_passed": str(is_passed).lower(),
+            "short_name": short_name,
         }
         if include_content:
             try:
@@ -541,7 +589,10 @@ def get_issue_files(issue_id: str, include_content: bool = False) -> list[dict[s
                 "name": "issue.yaml",
                 "display_name": "Issue YAML",
                 "size": str(issue_yaml.stat().st_size),
-                "modified": datetime.fromtimestamp(issue_yaml.stat().st_mtime).isoformat()
+                "modified": datetime.fromtimestamp(issue_yaml.stat().st_mtime).isoformat(),
+                "stage": "",
+                "is_passed": "false",
+                "short_name": "Issue YAML",
             }
             if include_content:
                 try:
@@ -746,11 +797,11 @@ async def flow(
     commits_behind = 0
     default_doc: str | None = None
     if selected_issue and selected_issue_id:
-        # Load all file contents upfront for CSS toggle tabs
-        files = get_issue_files(selected_issue_id, include_content=True)
-        # Get default doc to show for this stage
         issue_obj = issue_crud.get_issue(selected_issue_id, sync=False)
         if issue_obj:
+            # Load all file contents upfront for CSS toggle tabs
+            files = get_issue_files(selected_issue_id, include_content=True, current_stage=issue_obj.stage)
+            # Get default doc to show for this stage
             default_doc = get_default_doc(issue_obj.stage)
             # Get commits ahead/behind for rebase button
             if selected_issue.tmux_active and issue_obj.worktree_dir:
@@ -812,9 +863,9 @@ async def mobile(
     commits_behind = 0
     default_doc: str | None = None
     if selected_issue and selected_issue_id:
-        files = get_issue_files(selected_issue_id, include_content=True)
         issue_obj = issue_crud.get_issue(selected_issue_id, sync=False)
         if issue_obj:
+            files = get_issue_files(selected_issue_id, include_content=True, current_stage=issue_obj.stage)
             default_doc = get_default_doc(issue_obj.stage)
             if selected_issue.tmux_active and issue_obj.worktree_dir:
                 from agenttree.hooks import get_commits_ahead_behind_main
