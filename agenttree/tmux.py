@@ -5,7 +5,7 @@ from __future__ import annotations
 import subprocess
 import sys
 from pathlib import Path
-from typing import List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING
 from dataclasses import dataclass
 
 from agenttree.config import Config
@@ -83,7 +83,7 @@ def session_exists(session_name: str) -> bool:
 
 
 def create_session(
-    session_name: str, working_dir: Path, start_command: Optional[str] = None
+    session_name: str, working_dir: Path, start_command: str | None = None
 ) -> None:
     """Create a new tmux session.
 
@@ -338,7 +338,7 @@ def wait_for_prompt(
     return False
 
 
-def list_sessions() -> List[TmuxSession]:
+def list_sessions() -> list[TmuxSession]:
     """List all tmux sessions.
 
     Returns:
@@ -404,23 +404,6 @@ class TmuxManager:
             Session name
         """
         return self.config.get_tmux_session_name(agent_num)
-
-    def start_agent(
-        self,
-        agent_num: int,
-        worktree_path: Path,
-        tool_name: str,
-        startup_script: Optional[Path] = None,
-    ) -> None:
-        """DEPRECATED: Use start_agent_in_container instead.
-        
-        This method is kept for backwards compatibility but will raise an error.
-        AgentTree requires containers - there is no non-container mode.
-        """
-        raise RuntimeError(
-            "start_agent() is deprecated. Use start_agent_in_container() instead. "
-            "AgentTree requires containers for security - there is no non-container mode."
-        )
 
     def start_agent_in_container(
         self,
@@ -511,7 +494,7 @@ class TmuxManager:
         session_name = self.get_session_name(agent_num)
         return session_exists(session_name)
 
-    def list_agent_sessions(self) -> List[TmuxSession]:
+    def list_agent_sessions(self) -> list[TmuxSession]:
         """List all agent tmux sessions.
 
         Returns:
@@ -729,7 +712,7 @@ class TmuxManager:
         """
         return session_exists(session_name)
 
-    def list_issue_sessions(self) -> List[TmuxSession]:
+    def list_issue_sessions(self) -> list[TmuxSession]:
         """List all issue-bound agent tmux sessions.
 
         Returns:

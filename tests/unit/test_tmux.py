@@ -323,15 +323,6 @@ class TestTmuxManager:
         assert result == "agent-42"
         mock_config.get_tmux_session_name.assert_called_once_with(42)
 
-    def test_start_agent_raises_deprecation_error(self, mock_config, tmp_path):
-        """start_agent should raise RuntimeError as it's deprecated."""
-        from agenttree.tmux import TmuxManager
-
-        manager = TmuxManager(mock_config)
-
-        with pytest.raises(RuntimeError, match="deprecated"):
-            manager.start_agent(42, tmp_path, "claude")
-
     def test_stop_agent(self, mock_config):
         """Should kill the correct session."""
         from agenttree.tmux import TmuxManager
