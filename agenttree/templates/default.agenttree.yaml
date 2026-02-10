@@ -29,11 +29,11 @@ tools:
     command: codex
     startup_prompt: "Read TASK.md for your instructions."
 
-# Host configurations
-# Hosts are execution environments that handle stages in the workflow.
-# Each host can specify container settings, AI tool, model, and skills.
-hosts:
-  # Controller: Human-driven, runs on host machine (no container)
+# Role configurations
+# Roles are execution environments that handle stages in the workflow.
+# Each role can specify container settings, AI tool, model, and skills.
+roles:
+  # Manager: Human-driven, runs on host machine (no container)
   # Runs the sync server which spawns agents and runs hooks
   manager:
     description: "Human-driven manager"
