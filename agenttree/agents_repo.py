@@ -343,20 +343,16 @@ def check_custom_agent_stages(agents_dir: Path) -> int:
                 issue = Issue(**data)
                 console.print(f"[cyan]Starting {role_name} agent for issue #{issue.id} at stage {stage}...[/cyan]")
 
-                # Use agenttree start --host to spawn the agent
-                import subprocess
-                proc = subprocess.run(
-                    ["agenttree", "start", issue.id, "--role", role_name, "--skip-preflight"],
-                    capture_output=True,
-                    text=True,
-                )
-                if proc.returncode == 0:
+                # Use api to spawn the agent
+                try:
+                    from agenttree.api import start_agent
+
+                    start_agent(issue.id, host=role_name, skip_preflight=True, quiet=True)
                     console.print(f"[green]✓ Started {role_name} agent for issue #{issue.id}[/green]")
                     spawned += 1
-                else:
+                except Exception as e:
                     console.print(f"[red]Failed to start {role_name} agent for issue #{issue.id}[/red]")
-                    if proc.stderr:
-                        console.print(f"[dim]{proc.stderr[:200]}[/dim]")
+                    console.print(f"[dim]{str(e)[:200]}[/dim]")
 
         except Exception as e:
             from rich.console import Console
@@ -667,20 +663,11 @@ def check_ci_status(agents_dir: Path) -> int:
                 # Start the agent
                 console.print(f"[dim]Agent not running, starting agent for issue #{issue_id}...[/dim]")
                 try:
-                    import subprocess
-                    result = subprocess.run(
-                        ["agenttree", "start", issue_id, "--skip-preflight"],
-                        capture_output=True,
-                        text=True,
-                        timeout=60,
-                    )
-                    if result.returncode == 0:
-                        console.print(f"[green]✓ Started agent for issue #{issue_id}[/green]")
-                        # Re-fetch agent after starting
-                        agent = get_active_agent(issue_id)
-                        agent_running = agent and tmux_manager.is_issue_running(agent.tmux_session)
-                    else:
-                        console.print(f"[yellow]Could not start agent: {result.stderr}[/yellow]")
+                    from agenttree.api import start_agent
+
+                    agent = start_agent(issue_id, skip_preflight=True, quiet=True)
+                    console.print(f"[green]✓ Started agent for issue #{issue_id}[/green]")
+                    agent_running = tmux_manager.is_issue_running(agent.tmux_session)
                 except Exception as e:
                     console.print(f"[yellow]Could not start agent: {e}[/yellow]")
 

@@ -2541,17 +2541,12 @@ def check_and_start_blocked_issues(issue: Issue) -> None:
         if all_met:
             console.print(f"[green]→ Issue #{blocked_issue.id} ready to start (all dependencies met)[/green]")
             try:
-                # Use subprocess to call agenttree start (safer than importing CLI)
-                result = subprocess.run(
-                    ["agenttree", "start", blocked_issue.id],
-                    capture_output=True,
-                    text=True,
-                    timeout=60,
-                )
-                if result.returncode == 0:
-                    console.print(f"[green]✓ Started agent for issue #{blocked_issue.id}[/green]")
-                else:
-                    console.print(f"[yellow]Could not start issue #{blocked_issue.id}: {result.stderr}[/yellow]")
+                from agenttree.api import start_agent, IssueNotFoundError, AgentStartError
+
+                start_agent(blocked_issue.id, quiet=True)
+                console.print(f"[green]✓ Started agent for issue #{blocked_issue.id}[/green]")
+            except (IssueNotFoundError, AgentStartError) as e:
+                console.print(f"[yellow]Could not start issue #{blocked_issue.id}: {e}[/yellow]")
             except Exception as e:
                 console.print(f"[yellow]Failed to start issue #{blocked_issue.id}: {e}[/yellow]")
         else:
