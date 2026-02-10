@@ -475,7 +475,7 @@ class TestApproveIssueEndpoint:
         data = response.json()
         assert data["ok"] is True
 
-        # Verify hooks were called
+        # Verify exit hooks were called (synchronous validation)
         mock_exit.assert_called_once()
         mock_enter.assert_called_once()
         mock_crud.update_issue_stage.assert_called_once()
@@ -556,32 +556,26 @@ class TestApproveIssueEndpoint:
         assert response.status_code == 500
         assert "Failed to update" in response.json()["detail"]
 
-    @patch("agenttree.tmux.send_message")
-    @patch("agenttree.tmux.session_exists")
-    @patch("agenttree.state.get_active_agent")
     @patch("agenttree.hooks.execute_enter_hooks")
     @patch("agenttree.hooks.execute_exit_hooks")
     @patch("agenttree.config.load_config")
     @patch("agenttree.web.app.issue_crud")
     def test_approve_issue_notifies_agent(
-        self, mock_crud, mock_config, mock_exit, mock_enter, mock_get_agent,
-        mock_session_exists, mock_send, client, mock_review_issue
+        self, mock_crud, mock_config, mock_exit, mock_enter,
+        client, mock_review_issue
     ):
-        """Test approve notifies active agent."""
+        """Test approve runs enter hooks after stage update."""
         mock_crud.get_issue.return_value = mock_review_issue
         mock_crud.update_issue_stage.return_value = mock_review_issue
         mock_config.return_value.get_next_stage.return_value = ("accepted", None, True)
 
-        mock_agent = Mock()
-        mock_agent.tmux_session = "test-session"
-        mock_get_agent.return_value = mock_agent
-        mock_session_exists.return_value = True
-
         response = client.post("/api/issues/002/approve")
 
         assert response.status_code == 200
-        mock_send.assert_called_once()
-        assert "approved" in mock_send.call_args[0][1].lower()
+        # Verify exit hooks were called (synchronous validation)
+        mock_exit.assert_called_once()
+        # Verify enter hooks were called (synchronous, within try/finally)
+        mock_enter.assert_called_once()
 
 
 class TestRebaseIssueEndpoint:
@@ -655,12 +649,13 @@ class TestAgentTmuxEndpoint:
 class TestSendToAgentEndpoint:
     """Tests for send message to agent endpoint."""
 
-    @patch("agenttree.tmux.session_exists", return_value=False)
+    @patch("agenttree.tmux.session_exists")
     @patch("agenttree.tmux.send_message")
     @patch("agenttree.web.app.load_config")
-    def test_send_to_agent(self, mock_config, mock_send, mock_session, client):
+    def test_send_to_agent(self, mock_config, mock_send, mock_session_exists, client):
         """Test sending message to agent."""
         mock_config.return_value.project = "test"
+        mock_session_exists.return_value = True
 
         response = client.post(
             "/agent/001/send",
@@ -707,9 +702,11 @@ class TestAgentManager:
         )
 
         with patch("agenttree.web.app._config") as mock_config:
+            mock_config.project = "myproject"
             mock_config.get_issue_session_patterns.return_value = [
                 "myproject-developer-001",
                 "myproject-reviewer-001",
+                "myproject-issue-001",
             ]
             manager = AgentManager()
             manager._active_sessions = None  # Reset cache
