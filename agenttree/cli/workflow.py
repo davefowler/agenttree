@@ -251,10 +251,10 @@ def stage_next(issue_id: str | None, reassess: bool) -> None:
     try:
         execute_exit_hooks(issue, from_stage, from_substage)
     except StageRedirect as redirect:
-        # Redirect to a different stage instead of normal next stage
-        console.print(f"[yellow]Redirecting to {redirect.target_stage}: {redirect.reason}[/yellow]")
+        # Redirect to a different stage/substage instead of normal next
+        console.print(f"[yellow]Redirecting to {redirect.target_stage}{('.' + redirect.target_substage) if redirect.target_substage else ''}: {redirect.reason}[/yellow]")
         next_stage = redirect.target_stage
-        next_substage = None
+        next_substage = redirect.target_substage
         is_human_review = False  # Redirect target is typically not human review
     except ValidationError as e:
         console.print(f"[red]Cannot proceed: {e}[/red]")
@@ -365,10 +365,10 @@ def approve_issue(issue_id: str, skip_approval: bool) -> None:
     try:
         execute_exit_hooks(issue, from_stage, from_substage, skip_pr_approval=skip_approval)
     except StageRedirect as redirect:
-        # Redirect to a different stage instead of normal next stage
-        console.print(f"[yellow]Redirecting to {redirect.target_stage}: {redirect.reason}[/yellow]")
+        # Redirect to a different stage/substage instead of normal next
+        console.print(f"[yellow]Redirecting to {redirect.target_stage}{('.' + redirect.target_substage) if redirect.target_substage else ''}: {redirect.reason}[/yellow]")
         next_stage = redirect.target_stage
-        next_substage = None
+        next_substage = redirect.target_substage
     except ValidationError as e:
         console.print(f"[red]Cannot approve: {e}[/red]")
         sys.exit(1)

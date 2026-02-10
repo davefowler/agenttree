@@ -90,10 +90,10 @@ def web(host: str, port: int, config_path: str | None) -> None:
 def serve(host: str, port: int) -> None:
     """Start the AgentTree server (runs syncs, spawns agents).
 
-    This is the main controller process that:
+    This is the main manager process that:
     - Syncs the _agenttree repo periodically
     - Spawns agents for issues in agent stages
-    - Runs hooks for controller stages
+    - Runs hooks for manager stages
     - Provides the web dashboard
 
     Use 'agenttree start' to run this in a tmux session.

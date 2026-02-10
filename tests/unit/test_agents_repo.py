@@ -272,7 +272,7 @@ class TestSyncAgentsRepo:
     @patch("agenttree.agents_repo.check_manager_stages")
     @patch("agenttree.agents_repo.push_pending_branches")
     @patch("agenttree.agents_repo.subprocess.run")
-    def test_sync_pull_only_success(self, mock_run, mock_push_pending, mock_check_controller, mock_check_merged, git_repo):
+    def test_sync_pull_only_success(self, mock_run, mock_push_pending, mock_check_manager, mock_check_merged, git_repo):
         """Test sync with pull_only=True succeeds."""
         # Mock responses for: status --porcelain (no changes), pull
         mock_run.side_effect = [
@@ -335,7 +335,7 @@ class TestSyncAgentsRepo:
     @patch("agenttree.agents_repo.check_manager_stages")
     @patch("agenttree.agents_repo.push_pending_branches")
     @patch("agenttree.agents_repo.subprocess.run")
-    def test_sync_write_commits_and_pushes(self, mock_run, mock_push_pending, mock_check_controller, mock_check_merged, git_repo):
+    def test_sync_write_commits_and_pushes(self, mock_run, mock_push_pending, mock_check_manager, mock_check_merged, git_repo):
         """Test sync with write commits and pushes changes."""
         # Mock responses for: status --porcelain (has changes), add, commit, pull, push
         mock_run.side_effect = [
@@ -364,7 +364,7 @@ class TestSyncAgentsRepo:
     @patch("agenttree.agents_repo.check_manager_stages")
     @patch("agenttree.agents_repo.push_pending_branches")
     @patch("agenttree.agents_repo.subprocess.run")
-    def test_sync_write_no_changes(self, mock_run, mock_push_pending, mock_check_controller, mock_check_merged, git_repo):
+    def test_sync_write_no_changes(self, mock_run, mock_push_pending, mock_check_manager, mock_check_merged, git_repo):
         """Test sync with write but no changes to commit."""
         # Mock responses for: status --porcelain (no changes), pull, push
         mock_run.side_effect = [

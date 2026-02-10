@@ -25,7 +25,7 @@ from agenttree.hooks import (
 class TestRoleConfig:
     """Tests for RoleConfig dataclass."""
 
-    def test_host_config_with_container(self):
+    def test_role_config_with_container(self):
         """Test RoleConfig with container settings."""
         config = RoleConfig(
             name="review",
@@ -43,18 +43,18 @@ class TestRoleConfig:
         assert config.is_agent() is True
         assert config.container.image == "custom-image:latest"
 
-    def test_host_config_without_container(self):
-        """Test RoleConfig without container (like controller)."""
+    def test_role_config_without_container(self):
+        """Test RoleConfig without container (like manager)."""
         config = RoleConfig(
             name="manager",
-            description="Human-driven controller",
+            description="Human-driven manager",
             container=None
         )
         assert config.name == "manager"
         assert config.is_containerized() is False
         assert config.is_agent() is False
 
-    def test_host_config_disabled_container(self):
+    def test_role_config_disabled_container(self):
         """Test RoleConfig with disabled container."""
         config = RoleConfig(
             name="local-agent",
@@ -63,26 +63,26 @@ class TestRoleConfig:
         assert config.is_containerized() is False
 
 
-class TestConfigWithHosts:
-    """Tests for Config with hosts section."""
+class TestConfigWithRoles:
+    """Tests for Config with roles section."""
 
     def test_get_all_roles_includes_defaults(self):
-        """Test that get_all_roles includes built-in controller and agent."""
+        """Test that get_all_roles includes built-in manager and developer."""
         config = Config()
-        all_hosts = config.get_all_roles()
+        all_roles = config.get_all_roles()
 
-        # Should have at least controller and agent
-        assert "manager" in all_hosts
-        assert "developer" in all_hosts
+        # Should have at least manager and developer
+        assert "manager" in all_roles
+        assert "developer" in all_roles
 
-        # Controller should not be containerized
-        assert all_hosts["manager"].is_containerized() is False
+        # Manager should not be containerized
+        assert all_roles["manager"].is_containerized() is False
 
-        # Agent should be containerized
-        assert all_hosts["developer"].is_containerized() is True
+        # Developer should be containerized
+        assert all_roles["developer"].is_containerized() is True
 
-    def test_get_all_roles_with_custom_hosts(self):
-        """Test that custom hosts are merged with defaults."""
+    def test_get_all_roles_with_custom(self):
+        """Test that custom roles are merged with defaults."""
         config = Config(
             roles={
                 "review": RoleConfig(
@@ -93,20 +93,20 @@ class TestConfigWithHosts:
                 )
             }
         )
-        all_hosts = config.get_all_roles()
+        all_roles = config.get_all_roles()
 
         # Should have defaults plus custom
-        assert "manager" in all_hosts
-        assert "developer" in all_hosts
-        assert "review" in all_hosts
+        assert "manager" in all_roles
+        assert "developer" in all_roles
+        assert "review" in all_roles
 
-    def test_get_host_returns_builtin(self):
-        """Test get_host returns built-in hosts."""
+    def test_get_role_returns_builtin(self):
+        """Test get_role returns built-in roles."""
         config = Config()
 
-        controller = config.get_role("manager")
-        assert controller is not None
-        assert controller.name == "manager"
+        mgr = config.get_role("manager")
+        assert mgr is not None
+        assert mgr.name == "manager"
 
         agent = config.get_role("developer")
         assert agent is not None
@@ -128,11 +128,11 @@ class TestConfigWithHosts:
         assert config.role_is_containerized("review") is True
 
 
-class TestConfigWithCustomHosts:
-    """Tests for Config with custom hosts section."""
+class TestConfigWithCustomRoles:
+    """Tests for Config with custom roles section."""
 
-    def test_config_with_hosts(self):
-        """Test Config creation with custom hosts."""
+    def test_config_with_custom_roles(self):
+        """Test Config creation with custom roles."""
         config = Config(
             roles={
                 "review": RoleConfig(
@@ -242,11 +242,11 @@ class TestConfigWithCustomHosts:
         assert "implement" not in non_agent
 
 
-class TestLoadConfigWithHosts:
-    """Tests for loading config with hosts section from YAML."""
+class TestLoadConfigWithRoles:
+    """Tests for loading config with roles section from YAML."""
 
-    def test_load_config_with_hosts_yaml(self, tmp_path):
-        """Test loading config with hosts from YAML file."""
+    def test_load_config_with_roles_yaml(self, tmp_path):
+        """Test loading config with roles from YAML file."""
         config_content = """
 roles:
   review:
@@ -263,11 +263,11 @@ roles:
 
 stages:
   - name: implement
-    host: agent
+    role: developer
   - name: independent_code_review
-    host: review
+    role: review
   - name: implementation_review
-    host: controller
+    role: manager
 """
         config_file = tmp_path / ".agenttree.yaml"
         config_file.write_text(config_content)
@@ -298,9 +298,9 @@ class TestGetCurrentAgentHost:
             assert get_current_role() == "developer"
 
     def test_default_on_host(self):
-        """Test default is 'controller' when not in container."""
+        """Test default is 'manager' when not in container."""
         with patch.dict(os.environ, {}, clear=True):
-            # Clear container and agent host vars
+            # Clear container and agent role vars
             os.environ.pop("AGENTTREE_CONTAINER", None)
             os.environ.pop("AGENTTREE_ROLE", None)
             # Also mock the container detection files
@@ -311,22 +311,22 @@ class TestGetCurrentAgentHost:
 class TestCanAgentOperateInStage:
     """Tests for can_agent_operate_in_stage function."""
 
-    def test_controller_can_operate_anywhere(self):
-        """Controller (human) can operate in any stage."""
+    def test_manager_can_operate_anywhere(self):
+        """Manager (human) can operate in any stage."""
         with patch("agenttree.hooks.get_current_role", return_value="manager"):
             assert can_agent_operate_in_stage("agent") is True
             assert can_agent_operate_in_stage("manager") is True
             assert can_agent_operate_in_stage("review") is True
 
     def test_agent_can_only_operate_in_agent_stages(self):
-        """Default agent can only operate in host='agent' stages."""
+        """Default agent can only operate in role='developer' stages."""
         with patch("agenttree.hooks.get_current_role", return_value="agent"):
             assert can_agent_operate_in_stage("agent") is True
             assert can_agent_operate_in_stage("manager") is False
             assert can_agent_operate_in_stage("review") is False
 
     def test_custom_agent_can_only_operate_in_own_stages(self):
-        """Custom agents can only operate in their own host stages."""
+        """Custom agents can only operate in their own role stages."""
         with patch("agenttree.hooks.get_current_role", return_value="review"):
             assert can_agent_operate_in_stage("review") is True
             assert can_agent_operate_in_stage("agent") is False

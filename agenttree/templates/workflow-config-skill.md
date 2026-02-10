@@ -38,7 +38,7 @@ What are you changing?
 │   └── CLAUDE.md or .cursorrules
 │   └── The "don't touch the stove" file
 │
-├── How the controller monitors agents
+├── How the manager monitors agents
 │   └── .agenttree.yaml → on: section
 │
 └── Things agents must never do
@@ -76,7 +76,7 @@ stages:
 
   - name: security_review
     output: security_review.md          # What this stage produces
-    host: review                         # Which host runs it (optional)
+    role: review                         # Which role runs it (optional)
     skill: security_review.md           # Skill file path (optional, convention: skills/{name}.md)
     post_start:
       - create_file:
@@ -425,7 +425,7 @@ Three components: a review stage, an address stage, and a loop check.
 
 ```yaml
 - name: security_review
-  host: review
+  role: review
   output: security_review.md
   pre_completion:
     - checkbox_checked:
@@ -435,7 +435,7 @@ Three components: a review stage, an address stage, and a loop check.
 
 - name: address_security_review
   redirect_only: true
-  host: agent
+  role: developer
   pre_completion:
     - loop_check:
         count_files: security_review_v*.md

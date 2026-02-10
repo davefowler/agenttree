@@ -206,7 +206,7 @@ def context_init(agent_num: int | None, port: int | None) -> None:
 @click.option(
     "--ai-review",
     is_flag=True,
-    help="Ask controller AI to review edge cases before cleanup"
+    help="Ask manager AI to review edge cases before cleanup"
 )
 def cleanup_command(
     dry_run: bool,
@@ -234,7 +234,7 @@ def cleanup_command(
         agenttree cleanup --dry-run          # Preview what would be cleaned
         agenttree cleanup --force            # Clean without prompts
         agenttree cleanup --no-branches      # Skip branch cleanup
-        agenttree cleanup --ai-review        # Ask controller AI about edge cases
+        agenttree cleanup --ai-review        # Ask manager AI about edge cases
     """
     from agenttree.worktree import list_worktrees, remove_worktree
     from agenttree.tmux import list_sessions, kill_session
@@ -474,7 +474,7 @@ def cleanup_command(
 
     # AI review for edge cases
     if ai_review and edge_cases:
-        console.print("[bold]Asking controller AI to review edge cases...[/bold]")
+        console.print("[bold]Asking manager AI to review edge cases...[/bold]")
         _cleanup_ai_review(edge_cases, config)
 
     if dry_run:
@@ -551,7 +551,7 @@ def cleanup_command(
 
 
 def _cleanup_ai_review(edge_cases: list[dict], config: Config) -> None:
-    """Ask the controller AI to review cleanup edge cases.
+    """Ask the manager AI to review cleanup edge cases.
 
     Args:
         edge_cases: List of edge case dictionaries
@@ -559,11 +559,11 @@ def _cleanup_ai_review(edge_cases: list[dict], config: Config) -> None:
     """
     from agenttree.tmux import session_exists, send_keys
 
-    controller_session = f"{config.project}-controller"
+    manager_session = f"{config.project}-manager"
 
-    if not session_exists(controller_session):
-        console.print("[yellow]Controller agent not running - skipping AI review[/yellow]")
-        console.print("[dim]Start the controller with: agenttree start --controller[/dim]")
+    if not session_exists(manager_session):
+        console.print("[yellow]Manager agent not running - skipping AI review[/yellow]")
+        console.print("[dim]Start the manager with: agenttree start --manager[/dim]")
         return
 
     # Format the edge cases for the AI
@@ -583,9 +583,9 @@ For each edge case, please tell me:
 
 Be concise - just a few lines per case."""
 
-    console.print("[dim]Sending to controller for review...[/dim]")
-    send_keys(controller_session, prompt + "\n")
-    console.print(f"[cyan]Sent edge cases to controller. Check tmux session '{controller_session}' for response.[/cyan]")
+    console.print("[dim]Sending to manager for review...[/dim]")
+    send_keys(manager_session, prompt + "\n")
+    console.print(f"[cyan]Sent edge cases to manager. Check tmux session '{manager_session}' for response.[/cyan]")
 
 
 @click.command("tui")

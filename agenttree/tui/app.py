@@ -329,9 +329,9 @@ class TUIApp(App):  # type: ignore[type-arg]
             try:
                 execute_exit_hooks(issue, from_stage, from_substage)
             except StageRedirect as redirect:
-                # Redirect to a different stage
+                # Redirect to a different stage/substage
                 next_stage = redirect.target_stage
-                next_substage = None
+                next_substage = redirect.target_substage
                 status.show_message(f"Redirecting to {next_stage}: {redirect.reason}")
 
             # Update issue stage
