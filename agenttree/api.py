@@ -163,8 +163,10 @@ def cleanup_orphaned_containers(quiet: bool = False) -> int:
                 stopped += 1
                 if not quiet:
                     console.print(f"[dim]Cleaned up orphaned container: {name}[/dim]")
-            except Exception:
-                pass
+            except Exception as e:
+                # Container cleanup can fail if already removed - continue with others
+                if not quiet:
+                    console.print(f"[yellow]Warning: Could not cleanup container {name}: {e}[/yellow]")
 
     if not quiet and stopped > 0:
         console.print(f"[green]✓ Cleaned up {stopped} orphaned container(s)[/green]")
