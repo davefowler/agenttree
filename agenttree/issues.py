@@ -78,6 +78,7 @@ class Issue(BaseModel):
     history: list[HistoryEntry] = Field(default_factory=list)
 
     custom_agent_spawned: Optional[str] = None  # Stage name where custom agent was spawned
+    needs_ui_review: bool = False  # If True, ui_review stage will run
 
     # Processing state: "exit", "enter", or None (not processing)
     processing: Optional[str] = None
@@ -165,6 +166,7 @@ def create_issue(
     context: Optional[str] = None,
     solutions: Optional[str] = None,
     dependencies: Optional[list[str]] = None,
+    needs_ui_review: bool = False,
 ) -> Issue:
     """Create a new issue.
 
@@ -179,6 +181,7 @@ def create_issue(
         context: Context/background text (fills problem.md)
         solutions: Possible solutions text (fills problem.md)
         dependencies: Optional list of issue IDs that must be completed first
+        needs_ui_review: If True, ui_review stage will run for this issue
 
     Returns:
         The created Issue object
@@ -231,6 +234,7 @@ def create_issue(
         priority=priority,
         labels=labels or [],
         dependencies=normalized_deps,
+        needs_ui_review=needs_ui_review,
         history=[
             HistoryEntry(stage=stage, substage=substage, timestamp=now)
         ]
@@ -653,6 +657,7 @@ def get_next_stage(
     current_stage: str,
     current_substage: Optional[str] = None,
     flow: str = "default",
+    issue_context: dict | None = None,
 ) -> tuple[str, Optional[str], bool]:
     """Calculate the next stage/substage.
 
@@ -662,6 +667,7 @@ def get_next_stage(
         current_stage: Current stage name (string)
         current_substage: Current substage (if any)
         flow: Workflow flow to use for stage progression (default: "default")
+        issue_context: Optional dict of issue context for condition evaluation
 
     Returns:
         Tuple of (next_stage, next_substage, is_human_review)
@@ -670,7 +676,7 @@ def get_next_stage(
     from agenttree.config import load_config
 
     config = load_config()
-    return config.get_next_stage(current_stage, current_substage, flow)
+    return config.get_next_stage(current_stage, current_substage, flow, issue_context)
 
 
 def update_issue_stage(
@@ -747,6 +753,7 @@ def update_issue_metadata(
     clear_pr: bool = False,
     priority: Optional[Priority] = None,
     commit_message: Optional[str] = None,
+    needs_ui_review: Optional[bool] = None,
 ) -> Optional[Issue]:
     """Update metadata fields on an issue.
 
@@ -761,6 +768,7 @@ def update_issue_metadata(
         clear_pr: If True, sets pr_number and pr_url to None
         priority: Priority level (optional)
         commit_message: Custom commit message (optional, defaults to generic)
+        needs_ui_review: If True, ui_review stage will run (optional)
 
     Returns:
         Updated Issue object or None if not found
@@ -801,6 +809,8 @@ def update_issue_metadata(
         issue.pr_url = None
     if priority is not None:
         issue.priority = priority
+    if needs_ui_review is not None:
+        issue.needs_ui_review = needs_ui_review
     issue.updated = now
 
     # Write back
