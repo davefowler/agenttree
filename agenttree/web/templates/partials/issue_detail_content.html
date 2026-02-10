@@ -113,8 +113,11 @@
                 {% for file in files %}
                 <button class="file-tab{% if file.name == active_file.name and not issue.has_worktree %} active{% endif %}"
                         onclick="selectFileTab(event, '{{ issue.number }}', '{{ file.name }}')"
-                        data-filename="{{ file.name }}">
-                    {{ file.display_name }}
+                        data-filename="{{ file.name }}"
+                        data-stage="{{ file.stage }}"
+                        data-passed="{{ file.is_passed }}"
+                        title="{{ file.display_name }}">
+                    {{ file.short_name }}
                 </button>
                 {% else %}
                 <span class="no-files">No files found</span>
