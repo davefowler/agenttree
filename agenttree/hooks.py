@@ -352,7 +352,7 @@ HOOK_TYPES = {
     "rollback",  # Review loop: programmatic rollback to earlier stage
     # Manager hooks (run on post-sync)
     "push_pending_branches", "check_manager_stages", "check_merged_prs",
-    "check_ci_status", "check_custom_agent_stages", "check_stalled_agents",
+    "check_ci_status", "check_custom_agent_stages",
 }
 
 # =============================================================================
@@ -1212,35 +1212,8 @@ def run_builtin_validator(
         if agents_dir:
             check_custom_agent_stages(agents_dir)
 
-    elif hook_type == "check_stalled_agents":
-        from agenttree.manager_agent import get_stalled_agents
-
-        agents_dir = kwargs.get("agents_dir")
-        if agents_dir:
-            threshold = params.get("threshold_min", 20)
-            stalled = get_stalled_agents(agents_dir, threshold_min=threshold)
-
-            for agent_info in stalled:
-                issue_id = agent_info["issue_id"]
-                minutes = agent_info["minutes_stalled"]
-
-                # Send nudge via agenttree send --interrupt to actually interrupt the agent
-                message = f"STALL DETECTED ({minutes}m). Run `agenttree next` NOW to check your progress and advance."
-                try:
-                    result = subprocess.run(
-                        ["agenttree", "send", issue_id, message, "--interrupt"],
-                        capture_output=True,
-                        text=True,
-                        timeout=30,
-                    )
-                    if result.returncode == 0:
-                        console.print(f"[yellow]Nudged stalled agent #{issue_id} ({minutes}m)[/yellow]")
-                    else:
-                        console.print(f"[red]Failed to nudge #{issue_id}: {result.stderr}[/red]")
-                except subprocess.TimeoutExpired:
-                    console.print(f"[red]Nudge timed out for #{issue_id}[/red]")
-                except Exception as e:
-                    console.print(f"[red]Failed to nudge #{issue_id}: {e}[/red]")
+    # NOTE: check_stalled_agents is handled by the actions system (actions.py),
+    # not the hook system. See actions.py:check_stalled_agents.
 
     elif hook_type == "server_running":
         # Check that a dev server is running on the issue's port

@@ -702,6 +702,7 @@ class TmuxManager:
         session_name: str,
         repo_path: Path,
         tool_name: str,
+        model: str | None = None,
     ) -> None:
         """Start the manager agent on the host (not in a container).
 
@@ -711,6 +712,7 @@ class TmuxManager:
             session_name: Tmux session name (typically {project}-manager-000)
             repo_path: Path to the repository root
             tool_name: Name of the AI tool to use
+            model: Model to use (e.g., "sonnet", "opus"). If None, uses tool default.
         """
         # Kill existing session if it exists
         if session_exists(session_name):
@@ -722,6 +724,8 @@ class TmuxManager:
         # Build command to run the AI tool directly (not in container)
         # Manager runs on the host with full access
         ai_command = tool_config.command
+        if model:
+            ai_command = f"{ai_command} --model {model}"
 
         # Create tmux session running the AI tool
         create_session(session_name, repo_path, ai_command)

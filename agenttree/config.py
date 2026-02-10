@@ -43,7 +43,8 @@ class RoleConfig(BaseModel):
 
     # AI agent settings (only for AI roles, not manager)
     tool: Optional[str] = None  # AI tool to use (e.g., "claude", "codex")
-    model: Optional[str] = None  # Model to use (e.g., "opus", "gpt-5.2")
+    model: Optional[str] = None  # Explicit model (e.g., "opus"). Overrides model_tier.
+    model_tier: Optional[str] = None  # Tier name (e.g., "high", "medium", "low") → resolved via model_tiers
     skill: Optional[str] = None  # Skill file path for custom agents
 
     # Process to run (for manager, this could be "agenttree watch")
@@ -121,7 +122,8 @@ class SubstageConfig(BaseModel):
     output: Optional[str] = None  # Document created by this substage
     output_optional: bool = False  # If True, missing output file doesn't error
     skill: Optional[str] = None   # Override skill file path
-    model: Optional[str] = None   # Model to use for this substage (overrides stage model)
+    model: Optional[str] = None   # Explicit model (overrides model_tier and stage model)
+    model_tier: Optional[str] = None  # Tier name (e.g., "high") → resolved via model_tiers
     validators: list[str] = Field(default_factory=list)  # Legacy format
     pre_completion: list[dict] = Field(default_factory=list)  # Hooks before completing
     post_start: list[dict] = Field(default_factory=list)  # Hooks after starting
@@ -134,7 +136,8 @@ class StageConfig(BaseModel):
     output: Optional[str] = None  # Document created by this stage
     output_optional: bool = False  # If True, missing output file doesn't error
     skill: Optional[str] = None   # Override skill file path
-    model: Optional[str] = None   # Model to use for this stage (overrides default_model)
+    model: Optional[str] = None   # Explicit model (overrides model_tier)
+    model_tier: Optional[str] = None  # Tier name (e.g., "high") → resolved via model_tiers
     human_review: bool = False    # Requires human approval to exit
     is_parking_lot: bool = False  # No agent auto-starts here (backlog, accepted, not_doing)
     redirect_only: bool = False   # Only reachable via StageRedirect, skipped in normal progression
@@ -235,6 +238,11 @@ class Config(BaseModel):
     port_range: str = "9001-9099"
     default_tool: str = "claude"
     default_model: str = "opus"  # Model to use for Claude CLI (opus, sonnet)
+    model_tiers: Dict[str, str] = Field(default_factory=lambda: {
+        "high": "opus",
+        "medium": "sonnet",
+        "low": "haiku",
+    })
     refresh_interval: int = 10
     tools: Dict[str, ToolConfig] = Field(default_factory=dict)
     roles: Dict[str, RoleConfig] = Field(default_factory=dict)  # Role configurations
@@ -489,6 +497,7 @@ class Config(BaseModel):
                 description="Human-driven manager (runs on host)",
                 container=None,  # No container
                 process=None,  # Could be "agenttree watch" in future
+                model_tier="low",  # Manager just runs CLI commands
             ),
             "developer": RoleConfig(
                 name="developer",
@@ -645,36 +654,35 @@ class Config(BaseModel):
         # Fall back to stage output
         return stage.output
 
-    def model_for(self, stage_name: str, substage: Optional[str] = None) -> str:
-        """Get the model to use for a stage/substage.
+    def model_for(self, stage_name: str, substage: Optional[str] = None, role: Optional[str] = None) -> str:
+        """Get the model to use. Checks substage → stage → role → default.
 
-        Resolution order:
-        1. Substage model (if substage specified and has model)
-        2. Stage model (if stage has model)
-        3. default_model (fallback)
-
-        Args:
-            stage_name: Name of the stage
-            substage: Optional substage name
-
-        Returns:
-            Model name (e.g., "opus", "haiku", "sonnet")
+        At each level, explicit `model` beats `model_tier`.
         """
+        tiers = self.model_tiers
+
+        # Check each config in priority order: substage, stage, role
+        configs: list[object] = []
         stage = self.get_stage(stage_name)
-        if stage is None:
-            return self.default_model
+        if stage:
+            if substage:
+                sc = stage.get_substage(substage)
+                if sc:
+                    configs.append(sc)
+            configs.append(stage)
+        if role:
+            rc = self.get_role(role)
+            if rc:
+                configs.append(rc)
 
-        # Check substage model first
-        if substage:
-            substage_config = stage.get_substage(substage)
-            if substage_config and substage_config.model:
-                return substage_config.model
+        for cfg in configs:
+            m = getattr(cfg, "model", None)
+            if m:
+                return m
+            t = getattr(cfg, "model_tier", None)
+            if t:
+                return tiers.get(t, t)
 
-        # Check stage model
-        if stage.model:
-            return stage.model
-
-        # Fall back to default model
         return self.default_model
 
     def validators_for(self, stage_name: str, substage: Optional[str] = None) -> list[str]:

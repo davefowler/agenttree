@@ -394,9 +394,11 @@ def check_stalled_agents(
         console.print(f"[dim]Stall state unchanged ({len(dead)} dead, {len(stalled)} stalled) - not re-alerting manager[/dim]")
         return
     
-    # Check if manager is running before sending notification
+    # Ensure manager is running before sending notification
     if not session_exists(manager_session):
-        console.print("[dim]Manager not running, wrote stalled.yaml only[/dim]")
+        console.print("[yellow]Manager not running, restarting...[/yellow]")
+        start_manager(agents_dir)
+        # Give it a moment to spin up - notification will reach it on next cycle
         return
     
     # Send brief notification pointing to file
@@ -890,6 +892,7 @@ DEFAULT_EVENT_CONFIGS: dict[str, list[str] | dict[str, Any]] = {
         "interval_s": 10,
         "actions": [
             "sync",
+            {"start_manager": {"min_interval_s": 30}},  # Ensure manager stays alive
             {"push_pending_branches": {}},
             {"check_manager_stages": {}},
             {"check_custom_agent_stages": {}},
