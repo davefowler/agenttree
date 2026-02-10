@@ -44,6 +44,7 @@ class RoleConfig(BaseModel):
     # AI agent settings (only for AI roles, not manager)
     tool: Optional[str] = None  # AI tool to use (e.g., "claude", "codex")
     model: Optional[str] = None  # Model to use (e.g., "opus", "gpt-5.2")
+    model_tier: str | None = None  # Model tier (e.g., "high", "medium", "low") - resolved via model_tiers
     skill: Optional[str] = None  # Skill file path for custom agents
 
     # Process to run (for manager, this could be "agenttree watch")
@@ -122,6 +123,7 @@ class SubstageConfig(BaseModel):
     output_optional: bool = False  # If True, missing output file doesn't error
     skill: Optional[str] = None   # Override skill file path
     model: Optional[str] = None   # Model to use for this substage (overrides stage model)
+    model_tier: str | None = None  # Model tier (resolved via model_tiers)
     validators: list[str] = Field(default_factory=list)  # Legacy format
     pre_completion: list[dict] = Field(default_factory=list)  # Hooks before completing
     post_start: list[dict] = Field(default_factory=list)  # Hooks after starting
@@ -135,6 +137,7 @@ class StageConfig(BaseModel):
     output_optional: bool = False  # If True, missing output file doesn't error
     skill: Optional[str] = None   # Override skill file path
     model: Optional[str] = None   # Model to use for this stage (overrides default_model)
+    model_tier: str | None = None  # Model tier (resolved via model_tiers)
     human_review: bool = False    # Requires human approval to exit
     is_parking_lot: bool = False  # No agent auto-starts here (backlog, accepted, not_doing)
     redirect_only: bool = False   # Only reachable via StageRedirect, skipped in normal progression
@@ -235,6 +238,7 @@ class Config(BaseModel):
     port_range: str = "9001-9099"
     default_tool: str = "claude"
     default_model: str = "opus"  # Model to use for Claude CLI (opus, sonnet)
+    model_tiers: dict[str, str] = Field(default_factory=dict)  # Tier name -> model name mapping
     refresh_interval: int = 10
     tools: Dict[str, ToolConfig] = Field(default_factory=dict)
     roles: Dict[str, RoleConfig] = Field(default_factory=dict)  # Role configurations
@@ -649,9 +653,11 @@ class Config(BaseModel):
         """Get the model to use for a stage/substage.
 
         Resolution order:
-        1. Substage model (if substage specified and has model)
-        2. Stage model (if stage has model)
-        3. default_model (fallback)
+        1. Substage model (explicit model name)
+        2. Substage tier lookup (via model_tiers)
+        3. Stage model (explicit model name)
+        4. Stage tier lookup (via model_tiers)
+        5. default_model (fallback)
 
         Args:
             stage_name: Name of the stage
@@ -664,15 +670,22 @@ class Config(BaseModel):
         if stage is None:
             return self.default_model
 
-        # Check substage model first
+        # Check substage first (model > tier)
         if substage:
             substage_config = stage.get_substage(substage)
-            if substage_config and substage_config.model:
-                return substage_config.model
+            if substage_config:
+                # Explicit substage model takes precedence
+                if substage_config.model:
+                    return substage_config.model
+                # Substage tier lookup
+                if substage_config.model_tier and substage_config.model_tier in self.model_tiers:
+                    return self.model_tiers[substage_config.model_tier]
 
-        # Check stage model
+        # Check stage (model > tier)
         if stage.model:
             return stage.model
+        if stage.model_tier and stage.model_tier in self.model_tiers:
+            return self.model_tiers[stage.model_tier]
 
         # Fall back to default model
         return self.default_model
