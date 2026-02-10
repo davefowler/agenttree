@@ -227,6 +227,14 @@ def stage_next(issue_id: str | None, reassess: bool) -> None:
         mark_session_oriented(issue_id, issue.stage, issue.substage)
         return
 
+    # Block agents from advancing past human_review stages — only `agenttree approve` can do that
+    current_stage_config = load_config().get_stage(issue.stage)
+    if current_stage_config and current_stage_config.human_review and is_running_in_container():
+        console.print(f"\n[yellow]⏳ Waiting for human review at {issue.stage}[/yellow]")
+        console.print(f"[dim]This stage requires human approval.[/dim]")
+        console.print(f"[dim]Use 'agenttree approve {issue_id}' from the host to advance.[/dim]")
+        return
+
     # Handle --reassess flag for plan revision cycling
     if reassess:
         if issue.stage != PLAN_REVISE:
@@ -292,18 +300,24 @@ def stage_next(issue_id: str | None, reassess: bool) -> None:
         stage_str += f".{next_substage}"
     console.print(f"[green]✓ Moved to {stage_str}[/green]")
 
-    # Check if next stage requires a different role
+    # Check if next stage requires waiting (human review or different role)
     next_stage_config = config.get_stage(next_stage)
-    if next_stage_config and next_stage_config.role != "developer" and is_running_in_container():
-        if next_stage_config.role == "manager" or is_human_review:
+    if next_stage_config and is_running_in_container():
+        if is_human_review or next_stage_config.human_review:
+            # Human review stage — agent must stop and wait for human approval
             console.print(f"\n[yellow]⏳ Waiting for human review[/yellow]")
             console.print(f"[dim]Your work has been submitted for review.[/dim]")
             console.print(f"[dim]You will receive instructions when the review is complete.[/dim]")
-        else:
-            console.print(f"\n[yellow]⏳ Waiting for '{next_stage_config.role}' agent[/yellow]")
-            console.print(f"[dim]The '{next_stage_config.role}' agent will handle the next stage.[/dim]")
+            return
+        elif next_stage_config.role != "developer":
+            if next_stage_config.role == "manager":
+                console.print(f"\n[yellow]⏳ Waiting for manager[/yellow]")
+                console.print(f"[dim]The manager will handle this stage.[/dim]")
+            else:
+                console.print(f"\n[yellow]⏳ Waiting for '{next_stage_config.role}' agent[/yellow]")
+                console.print(f"[dim]The '{next_stage_config.role}' agent will handle the next stage.[/dim]")
             console.print(f"[dim]You will receive instructions when that stage is complete.[/dim]")
-        return
+            return
 
     # Determine if this is first agent entry (should include AGENTS.md system prompt)
     is_first_stage = next_stage == DEFINE and from_stage == BACKLOG
