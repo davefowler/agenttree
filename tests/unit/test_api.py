@@ -729,3 +729,129 @@ class TestContainerNamingConsistency:
         expected_name = "agenttree-testproject-123"
         mock_runtime.stop.assert_called_with(expected_name)
         mock_runtime.delete.assert_called_with(expected_name)
+
+
+class TestTransitionIssue:
+    """Tests for transition_issue() function."""
+
+    @pytest.fixture
+    def mock_issue(self):
+        issue = MagicMock()
+        issue.id = "42"
+        issue.stage = "plan_review"
+        issue.substage = None
+        issue.slug = "test-issue"
+        return issue
+
+    def test_transition_success(self, mock_issue):
+        """Normal transition: exit hooks -> stage update -> enter hooks."""
+        from agenttree.api import transition_issue
+
+        updated_issue = MagicMock()
+        updated_issue.stage = "implement"
+        updated_issue.substage = "code"
+
+        with patch("agenttree.issues.get_issue", return_value=mock_issue), \
+             patch("agenttree.hooks.execute_exit_hooks") as mock_exit, \
+             patch("agenttree.issues.update_issue_stage", return_value=updated_issue) as mock_update, \
+             patch("agenttree.hooks.execute_enter_hooks") as mock_enter:
+
+            result = transition_issue("42", "implement", "code")
+
+        assert result == updated_issue
+        mock_exit.assert_called_once_with(mock_issue, "plan_review", None, skip_pr_approval=False)
+        mock_update.assert_called_once_with("42", "implement", "code")
+        mock_enter.assert_called_once_with(updated_issue, "implement", "code")
+
+    def test_transition_exit_hook_redirect(self, mock_issue):
+        """Exit hook StageRedirect changes the target stage."""
+        from agenttree.api import transition_issue
+        from agenttree.hooks import StageRedirect
+
+        updated_issue = MagicMock()
+        updated_issue.stage = "define"
+
+        with patch("agenttree.issues.get_issue", return_value=mock_issue), \
+             patch("agenttree.hooks.execute_exit_hooks", side_effect=StageRedirect("define", "needs more work")), \
+             patch("agenttree.issues.update_issue_stage", return_value=updated_issue) as mock_update, \
+             patch("agenttree.hooks.execute_enter_hooks"):
+
+            result = transition_issue("42", "implement", "code")
+
+        # Should have updated to the redirected stage, not original target
+        mock_update.assert_called_once_with("42", "define", None)
+        assert result == updated_issue
+
+    def test_transition_enter_hook_redirect(self, mock_issue):
+        """Enter hook StageRedirect updates stage and notifies agent."""
+        from agenttree.api import transition_issue, _notify_agent
+        from agenttree.hooks import StageRedirect
+
+        updated_issue = MagicMock()
+        redirected_issue = MagicMock()
+        redirected_issue.stage = "implement"
+        redirected_issue.substage = "code"
+
+        with patch("agenttree.issues.get_issue", return_value=mock_issue), \
+             patch("agenttree.hooks.execute_exit_hooks"), \
+             patch("agenttree.issues.update_issue_stage", side_effect=[updated_issue, redirected_issue]), \
+             patch("agenttree.hooks.execute_enter_hooks", side_effect=StageRedirect("implement", "merge conflict", "code")), \
+             patch("agenttree.api._notify_agent") as mock_notify:
+
+            result = transition_issue("42", "accepted")
+
+        assert result == redirected_issue
+        mock_notify.assert_called_once()
+        assert "merge conflict" in mock_notify.call_args[0][1]
+
+    def test_transition_validation_error_propagates(self, mock_issue):
+        """ValidationError from exit hooks propagates to caller."""
+        from agenttree.api import transition_issue
+        from agenttree.hooks import ValidationError
+
+        with patch("agenttree.issues.get_issue", return_value=mock_issue), \
+             patch("agenttree.hooks.execute_exit_hooks", side_effect=ValidationError("Tests failed")):
+
+            with pytest.raises(ValidationError, match="Tests failed"):
+                transition_issue("42", "implement")
+
+    def test_transition_issue_not_found(self):
+        """RuntimeError if issue doesn't exist."""
+        from agenttree.api import transition_issue
+
+        with patch("agenttree.issues.get_issue", return_value=None):
+            with pytest.raises(RuntimeError, match="not found"):
+                transition_issue("999", "implement")
+
+
+class TestNotifyAgent:
+    """Tests for _notify_agent() function."""
+
+    def test_notify_sends_message(self):
+        """Sends message to active agent's tmux session."""
+        from agenttree.api import _notify_agent
+
+        agent = MagicMock()
+        agent.tmux_session = "testproj-dev-042"
+
+        with patch("agenttree.state.get_active_agent", return_value=agent), \
+             patch("agenttree.tmux.session_exists", return_value=True), \
+             patch("agenttree.tmux.send_message") as mock_send:
+
+            _notify_agent("42", "Test message")
+
+        mock_send.assert_called_once_with("testproj-dev-042", "Test message")
+
+    def test_notify_no_agent(self):
+        """Does nothing if no active agent."""
+        from agenttree.api import _notify_agent
+
+        with patch("agenttree.state.get_active_agent", return_value=None):
+            _notify_agent("42", "Test message")  # Should not raise
+
+    def test_notify_never_raises(self):
+        """Never raises even if tmux operations fail."""
+        from agenttree.api import _notify_agent
+
+        with patch("agenttree.state.get_active_agent", side_effect=Exception("boom")):
+            _notify_agent("42", "Test message")  # Should not raise

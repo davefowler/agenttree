@@ -1131,12 +1131,12 @@ async def approve_issue(
 ) -> dict:
     """Approve an issue at a human review stage.
 
-    Runs the proper workflow: executes exit hooks, advances to next stage,
-    executes enter hooks. Only works from human review stages.
+    Uses api.transition_issue() for consistent exit hooks -> stage update -> enter hooks.
+    Only works from human review stages.
     """
     import asyncio
     from agenttree.config import load_config
-    from agenttree.hooks import execute_exit_hooks, execute_enter_hooks, ValidationError, StageRedirect
+    from agenttree.hooks import ValidationError, StageRedirect
 
     HUMAN_REVIEW_STAGES = ["plan_review", "implementation_review", "independent_code_review"]
 
@@ -1156,63 +1156,32 @@ async def approve_issue(
     next_stage, next_substage, _ = config.get_next_stage(issue.stage, issue.substage, issue.flow)
 
     try:
-        # Set processing state for exit hooks
+        # Set processing state
         issue_crud.set_processing(issue_id_normalized, "exit")
 
-        # Execute exit hooks (validation)
+        # Use consolidated transition_issue() — handles exit hooks, stage update, enter hooks
+        from agenttree.api import transition_issue
         try:
-            await asyncio.to_thread(
-                execute_exit_hooks,
-                issue,
-                issue.stage,
-                issue.substage,
+            updated = await asyncio.to_thread(
+                transition_issue,
+                issue_id_normalized,
+                next_stage,
+                next_substage,
                 skip_pr_approval=config.allow_self_approval,
+                trigger="web",
             )
         except StageRedirect as redirect:
-            # Redirect to a different stage/substage instead of normal next
-            next_stage = redirect.target_stage
-            next_substage = redirect.target_substage
+            # Redirect — retry with new target
+            updated = await asyncio.to_thread(
+                transition_issue,
+                issue_id_normalized,
+                redirect.target_stage,
+                redirect.target_substage,
+                skip_pr_approval=config.allow_self_approval,
+                trigger="web",
+            )
         except ValidationError as e:
             raise HTTPException(status_code=400, detail=str(e))
-
-        # Update issue stage
-        updated = await asyncio.to_thread(issue_crud.update_issue_stage, issue_id_normalized, next_stage, next_substage)
-        if not updated:
-            raise HTTPException(status_code=500, detail="Failed to update")
-
-        # Note: We intentionally DON'T call update_session_stage here because that would
-        # sync last_stage with issue.stage, defeating the stage mismatch detection.
-        # When the agent runs `next`, is_restart() will detect session.last_stage != issue.stage
-        # and show them the current stage instructions instead of advancing.
-
-        # Set processing state for enter hooks
-        issue_crud.set_processing(issue_id_normalized, "enter")
-
-        # Execute enter hooks (may redirect on merge conflict etc.)
-        try:
-            await asyncio.to_thread(execute_enter_hooks, updated, next_stage, next_substage)
-        except StageRedirect as redirect:
-            # Merge conflict or similar - redirect issue to developer
-            logger.warning("Enter hooks redirected issue %s to %s: %s",
-                        issue_id_normalized, redirect.target_stage, redirect.reason)
-            from agenttree.issues import update_issue_stage as _update_stage
-            redirect_stage = redirect.target_stage
-            redirect_substage = redirect.target_substage
-            await asyncio.to_thread(_update_stage, issue_id_normalized, redirect_stage, redirect_substage)
-            # Notify developer agent
-            try:
-                from agenttree.state import get_active_agent
-                from agenttree.tmux import send_message, session_exists
-                agent = get_active_agent(issue_id_normalized)
-                if agent and agent.tmux_session and session_exists(agent.tmux_session):
-                    msg = f"Issue redirected: {redirect.reason} Run `agenttree next` for instructions."
-                    await asyncio.to_thread(send_message, agent.tmux_session, msg)
-            except Exception:
-                pass  # Best-effort notification
-            stage_str = redirect_stage + (f".{redirect_substage}" if redirect_substage else "")
-            return {"ok": True, "redirected": True, "stage": stage_str, "reason": redirect.reason}
-        except Exception as e:
-            logger.warning("Enter hooks failed for issue %s: %s", issue_id_normalized, e)
 
         # Notify agent to continue (if active)
         try:

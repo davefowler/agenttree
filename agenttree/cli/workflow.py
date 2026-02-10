@@ -320,22 +320,6 @@ def stage_next(issue_id: str | None, reassess: bool) -> None:
         console.print(skill)
 
 
-def _notify_agent_of_redirect(issue_id: str, redirect: StageRedirect) -> None:
-    """Send a message to the developer agent about a redirect (e.g., merge conflict)."""
-    from agenttree.state import get_active_agent
-
-    agent = get_active_agent(issue_id)
-    if agent:
-        config = load_config()
-        tmux_manager = TmuxManager(config)
-        if tmux_manager.is_issue_running(agent.tmux_session):
-            message = f"Issue redirected: {redirect.reason} Run `agenttree next` for instructions."
-            tmux_manager.send_message_to_issue(agent.tmux_session, message, interrupt=True)
-            console.print(f"[green]✓ Notified developer agent to handle redirect[/green]")
-        else:
-            console.print(f"[yellow]Developer agent not running. Start with: agenttree start {issue_id}[/yellow]")
-    else:
-        console.print(f"[yellow]No active agent. Start with: agenttree start {issue_id}[/yellow]")
 
 
 @click.command("approve")
@@ -382,51 +366,29 @@ def approve_issue(issue_id: str, skip_approval: bool) -> None:
         issue.stage, issue.substage, issue.flow, issue_context=issue_ctx
     )
 
-    # Execute exit hooks
-    from_stage = issue.stage
-    from_substage = issue.substage
+    # Use consolidated transition_issue() — handles exit hooks, stage update, enter hooks
+    from agenttree.api import transition_issue
     try:
-        execute_exit_hooks(issue, from_stage, from_substage, skip_pr_approval=skip_approval)
+        updated = transition_issue(
+            issue_id_normalized,
+            next_stage,
+            next_substage,
+            skip_pr_approval=skip_approval,
+            trigger="cli",
+        )
     except StageRedirect as redirect:
-        # Redirect to a different stage/substage instead of normal next
-        console.print(f"[yellow]Redirecting to {redirect.target_stage}{('.' + redirect.target_substage) if redirect.target_substage else ''}: {redirect.reason}[/yellow]")
-        next_stage = redirect.target_stage
-        next_substage = redirect.target_substage
+        console.print(f"[yellow]Redirecting to {redirect.target_stage}: {redirect.reason}[/yellow]")
+        return
     except ValidationError as e:
         console.print(f"[red]Cannot approve: {e}[/red]")
         sys.exit(1)
-
-    # Update issue stage
-    updated = update_issue_stage(issue_id_normalized, next_stage, next_substage)
-    if not updated:
-        console.print(f"[red]Failed to update issue[/red]")
+    except RuntimeError as e:
+        console.print(f"[red]Failed: {e}[/red]")
         sys.exit(1)
 
-    # Update session (last_stage will differ from issue.stage, triggering re-orient)
-    # Note: We intentionally DON'T call update_session_stage here because that would
-    # sync last_stage, defeating the stage mismatch detection in is_restart()
-
-    # Execute enter hooks (after stage updated)
-    # StageRedirect can happen here (e.g., merge conflict → redirect to developer)
-    try:
-        execute_enter_hooks(updated, next_stage, next_substage)
-    except StageRedirect as redirect:
-        console.print(f"[yellow]Post-hook redirect: {redirect.reason}[/yellow]")
-        redirect_stage = redirect.target_stage
-        redirect_substage = redirect.target_substage
-        redirected = update_issue_stage(issue_id_normalized, redirect_stage, redirect_substage)
-        if redirected:
-            stage_str = redirect_stage
-            if redirect_substage:
-                stage_str += f".{redirect_substage}"
-            console.print(f"[yellow]Issue #{issue.id} redirected to {stage_str}[/yellow]")
-            # Notify developer agent to handle (e.g., rebase)
-            _notify_agent_of_redirect(issue_id_normalized, redirect)
-        return
-
-    stage_str = next_stage
-    if next_substage:
-        stage_str += f".{next_substage}"
+    stage_str = updated.stage
+    if updated.substage:
+        stage_str += f".{updated.substage}"
     console.print(f"[green]✓ Approved! Issue #{issue.id} moved to {stage_str}[/green]")
 
     # Auto-notify agent to continue (if active)

@@ -59,3 +59,27 @@ Tasks are stored in `tasks/` directory within agent worktrees:
 - FastAPI for web server
 - Rich for terminal output
 
+## Module Ownership — One Function, One Place
+
+Every operation has ONE authoritative function. Don't reinvent, don't call lower-level primitives.
+
+| Operation | Authoritative function | Module |
+|-----------|----------------------|--------|
+| Stop an agent | `stop_agent()` | `agenttree/api.py` |
+| Stop all agents for issue | `stop_all_agents_for_issue()` | `agenttree/api.py` |
+| Start an agent | `start_agent()` | `agenttree/api.py` |
+| Send message to agent | `send_message()` | `agenttree/api.py` |
+| Transition issue stage | `transition_issue()` | `agenttree/api.py` |
+| Clean up orphaned containers | `cleanup_orphaned_containers()` | `agenttree/api.py` |
+| Notify agent (best-effort) | `_notify_agent()` | `agenttree/api.py` |
+
+**Never call `kill_session()` directly to stop an agent — use `stop_agent()`.**
+**Never manually do exit_hooks + update_stage + enter_hooks — use `transition_issue()`.**
+
+## No Silent Failures
+
+- `ensure_pr_for_issue()` raises `RuntimeError` on failure, not `return False`
+- `_action_merge_pr()` raises `RuntimeError` if no PR number, not silent return
+- `check_manager_stages()` logs warnings on exceptions, not bare `continue`
+- Manager heartbeat notifies agents on StageRedirect (via `_notify_agent()`)
+
