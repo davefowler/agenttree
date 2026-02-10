@@ -494,7 +494,11 @@ STAGE_FILE_ORDER = [
     "implementation.md",
 ]
 
-# Mapping of filenames to their associated workflow stage
+# Mapping of filenames to their associated workflow stage.
+# Note: Not all stages are in STAGE_ORDER (e.g., independent_code_review is a
+# separate review workflow). Files with stages not in STAGE_ORDER will get
+# stage-based colors but won't be marked as "passed" since they're outside
+# the main linear progression.
 FILE_TO_STAGE: dict[str, str] = {
     "problem.md": "define",
     "research.md": "research",
@@ -538,27 +542,23 @@ def get_issue_files(
             return (STAGE_FILE_ORDER.index(f.name), f.name)
         return (len(STAGE_FILE_ORDER), f.name)  # Unknown files sorted after known ones
 
-    # Get current stage index for is_passed calculation
+    # Get current stage index for is_passed calculation.
+    # Stages not in STAGE_ORDER (e.g., sub-workflows) won't have files marked as passed.
     current_stage_index = -1
-    if current_stage:
-        try:
-            current_stage_index = issue_crud.STAGE_ORDER.index(current_stage)
-        except ValueError:
-            pass  # Stage not in STAGE_ORDER, no files will be marked as passed
+    if current_stage and current_stage in issue_crud.STAGE_ORDER:
+        current_stage_index = issue_crud.STAGE_ORDER.index(current_stage)
 
     files: list[dict[str, str]] = []
     for f in sorted(file_list, key=file_sort_key):
         display_name = f.stem.replace("_", " ").title()
         file_stage = FILE_TO_STAGE.get(f.name)
 
-        # Calculate is_passed: file's stage is earlier than current stage
+        # Calculate is_passed: file's stage is earlier than current stage.
+        # Files with stages not in STAGE_ORDER (sub-workflows) remain is_passed=False.
         is_passed = False
-        if file_stage and current_stage_index >= 0:
-            try:
-                file_stage_index = issue_crud.STAGE_ORDER.index(file_stage)
-                is_passed = file_stage_index < current_stage_index
-            except ValueError:
-                pass  # File stage not in STAGE_ORDER, leave is_passed as False
+        if file_stage and current_stage_index >= 0 and file_stage in issue_crud.STAGE_ORDER:
+            file_stage_index = issue_crud.STAGE_ORDER.index(file_stage)
+            is_passed = file_stage_index < current_stage_index
 
         # Generate short_name for passed stages (first 3 chars + "...")
         short_name = display_name
