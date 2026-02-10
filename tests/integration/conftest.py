@@ -153,13 +153,13 @@ def agenttree_config() -> dict[str, Any]:
             {
                 "name": "implementation_review",
                 "human_review": True,
-                "host": "manager",
+                "role": "manager",
                 "post_start": [{"create_pr": {}}],
                 "pre_completion": [{"pr_approved": {}}]
             },
             {
                 "name": "knowledge_base",
-                "host": "agent",
+                "role": "developer",
                 "skill": "knowledge_base.md"
             },
             {

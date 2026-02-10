@@ -20,6 +20,7 @@ from agenttree.hooks import (
 from agenttree.issues import (
     list_issues as list_issues_func,
     get_next_stage,
+    get_issue_context,
     update_issue_stage,
     update_issue_metadata,
     load_skill,
@@ -235,9 +236,10 @@ def stage_next(issue_id: str | None, reassess: bool) -> None:
         next_substage = None
         is_human_review = False
     else:
-        # Calculate next stage
+        # Calculate next stage (pass issue context for condition evaluation)
+        issue_ctx = get_issue_context(issue, include_docs=False)
         next_stage, next_substage, is_human_review = get_next_stage(
-            issue.stage, issue.substage, issue.flow
+            issue.stage, issue.substage, issue.flow, issue_context=issue_ctx
         )
 
     # Check if we're already at the next stage (no change)
@@ -356,8 +358,11 @@ def approve_issue(issue_id: str, skip_approval: bool) -> None:
         console.print(f"[dim]Human review stages: {', '.join(human_review_stages)}[/dim]")
         sys.exit(1)
 
-    # Calculate next stage
-    next_stage, next_substage, _ = get_next_stage(issue.stage, issue.substage, issue.flow)
+    # Calculate next stage (pass issue context for condition evaluation)
+    issue_ctx = get_issue_context(issue, include_docs=False)
+    next_stage, next_substage, _ = get_next_stage(
+        issue.stage, issue.substage, issue.flow, issue_context=issue_ctx
+    )
 
     # Execute exit hooks
     from_stage = issue.stage

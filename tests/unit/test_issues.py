@@ -1418,6 +1418,80 @@ class TestGetIssueContext:
         assert context["history"][1]["agent"] == 1
 
 
+class TestNeedsUIReview:
+    """Tests for needs_ui_review field on Issue model."""
+
+    def test_issue_needs_ui_review_default_false(self):
+        """New issues should have needs_ui_review=False by default."""
+        issue = Issue(
+            id="001",
+            slug="test-issue",
+            title="Test Issue",
+            created="2026-01-11T12:00:00Z",
+            updated="2026-01-11T12:00:00Z",
+        )
+        assert issue.needs_ui_review is False
+
+    def test_issue_needs_ui_review_can_be_set_true(self):
+        """Issues should be able to have needs_ui_review=True."""
+        issue = Issue(
+            id="001",
+            slug="test-issue",
+            title="Test Issue",
+            created="2026-01-11T12:00:00Z",
+            updated="2026-01-11T12:00:00Z",
+            needs_ui_review=True,
+        )
+        assert issue.needs_ui_review is True
+
+    @pytest.fixture
+    def temp_agenttrees(self, monkeypatch, tmp_path):
+        """Create a temporary _agenttree directory."""
+        agenttrees_path = tmp_path / "_agenttree"
+        agenttrees_path.mkdir()
+        (agenttrees_path / "issues").mkdir()
+        (agenttrees_path / "templates").mkdir()
+
+        # Create problem template
+        template = agenttrees_path / "templates" / "problem.md"
+        template.write_text("# Problem Statement\n\n")
+
+        # Monkeypatch get_agenttree_path to return our temp dir
+        monkeypatch.setattr(
+            "agenttree.issues.get_agenttree_path",
+            lambda: agenttrees_path
+        )
+        # Also monkeypatch sync to do nothing
+        monkeypatch.setattr(
+            "agenttree.issues.sync_agents_repo",
+            lambda *args, **kwargs: True
+        )
+
+        return agenttrees_path
+
+    def test_issue_needs_ui_review_in_context(self, temp_agenttrees):
+        """get_issue_context should include needs_ui_review field."""
+        issue = create_issue("Test Issue")
+
+        # Default should be False
+        context = get_issue_context(issue)
+        assert "needs_ui_review" in context
+        assert context["needs_ui_review"] is False
+
+    def test_issue_needs_ui_review_true_in_context(self, temp_agenttrees):
+        """get_issue_context should include needs_ui_review=True when set."""
+        from agenttree.issues import update_issue_metadata
+
+        issue = create_issue("Test Issue")
+        update_issue_metadata(issue.id, needs_ui_review=True)
+
+        # Reload issue
+        issue = get_issue(issue.id)
+        context = get_issue_context(issue)
+
+        assert context["needs_ui_review"] is True
+
+
 class TestUpdateIssuePriority:
     """Tests for update_issue_priority function."""
 
