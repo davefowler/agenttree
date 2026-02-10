@@ -42,6 +42,7 @@ console = Console()
 DEFAULT_POST_SYNC_HOOKS: list[dict[str, Any]] = [
     {"push_pending_branches": {}},
     {"check_manager_stages": {}},
+    {"ensure_review_branches": {}},
     {"check_custom_agent_stages": {}},
     {"check_ci_status": {}},
     {"check_merged_prs": {}},

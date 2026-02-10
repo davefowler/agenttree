@@ -340,8 +340,17 @@ class TUIApp(App):  # type: ignore[type-arg]
                 status.show_message(f"Failed to update issue #{issue.id}")
                 return
 
-            # Execute post-start hooks
-            execute_enter_hooks(updated, next_stage, next_substage)
+            # Execute post-start hooks (may redirect on merge conflict etc.)
+            try:
+                execute_enter_hooks(updated, next_stage, next_substage)
+            except StageRedirect as redirect:
+                redirect_stage = redirect.target_stage
+                redirect_substage = redirect.target_substage
+                update_issue_stage(issue.id, redirect_stage, redirect_substage)
+                stage_str = redirect_stage + (f".{redirect_substage}" if redirect_substage else "")
+                status.show_message(f"Redirected #{issue.id} to {stage_str}: {redirect.reason}")
+                self._load_issues()
+                return
 
             status.show_message(f"Advanced #{issue.id} to {next_stage}")
             self._load_issues()

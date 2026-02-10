@@ -259,6 +259,7 @@ Configure in .agenttree.yaml under manager_hooks:
 Built-in manager hooks:
     push_pending_branches - Push any local branches with unpushed commits
     check_manager_stages - Process issues in manager-owned stages
+    ensure_review_branches - Create missing PRs and rebase branches in implementation_review
     check_custom_agent_stages - Spawn custom agents for issues in custom agent stages
     check_merged_prs - Detect externally merged PRs and update issue status
 
@@ -306,6 +307,7 @@ Manager hooks (for post-sync operations):
 
 import re
 import subprocess
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -384,8 +386,8 @@ HOOK_TYPES = {
     "loop_check",  # Review loop: count iterations and fail if max exceeded
     "rollback",  # Review loop: programmatic rollback to earlier stage
     # Manager hooks (run on post-sync)
-    "push_pending_branches", "check_manager_stages", "check_merged_prs",
-    "check_ci_status", "check_custom_agent_stages",
+    "push_pending_branches", "check_manager_stages", "ensure_review_branches",
+    "check_merged_prs", "check_ci_status", "check_custom_agent_stages",
 }
 
 # =============================================================================
@@ -630,8 +632,48 @@ def _action_create_pr(issue_dir: Path, issue_id: str = "", issue_title: str = ""
         raise RuntimeError(f"Failed to create PR for issue #{issue_id}. Will retry on next heartbeat.")
 
 
+def _try_update_pr_branch(pr_number: int) -> bool:
+    """Try to update a PR branch by merging base branch into it.
+
+    Uses GitHub API to merge the base branch (main) into the PR head branch.
+    This resolves simple merge situations without needing manual intervention.
+
+    Returns:
+        True if branch was updated (or already up to date), False on conflict.
+    """
+    try:
+        result = subprocess.run(
+            ["gh", "api", "-X", "PUT",
+             f"repos/{{owner}}/{{repo}}/pulls/{pr_number}/update-branch",
+             "-f", "expected_head_oid="],
+            capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode == 0:
+            console.print(f"[dim]Branch updated with latest main[/dim]")
+            time.sleep(3)  # Give GitHub a moment to process
+            return True
+        # 422 = conflicts, 409 = already up to date
+        if "merge conflict" in result.stderr.lower() or "conflict" in result.stderr.lower():
+            return False
+        # Already up to date is fine
+        return True
+    except Exception:
+        return True  # Best-effort; proceed to merge attempt anyway
+
+
 def _action_merge_pr(pr_number: Optional[int], **kwargs: Any) -> None:
-    """Merge PR for an issue (action hook helper)."""
+    """Merge PR for an issue. Tries to update branch first, redirects on conflict.
+
+    Flow:
+        1. Try to merge directly
+        2. If merge fails (likely conflicts): try updating branch from main
+        3. If update succeeds: retry merge
+        4. If conflicts: raise StageRedirect so developer can rebase
+
+    Raises:
+        StageRedirect: If PR has merge conflicts that need developer intervention.
+        RuntimeError: If merge fails for non-conflict reasons.
+    """
     if pr_number is None:
         console.print("[yellow]No PR to merge[/yellow]")
         return
@@ -646,8 +688,38 @@ def _action_merge_pr(pr_number: Optional[int], **kwargs: Any) -> None:
 
     config = load_config()
 
+    # First attempt: try to merge directly
     console.print(f"[dim]Merging PR #{pr_number}...[/dim]")
-    merge_pr(pr_number, method=config.merge_strategy)
+    try:
+        merge_pr(pr_number, method=config.merge_strategy)
+    except RuntimeError as e:
+        error_msg = str(e).lower()
+        is_conflict = any(word in error_msg for word in ("conflict", "not mergeable", "merge blocked"))
+
+        if not is_conflict:
+            raise  # Non-conflict errors fail loudly
+
+        # Conflict: try updating branch from main first
+        console.print(f"[yellow]Merge blocked - trying to update branch from main...[/yellow]")
+        if _try_update_pr_branch(pr_number):
+            # Branch updated, retry merge
+            try:
+                merge_pr(pr_number, method=config.merge_strategy)
+            except RuntimeError:
+                # Still can't merge after update - redirect to developer
+                raise StageRedirect(
+                    target_stage="implement",
+                    target_substage="code",
+                    reason=f"PR #{pr_number} can't be merged after branch update. Developer needs to rebase on main.",
+                )
+        else:
+            # Can't auto-update (real conflicts) - redirect to developer
+            raise StageRedirect(
+                target_stage="implement",
+                target_substage="code",
+                reason=f"PR #{pr_number} has merge conflicts. Developer needs to rebase on main.",
+            )
+
     console.print(f"[green]✓ PR #{pr_number} merged[/green]")
 
     # Run post_merge hooks
@@ -1093,8 +1165,11 @@ def run_builtin_validator(
 
     elif hook_type == "merge_pr":
         # Merge PR on transition to accepted
+        # StageRedirect propagates (e.g., conflict → redirect to developer)
         try:
             _action_merge_pr(pr_number, **kwargs)
+        except StageRedirect:
+            raise  # Let redirect propagate to caller
         except Exception as e:
             errors.append(f"Failed to merge PR: {e}")
 
@@ -1237,6 +1312,12 @@ def run_builtin_validator(
         agents_dir = kwargs.get("agents_dir")
         if agents_dir:
             check_manager_stages(agents_dir)
+
+    elif hook_type == "ensure_review_branches":
+        from agenttree.agents_repo import ensure_review_branches
+        agents_dir = kwargs.get("agents_dir")
+        if agents_dir:
+            ensure_review_branches(agents_dir)
 
     elif hook_type == "check_merged_prs":
         from agenttree.agents_repo import check_merged_prs
@@ -1451,7 +1532,7 @@ def run_hook(
         if hook_type == "run":
             # Shell command hook
             errors = run_command_hook(context_dir, params, **kwargs)
-        elif hook_type in ("push_pending_branches", "check_manager_stages", "check_merged_prs", "check_custom_agent_stages"):
+        elif hook_type in ("push_pending_branches", "check_manager_stages", "ensure_review_branches", "check_merged_prs", "check_custom_agent_stages"):
             # Manager hooks need agents_dir - use from kwargs if provided, otherwise context_dir
             if "agents_dir" not in kwargs:
                 kwargs["agents_dir"] = context_dir
@@ -1637,13 +1718,13 @@ def execute_exit_hooks(issue: "Issue", stage: str, substage: Optional[str] = Non
 
 
 def execute_enter_hooks(issue: "Issue", stage: str, substage: Optional[str] = None) -> None:
-    """Execute post_start hooks for a stage/substage. Logs warnings but doesn't block.
+    """Execute post_start hooks for a stage/substage.
 
-    This is the config-driven replacement for execute_post_hooks.
+    Non-critical errors are logged as warnings. Critical failures (like merge conflicts)
+    raise StageRedirect so the issue can be routed back for developer intervention.
 
     Hook execution order: substage → stage (inner to outer).
     When entering the FIRST substage, runs substage hooks first, then stage-level hooks.
-    This ensures stage-level setup (like create_pr) runs when entering a stage with substages.
 
     For manager stages (role: manager), hooks are skipped when running in a container.
     The host will execute them via check_manager_stages() during sync.
@@ -1652,6 +1733,9 @@ def execute_enter_hooks(issue: "Issue", stage: str, substage: Optional[str] = No
         issue: Issue that was transitioned
         stage: New stage name
         substage: New substage name (optional)
+
+    Raises:
+        StageRedirect: If a hook needs to route the issue elsewhere (e.g., merge conflict).
     """
     from agenttree.config import load_config
     from agenttree.issues import get_issue_dir
