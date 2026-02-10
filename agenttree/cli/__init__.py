@@ -24,7 +24,7 @@ from agenttree.cli.dev import test, lint, sync_command
 from agenttree.cli.misc import auto_merge, context_init, cleanup_command, tui_command
 from agenttree.cli.server import web, serve, run, stop_all, stalls
 from agenttree.cli.issues import issue
-from agenttree.cli.setup import init, upgrade, setup as setup_cmd, preflight
+from agenttree.cli.setup import init, upgrade, setup as setup_cmd, preflight, migrate_docs
 from agenttree.cli.workflow import (
     stage_status,
     stage_next,
@@ -56,6 +56,7 @@ main.add_command(init)
 main.add_command(upgrade)
 main.add_command(setup_cmd)
 main.add_command(preflight)
+main.add_command(migrate_docs)
 main.add_command(notes)
 main.add_command(remote)
 main.add_command(hooks_group)

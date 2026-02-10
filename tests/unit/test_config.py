@@ -5,7 +5,15 @@ from pathlib import Path
 import pytest
 import yaml
 
-from agenttree.config import Config, ToolConfig, load_config, find_config_file
+from agenttree.config import (
+    Config,
+    ToolConfig,
+    load_config,
+    find_config_file,
+    StageConfig,
+    SubstageConfig,
+    RoleConfig,
+)
 
 
 class TestConfig:
@@ -860,3 +868,139 @@ stages:
         ui_review = config.get_stage("ui_review")
         assert ui_review is not None
         assert ui_review.condition == "{{ needs_ui_review }}"
+
+
+class TestModelTiers:
+    """Tests for model tier abstraction feature."""
+
+    # Tier mapping configuration tests
+
+    def test_model_tiers_default_empty(self) -> None:
+        """model_tiers should default to empty dict."""
+        config = Config()
+        assert config.model_tiers == {}
+
+    def test_model_tiers_from_yaml(self, tmp_path: Path) -> None:
+        """model_tiers should load correctly from YAML config."""
+        config_file = tmp_path / ".agenttree.yaml"
+        config_file.write_text("""
+model_tiers:
+  high: opus
+  medium: sonnet
+  low: haiku
+""")
+        config = load_config(tmp_path)
+        assert config.model_tiers == {"high": "opus", "medium": "sonnet", "low": "haiku"}
+
+    # Tier resolution in model_for() tests
+
+    def test_model_for_with_tier_returns_mapped_model(self) -> None:
+        """model_for() should return the mapped model when tier is specified."""
+        config = Config(
+            default_model="opus",
+            model_tiers={"high": "opus", "medium": "sonnet", "low": "haiku"},
+            stages=[StageConfig(name="research", model_tier="low")]
+        )
+        assert config.model_for("research") == "haiku"
+
+    def test_model_for_model_overrides_tier(self) -> None:
+        """Explicit model should take precedence over model_tier."""
+        config = Config(
+            default_model="opus",
+            model_tiers={"high": "opus", "medium": "sonnet", "low": "haiku"},
+            stages=[StageConfig(name="research", model="gpt-5", model_tier="low")]
+        )
+        assert config.model_for("research") == "gpt-5"
+
+    def test_model_for_tier_overrides_default(self) -> None:
+        """model_tier should take precedence over default_model."""
+        config = Config(
+            default_model="opus",
+            model_tiers={"fast": "haiku"},
+            stages=[StageConfig(name="research", model_tier="fast")]
+        )
+        assert config.model_for("research") == "haiku"
+
+    def test_model_for_unknown_tier_returns_default(self) -> None:
+        """Unknown tier should fall back to default_model."""
+        config = Config(
+            default_model="opus",
+            model_tiers={"high": "opus"},
+            stages=[StageConfig(name="research", model_tier="ultra")]  # Not in model_tiers
+        )
+        assert config.model_for("research") == "opus"
+
+    def test_model_for_substage_tier_overrides_stage_tier(self) -> None:
+        """Substage tier should override stage tier."""
+        config = Config(
+            default_model="opus",
+            model_tiers={"high": "opus", "low": "haiku"},
+            stages=[
+                StageConfig(
+                    name="implement",
+                    model_tier="high",
+                    substages={
+                        "code_review": SubstageConfig(name="code_review", model_tier="low")
+                    }
+                )
+            ]
+        )
+        assert config.model_for("implement") == "opus"  # Stage tier
+        assert config.model_for("implement", "code_review") == "haiku"  # Substage tier
+
+    # Stage/Substage tier field tests
+
+    def test_stage_config_has_model_tier_field(self) -> None:
+        """StageConfig should have model_tier field."""
+        stage = StageConfig(name="research", model_tier="high")
+        assert stage.model_tier == "high"
+
+    def test_substage_config_has_model_tier_field(self) -> None:
+        """SubstageConfig should have model_tier field."""
+        substage = SubstageConfig(name="code", model_tier="low")
+        assert substage.model_tier == "low"
+
+    def test_role_config_has_model_tier_field(self) -> None:
+        """RoleConfig should have model_tier field for future use."""
+        role = RoleConfig(name="reviewer", model_tier="medium")
+        assert role.model_tier == "medium"
+
+    # Edge cases
+
+    def test_model_for_empty_model_tiers_ignores_tier(self) -> None:
+        """Empty model_tiers should cause tier to be ignored."""
+        config = Config(
+            default_model="opus",
+            model_tiers={},  # No tier mappings
+            stages=[StageConfig(name="research", model_tier="high")]
+        )
+        assert config.model_for("research") == "opus"  # Falls through to default
+
+    def test_model_tier_none_uses_model(self) -> None:
+        """None model_tier should not override model field."""
+        config = Config(
+            default_model="opus",
+            model_tiers={"high": "opus"},
+            stages=[StageConfig(name="research", model="sonnet", model_tier=None)]
+        )
+        assert config.model_for("research") == "sonnet"
+
+    def test_substage_model_overrides_substage_tier(self) -> None:
+        """Substage model should override substage tier."""
+        config = Config(
+            default_model="opus",
+            model_tiers={"low": "haiku"},
+            stages=[
+                StageConfig(
+                    name="implement",
+                    substages={
+                        "code_review": SubstageConfig(
+                            name="code_review",
+                            model="sonnet",
+                            model_tier="low"
+                        )
+                    }
+                )
+            ]
+        )
+        assert config.model_for("implement", "code_review") == "sonnet"

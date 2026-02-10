@@ -346,6 +346,27 @@ class StageRedirect(Exception):
         super().__init__(f"Redirect to stage {target}: {reason}")
 
 
+def _extract_markdown_section(content: str, section: str) -> tuple[bool, str]:
+    """Extract section content from markdown, supporting ## and ### headers.
+
+    Finds content between a section header (## or ###) and the next same-level
+    or higher header, or end of file.
+
+    Args:
+        content: The full markdown content to search
+        section: The section name to find (without # prefix)
+
+    Returns:
+        Tuple of (found, section_content) where found is True if section exists
+        and section_content is the text between the header and next header/EOF.
+    """
+    pattern = rf'^##[#]?\s*{re.escape(section)}.*?\n(.*?)(?=\n##[#]? |\Z)'
+    match = re.search(pattern, content, re.MULTILINE | re.DOTALL)
+    if match:
+        return True, match.group(1)
+    return False, ""
+
+
 # =============================================================================
 # Hook Type Registry
 # =============================================================================
@@ -598,13 +619,15 @@ def _action_create_pr(issue_dir: Path, issue_id: str = "", issue_title: str = ""
     2. Host sync calls check_manager_stages()
     3. For issues in manager stages, host runs post_start hooks
     4. This hook (create_pr) calls ensure_pr_for_issue() to create the PR
+
+    Raises:
+        RuntimeError: If PR creation fails (prevents silent progression without a PR).
     """
     if not issue_id:
-        console.print(f"[yellow]create_pr hook: no issue_id provided[/yellow]")
-        return
+        raise RuntimeError("create_pr hook: no issue_id provided")
 
-    # Delegate to ensure_pr_for_issue which handles the actual PR creation
-    ensure_pr_for_issue(issue_id)
+    if not ensure_pr_for_issue(issue_id):
+        raise RuntimeError(f"Failed to create PR for issue #{issue_id}. Will retry on next heartbeat.")
 
 
 def _action_merge_pr(pr_number: Optional[int], **kwargs: Any) -> None:
@@ -731,16 +754,11 @@ def run_builtin_validator(
             section = params["section"]
             expect = params["expect"]
 
-            # Find section content (between ## or ### Section and next same-level or higher header or end)
-            # Accepts both H2 (##) and H3 (###) section headers
-            # The lookahead stops at "\n## " or "\n### " followed by a letter/word (not "#")
-            pattern = rf'^##[#]?\s*{re.escape(section)}.*?\n(.*?)(?=\n##[#]? [A-Za-z]|\Z)'
-            section_match = re.search(pattern, content, re.MULTILINE | re.DOTALL)
+            found, section_content = _extract_markdown_section(content, section)
 
-            if not section_match:
+            if not found:
                 errors.append(f"Section '{section}' not found in {params['file']}")
             else:
-                section_content = section_match.group(1)
                 # Remove HTML comments
                 section_content = re.sub(r'<!--.*?-->', '', section_content, flags=re.DOTALL)
 
@@ -792,13 +810,11 @@ def run_builtin_validator(
             content = file_path.read_text()
 
             if section:
-                # Find section content
-                pattern = rf'^##\s*{re.escape(section)}.*?\n(.*?)(?=\n## [A-Za-z]|\Z)'
-                section_match = re.search(pattern, content, re.MULTILINE | re.DOTALL)
-                if not section_match:
+                found, section_content = _extract_markdown_section(content, section)
+                if not found:
                     errors.append(f"Section '{section}' not found in {params['file']}")
                 else:
-                    content = section_match.group(1)
+                    content = section_content
 
             # Count words (split on whitespace, filter empty)
             words = [w for w in content.split() if w.strip()]
@@ -818,13 +834,11 @@ def run_builtin_validator(
             errors.append(f"File '{params['file']}' not found for has_list_items check")
         else:
             content = file_path.read_text()
-            pattern = rf'^##\s*{re.escape(section)}.*?\n(.*?)(?=\n## [A-Za-z]|\Z)'
-            section_match = re.search(pattern, content, re.MULTILINE | re.DOTALL)
+            found, section_content = _extract_markdown_section(content, section)
 
-            if not section_match:
+            if not found:
                 errors.append(f"Section '{section}' not found in {params['file']}")
             else:
-                section_content = section_match.group(1)
                 # Count list items (lines starting with - or *)
                 list_items = re.findall(r'^\s*[-*]\s+\S', section_content, re.MULTILINE)
                 if len(list_items) < min_items:
@@ -842,16 +856,15 @@ def run_builtin_validator(
             errors.append(f"File '{params['file']}' not found for contains check")
         else:
             content = file_path.read_text()
-            pattern = rf'^##\s*{re.escape(section)}.*?\n(.*?)(?=\n## [A-Za-z]|\Z)'
-            section_match = re.search(pattern, content, re.MULTILINE | re.DOTALL)
+            found, section_content = _extract_markdown_section(content, section)
 
-            if not section_match:
+            if not found:
                 errors.append(f"Section '{section}' not found in {params['file']}")
             else:
-                section_content = section_match.group(1).strip()
+                section_content = section_content.strip()
                 # Check if any of the values appear in the section
-                found = any(v.lower() in section_content.lower() for v in values)
-                if not found:
+                value_found = any(v.lower() in section_content.lower() for v in values)
+                if not value_found:
                     errors.append(
                         f"Section '{section}' must contain one of: {', '.join(values)}"
                     )
@@ -2409,9 +2422,22 @@ def ensure_pr_for_issue(issue_id: str) -> bool:
                 capture_output=True, text=True, timeout=30,
             )
 
+    # Detect the actual branch in the worktree (issue.branch may be stale/wrong)
+    actual_branch_result = subprocess.run(
+        ["git", "-C", str(worktree_path), "rev-parse", "--abbrev-ref", "HEAD"],
+        capture_output=True, text=True, timeout=10,
+    )
+    actual_branch = actual_branch_result.stdout.strip() if actual_branch_result.returncode == 0 else ""
+    push_branch = actual_branch or issue.branch
+
+    if actual_branch and actual_branch != issue.branch:
+        console.print(f"[yellow]Branch mismatch: issue says '{issue.branch}', worktree is on '{actual_branch}'. Using worktree branch.[/yellow]")
+        # Fix stored branch name
+        update_issue_metadata(issue_id, branch=actual_branch)
+
     # Push the branch from the worktree (force-with-lease since squash rewrites history)
     result = subprocess.run(
-        ["git", "-C", str(worktree_path), "push", "--force-with-lease", "-u", "origin", issue.branch],
+        ["git", "-C", str(worktree_path), "push", "--force-with-lease", "-u", "origin", push_branch],
         capture_output=True,
         text=True
     )
@@ -2453,7 +2479,7 @@ def ensure_pr_for_issue(issue_id: str) -> bool:
     body += f"---\n🤖 Generated with [Claude Code](https://claude.com/claude-code)"
 
     try:
-        pr = create_pr(title=title, body=body, branch=issue.branch, base="main")
+        pr = create_pr(title=title, body=body, branch=push_branch, base="main")
         update_issue_metadata(issue.id, pr_number=pr.number, pr_url=pr.url)
         console.print(f"[green]✓ PR #{pr.number} created for issue #{issue_id}[/green]")
 
@@ -2495,7 +2521,7 @@ def cleanup_issue_agent(issue: Issue) -> None:
     Args:
         issue: Issue that was transitioned to accepted
     """
-    from agenttree.state import stop_all_agents_for_issue
+    from agenttree.api import stop_all_agents_for_issue
 
     # Stop all agents for this issue (handles tmux, container, and state cleanup)
     count = stop_all_agents_for_issue(issue.id)

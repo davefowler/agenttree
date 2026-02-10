@@ -546,7 +546,7 @@ def shutdown_issue(
     repo_path = Path.cwd()
 
     # Stop ALL agents for this issue FIRST to avoid race conditions with worktree operations
-    from agenttree.state import stop_all_agents_for_issue
+    from agenttree.api import stop_all_agents_for_issue
     count = stop_all_agents_for_issue(issue_id_normalized, quiet=True)
     if count > 0:
         console.print(f"[dim]Stopped {count} agent(s) for issue #{issue.id}[/dim]")
