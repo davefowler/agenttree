@@ -432,6 +432,50 @@ button[disabled] {
     flex-shrink: 0; /* Keep active tab fully visible */
 }
 
+/* Stage-based file tab colors */
+.file-tab[data-stage="define"] {
+    border-top-color: #78716c;
+}
+
+.file-tab[data-stage="research"] {
+    border-top-color: #14b8a6;
+}
+
+.file-tab[data-stage="plan"],
+.file-tab[data-stage="plan_assess"],
+.file-tab[data-stage="plan_revise"] {
+    border-top-color: #60a5fa;
+}
+
+.file-tab[data-stage="implement"] {
+    border-top-color: #8b5cf6;
+}
+
+.file-tab[data-stage="implementation_review"],
+.file-tab[data-stage="independent_code_review"] {
+    border-top-color: #f59e0b;
+}
+
+/* Passed-stage tabs are truncated and slightly faded */
+.file-tab[data-passed="true"] {
+    max-width: 60px;
+    opacity: 0.8;
+}
+
+/* Active tab overrides stage color with accent */
+.file-tab.active[data-stage] {
+    border-top-color: var(--text-accent);
+}
+
+/* Dark theme overrides for stage colors */
+[data-theme="dark"] .file-tab[data-stage="define"] {
+    border-top-color: #a8a29e;
+}
+
+[data-theme="dark"] .file-tab[data-stage="research"] {
+    border-top-color: #2dd4bf;
+}
+
 .no-files {
     padding: 10px 16px;
     color: var(--text-muted);
