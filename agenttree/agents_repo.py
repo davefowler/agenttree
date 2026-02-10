@@ -269,6 +269,101 @@ def check_manager_stages(agents_dir: Path) -> int:
     return processed
 
 
+def ensure_review_branches(agents_dir: Path) -> int:
+    """Ensure PRs exist and branches are up-to-date for issues in implementation_review.
+
+    Runs on every sync heartbeat. For each issue at implementation_review:
+    1. If no PR exists: create one via ensure_pr_for_issue()
+    2. If PR exists: check if branch is behind main, try to update
+    3. If conflicts on update: redirect issue to implement.code for developer to rebase
+
+    Args:
+        agents_dir: Path to _agenttree directory
+
+    Returns:
+        Number of issues processed
+    """
+    import yaml
+    from rich.console import Console
+    from agenttree.hooks import is_running_in_container, ensure_pr_for_issue
+
+    if is_running_in_container():
+        return 0
+
+    issues_dir = agents_dir / "issues"
+    if not issues_dir.exists():
+        return 0
+
+    console = Console()
+    processed = 0
+
+    for issue_dir in issues_dir.iterdir():
+        if not issue_dir.is_dir():
+            continue
+
+        issue_yaml = issue_dir / "issue.yaml"
+        if not issue_yaml.exists():
+            continue
+
+        try:
+            with open(issue_yaml) as f:
+                data = yaml.safe_load(f)
+
+            stage = data.get("stage", "")
+            if stage != "implementation_review":
+                continue
+
+            issue_id = data.get("id", "")
+            pr_number = data.get("pr_number")
+
+            # 1. No PR yet - create one
+            if not pr_number:
+                if ensure_pr_for_issue(issue_id):
+                    # Re-read to get updated pr_number
+                    with open(issue_yaml) as f:
+                        data = yaml.safe_load(f)
+                    pr_number = data.get("pr_number")
+                    if pr_number:
+                        console.print(f"[green]✓ Created PR #{pr_number} for issue #{issue_id}[/green]")
+                        processed += 1
+                continue  # Whether or not PR was created, move on
+
+            # 2. PR exists - try to keep branch up to date
+            from agenttree.hooks import _try_update_pr_branch
+            try:
+                updated = _try_update_pr_branch(pr_number)
+                if updated:
+                    console.print(f"[dim]Branch up to date for PR #{pr_number} (issue #{issue_id})[/dim]")
+                else:
+                    # Conflicts - redirect to developer to rebase
+                    console.print(f"[yellow]PR #{pr_number} (issue #{issue_id}) has conflicts with main - redirecting to developer[/yellow]")
+                    from agenttree.issues import update_issue_stage
+                    update_issue_stage(issue_id, "implement", "code")
+                    # Try to notify developer agent
+                    try:
+                        from agenttree.state import get_active_agent
+                        from agenttree.tmux import send_message, session_exists
+                        agent = get_active_agent(issue_id)
+                        if agent and agent.tmux_session and session_exists(agent.tmux_session):
+                            send_message(
+                                agent.tmux_session,
+                                f"PR #{pr_number} has merge conflicts with main. "
+                                f"Please rebase on main and resolve conflicts, "
+                                f"then run `agenttree next` to advance.",
+                            )
+                            console.print(f"[dim]Notified developer for issue #{issue_id} to rebase[/dim]")
+                    except Exception:
+                        pass  # Best-effort notification
+                processed += 1
+            except Exception:
+                pass  # Network/timeout - skip, retry next sync
+
+        except Exception:
+            continue
+
+    return processed
+
+
 def check_custom_agent_stages(agents_dir: Path) -> int:
     """Spawn custom role agents for issues in custom agent stages.
 

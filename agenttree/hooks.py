@@ -259,6 +259,7 @@ Configure in .agenttree.yaml under manager_hooks:
 Built-in manager hooks:
     push_pending_branches - Push any local branches with unpushed commits
     check_manager_stages - Process issues in manager-owned stages
+    ensure_review_branches - Create missing PRs and rebase branches in implementation_review
     check_custom_agent_stages - Spawn custom agents for issues in custom agent stages
     check_merged_prs - Detect externally merged PRs and update issue status
 
@@ -364,8 +365,8 @@ HOOK_TYPES = {
     "loop_check",  # Review loop: count iterations and fail if max exceeded
     "rollback",  # Review loop: programmatic rollback to earlier stage
     # Manager hooks (run on post-sync)
-    "push_pending_branches", "check_manager_stages", "check_merged_prs",
-    "check_ci_status", "check_custom_agent_stages",
+    "push_pending_branches", "check_manager_stages", "ensure_review_branches",
+    "check_merged_prs", "check_ci_status", "check_custom_agent_stages",
 }
 
 # =============================================================================
@@ -1299,6 +1300,12 @@ def run_builtin_validator(
         if agents_dir:
             check_manager_stages(agents_dir)
 
+    elif hook_type == "ensure_review_branches":
+        from agenttree.agents_repo import ensure_review_branches
+        agents_dir = kwargs.get("agents_dir")
+        if agents_dir:
+            ensure_review_branches(agents_dir)
+
     elif hook_type == "check_merged_prs":
         from agenttree.agents_repo import check_merged_prs
         agents_dir = kwargs.get("agents_dir")
@@ -1512,7 +1519,7 @@ def run_hook(
         if hook_type == "run":
             # Shell command hook
             errors = run_command_hook(context_dir, params, **kwargs)
-        elif hook_type in ("push_pending_branches", "check_manager_stages", "check_merged_prs", "check_custom_agent_stages"):
+        elif hook_type in ("push_pending_branches", "check_manager_stages", "ensure_review_branches", "check_merged_prs", "check_custom_agent_stages"):
             # Manager hooks need agents_dir - use from kwargs if provided, otherwise context_dir
             if "agents_dir" not in kwargs:
                 kwargs["agents_dir"] = context_dir

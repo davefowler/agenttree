@@ -469,6 +469,23 @@ def push_pending_branches(agents_dir: Path, **kwargs: Any) -> None:
         console.print(f"[dim]Pushed {count} branch(es)[/dim]")
 
 
+@register_action("ensure_review_branches")
+def ensure_review_branches(agents_dir: Path, **kwargs: Any) -> None:
+    """Ensure PRs exist and branches stay rebased for issues in implementation_review.
+
+    Creates missing PRs, updates stale branches, and redirects conflicting
+    issues back to the developer for rebase.
+
+    Args:
+        agents_dir: Path to _agenttree directory
+    """
+    from agenttree.agents_repo import ensure_review_branches as do_ensure
+
+    count = do_ensure(agents_dir)
+    if count > 0:
+        console.print(f"[dim]Processed {count} review branch(es)[/dim]")
+
+
 @register_action("check_manager_stages")
 def check_manager_stages(agents_dir: Path, **kwargs: Any) -> None:
     """Process issues in manager-owned stages.
@@ -895,6 +912,7 @@ DEFAULT_EVENT_CONFIGS: dict[str, list[str] | dict[str, Any]] = {
             {"start_manager": {"min_interval_s": 30}},  # Ensure manager stays alive
             {"push_pending_branches": {}},
             {"check_manager_stages": {}},
+            {"ensure_review_branches": {"min_interval_s": 60}},
             {"check_custom_agent_stages": {}},
             {"check_rate_limits": {"min_interval_s": 30}},  # Check for rate limits
             {"check_stalled_agents": {"min_interval_s": 180}},
