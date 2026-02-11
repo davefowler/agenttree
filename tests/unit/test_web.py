@@ -11,7 +11,7 @@ pytest.importorskip("httpx")
 
 from starlette.testclient import TestClient
 
-from agenttree.web.app import app, AgentManager, convert_issue_to_web, filter_issues
+from agenttree.web.app import app, AgentManager, convert_issue_to_web, filter_issues, FILE_TO_STAGE
 from agenttree.web.models import Issue as WebIssue
 from agenttree.issues import Priority
 
@@ -254,21 +254,26 @@ class TestFlowSortingFunctions:
         assert result[0].number == 2
         assert result[1].number == 1
 
-    def test_filter_flow_issues_review(self):
+    @patch("agenttree.config.load_config")
+    def test_filter_flow_issues_review(self, mock_load_config):
         """Test filtering to review stages."""
         from agenttree.web.app import _filter_flow_issues
         from agenttree.web.models import Issue as WebIssue
 
+        mock_config = Mock()
+        mock_config.is_human_review.side_effect = lambda s: s == "implement.review"
+        mock_load_config.return_value = mock_config
+
         review_issue = WebIssue(
             number=1, title="Review", body="", labels=[], assignees=[],
             stage="implement.review",
-            assigned_agent="1", tmux_active=False, pr_url=None, pr_number=None,
+            tmux_active=False, pr_url=None, pr_number=None,
             created_at=datetime(2024, 1, 1), updated_at=datetime(2024, 1, 1),
             dependencies=[], dependents=[],
         )
         other_issue = WebIssue(
             number=2, title="Other", body="", labels=[], assignees=[],
-            stage="implement.code", assigned_agent=None,
+            stage="implement.code",
             tmux_active=False, pr_url=None, pr_number=None,
             created_at=datetime(2024, 1, 1), updated_at=datetime(2024, 1, 1),
             dependencies=[], dependents=[],
@@ -963,9 +968,7 @@ class TestFileToStageMapping:
     """Tests for file-to-stage mapping in get_issue_files."""
 
     def test_file_to_stage_mapping_exists(self):
-        """Test that _file_to_stage mapping is derived from config."""
-        from agenttree.web.app import _file_to_stage
-
+        """Test that FILE_TO_STAGE mapping maps files to dot-path stages."""
         assert "problem.md" in FILE_TO_STAGE
         assert FILE_TO_STAGE["problem.md"] == "explore.define"
         assert FILE_TO_STAGE["research.md"] == "explore.research"
@@ -974,11 +977,9 @@ class TestFileToStageMapping:
         assert FILE_TO_STAGE["review.md"] == "implement.code"
 
     def test_file_to_stage_unknown_file(self):
-        """Test that unknown files are not in _file_to_stage."""
-        from agenttree.web.app import _file_to_stage
-
-        assert "unknown.md" not in _file_to_stage
-        assert "issue.yaml" not in _file_to_stage
+        """Test that unknown files are not in FILE_TO_STAGE."""
+        assert "unknown.md" not in FILE_TO_STAGE
+        assert "issue.yaml" not in FILE_TO_STAGE
 
     @patch("agenttree.web.app.issue_crud")
     @patch("agenttree.web.app._config")

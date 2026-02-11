@@ -237,11 +237,12 @@ class TestCheckStalledAgentsReNotification:
         tmp_path: Path,
     ) -> None:
         """First time an agent is detected stalled, manager should be notified."""
-        issue = MagicMock(id="042", title="Test", stage="implement",
+        issue = MagicMock(id="042", title="Test", stage="implement.code",
                           updated=self._issue_updated_ago(20))
         mock_list.return_value = [issue]
         mock_config.return_value.get_manager_tmux_session.return_value = "mgr"
         mock_config.return_value.get_issue_tmux_session.return_value = "at-042"
+        mock_config.return_value.is_parking_lot.return_value = False
 
         check_stalled_agents(tmp_path, threshold_min=15)
 
@@ -268,15 +269,16 @@ class TestCheckStalledAgentsReNotification:
         """If stall hasn't grown by threshold_min since last notification, don't re-notify."""
         # Agent stalled at 25 min, previously notified at 20 min (only 5 min growth, threshold 15)
         self._make_stalled_yaml(tmp_path, [
-            {"id": "042", "title": "Test", "stage": "implement",
+            {"id": "042", "title": "Test", "stage": "implement.code",
              "stalled_minutes": 20, "notified_at_minutes": 20},
         ])
 
-        issue = MagicMock(id="042", title="Test", stage="implement",
+        issue = MagicMock(id="042", title="Test", stage="implement.code",
                           updated=self._issue_updated_ago(25))
         mock_list.return_value = [issue]
         mock_config.return_value.get_manager_tmux_session.return_value = "mgr"
         mock_config.return_value.get_issue_tmux_session.return_value = "at-042"
+        mock_config.return_value.is_parking_lot.return_value = False
 
         check_stalled_agents(tmp_path, threshold_min=15)
 
@@ -297,16 +299,17 @@ class TestCheckStalledAgentsReNotification:
         """If stall grows by another threshold_min, re-notify with STILL STALLED."""
         # Previously notified at 20 min
         self._make_stalled_yaml(tmp_path, [
-            {"id": "042", "title": "Test", "stage": "implement",
+            {"id": "042", "title": "Test", "stage": "implement.code",
              "stalled_minutes": 20, "notified_at_minutes": 20},
         ])
 
         # Agent now stalled at 36 min (16 more than 20, threshold is 15 → re-notify)
-        issue = MagicMock(id="042", title="Test", stage="implement",
+        issue = MagicMock(id="042", title="Test", stage="implement.code",
                           updated=self._issue_updated_ago(36))
         mock_list.return_value = [issue]
         mock_config.return_value.get_manager_tmux_session.return_value = "mgr"
         mock_config.return_value.get_issue_tmux_session.return_value = "at-042"
+        mock_config.return_value.is_parking_lot.return_value = False
 
         check_stalled_agents(tmp_path, threshold_min=15)
 

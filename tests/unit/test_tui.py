@@ -12,7 +12,6 @@ from agenttree.tui.app import (
     DetailPanel,
     FilterInput,
     IssueTable,
-    REJECTION_MAPPINGS,
     StatusBar,
     TUIApp,
 )
@@ -371,18 +370,41 @@ class TestActions:
             assert hasattr(app, "action_refresh")
 
 
-class TestRejectionMappings:
-    """Tests for rejection stage mappings."""
+class TestRejectionBehavior:
+    """Tests for rejection stage behavior (dynamic, computed from flow)."""
 
-    def test_rejection_mappings_exist(self) -> None:
-        """Verify rejection mappings are defined for valid human review stages."""
-        # Only plan.review and implement.review are valid human review stages
-        assert "plan.review" in REJECTION_MAPPINGS
-        assert "implement.review" in REJECTION_MAPPINGS
-        # problem_review is NOT a valid human review stage
-        assert "problem_review" not in REJECTION_MAPPINGS
+    @patch("agenttree.tui.app.load_config")
+    def test_reject_finds_previous_stage_in_flow(self, mock_config: MagicMock) -> None:
+        """Verify rejection navigates to the previous stage in the flow."""
+        from agenttree.config import Config, StageConfig, FlowConfig
 
-    def test_rejection_mappings_correct(self) -> None:
-        """Verify rejection mappings map to correct stages."""
-        assert REJECTION_MAPPINGS["plan.review"] == "plan.draft"
-        assert REJECTION_MAPPINGS["implement.review"] == "implement.code"
+        config = Config(
+            stages={
+                "plan": StageConfig(name="plan", substages={
+                    "draft": {},
+                    "review": {"human_review": True},
+                }),
+                "implement": StageConfig(name="implement", substages={
+                    "code": {},
+                    "review": {"human_review": True},
+                }),
+            },
+            flows={
+                "default": FlowConfig(
+                    name="default",
+                    stages=["plan.draft", "plan.review", "implement.code", "implement.review"],
+                ),
+            },
+        )
+        mock_config.return_value = config
+
+        # plan.review should reject to plan.draft (previous in flow)
+        flow_stages = config.get_flow_stage_names("default")
+        idx = flow_stages.index("plan.review")
+        assert idx > 0
+        assert flow_stages[idx - 1] == "plan.draft"
+
+        # implement.review should reject to implement.code
+        idx = flow_stages.index("implement.review")
+        assert idx > 0
+        assert flow_stages[idx - 1] == "implement.code"

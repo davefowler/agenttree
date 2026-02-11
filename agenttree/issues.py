@@ -870,10 +870,6 @@ def load_skill(
     from jinja2 import Template
     from agenttree.config import load_config
 
-    # Parse dot notation: "explore.define" -> stage="explore", substage="define"
-    if "." in stage and substage is None:
-        stage, substage = stage.split(".", 1)[0], stage.split(".", 1)[1]
-
     # Sync before reading
     agents_path = get_agenttree_path()
     sync_agents_repo(agents_path, pull_only=True)
@@ -1289,10 +1285,6 @@ def get_issue_context(issue: Issue, include_docs: bool = True) -> dict:
     stage_group, substage = cfg.parse_stage(issue.stage)
     context["stage_group"] = stage_group
     context["substage"] = substage or ""
-
-    # Parsed stage components (stage_group = top-level stage, substage = substage or "")
-    context["stage_group"] = issue.stage
-    context["substage"] = issue.substage or ""
 
     # Load document contents if requested
     if include_docs and issue_dir:

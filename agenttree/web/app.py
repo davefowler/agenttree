@@ -307,12 +307,6 @@ def convert_issue_to_web(issue: issue_crud.Issue, load_dependents: bool = False)
         dependent_issues = issue_crud.get_dependent_issues(issue.id)
         dependents = [int(d.id) for d in dependent_issues]
 
-    # Map issue stage to StageEnum; fall back to BACKLOG for unknown stages
-    try:
-        stage_enum = StageEnum(issue.stage)
-    except ValueError:
-        stage_enum = StageEnum.BACKLOG
-
     return WebIssue(
         number=int(issue.id),
         title=issue.title,
