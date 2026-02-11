@@ -60,17 +60,47 @@
         </div>
         {% endfor %}
 
-        <!-- Mini dropzones for hidden columns and backlog -->
+        <!-- Mini dropzones for parking stages (always visible for toggle access) -->
         <div class="mini-dropzones" id="mini-dropzones">
             <div class="mini-dropzone" data-stage="backlog" id="mini-backlog">
+                <button class="toggle-parking-btn" onclick="toggleParkingVisibility('backlog', event)" title="Show column">
+                    <svg class="eye-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                        <circle cx="12" cy="12" r="3"></circle>
+                    </svg>
+                    <svg class="eye-off-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none">
+                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                        <line x1="1" y1="1" x2="23" y2="23"></line>
+                    </svg>
+                </button>
                 <span class="dropzone-label">Backlog</span>
                 <span class="dropzone-count" id="backlog-count">0</span>
             </div>
             <div class="mini-dropzone" data-stage="accepted" id="mini-accepted">
+                <button class="toggle-parking-btn" onclick="toggleParkingVisibility('accepted', event)" title="Show column">
+                    <svg class="eye-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                        <circle cx="12" cy="12" r="3"></circle>
+                    </svg>
+                    <svg class="eye-off-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none">
+                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                        <line x1="1" y1="1" x2="23" y2="23"></line>
+                    </svg>
+                </button>
                 <span class="dropzone-label">Accepted</span>
                 <span class="dropzone-count" id="accepted-count">0</span>
             </div>
             <div class="mini-dropzone" data-stage="not_doing" id="mini-not-doing">
+                <button class="toggle-parking-btn" onclick="toggleParkingVisibility('not_doing', event)" title="Show column">
+                    <svg class="eye-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                        <circle cx="12" cy="12" r="3"></circle>
+                    </svg>
+                    <svg class="eye-off-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none">
+                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                        <line x1="1" y1="1" x2="23" y2="23"></line>
+                    </svg>
+                </button>
                 <span class="dropzone-label">Not Doing</span>
                 <span class="dropzone-count" id="not-doing-count">0</span>
             </div>
@@ -140,6 +170,9 @@ Possible solutions:
 
         // Human review stages - only these can be dragged
         const HUMAN_REVIEW_STAGES = ['plan_review', 'implementation_review'];
+
+        // Parking lot stages - hidden by default, toggleable
+        const PARKING_STAGES = ['backlog', 'accepted', 'not_doing'];
 
         // Drag and drop
         let draggedCard = null;
@@ -445,6 +478,67 @@ Possible solutions:
             }
         }
 
+        // Toggle parking stage visibility
+        window.toggleParkingVisibility = function(stageName, event) {
+            if (event) {
+                event.stopPropagation();  // Prevent mini-dropzone click handler
+            }
+            const key = `kanbanShowParking_${stageName}`;
+            const currentValue = localStorage.getItem(key) === 'true';
+            localStorage.setItem(key, (!currentValue).toString());
+            applyParkingVisibility();
+        };
+
+        // Apply parking stage visibility based on localStorage
+        function applyParkingVisibility() {
+            const miniDropzones = document.getElementById('mini-dropzones');
+            let anyCollapsed = false;
+
+            PARKING_STAGES.forEach(stageName => {
+                const isExpanded = localStorage.getItem(`kanbanShowParking_${stageName}`) === 'true';
+                const column = document.querySelector(`.kanban-column[data-stage="${stageName}"]`);
+                const miniDropzone = document.getElementById(`mini-${stageName.replace('_', '-')}`);
+
+                if (!column || !miniDropzone) return;
+
+                // Get or create the header toggle button for this parking column
+                const header = column.querySelector('.column-header');
+                let headerBtn = header.querySelector('.toggle-parking-btn');
+                if (!headerBtn) {
+                    headerBtn = document.createElement('button');
+                    headerBtn.className = 'toggle-parking-btn header-toggle';
+                    headerBtn.title = 'Hide column';
+                    headerBtn.onclick = (e) => toggleParkingVisibility(stageName, e);
+                    headerBtn.innerHTML = `<svg class="eye-off-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                        <line x1="1" y1="1" x2="23" y2="23"></line>
+                    </svg>`;
+                    header.appendChild(headerBtn);
+                }
+
+                if (isExpanded) {
+                    // Show column and header toggle, hide mini-dropzone
+                    column.classList.remove('hidden');
+                    miniDropzone.style.display = 'none';
+                    headerBtn.style.display = 'block';
+                } else {
+                    // Hide column and header toggle, show mini-dropzone
+                    column.classList.add('hidden');
+                    miniDropzone.style.display = 'block';
+                    headerBtn.style.display = 'none';
+                    anyCollapsed = true;
+                    // Update count
+                    const countEl = miniDropzone.querySelector('.dropzone-count');
+                    if (countEl && column) {
+                        countEl.textContent = column.querySelectorAll('.issue-item').length;
+                    }
+                }
+            });
+
+            // Always show mini-dropzones container so toggle buttons are accessible
+            miniDropzones.classList.add('visible');
+        }
+
         // Stage view toggle
         window.setStageView = function(view) {
             const columns = document.querySelectorAll('.kanban-column');
@@ -483,8 +577,8 @@ Possible solutions:
             url.searchParams.set('view', view);
             history.replaceState({}, '', url);
 
-            // Update mini dropzones visibility
-            updateMiniDropzones();
+            // Apply parking stage visibility (overrides view mode for parking stages)
+            applyParkingVisibility();
 
             // Update stage indicators visibility
             updateIndicators();
