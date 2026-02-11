@@ -2,6 +2,9 @@
    AgentTree Styles
    ============================================== */
 
+/* Inter font */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
 /* Reset */
 * {
     margin: 0;
@@ -10,7 +13,7 @@
 }
 
 body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     background: var(--bg-primary);
     color: var(--text-primary);
     line-height: 1.6;
@@ -39,6 +42,9 @@ body {
     --btn-bg-active: #d4d4d4;
     --badge-bg: #f5f5f5;
     --badge-text: #525252;
+    --accent-green: #10b981;
+    --accent-green-light: #d1fae5;
+    --accent-green-muted: #6ee7b7;
 }
 
 [data-theme="dark"] {
@@ -58,6 +64,9 @@ body {
     --btn-bg-active: #525252;
     --badge-bg: #262626;
     --badge-text: #d4d4d4;
+    --accent-green: #10b981;
+    --accent-green-light: #064e3b;
+    --accent-green-muted: #047857;
 }
 
 /* ==============================================
@@ -347,7 +356,7 @@ button[disabled] {
 }
 
 .priority-low {
-    color: #22c55e;
+    color: var(--accent-green);
 }
 
 /* Priority dropdown in detail view */
@@ -835,7 +844,7 @@ button[disabled] {
 }
 
 .agent-light.on {
-    background: #22c55e;
+    background: var(--accent-green);
 }
 
 .agent-light.starting {
@@ -876,7 +885,7 @@ button[disabled] {
 }
 
 .agent-light-large.on {
-    background: #22c55e;
+    background: var(--accent-green);
 }
 
 .agent-light-large.stalled {
@@ -1437,8 +1446,8 @@ button[disabled] {
 }
 
 .kanban-column .issue-item[data-stage="accepted"] {
-    border-left-color: #22c55e;
-    background: #f0fdf4;
+    border-left-color: var(--accent-green);
+    background: var(--accent-green-light);
 }
 
 .kanban-column .issue-item[data-stage="not_doing"] {
@@ -1646,6 +1655,18 @@ button[disabled] {
     gap: 6px;
 }
 
+.issue-header-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.issue-label {
+    color: var(--text-muted);
+    font-size: 10px;
+    font-weight: 400;
+}
+
 .issue-number {
     color: var(--text-muted);
     font-size: 12px;
@@ -1659,8 +1680,8 @@ button[disabled] {
 }
 
 .issue-stage-label.needs-approval {
-    background: #3d6b5a;
-    color: white;
+    background: #fef3c7;
+    color: #92400e;
     padding: 2px 6px;
     border-radius: 3px;
     font-weight: 600;
@@ -1670,7 +1691,7 @@ button[disabled] {
     color: var(--text-card);
     font-size: 14px;
     font-weight: 500;
-    margin-bottom: 8px;
+    margin-bottom: 4px;
 }
 
 .issue-badges {
@@ -1734,7 +1755,7 @@ button[disabled] {
 }
 
 .flow-sidebar .issue-item[data-stage="accepted"] {
-    border-left-color: #22c55e;
+    border-left-color: var(--accent-green);
 }
 
 .flow-sidebar .issue-item[data-stage="not_doing"] {
@@ -2201,7 +2222,7 @@ button[disabled] {
 }
 
 .manager-status .status-indicator.active {
-    background: #22c55e;
+    background: var(--accent-green);
 }
 
 .manager-status .status-indicator.inactive {
@@ -2785,7 +2806,7 @@ button[disabled] {
 }
 
 .mobile-char-counter.valid {
-    color: #22c55e;
+    color: var(--accent-green);
 }
 
 .mobile-char-counter.invalid {
