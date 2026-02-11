@@ -405,7 +405,7 @@ async def kanban(
     from agenttree.actions import load_rate_limit_state
     
     agent_manager.clear_session_cache()  # Fresh session data per request
-    board = get_kanban_board(search=search)
+    board = await asyncio.to_thread(get_kanban_board, search)
 
     # If issue param provided, load issue detail for modal
     selected_issue = None
@@ -424,8 +424,10 @@ async def kanban(
             # Get commits ahead/behind for rebase button
             if selected_issue.tmux_active and issue_obj.worktree_dir:
                 from agenttree.hooks import get_commits_ahead_behind_main
-                commits_ahead, commits_behind = get_commits_ahead_behind_main(issue_obj.worktree_dir)
-    
+                commits_ahead, commits_behind = await asyncio.to_thread(
+                    get_commits_ahead_behind_main, issue_obj.worktree_dir
+                )
+
     # Check rate limit status for warning banner
     config = load_config()
     agents_dir = Path("_agenttree")
@@ -743,6 +745,26 @@ def _filter_flow_issues(issues: list[WebIssue], filter_by: Optional[str] = None)
         return issues
 
 
+def _get_flow_issues(
+    search: str | None = None,
+    sort: str | None = None,
+    filter_by: str | None = None
+) -> list[WebIssue]:
+    """Sync helper that loads and converts issues for flow/mobile views.
+
+    This function is called via asyncio.to_thread() to avoid blocking the event loop
+    during subprocess calls in convert_issue_to_web().
+    """
+    agent_manager.clear_session_cache()  # Fresh session data per request
+    issues = issue_crud.list_issues(sync=False)
+    web_issues = [convert_issue_to_web(i) for i in issues]
+    web_issues = _filter_flow_issues(web_issues, filter_by)
+    web_issues = _sort_flow_issues(web_issues, sort)
+    if search:
+        web_issues = filter_issues(web_issues, search)
+    return web_issues
+
+
 @app.get("/flow", response_class=HTMLResponse)
 async def flow(
     request: Request,
@@ -754,17 +776,8 @@ async def flow(
     user: Optional[str] = Depends(get_current_user)
 ) -> HTMLResponse:
     """Flow view page."""
-    agent_manager.clear_session_cache()  # Fresh session data per request
-    issues = issue_crud.list_issues(sync=False)  # Skip sync for fast web reads
-    web_issues = [convert_issue_to_web(i) for i in issues]
-
-    # Apply filter first, then sort
-    web_issues = _filter_flow_issues(web_issues, filter)
-    web_issues = _sort_flow_issues(web_issues, sort)
-
-    # Apply search filter if provided
-    if search:
-        web_issues = filter_issues(web_issues, search)
+    # Load and convert issues in thread pool to avoid blocking event loop
+    web_issues = await asyncio.to_thread(_get_flow_issues, search, sort, filter)
 
     # Select issue from URL param or default to first
     selected_issue = None
@@ -798,7 +811,9 @@ async def flow(
             # Get commits ahead/behind for rebase button
             if selected_issue.tmux_active and issue_obj.worktree_dir:
                 from agenttree.hooks import get_commits_ahead_behind_main
-                commits_ahead, commits_behind = get_commits_ahead_behind_main(issue_obj.worktree_dir)
+                commits_ahead, commits_behind = await asyncio.to_thread(
+                    get_commits_ahead_behind_main, issue_obj.worktree_dir
+                )
 
     return templates.TemplateResponse(
         "flow.html",
@@ -828,9 +843,8 @@ async def mobile(
     user: str | None = Depends(get_current_user)
 ) -> HTMLResponse:
     """Mobile-optimized view with bottom tab navigation."""
-    agent_manager.clear_session_cache()  # Fresh session data per request
-    issues = issue_crud.list_issues(sync=False)  # Skip sync for fast web reads
-    web_issues = _sort_flow_issues([convert_issue_to_web(i) for i in issues])
+    # Load and convert issues in thread pool to avoid blocking event loop
+    web_issues = await asyncio.to_thread(_get_flow_issues)
 
     # Select issue from URL param or default to first
     selected_issue = None
@@ -861,7 +875,9 @@ async def mobile(
             default_doc = get_default_doc(issue_obj.stage)
             if selected_issue.tmux_active and issue_obj.worktree_dir:
                 from agenttree.hooks import get_commits_ahead_behind_main
-                commits_ahead, commits_behind = get_commits_ahead_behind_main(issue_obj.worktree_dir)
+                commits_ahead, commits_behind = await asyncio.to_thread(
+                    get_commits_ahead_behind_main, issue_obj.worktree_dir
+                )
 
     # Determine active tab: default to 'issues' if no issue, 'detail' if issue specified
     active_tab = tab if tab in ["issues", "detail", "chat"] else None
@@ -885,6 +901,30 @@ async def mobile(
     )
 
 
+def _capture_tmux_output(session_names: list[str]) -> tuple[str | None, str | None]:
+    """Sync helper that captures tmux output from session.
+
+    This function is called via asyncio.to_thread() to avoid blocking the event loop
+    during subprocess calls.
+
+    Returns:
+        Tuple of (output, session_name) or (None, None) if no session found.
+    """
+    for name in session_names:
+        try:
+            result = subprocess.run(
+                ["tmux", "capture-pane", "-t", name, "-p", "-S", "-100"],
+                capture_output=True,
+                text=True,
+                timeout=2
+            )
+            if result.returncode == 0:
+                return result.stdout, name
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            continue
+    return None, None
+
+
 @app.get("/agent/{agent_num}/tmux", response_class=HTMLResponse)
 async def agent_tmux(
     request: Request,
@@ -903,29 +943,15 @@ async def agent_tmux(
     # Use config for consistent session naming
     session_names = config.get_issue_session_patterns(padded_num)
 
-    # Capture tmux output - try all session name patterns
-    claude_status = "unknown"
-    session_name = None
-    result = None
-    for name in session_names:
-        try:
-            result = subprocess.run(
-                ["tmux", "capture-pane", "-t", name, "-p", "-S", "-100"],
-                capture_output=True,
-                text=True,
-                timeout=2
-            )
-            if result.returncode == 0:
-                session_name = name
-                break
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            continue
+    # Capture tmux output in thread pool to avoid blocking event loop
+    raw_output, session_name = await asyncio.to_thread(_capture_tmux_output, session_names)
 
-    if result and result.returncode == 0 and session_name:
+    if raw_output and session_name:
         # Strip Claude Code's input prompt separator from the output
-        output = _strip_claude_input_prompt(result.stdout)
+        output = _strip_claude_input_prompt(raw_output)
         # Check if Claude is actually running (not just tmux session)
-        claude_status = "running" if is_claude_running(session_name) else "exited"
+        is_running = await asyncio.to_thread(is_claude_running, session_name)
+        claude_status = "running" if is_running else "exited"
     else:
         output = "Tmux session not active"
         claude_status = "no_session"
@@ -1038,7 +1064,8 @@ async def get_agent_status(
     """Check if an agent's tmux session is running for an issue."""
     # Normalize issue ID
     padded_id = issue_id.zfill(3)
-    tmux_active = agent_manager._check_issue_tmux_session(padded_id)
+    # Check tmux session in thread pool to avoid blocking event loop
+    tmux_active = await asyncio.to_thread(agent_manager._check_issue_tmux_session, padded_id)
 
     # Get processing state from issue
     issue = issue_crud.get_issue(padded_id, sync=False)
@@ -1067,7 +1094,8 @@ async def get_diff(
     if not issue:
         raise HTTPException(status_code=404, detail="Issue not found")
 
-    return get_issue_diff(issue_id)
+    # Get diff in thread pool to avoid blocking event loop
+    return await asyncio.to_thread(get_issue_diff, issue_id)
 
 
 @app.post("/api/issues/{issue_id}/move")
