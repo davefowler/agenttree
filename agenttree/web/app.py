@@ -5,7 +5,7 @@
 import asyncio
 asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
 
-from fastapi import FastAPI, Request, Form, WebSocket, WebSocketDisconnect, Depends, HTTPException, status
+from fastapi import FastAPI, Request, Form, Depends, HTTPException, status
 from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse, Response
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
@@ -21,6 +21,8 @@ from typing import Optional, AsyncIterator, Callable, Awaitable
 from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 import yaml
+
+import hashlib
 
 from agenttree import __version__
 from agenttree.config import load_config, Config
@@ -55,6 +57,15 @@ def _strip_claude_input_prompt(output: str) -> str:
             return '\n'.join(lines[:i]).rstrip()
 
     return output
+
+
+def _compute_etag(content: str) -> str:
+    """Compute an ETag header value from content.
+
+    Returns a quoted MD5 hash of the content suitable for use as an ETag header.
+    """
+    content_hash = hashlib.md5(content.encode()).hexdigest()
+    return f'"{content_hash}"'
 
 
 # Get the directory where this file is located
@@ -890,12 +901,15 @@ async def agent_tmux(
     request: Request,
     agent_num: str,
     user: Optional[str] = Depends(get_current_user)
-) -> HTMLResponse:
+) -> Response:
     """Get tmux output for an issue's agent (HTMX endpoint).
 
     Note: agent_num parameter is actually the issue number - sessions are named by issue.
+
+    Returns ETag header for conditional requests. If client sends If-None-Match
+    with matching ETag, returns 304 Not Modified to save bandwidth.
     """
-    from agenttree.tmux import is_claude_running
+    from agenttree.tmux import is_claude_running, capture_pane
 
     config = load_config()
     # Pad issue number to 3 digits to match tmux session naming
@@ -906,31 +920,35 @@ async def agent_tmux(
     # Capture tmux output - try all session name patterns
     claude_status = "unknown"
     session_name = None
-    result = None
+    raw_output = None
+
     for name in session_names:
         try:
-            result = subprocess.run(
-                ["tmux", "capture-pane", "-t", name, "-p", "-S", "-100"],
-                capture_output=True,
-                text=True,
-                timeout=2
-            )
-            if result.returncode == 0:
-                session_name = name
-                break
-        except (subprocess.TimeoutExpired, FileNotFoundError):
+            raw_output = capture_pane(name, lines=100)
+            session_name = name
+            break
+        except subprocess.CalledProcessError:
             continue
 
-    if result and result.returncode == 0 and session_name:
+    if raw_output is not None and session_name:
         # Strip Claude Code's input prompt separator from the output
-        output = _strip_claude_input_prompt(result.stdout)
+        output = _strip_claude_input_prompt(raw_output)
         # Check if Claude is actually running (not just tmux session)
         claude_status = "running" if is_claude_running(session_name) else "exited"
     else:
         output = "Tmux session not active"
         claude_status = "no_session"
 
-    return templates.TemplateResponse(
+    # Compute ETag from stripped output
+    etag = _compute_etag(output)
+
+    # Check If-None-Match header for conditional request
+    if_none_match = request.headers.get("If-None-Match")
+    if if_none_match and if_none_match == etag:
+        return Response(status_code=304, headers={"ETag": etag})
+
+    # Render template and return with ETag
+    html_content = templates.TemplateResponse(
         "partials/tmux_output.html",
         {
             "request": request,
@@ -939,6 +957,8 @@ async def agent_tmux(
             "claude_status": claude_status,
         }
     )
+    html_content.headers["ETag"] = etag
+    return html_content
 
 
 @app.post("/agent/{agent_num}/send", response_class=HTMLResponse)
@@ -1337,36 +1357,6 @@ async def rebase_issue(
         send_message(session_name, notification)
 
     return {"ok": True}
-
-
-@app.websocket("/ws/agent/{agent_num}/tmux")
-async def tmux_websocket(websocket: WebSocket, agent_num: int) -> None:
-    """WebSocket for live tmux output streaming."""
-    await websocket.accept()
-
-    try:
-        while True:
-            # Capture tmux output every second
-            try:
-                result = subprocess.run(
-                    ["tmux", "capture-pane", "-t", f"agent-{agent_num}", "-p", "-S", "-100"],
-                    capture_output=True,
-                    text=True,
-                    timeout=1
-                )
-
-                if result.returncode == 0:
-                    await websocket.send_text(result.stdout)
-                else:
-                    await websocket.send_text("[Tmux session not active]")
-
-            except subprocess.TimeoutExpired:
-                await websocket.send_text("[Timeout capturing tmux]")
-
-            await asyncio.sleep(1)
-
-    except WebSocketDisconnect:
-        pass
 
 
 @app.get("/health")
