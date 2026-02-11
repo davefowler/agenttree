@@ -37,6 +37,7 @@ def mock_issue_with_worktree():
     mock.updated = "2024-01-01T00:00:00Z"
     mock.dependencies = []
     mock.priority = Priority.MEDIUM
+    mock.flow = "default"
     return mock
 
 
@@ -57,6 +58,7 @@ def mock_issue_no_worktree():
     mock.updated = "2024-01-01T00:00:00Z"
     mock.dependencies = []
     mock.priority = Priority.MEDIUM
+    mock.flow = "default"
     return mock
 
 

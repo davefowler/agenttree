@@ -69,11 +69,14 @@ class TestConfig:
         assert config.get_port_for_agent(5) == 8005
         assert config.get_port_for_agent(9) == 8009
 
-    def test_get_port_for_agent_out_of_range(self) -> None:
-        """Test error when agent number exceeds port range."""
-        config = Config(port_range="8001-8003")
-        with pytest.raises(ValueError, match="Agent number 5 exceeds port range"):
-            config.get_port_for_agent(5)
+    def test_get_port_for_agent_wraps_with_modulo(self) -> None:
+        """Test port wraps around via modulo when exceeding range."""
+        config = Config(port_range="8001-8009")
+        # Range size is 9 (8001-8009). Agent 10 wraps to 8001.
+        assert config.get_port_for_agent(10) == 8001
+        assert config.get_port_for_agent(11) == 8002
+        assert config.get_port_for_agent(18) == 8009
+        assert config.get_port_for_agent(19) == 8001  # Wraps again
 
     def test_get_port_for_issue(self) -> None:
         """Test getting port number for an issue ID."""
@@ -88,13 +91,22 @@ class TestConfig:
         assert config.get_port_for_issue("1") == 8001
         assert config.get_port_for_issue("5") == 8005
 
-    def test_get_port_for_issue_out_of_range(self) -> None:
-        """Test returns None when issue ID exceeds port range."""
+    def test_get_port_for_issue_wraps_with_modulo(self) -> None:
+        """Test issue port wraps around when exceeding range size."""
+        config = Config(port_range="9001-9099")
+        # Range is 99 ports. Issue 100 wraps to 9001.
+        assert config.get_port_for_issue("100") == 9001
+        assert config.get_port_for_issue("160") == 9061
+        assert config.get_port_for_issue("199") == 9001
+        assert config.get_port_for_issue("999") == 9009
+
+    def test_get_port_for_issue_never_returns_none_for_valid_id(self) -> None:
+        """Test that any valid numeric issue ID always gets a port."""
         config = Config(port_range="9001-9009")
-        # Issue 10 would need port 9010, exceeds range 9001-9009
-        assert config.get_port_for_issue("10") is None
-        # Issue 100 would need port 9100, exceeds range
-        assert config.get_port_for_issue("100") is None
+        # Even with a tiny range, high issue numbers still get a port
+        assert config.get_port_for_issue("10") is not None
+        assert config.get_port_for_issue("100") is not None
+        assert config.get_port_for_issue("9999") is not None
 
     def test_get_port_for_issue_invalid_id(self) -> None:
         """Test returns None for non-numeric issue IDs."""

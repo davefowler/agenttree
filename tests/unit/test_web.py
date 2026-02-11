@@ -41,6 +41,7 @@ def mock_issue():
     mock.priority = Priority.MEDIUM
     mock.processing = None
     mock.ci_escalated = False
+    mock.flow = "default"
     return mock
 
 
@@ -63,6 +64,7 @@ def mock_review_issue():
     mock.priority = Priority.MEDIUM
     mock.processing = None
     mock.ci_escalated = False
+    mock.flow = "default"
     return mock
 
 
@@ -964,27 +966,26 @@ class TestFileToStageMapping:
     """Tests for file-to-stage mapping in get_issue_files."""
 
     def test_file_to_stage_mapping_exists(self):
-        """Test that FILE_TO_STAGE mapping is defined."""
-        from agenttree.web.app import FILE_TO_STAGE
+        """Test that _file_to_stage mapping is derived from config."""
+        from agenttree.web.app import _file_to_stage
 
-        assert "problem.md" in FILE_TO_STAGE
-        assert FILE_TO_STAGE["problem.md"] == "define"
-        assert FILE_TO_STAGE["research.md"] == "research"
-        assert FILE_TO_STAGE["spec.md"] == "plan"
-        assert FILE_TO_STAGE["spec_review.md"] == "plan_assess"
-        assert FILE_TO_STAGE["review.md"] == "implement"
+        assert "problem.md" in _file_to_stage
+        assert _file_to_stage["problem.md"] == "define"
+        assert _file_to_stage["research.md"] == "research"
+        assert _file_to_stage["spec.md"] == "plan"
+        assert _file_to_stage["spec_review.md"] == "plan_assess"
 
     def test_file_to_stage_unknown_file(self):
-        """Test that unknown files are not in FILE_TO_STAGE."""
-        from agenttree.web.app import FILE_TO_STAGE
+        """Test that unknown files are not in _file_to_stage."""
+        from agenttree.web.app import _file_to_stage
 
-        assert "unknown.md" not in FILE_TO_STAGE
-        assert "issue.yaml" not in FILE_TO_STAGE
+        assert "unknown.md" not in _file_to_stage
+        assert "issue.yaml" not in _file_to_stage
 
     @patch("agenttree.web.app.issue_crud")
     @patch("agenttree.web.app._config")
     def test_get_issue_files_includes_stage(self, mock_config, mock_crud, tmp_path):
-        """Test that get_issue_files includes stage field."""
+        """Test that get_issue_files includes stage and stage_color fields."""
         from agenttree.web.app import get_issue_files
 
         # Create test files
@@ -1002,9 +1003,11 @@ class TestFileToStageMapping:
         # Check problem.md has stage=define
         problem_file = next(f for f in files if f["name"] == "problem.md")
         assert problem_file["stage"] == "define"
+        assert problem_file["stage_color"] != ""
         # Check spec.md has stage=plan
         spec_file = next(f for f in files if f["name"] == "spec.md")
         assert spec_file["stage"] == "plan"
+        assert spec_file["stage_color"] != ""
 
     @patch("agenttree.web.app.issue_crud")
     @patch("agenttree.web.app._config")
@@ -1020,7 +1023,7 @@ class TestFileToStageMapping:
         (issue_dir / "review.md").write_text("# Review")
 
         mock_crud.get_issue_dir.return_value = issue_dir
-        mock_crud.STAGE_ORDER = ["backlog", "define", "research", "plan", "plan_assess", "plan_revise", "plan_review", "implement"]
+        mock_config.get_stage_names.return_value = ["backlog", "define", "research", "plan", "plan_assess", "plan_revise", "plan_review", "implement"]
         mock_config.show_issue_yaml = False
 
         # Current stage is implement
@@ -1036,33 +1039,6 @@ class TestFileToStageMapping:
         assert spec_file["is_passed"] == "true"
         # review.md (implement) should NOT be passed when at implement
         assert review_file["is_passed"] == "false"
-
-    @patch("agenttree.web.app.issue_crud")
-    @patch("agenttree.web.app._config")
-    def test_get_issue_files_short_name_for_passed(self, mock_config, mock_crud, tmp_path):
-        """Test that short_name is truncated for passed stages."""
-        from agenttree.web.app import get_issue_files
-
-        # Create test files
-        issue_dir = tmp_path / "001-test"
-        issue_dir.mkdir()
-        (issue_dir / "problem.md").write_text("# Problem")
-        (issue_dir / "review.md").write_text("# Review")
-
-        mock_crud.get_issue_dir.return_value = issue_dir
-        mock_crud.STAGE_ORDER = ["backlog", "define", "research", "plan", "plan_assess", "plan_revise", "plan_review", "implement"]
-        mock_config.show_issue_yaml = False
-
-        # Current stage is implement
-        files = get_issue_files("001", current_stage="implement")
-
-        problem_file = next(f for f in files if f["name"] == "problem.md")
-        review_file = next(f for f in files if f["name"] == "review.md")
-
-        # problem.md is passed, should have truncated short_name
-        assert problem_file["short_name"] == "Pro..."
-        # review.md is current, should have full display_name as short_name
-        assert review_file["short_name"] == "Review"
 
     @patch("agenttree.web.app.issue_crud")
     @patch("agenttree.web.app._config")
@@ -1082,6 +1058,7 @@ class TestFileToStageMapping:
 
         custom_file = files[0]
         assert custom_file["stage"] == ""
+        assert custom_file["stage_color"] == ""
         assert custom_file["is_passed"] == "false"
 
     @patch("agenttree.web.app.issue_crud")
@@ -1097,10 +1074,10 @@ class TestFileToStageMapping:
 
         mock_crud.get_issue_dir.return_value = issue_dir
         mock_config.show_issue_yaml = False
+        mock_config.get_stage_names.return_value = []
 
         # No current_stage provided
         files = get_issue_files("001")
 
         problem_file = files[0]
         assert problem_file["is_passed"] == "false"
-        assert problem_file["short_name"] == "Problem"  # Not truncated

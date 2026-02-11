@@ -64,9 +64,9 @@ def _start_manager(
 
 @click.command()
 @click.option("--host", default="127.0.0.1", help="Host to bind to")
-@click.option("--port", default=8080, type=int, help="Port to bind to")
+@click.option("--port", default=None, type=int, help="Port to bind to (default: from port_range config)")
 @click.option("--config", "config_path", type=click.Path(exists=True), help="Path to config file")
-def web(host: str, port: int, config_path: str | None) -> None:
+def web(host: str, port: int | None, config_path: str | None) -> None:
     """Start the web dashboard for monitoring agents.
 
     The dashboard provides:
@@ -77,6 +77,8 @@ def web(host: str, port: int, config_path: str | None) -> None:
     """
     from agenttree.web.app import run_server
 
+    if port is None:
+        port = load_config().server_port
     console.print(f"[cyan]Starting AgentTree dashboard at http://{host}:{port}[/cyan]")
     console.print("[dim]Press Ctrl+C to stop[/dim]\n")
 
@@ -86,8 +88,8 @@ def web(host: str, port: int, config_path: str | None) -> None:
 
 @click.command()
 @click.option("--host", default="127.0.0.1", help="Host to bind to")
-@click.option("--port", default=8080, type=int, help="Port to bind to")
-def serve(host: str, port: int) -> None:
+@click.option("--port", default=None, type=int, help="Port to bind to (default: from port_range config)")
+def serve(host: str, port: int | None) -> None:
     """Start the AgentTree server (runs syncs, spawns agents).
 
     This is the main manager process that:
@@ -100,6 +102,8 @@ def serve(host: str, port: int) -> None:
     """
     from agenttree.web.app import run_server
 
+    if port is None:
+        port = load_config().server_port
     console.print(f"[cyan]Starting AgentTree server at http://{host}:{port}[/cyan]")
     console.print("[dim]Press Ctrl+C to stop[/dim]\n")
 
@@ -108,9 +112,9 @@ def serve(host: str, port: int) -> None:
 
 @click.command()
 @click.option("--host", default="127.0.0.1", help="Host to bind to")
-@click.option("--port", default=8080, type=int, help="Port to bind to")
+@click.option("--port", default=None, type=int, help="Port to bind to (default: from port_range config)")
 @click.option("--skip-agents", is_flag=True, help="Don't auto-start agents")
-def run(host: str, port: int, skip_agents: bool) -> None:
+def run(host: str, port: int | None, skip_agents: bool) -> None:
     """Start AgentTree: server + agents for all active issues.
 
     This is the main entry point that:
@@ -132,6 +136,9 @@ def run(host: str, port: int, skip_agents: bool) -> None:
 
     repo_path = Path.cwd()
     config = load_config(repo_path)
+
+    if port is None:
+        port = config.server_port
 
     if not skip_agents:
         # Get parking lot stages to filter out

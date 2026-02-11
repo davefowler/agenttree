@@ -191,6 +191,15 @@ def stage_display_name(value: str) -> str:
 
 templates.env.filters["stage_name"] = stage_display_name
 
+# Jinja global for looking up stage colors in templates.
+# References module-level _stage_colors (built later at module load).
+def _jinja_stage_color(stage_name: str) -> str:
+    """Get the light-theme color for a stage, usable in templates."""
+    colors = _stage_colors.get(stage_name)
+    return colors["light"] if colors else ""
+
+templates.env.globals["stage_color"] = _jinja_stage_color
+
 # Optional authentication (auto_error=False allows requests without credentials)
 security = HTTPBasic(auto_error=False)
 
@@ -348,6 +357,7 @@ def convert_issue_to_web(issue: issue_crud.Issue, load_dependents: bool = False)
         updated_at=datetime.fromisoformat(issue.updated.replace("Z", "+00:00")),
         dependencies=dependencies,
         dependents=dependents,
+        flow=issue.flow or "default",
         processing=issue.processing,
         ci_escalated=issue.ci_escalated,
     )
@@ -467,6 +477,9 @@ async def kanban(
             "can_switch": bool(os.environ.get(config.rate_limit_fallback.api_key_env)),
         }
 
+    # Get available flows for the new issue form
+    flow_names = list(config.flows.keys())
+
     return templates.TemplateResponse(
         "kanban.html",
         {
@@ -483,32 +496,164 @@ async def kanban(
             "search": search or "",
             "current_view": view or "nonempty",
             "rate_limit_warning": rate_limit_warning,
+            "flow_names": flow_names,
         }
     )
 
 
-# File ordering by workflow stage (problem first, then spec, etc.)
-STAGE_FILE_ORDER = [
-    "problem.md",
-    "spec.md",
-    "review.md",
-    "implementation.md",
+# Stage color palette - distributed across stages by position.
+# HSL-based: we rotate hue across stages, keeping saturation/lightness consistent.
+# Parking-lot stages (backlog, accepted, not_doing) get neutral gray.
+STAGE_COLOR_PALETTE = [
+    "#78716c",  # warm gray (for parking lot stages)
+    "#ef4444",  # red
+    "#f97316",  # orange
+    "#eab308",  # yellow
+    "#22c55e",  # green
+    "#14b8a6",  # teal
+    "#3b82f6",  # blue
+    "#6366f1",  # indigo
+    "#8b5cf6",  # violet
+    "#a855f7",  # purple
+    "#ec4899",  # pink
+    "#f43f5e",  # rose
 ]
 
-# Mapping of filenames to their associated workflow stage.
-# Note: Not all stages are in STAGE_ORDER (e.g., independent_code_review is a
-# separate review workflow). Files with stages not in STAGE_ORDER will get
-# stage-based colors but won't be marked as "passed" since they're outside
-# the main linear progression.
-FILE_TO_STAGE: dict[str, str] = {
-    "problem.md": "define",
-    "research.md": "research",
-    "spec.md": "plan",
-    "spec_review.md": "plan_assess",
-    "review.md": "implement",
-    "independent_review.md": "independent_code_review",
-    "feedback.md": "implement",
-}
+# Dark theme variants (brighter for dark backgrounds)
+STAGE_COLOR_PALETTE_DARK = [
+    "#a8a29e",  # warm gray (for parking lot stages)
+    "#f87171",  # red
+    "#fb923c",  # orange
+    "#facc15",  # yellow
+    "#4ade80",  # green
+    "#2dd4bf",  # teal
+    "#60a5fa",  # blue
+    "#818cf8",  # indigo
+    "#a78bfa",  # violet
+    "#c084fc",  # purple
+    "#f472b6",  # pink
+    "#fb7185",  # rose
+]
+
+
+def _build_stage_groups() -> dict[str, str]:
+    """Map each stage to its parent group stage.
+
+    If a stage has an explicit `group` field in config, use that.
+    Otherwise, infer groups: "anchor" stages (those with substages that
+    aren't review gates) start a new group. All subsequent non-anchor
+    stages belong to the most recent anchor's group.
+
+    Parking-lot stages are their own group.
+
+    Example with defaults: plan_assess, plan_revise, plan_review -> "plan".
+    Example with explicit: `group: explore` on define and research -> "explore".
+    """
+    groups: dict[str, str] = {}
+    current_group: str | None = None
+
+    for stage_cfg in _config.stages:
+        if stage_cfg.group:
+            # Explicit group set in config — use it directly
+            groups[stage_cfg.name] = stage_cfg.group
+            current_group = stage_cfg.group
+        elif stage_cfg.is_parking_lot:
+            groups[stage_cfg.name] = stage_cfg.name
+        elif stage_cfg.substages and not stage_cfg.human_review:
+            # Anchor stage — starts a new group
+            current_group = stage_cfg.name
+            groups[stage_cfg.name] = stage_cfg.name
+        else:
+            # Non-anchor: belongs to current group (or itself if no group yet)
+            groups[stage_cfg.name] = current_group or stage_cfg.name
+
+    return groups
+
+
+def _build_stage_colors() -> dict[str, dict[str, str]]:
+    """Build stage-to-color mapping from config.
+
+    Returns dict mapping stage name -> {"light": color, "dark": color}.
+    Stages in the same group share the same color. Parking-lot stages
+    get gray; group colors are distributed across the palette.
+    """
+    gray = {"light": STAGE_COLOR_PALETTE[0], "dark": STAGE_COLOR_PALETTE_DARK[0]}
+    colors: dict[str, dict[str, str]] = {}
+
+    # Find unique groups in order, skipping parking lots
+    seen_groups: list[str] = []
+    for stage_cfg in _config.stages:
+        group = _stage_groups.get(stage_cfg.name, stage_cfg.name)
+        if stage_cfg.is_parking_lot:
+            colors[stage_cfg.name] = gray
+        elif group not in seen_groups:
+            seen_groups.append(group)
+
+    # Assign palette colors to groups
+    palette = STAGE_COLOR_PALETTE[1:]
+    palette_dark = STAGE_COLOR_PALETTE_DARK[1:]
+    group_colors: dict[str, dict[str, str]] = {}
+    for i, group in enumerate(seen_groups):
+        idx = i % len(palette)
+        group_colors[group] = {"light": palette[idx], "dark": palette_dark[idx]}
+
+    # Map every stage to its group's color
+    for stage_cfg in _config.stages:
+        if stage_cfg.name not in colors:  # Skip already-assigned parking lots
+            group = _stage_groups.get(stage_cfg.name, stage_cfg.name)
+            colors[stage_cfg.name] = group_colors.get(group, gray)
+
+    return colors
+
+
+def _build_file_to_stage() -> dict[str, str]:
+    """Build filename-to-stage mapping from config.
+
+    Derives the mapping from each stage's `output` field. If multiple stages
+    produce the same file, the first one wins (earliest in stage order).
+    """
+    file_map: dict[str, str] = {}
+    for stage_cfg in _config.stages:
+        if stage_cfg.output and stage_cfg.output not in file_map:
+            file_map[stage_cfg.output] = stage_cfg.name
+        # Also check substage outputs
+        for sub_cfg in stage_cfg.substages.values():
+            if sub_cfg.output and sub_cfg.output not in file_map:
+                file_map[sub_cfg.output] = stage_cfg.name
+    return file_map
+
+
+def _build_file_order() -> list[str]:
+    """Build file ordering from config stage order.
+
+    Files are ordered by the stage that produces them.
+    """
+    seen: set[str] = set()
+    order: list[str] = []
+    for stage_cfg in _config.stages:
+        if stage_cfg.output and stage_cfg.output not in seen:
+            order.append(stage_cfg.output)
+            seen.add(stage_cfg.output)
+        for sub_cfg in stage_cfg.substages.values():
+            if sub_cfg.output and sub_cfg.output not in seen:
+                order.append(sub_cfg.output)
+                seen.add(sub_cfg.output)
+    return order
+
+
+# Build all mappings from config at module load
+# Build all mappings from config at module load.
+# Order matters: _stage_groups must be built before _stage_colors.
+_stage_groups = _build_stage_groups()
+_stage_colors = _build_stage_colors()
+_file_to_stage = _build_file_to_stage()
+_file_order = _build_file_order()
+
+
+def get_stage_color(stage_name: str) -> str:
+    """Get the light-theme color for a stage name."""
+    colors = _stage_colors.get(stage_name)
+    return colors["light"] if colors else ""
 
 
 def get_issue_files(
@@ -518,12 +663,11 @@ def get_issue_files(
 ) -> list[dict[str, str]]:
     """Get list of markdown files for an issue.
 
-    Returns list of dicts with keys: name, display_name, size, modified, stage, is_passed, short_name
+    Returns list of dicts with keys: name, display_name, size, modified, stage, stage_color, is_passed
     If include_content=True, also includes 'content' key with file contents.
 
-    Files are ordered by workflow stage (problem.md first, then spec.md, etc.),
-    with any unknown files at the end sorted alphabetically.
-    If config.show_issue_yaml is True, issue.yaml is included at the end.
+    Files are ordered by workflow stage (from config), with unknown files at the end.
+    If config.show_issue_yaml is True, issue.yaml is included first.
 
     Args:
         issue_id: The issue ID to get files for
@@ -537,43 +681,40 @@ def get_issue_files(
     # Build file list
     file_list = list(issue_dir.glob("*.md"))
 
-    # Sort by stage order, then alphabetically for unknown files
+    # Sort by config-driven file order, then alphabetically for unknown files
     def file_sort_key(f: Path) -> tuple[int, str]:
-        if f.name in STAGE_FILE_ORDER:
-            return (STAGE_FILE_ORDER.index(f.name), f.name)
-        return (len(STAGE_FILE_ORDER), f.name)  # Unknown files sorted after known ones
+        if f.name in _file_order:
+            return (_file_order.index(f.name), f.name)
+        return (len(_file_order), f.name)
 
-    # Get current stage index for is_passed calculation.
-    # Stages not in STAGE_ORDER (e.g., sub-workflows) won't have files marked as passed.
+    # Get current stage index for is_passed calculation using config stage order
+    stage_names = _config.get_stage_names()
     current_stage_index = -1
-    if current_stage and current_stage in issue_crud.STAGE_ORDER:
-        current_stage_index = issue_crud.STAGE_ORDER.index(current_stage)
+    if current_stage and current_stage in stage_names:
+        current_stage_index = stage_names.index(current_stage)
 
     files: list[dict[str, str]] = []
     for f in sorted(file_list, key=file_sort_key):
         display_name = f.stem.replace("_", " ").title()
-        file_stage = FILE_TO_STAGE.get(f.name)
+        file_stage = _file_to_stage.get(f.name, "")
 
-        # Calculate is_passed: file's stage is earlier than current stage.
-        # Files with stages not in STAGE_ORDER (sub-workflows) remain is_passed=False.
+        # Calculate is_passed: file's stage is earlier than current stage
         is_passed = False
-        if file_stage and current_stage_index >= 0 and file_stage in issue_crud.STAGE_ORDER:
-            file_stage_index = issue_crud.STAGE_ORDER.index(file_stage)
+        if file_stage and current_stage_index >= 0 and file_stage in stage_names:
+            file_stage_index = stage_names.index(file_stage)
             is_passed = file_stage_index < current_stage_index
 
-        # Generate short_name for passed stages (first 3 chars + "...")
-        short_name = display_name
-        if is_passed:
-            short_name = display_name[:3] + "..."
+        # Get color for this file's stage
+        stage_color = get_stage_color(file_stage) if file_stage else ""
 
         file_info: dict[str, str] = {
             "name": f.name,
             "display_name": display_name,
             "size": str(f.stat().st_size),
             "modified": datetime.fromtimestamp(f.stat().st_mtime).isoformat(),
-            "stage": file_stage or "",
+            "stage": file_stage,
+            "stage_color": stage_color,
             "is_passed": str(is_passed).lower(),
-            "short_name": short_name,
         }
         if include_content:
             try:
@@ -582,25 +723,25 @@ def get_issue_files(
                 file_info["content"] = ""
         files.append(file_info)
 
-    # Optionally include issue.yaml at the end
+    # Optionally include issue.yaml as the first tab
     if _config.show_issue_yaml:
         issue_yaml = issue_dir / "issue.yaml"
         if issue_yaml.exists():
             file_info = {
                 "name": "issue.yaml",
-                "display_name": "Issue YAML",
+                "display_name": "Issue",
                 "size": str(issue_yaml.stat().st_size),
                 "modified": datetime.fromtimestamp(issue_yaml.stat().st_mtime).isoformat(),
                 "stage": "",
+                "stage_color": "",
                 "is_passed": "false",
-                "short_name": "Issue YAML",
             }
             if include_content:
                 try:
                     file_info["content"] = issue_yaml.read_text()
                 except Exception:
                     file_info["content"] = ""
-            files.append(file_info)
+            files.insert(0, file_info)
 
     return files
 
@@ -1212,12 +1353,14 @@ async def create_issue_api(
     request: Request,
     description: str = Form(""),
     title: str = Form(""),
+    flow: str = Form("auto"),
     user: Optional[str] = Depends(get_current_user)
 ) -> dict:
     """Create a new issue via the web UI.
 
     Creates an issue in the 'define' stage with default substage 'refine'.
     If no title is provided, one is auto-generated from the description.
+    Flow can be "auto" (agent decides during define stage) or a specific flow name.
     """
     from agenttree.issues import Priority
 
@@ -1232,6 +1375,10 @@ async def create_issue_api(
     if not title:
         title = "(untitled)"
 
+    # "auto" means start with default flow, agent will pick the right one in define stage
+    config = load_config()
+    effective_flow = config.default_flow if flow == "auto" else flow
+
     import asyncio
     from agenttree.api import start_agent
 
@@ -1240,6 +1387,7 @@ async def create_issue_api(
             title=title,
             priority=Priority.MEDIUM,
             problem=description,
+            flow=effective_flow,
         )
 
         # Auto-start agent for the new issue
@@ -1678,4 +1826,5 @@ def run_server(
 
 
 if __name__ == "__main__":
-    run_server()
+    config = load_config()
+    run_server(port=config.server_port)
