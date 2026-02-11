@@ -28,19 +28,21 @@ Optional:
             <span class="priority-badge priority-{{ issue.priority }}" title="Priority: {{ issue.priority }}">{{ issue.priority[:1] | upper }}</span>
             {% endif %}
         </div>
-        {% if show_stage %}
-        <span class="issue-stage-label {% if issue.is_review %}needs-approval{% endif %}">{% if issue.substage %}{{ issue.substage | replace('_', ' ') | title }}{% else %}{{ issue.stage.value | stage_name }}{% endif %}</span>
-        {% endif %}
+        <div class="issue-header-right">
+            {% for label in issue.labels[:2] %}
+            {% if not label.startswith('stage-') %}
+            <span class="issue-label">{{ label }}</span>
+            {% endif %}
+            {% endfor %}
+            {% if show_stage %}
+            <span class="issue-stage-label {% if issue.is_review %}needs-approval{% endif %}">{% if issue.substage %}{{ issue.substage | replace('_', ' ') | title }}{% else %}{{ issue.stage.value | stage_name }}{% endif %}</span>
+            {% endif %}
+        </div>
     </div>
     <div class="issue-title">{{ issue.title }}</div>
+    {% if issue.ci_escalated %}
     <div class="issue-badges">
-        {% if issue.ci_escalated %}
         <span class="badge badge-ci-failed" title="CI failed repeatedly — needs human attention">CI FAILED</span>
-        {% endif %}
-        {% for label in issue.labels[:2] %}
-        {% if not label.startswith('stage-') %}
-        <span class="badge">{{ label }}</span>
-        {% endif %}
-        {% endfor %}
     </div>
+    {% endif %}
 </a>

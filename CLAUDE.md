@@ -149,7 +149,7 @@ When working on web UI (HTML, CSS, templates):
 - Run the web server: `uv run python -m agenttree.web.app`
 - Use Playwright to screenshot pages: "use playwright to screenshot http://localhost:8080/kanban"
 - Check for layout issues, color contrast, responsive behavior
-- The web app uses a vintage green color palette — maintain consistency. A rogue blue button on a green page is the kind of thing that makes designers cry and reviewers reject.
+- The web app uses a minimal, neutral gray color palette inspired by Linear/Cursor — maintain consistency. Keep the design clean and uncluttered with subtle accent colors.
 
 ## Workflow Flows
 

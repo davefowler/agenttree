@@ -2,6 +2,9 @@
    AgentTree Styles
    ============================================== */
 
+/* Inter font */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
 /* Reset */
 * {
     margin: 0;
@@ -10,7 +13,7 @@
 }
 
 body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     background: var(--bg-primary);
     color: var(--text-primary);
     line-height: 1.6;
@@ -23,22 +26,25 @@ body {
    ============================================== */
 
 :root, [data-theme="light"] {
-    --bg-primary: #e8f4ec;
-    --bg-secondary: #d5ebe0;
+    --bg-primary: #fafafa;
+    --bg-secondary: #f5f5f5;
     --bg-card: #ffffff;
-    --bg-card-alt: #f5faf7;
-    --border-color: #a8d5ba;
-    --border-light: #c8e4d0;
-    --text-primary: #1e3a2f;
-    --text-secondary: #3d6b5a;
-    --text-accent: #2d5a4a;
-    --text-card: #1e3a2f;
-    --text-muted: #5d8a6b;
-    --btn-bg: #c8e4d0;
-    --btn-bg-hover: #a8d5ba;
-    --btn-bg-active: #8ec4a6;
-    --badge-bg: #d5ebe0;
-    --badge-text: #2d5a4a;
+    --bg-card-alt: #fafafa;
+    --border-color: #e5e5e5;
+    --border-light: #f0f0f0;
+    --text-primary: #171717;
+    --text-secondary: #525252;
+    --text-accent: #171717;
+    --text-card: #171717;
+    --text-muted: #737373;
+    --btn-bg: #f5f5f5;
+    --btn-bg-hover: #e5e5e5;
+    --btn-bg-active: #d4d4d4;
+    --badge-bg: #f5f5f5;
+    --badge-text: #525252;
+    --accent-green: #10b981;
+    --accent-green-light: #d1fae5;
+    --accent-green-muted: #6ee7b7;
 }
 
 [data-theme="dark"] {
@@ -46,18 +52,21 @@ body {
     --bg-secondary: #141414;
     --bg-card: #1a1a1a;
     --bg-card-alt: #222222;
-    --border-color: #2d5a4a;
+    --border-color: #262626;
     --border-light: #333333;
     --text-primary: #e0e0e0;
-    --text-secondary: #6fbf8a;
-    --text-accent: #4ade80;
+    --text-secondary: #a3a3a3;
+    --text-accent: #fafafa;
     --text-card: #e0e0e0;
-    --text-muted: #888888;
-    --btn-bg: #1a3a2a;
-    --btn-bg-hover: #2d5a4a;
-    --btn-bg-active: #3d6b5a;
-    --badge-bg: #1a3a2a;
-    --badge-text: #4ade80;
+    --text-muted: #737373;
+    --btn-bg: #262626;
+    --btn-bg-hover: #404040;
+    --btn-bg-active: #525252;
+    --badge-bg: #262626;
+    --badge-text: #d4d4d4;
+    --accent-green: #10b981;
+    --accent-green-light: #064e3b;
+    --accent-green-muted: #047857;
 }
 
 /* ==============================================
@@ -222,7 +231,7 @@ header h1 {
 }
 
 /* ==============================================
-   Buttons
+   Buttons - Minimal consistent styling
    ============================================== */
 
 .btn {
@@ -230,10 +239,10 @@ header h1 {
     border: 1px solid var(--border-color);
     background: var(--btn-bg);
     color: var(--text-primary);
-    border-radius: 4px;
+    border-radius: 6px;
     font-size: 13px;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: background 0.15s;
     text-decoration: none;
     display: inline-block;
 }
@@ -243,14 +252,13 @@ header h1 {
 }
 
 .btn-primary {
-    background: var(--btn-bg-active);
-    border-color: var(--btn-bg-active);
+    background: var(--btn-bg-hover);
+    border-color: var(--border-color);
     color: var(--text-primary);
 }
 
 .btn-primary:hover {
-    background: var(--text-accent);
-    border-color: var(--text-accent);
+    background: var(--btn-bg-active);
 }
 
 .btn-chat-toggle {
@@ -264,40 +272,39 @@ header h1 {
 .btn-approve {
     padding: 4px 12px;
     font-size: 13px;
-    background: var(--btn-bg-active);
-    border: 1px solid var(--text-accent);
+    background: var(--btn-bg);
+    border: 1px solid var(--border-color);
     color: var(--text-primary);
-    border-radius: 4px;
+    border-radius: 6px;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: background 0.15s;
 }
 
 .btn-approve:hover {
-    background: var(--text-accent);
-    color: white;
+    background: var(--btn-bg-hover);
 }
 
 button[disabled] {
-    opacity: 0.6;
+    opacity: 0.5;
     cursor: not-allowed;
 }
 
 /* ==============================================
-   Badges
+   Badges - Minimal text-based styling
    ============================================== */
 
 .badge {
     padding: 2px 8px;
-    border-radius: 10px;
+    border-radius: 4px;
     font-size: 11px;
-    font-weight: 600;
+    font-weight: 500;
     background: var(--badge-bg);
     color: var(--badge-text);
 }
 
 .badge-review {
-    background: #f8e8e8;
-    color: #c44;
+    background: var(--badge-bg);
+    color: #dc2626;
 }
 
 .badge-stage {
@@ -306,24 +313,18 @@ button[disabled] {
 }
 
 .badge-label {
-    background: var(--border-color);
-    color: var(--text-primary);
+    background: var(--badge-bg);
+    color: var(--text-secondary);
 }
 
 .badge-ci-failed {
-    background: #c44;
+    background: #dc2626;
     color: white;
     font-weight: 600;
-    animation: pulse-red 2s ease-in-out infinite;
-}
-
-@keyframes pulse-red {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.6; }
 }
 
 .ci-escalated-banner {
-    background: #c44;
+    background: #dc2626;
     color: white;
     padding: 8px 12px;
     border-radius: 6px;
@@ -341,34 +342,31 @@ button[disabled] {
     color: #eab308;
 }
 
-/* Priority badges */
+/* Priority badges - text color only */
 .priority-badge {
     padding: 2px 6px;
-    border-radius: 8px;
+    border-radius: 4px;
     font-size: 10px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.5px;
+    background: transparent;
 }
 
 .priority-critical {
-    background: #dc2626;
-    color: #fff;
+    color: #dc2626;
 }
 
 .priority-high {
-    background: #f59e0b;
-    color: #1a1a1a;
+    color: #f59e0b;
 }
 
 .priority-medium {
-    background: #06b6d4;
-    color: #1a1a1a;
+    color: var(--text-muted);
 }
 
 .priority-low {
-    background: #22c55e;
-    color: #1a1a1a;
+    color: var(--accent-green);
 }
 
 /* Priority dropdown in detail view */
@@ -794,141 +792,100 @@ button[disabled] {
 }
 
 /* ==============================================
-   Agent Light (shared)
+   Agent Light (shared) - Minimal design
    ============================================== */
 
 .agent-light {
     position: absolute;
     top: 8px;
     right: 8px;
-    width: 12px;
-    height: 12px;
+    width: 10px;
+    height: 10px;
     border-radius: 50%;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: background 0.2s;
     z-index: 10;
 }
 
 .agent-light.off {
-    background: #c4c0b4;
-    border: 2px solid #a8a498;
-    box-shadow: inset 0 1px 3px rgba(0,0,0,0.2);
+    background: #d4d4d4;
 }
 
 .agent-light.off:hover {
-    background: #b8e4c8;
-    border-color: #6b9a7a;
-    box-shadow: 0 0 6px rgba(107, 154, 122, 0.5);
+    background: #a3a3a3;
 }
 
 .agent-light.on {
-    background: #4ade80;
-    border: 2px solid #22c55e;
-    box-shadow: 0 0 6px rgba(74, 222, 128, 0.5);
+    background: var(--accent-green);
 }
 
 .agent-light.starting {
     background: #fbbf24;
-    border: 2px solid #f59e0b;
-    box-shadow: 0 0 8px rgba(251, 191, 36, 0.6);
     animation: blink 0.5s ease-in-out infinite;
 }
 
 .agent-light.stopping {
     background: #f97316;
-    border: 2px solid #ea580c;
-    box-shadow: 0 0 8px rgba(249, 115, 22, 0.6);
     animation: blink 0.3s ease-in-out infinite;
 }
 
 .agent-light.processing {
-    background: #fb923c;
-    border: 2px solid #f97316;
-    box-shadow: 0 0 8px rgba(251, 146, 60, 0.6);
-    animation: pulse 1s ease-in-out infinite;
+    background: #fbbf24;
+    animation: blink 1s ease-in-out infinite;
 }
 
 .agent-light.stalled {
     background: #f97316;
-    border: 2px solid #ea580c;
-    box-shadow: 0 0 6px rgba(249, 115, 22, 0.5);
 }
 
 /* Large agent light for detail view */
 .agent-light-large {
-    width: 20px;
-    height: 20px;
+    width: 16px;
+    height: 16px;
     border-radius: 50%;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: background 0.2s;
     flex-shrink: 0;
 }
 
 .agent-light-large.off {
-    background: #c4c0b4;
-    border: 2px solid #a8a498;
-    box-shadow: inset 0 1px 3px rgba(0,0,0,0.2);
+    background: #d4d4d4;
 }
 
 .agent-light-large.off:hover {
-    background: #b8e4c8;
-    border-color: #6b9a7a;
-    box-shadow: 0 0 8px rgba(107, 154, 122, 0.5);
+    background: #a3a3a3;
 }
 
 .agent-light-large.on {
-    background: #4ade80;
-    border: 2px solid #22c55e;
-    box-shadow: 0 0 8px rgba(74, 222, 128, 0.5);
+    background: var(--accent-green);
 }
 
 .agent-light-large.stalled {
     background: #f97316;
-    border: 2px solid #ea580c;
-    box-shadow: 0 0 8px rgba(249, 115, 22, 0.5);
 }
 
 .agent-light-large.stalled:hover {
-    box-shadow: 0 0 12px rgba(249, 115, 22, 0.7);
+    background: #ea580c;
 }
 
 .agent-light-large.starting {
     background: #fbbf24;
-    border: 2px solid #f59e0b;
-    box-shadow: 0 0 8px rgba(251, 191, 36, 0.6);
     animation: blink 0.5s ease-in-out infinite;
 }
 
 .agent-light-large.stopping {
     background: #f97316;
-    border: 2px solid #ea580c;
-    box-shadow: 0 0 8px rgba(249, 115, 22, 0.6);
     animation: blink 0.3s ease-in-out infinite;
 }
 
 .agent-light-large.processing {
-    background: #fb923c;
-    border: 2px solid #f97316;
-    box-shadow: 0 0 10px rgba(251, 146, 60, 0.6);
-    animation: pulse 1s ease-in-out infinite;
+    background: #fbbf24;
+    animation: blink 1s ease-in-out infinite;
 }
 
 @keyframes blink {
     0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
-}
-
-@keyframes pulse {
-    0%, 100% {
-        opacity: 1;
-        transform: scale(1);
-        box-shadow: 0 0 8px rgba(251, 146, 60, 0.6);
-    }
-    50% {
-        opacity: 0.8;
-        transform: scale(1.1);
-        box-shadow: 0 0 16px rgba(251, 146, 60, 0.8);
-    }
+    50% { opacity: 0.7; }
 }
 
 /* ==============================================
@@ -1155,7 +1112,7 @@ button[disabled] {
 
 .resize-handle:hover,
 .resize-handle.dragging {
-    background: rgba(168, 213, 186, 0.3);
+    background: var(--border-color);
 }
 
 .agent-chat-panel.collapsed .resize-handle,
@@ -1524,26 +1481,25 @@ button[disabled] {
 .mini-dropzone {
     width: 120px;
     padding: 12px 10px;
-    border: 2px dashed var(--border-color);
-    border-radius: 3px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
     background: transparent;
     text-align: center;
     font-size: 12px;
-    font-weight: 600;
+    font-weight: 500;
     color: var(--text-muted);
     cursor: pointer;
-    transition: all 0.2s;
+    transition: background 0.15s, border-color 0.15s;
 }
 
 .mini-dropzone:hover {
-    border-color: var(--text-accent);
+    border-color: var(--text-secondary);
     color: var(--text-primary);
 }
 
 .mini-dropzone.drag-over {
-    border-color: var(--text-accent);
-    background: var(--badge-bg);
-    transform: scale(1.05);
+    border-color: var(--text-primary);
+    background: var(--bg-secondary);
 }
 
 .mini-dropzone .dropzone-label {
@@ -1574,7 +1530,7 @@ button[disabled] {
 
 .flow-sidebar {
     width: 320px;
-    background: #f5f5f5;
+    background: var(--bg-secondary);
     border-right: 1px solid var(--border-color);
     overflow-y: auto;
     flex-shrink: 0;
@@ -1627,6 +1583,18 @@ button[disabled] {
     gap: 6px;
 }
 
+.issue-header-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.issue-label {
+    color: var(--text-muted);
+    font-size: 10px;
+    font-weight: 400;
+}
+
 .issue-number {
     color: var(--text-muted);
     font-size: 12px;
@@ -1640,8 +1608,8 @@ button[disabled] {
 }
 
 .issue-stage-label.needs-approval {
-    background: #3d6b5a;
-    color: white;
+    background: #fef3c7;
+    color: #92400e;
     padding: 2px 6px;
     border-radius: 3px;
     font-weight: 600;
@@ -1651,7 +1619,7 @@ button[disabled] {
     color: var(--text-card);
     font-size: 14px;
     font-weight: 500;
-    margin-bottom: 8px;
+    margin-bottom: 4px;
 }
 
 .issue-badges {
@@ -2075,7 +2043,7 @@ button[disabled] {
    ============================================== */
 
 /* ==============================================
-   Manager Panel
+   Manager Panel - Neutral dark theme
    ============================================== */
 
 .manager-panel {
@@ -2084,7 +2052,7 @@ button[disabled] {
     right: 0;
     width: 400px;
     height: 100vh;
-    background: #1e3a2f;
+    background: #171717;
     display: flex;
     flex-direction: column;
     z-index: 200;
@@ -2099,16 +2067,16 @@ button[disabled] {
 }
 
 .manager-panel-header {
-    background: #2d4a3e;
+    background: #262626;
     padding: 14px 16px;
-    border-bottom: 1px solid #4a7c6f;
+    border-bottom: 1px solid #404040;
     display: flex;
     align-items: center;
     justify-content: space-between;
 }
 
 .manager-panel-header h4 {
-    color: #a8d5ba;
+    color: #e5e5e5;
     font-size: 15px;
     font-weight: 600;
     margin: 0;
@@ -2117,7 +2085,7 @@ button[disabled] {
 .manager-panel-close {
     background: none;
     border: none;
-    color: #8eb89c;
+    color: #a3a3a3;
     cursor: pointer;
     font-size: 22px;
     padding: 2px 8px;
@@ -2127,8 +2095,8 @@ button[disabled] {
 }
 
 .manager-panel-close:hover {
-    color: #a8d5ba;
-    background: rgba(168, 213, 186, 0.1);
+    color: #e5e5e5;
+    background: rgba(255, 255, 255, 0.1);
 }
 
 .manager-panel-content {
@@ -2140,10 +2108,10 @@ button[disabled] {
 
 .manager-status {
     padding: 10px 16px;
-    background: #2d4a3e;
-    border-bottom: 1px solid #4a7c6f;
+    background: #262626;
+    border-bottom: 1px solid #404040;
     font-size: 12px;
-    color: #a8d5ba;
+    color: #a3a3a3;
     display: flex;
     align-items: center;
     gap: 8px;
@@ -2153,21 +2121,20 @@ button[disabled] {
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    transition: all 0.2s;
+    transition: background 0.2s;
 }
 
 .manager-status .status-indicator.active {
-    background: #4ade80;
-    box-shadow: 0 0 6px rgba(74, 222, 128, 0.5);
+    background: var(--accent-green);
 }
 
 .manager-status .status-indicator.inactive {
-    background: #6b7280;
+    background: #525252;
 }
 
 .manager-panel .tmux-output {
     flex: 1;
-    background: #0d1f18;
+    background: #0a0a0a;
     padding: 12px;
     overflow-y: auto;
     font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
@@ -2175,14 +2142,14 @@ button[disabled] {
     line-height: 1.5;
     white-space: pre-wrap;
     word-break: break-word;
-    color: #e8e4d9;
+    color: #e5e5e5;
     min-height: 0;
 }
 
 .manager-panel .tmux-input-container {
     padding: 12px;
-    background: #2d4a3e;
-    border-top: 1px solid #4a7c6f;
+    background: #262626;
+    border-top: 1px solid #404040;
 }
 
 .manager-panel .send-form {
@@ -2193,36 +2160,36 @@ button[disabled] {
 .manager-panel .tmux-input {
     flex: 1;
     padding: 10px 14px;
-    background: #1e3a2f;
-    border: 1px solid #4a7c6f;
-    border-radius: 4px;
-    color: #e8e4d9;
+    background: #171717;
+    border: 1px solid #404040;
+    border-radius: 6px;
+    color: #e5e5e5;
     font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
     font-size: 13px;
 }
 
 .manager-panel .tmux-input:focus {
     outline: none;
-    border-color: #a8d5ba;
+    border-color: #737373;
 }
 
 .manager-panel .send-button {
     padding: 10px 18px;
-    background: #4a7c6f;
-    border: 1px solid #5a9a88;
-    border-radius: 4px;
-    color: #e8e4d9;
+    background: #404040;
+    border: 1px solid #525252;
+    border-radius: 6px;
+    color: #e5e5e5;
     font-size: 13px;
     cursor: pointer;
-    transition: background-color 0.2s;
+    transition: background-color 0.15s;
 }
 
 .manager-panel .send-button:hover {
-    background: #5a9a88;
+    background: #525252;
 }
 
 .manager-panel .send-button:active {
-    background: #3d6a5f;
+    background: #404040;
 }
 
 .manager-panel .send-button .btn-loading {
@@ -2725,7 +2692,7 @@ button[disabled] {
 }
 
 .mobile-char-counter.valid {
-    color: #22c55e;
+    color: var(--accent-green);
 }
 
 .mobile-char-counter.invalid {
