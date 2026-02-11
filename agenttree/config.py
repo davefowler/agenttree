@@ -481,6 +481,21 @@ class Config(BaseModel):
         """
         return [stage.name for stage in self.stages if stage.human_review]
 
+    def is_human_review(self, stage_name: str) -> bool:
+        """Check if a stage requires human review.
+
+        This is a convenience method for checking a single stage.
+        Looks up the human_review property from the stage config.
+
+        Args:
+            stage_name: Stage name to check
+
+        Returns:
+            True if the stage has human_review: true in config
+        """
+        stage_config = self.get_stage(stage_name)
+        return stage_config.human_review if stage_config else False
+
     def get_manager_stages(self) -> list[str]:
         """Get list of stages executed by the manager (host), not developer.
 
@@ -583,6 +598,18 @@ class Config(BaseModel):
             List of stage names where role != "developer"
         """
         return [stage.name for stage in self.stages if stage.role != "developer"]
+
+    def role_for(self, stage_name: str) -> str:
+        """Get the role that handles a given stage.
+
+        Args:
+            stage_name: Name of the stage
+
+        Returns:
+            Role name (e.g., 'developer', 'manager') that executes this stage
+        """
+        stage_config = self.get_stage(stage_name)
+        return stage_config.role if stage_config else "developer"
 
     def role_is_containerized(self, role_name: str) -> bool:
         """Check if a role runs in a container.
@@ -739,6 +766,33 @@ class Config(BaseModel):
         """
         return {stage.name for stage in self.stages if stage.is_parking_lot}
 
+    def stage_group_name(self, stage_or_path: str) -> str:
+        """Get the top-level stage name for grouping (e.g. Kanban columns).
+
+        For "implement.code" returns "implement"; for "plan_review" returns "plan_review".
+        """
+        if "." in stage_or_path:
+            return stage_or_path.split(".", 1)[0]
+        return stage_or_path
+
+    def stage_display_name(self, stage_or_path: str) -> str:
+        """Get human-readable display name for a stage."""
+        stage_name = self.stage_group_name(stage_or_path)
+        # Convert plan_review -> Plan Review, implement -> Implement
+        return stage_name.replace("_", " ").title()
+
+    def resolve_stage(self, dot_path: str) -> tuple[Optional["StageConfig"], Optional[SubstageConfig]]:
+        """Resolve a dot-path (e.g. implement.code) to (stage_config, substage_config)."""
+        if "." in dot_path:
+            stage_name, substage_name = dot_path.split(".", 1)
+        else:
+            stage_name, substage_name = dot_path, None
+        stage_config = self.get_stage(stage_name)
+        sub_config = None
+        if stage_config and substage_name:
+            sub_config = stage_config.get_substage(substage_name)
+        return stage_config, sub_config
+
     def get_flow(self, flow_name: str) -> Optional[FlowConfig]:
         """Get configuration for a flow.
 
@@ -778,7 +832,7 @@ class Config(BaseModel):
         current_substage: Optional[str] = None,
         flow: str = "default",
         issue_context: dict | None = None,
-    ) -> tuple[str, Optional[str], bool]:
+    ) -> tuple[str, Optional[str]]:
         """Calculate the next stage/substage.
 
         Args:
@@ -788,11 +842,15 @@ class Config(BaseModel):
             issue_context: Optional dict of issue context for condition evaluation
 
         Returns:
-            Tuple of (next_stage, next_substage, is_human_review)
+            Tuple of (next_stage, next_substage)
+
+        Note:
+            To check if the next stage requires human review, use:
+            config.get_stage(next_stage).human_review
         """
         stage_config = self.get_stage(current_stage)
         if stage_config is None:
-            return current_stage, current_substage, False
+            return current_stage, current_substage
 
         substages = stage_config.substage_order()
 
@@ -806,7 +864,7 @@ class Config(BaseModel):
                     next_sub = stage_config.get_substage(next_sub_name)
                     if next_sub and next_sub.redirect_only:
                         continue  # Skip redirect_only substages in normal progression
-                    return current_stage, next_sub_name, False
+                    return current_stage, next_sub_name
                 # All remaining substages are redirect_only, move to next stage
             except ValueError:
                 pass  # substage not found, move to next stage
@@ -831,12 +889,12 @@ class Config(BaseModel):
                             continue
                     next_substages = next_stage.substage_order()
                     next_substage = next_substages[0] if next_substages else None
-                    return next_stage_name, next_substage, next_stage.human_review
+                    return next_stage_name, next_substage
         except ValueError:
             pass
 
         # Already at end
-        return current_stage, current_substage, False
+        return current_stage, current_substage
 
     def format_stage(self, stage: str, substage: Optional[str] = None) -> str:
         """Format stage/substage as a display string.

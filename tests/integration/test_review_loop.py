@@ -329,7 +329,7 @@ class TestRedirectOnlyStage:
 
             # From independent_code_review, next should be implementation_review
             # (skipping address_independent_review which is redirect_only)
-            next_stage, next_substage, is_review = config.get_next_stage("independent_code_review", None)
+            next_stage, next_substage = config.get_next_stage("independent_code_review", None)
 
             assert next_stage == "implementation_review"
             assert next_substage is None

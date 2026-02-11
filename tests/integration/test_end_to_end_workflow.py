@@ -89,7 +89,7 @@ class TestEndToEndWorkflow:
                         pytest.fail(f"Exit hooks failed at {current_stage}.{current_substage}: {e}")
 
                     # Get next stage
-                    next_stage, next_substage, is_human_review = get_next_stage(current_stage, current_substage)
+                    next_stage, next_substage = get_next_stage(current_stage, current_substage)
 
                     # Update to next stage
                     update_issue_stage(issue.id, next_stage, next_substage)
@@ -169,7 +169,7 @@ class TestEndToEndWorkflow:
                         except ValidationError as e:
                             pytest.fail(f"Exit hooks failed at {current_stage}.{current_substage}: {e}")
 
-                    next_stage, next_substage, _ = get_next_stage(current_stage, current_substage)
+                    next_stage, next_substage = get_next_stage(current_stage, current_substage)
                     update_issue_stage(issue.id, next_stage, next_substage)
 
                     issue = get_issue(issue.id)
@@ -242,7 +242,7 @@ class TestEndToEndWorkflow:
                             # Skip PR approval check (no actual PR in tests)
                             execute_exit_hooks(issue, current_stage, current_substage, skip_pr_approval=True)
 
-                    next_stage, next_substage, _ = get_next_stage(current_stage, current_substage)
+                    next_stage, next_substage = get_next_stage(current_stage, current_substage)
 
                     if next_stage is None:
                         pytest.fail(f"No next stage from {current_stage}.{current_substage}")
@@ -296,36 +296,36 @@ Just a brief problem description without required sections.
             config = load_config()
 
             # Test define substages
-            next_stage, next_substage, _ = get_next_stage("define", "refine")
+            next_stage, next_substage = get_next_stage("define", "refine")
             assert next_stage == "research"
             assert next_substage == "explore"
 
             # Test research substages
-            next_stage, next_substage, _ = get_next_stage("research", "explore")
+            next_stage, next_substage = get_next_stage("research", "explore")
             assert next_stage == "research"
             assert next_substage == "document"
 
-            next_stage, next_substage, _ = get_next_stage("research", "document")
+            next_stage, next_substage = get_next_stage("research", "document")
             assert next_stage == "plan"
 
             # Test implement substages (code → code_review → address_review → wrapup → feedback)
-            next_stage, next_substage, _ = get_next_stage("implement", "code")
+            next_stage, next_substage = get_next_stage("implement", "code")
             assert next_stage == "implement"
             assert next_substage == "code_review"
 
-            next_stage, next_substage, _ = get_next_stage("implement", "code_review")
+            next_stage, next_substage = get_next_stage("implement", "code_review")
             assert next_stage == "implement"
             assert next_substage == "address_review"
 
-            next_stage, next_substage, _ = get_next_stage("implement", "address_review")
+            next_stage, next_substage = get_next_stage("implement", "address_review")
             assert next_stage == "implement"
             assert next_substage == "wrapup"
 
-            next_stage, next_substage, _ = get_next_stage("implement", "wrapup")
+            next_stage, next_substage = get_next_stage("implement", "wrapup")
             assert next_stage == "implement"
             assert next_substage == "feedback"
 
-            next_stage, next_substage, _ = get_next_stage("implement", "feedback")
+            next_stage, next_substage = get_next_stage("implement", "feedback")
             assert next_stage == "implementation_review"
 
     def test_history_tracks_transitions(self, workflow_repo: Path, mock_sync: MagicMock):

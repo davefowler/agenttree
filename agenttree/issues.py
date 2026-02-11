@@ -658,7 +658,7 @@ def get_next_stage(
     current_substage: Optional[str] = None,
     flow: str = "default",
     issue_context: dict | None = None,
-) -> tuple[str, Optional[str], bool]:
+) -> tuple[str, Optional[str]]:
     """Calculate the next stage/substage.
 
     Delegates to Config.get_next_stage() for config-driven workflow.
@@ -670,8 +670,11 @@ def get_next_stage(
         issue_context: Optional dict of issue context for condition evaluation
 
     Returns:
-        Tuple of (next_stage, next_substage, is_human_review)
-        is_human_review is True if the next stage requires human approval
+        Tuple of (next_stage, next_substage)
+
+    Note:
+        To check if the next stage requires human review, use:
+        config.get_stage(next_stage).human_review
     """
     from agenttree.config import load_config
 
@@ -940,6 +943,10 @@ def load_skill(
     """
     from jinja2 import Template
     from agenttree.config import load_config
+
+    # Parse dot notation: "explore.define" -> stage="explore", substage="define"
+    if "." in stage and substage is None:
+        stage, substage = stage.split(".", 1)[0], stage.split(".", 1)[1]
 
     # Sync before reading
     agents_path = get_agenttree_path()
@@ -1377,6 +1384,10 @@ def get_issue_context(issue: Issue, include_docs: bool = True) -> dict:
         context["stage_substage"] = f"{issue.stage}.{issue.substage}"
     else:
         context["stage_substage"] = issue.stage
+
+    # Parsed stage components (stage_group = top-level stage, substage = substage or "")
+    context["stage_group"] = issue.stage
+    context["substage"] = issue.substage or ""
 
     # Load document contents if requested
     if include_docs and issue_dir:

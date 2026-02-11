@@ -257,7 +257,7 @@ class TestActions:
 
             mock_list.return_value = sample_issues
             mock_get_issue.return_value = sample_issues[0]  # Return issue 001
-            mock_next.return_value = ("define", "refine", False)
+            mock_next.return_value = ("define", "refine")
             mock_update.return_value = sample_issues[0]  # Return updated issue
 
             app = TUIApp()

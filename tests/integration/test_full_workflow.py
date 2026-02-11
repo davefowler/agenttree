@@ -64,11 +64,10 @@ class TestStageTransitions:
                     assert errors == [], f"Hooks failed: {errors}"
 
                     # Get next stage
-                    next_stage, next_substage, is_human_review = get_next_stage("define", "refine")
+                    next_stage, next_substage = get_next_stage("define", "refine")
 
                     assert next_stage == "research"
                     assert next_substage == "explore"
-                    assert is_human_review is False
 
     def test_research_to_plan(self, workflow_repo: Path, mock_sync: MagicMock):
         """Test transition from research.document to plan.draft."""
@@ -101,7 +100,7 @@ class TestStageTransitions:
 
                     assert errors == [], f"Hooks failed: {errors}"
 
-                    next_stage, next_substage, _ = get_next_stage("research", "document")
+                    next_stage, next_substage = get_next_stage("research", "document")
                     assert next_stage == "plan"
                     assert next_substage == "draft"
 
@@ -137,7 +136,7 @@ class TestStageTransitions:
 
                     assert errors == [], f"Hooks failed: {errors}"
 
-                    next_stage, next_substage, _ = get_next_stage("plan", "refine")
+                    next_stage, next_substage = get_next_stage("plan", "refine")
                     assert next_stage == "plan_assess"
                     assert next_substage is None
 
@@ -149,11 +148,15 @@ class TestStageTransitions:
 
         with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
-                next_stage, next_substage, is_human_review = get_next_stage("plan_revise", None)
+                next_stage, next_substage = get_next_stage("plan_revise", None)
 
                 assert next_stage == "plan_review"
                 assert next_substage is None
-                assert is_human_review is True  # Human review gate!
+
+                # Verify plan_review is a human review stage via config lookup
+                from agenttree.config import load_config
+                config = load_config()
+                assert config.get_stage("plan_review").human_review is True
 
 
 class TestHumanReviewGates:
@@ -171,11 +174,9 @@ class TestHumanReviewGates:
                 assert "plan_review" in HUMAN_REVIEW_STAGES
 
                 # Get next stage from plan_review
-                next_stage, next_substage, is_human_review = get_next_stage("plan_review", None)
+                next_stage, next_substage = get_next_stage("plan_review", None)
 
-                # The function returns the next stage, but is_human_review indicates current is blocked
-                # Actually, is_human_review tells us the NEXT stage requires review
-                # Let's check if plan_review requires human review
+                # Check if plan_review requires human review via config lookup
                 from agenttree.config import load_config
                 config = load_config()
                 stage = config.get_stage("plan_review")
@@ -203,7 +204,7 @@ class TestImplementSubstages:
         from agenttree.config import load_config
 
         with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
-            next_stage, next_substage, _ = get_next_stage("implement", "code")
+            next_stage, next_substage = get_next_stage("implement", "code")
 
             assert next_stage == "implement"
             assert next_substage == "code_review"

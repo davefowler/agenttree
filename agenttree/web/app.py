@@ -30,7 +30,7 @@ from agenttree.worktree import WorktreeManager
 _config: Config = load_config()
 from agenttree import issues as issue_crud
 from agenttree.agents_repo import sync_agents_repo
-from agenttree.web.models import KanbanBoard, Issue as WebIssue, IssueMoveRequest, PriorityUpdateRequest
+from agenttree.web.models import KanbanBoard, Issue as WebIssue, IssueMoveRequest, PriorityUpdateRequest, StageEnum
 
 # Module-level logger for web app
 logger = logging.getLogger("agenttree.web")
@@ -307,13 +307,19 @@ def convert_issue_to_web(issue: issue_crud.Issue, load_dependents: bool = False)
         dependent_issues = issue_crud.get_dependent_issues(issue.id)
         dependents = [int(d.id) for d in dependent_issues]
 
+    # Map issue stage to StageEnum; fall back to BACKLOG for unknown stages
+    try:
+        stage_enum = StageEnum(issue.stage)
+    except ValueError:
+        stage_enum = StageEnum.BACKLOG
+
     return WebIssue(
         number=int(issue.id),
         title=issue.title,
         body="",  # Loaded separately from problem.md
         labels=issue.labels,
         assignees=[],
-        stage=issue.stage,  # Dot path (e.g., "explore.define", "backlog")
+        stage=stage_enum,
         priority=issue.priority.value,
         tmux_active=tmux_active,
         has_worktree=bool(issue.worktree_dir),
@@ -476,17 +482,21 @@ STAGE_FILE_ORDER = [
     "implementation.md",
 ]
 
-# Mapping of filenames to their associated workflow dot path.
+# Mapping of filenames to their associated workflow stage.
 # Used to determine if a file's stage has been "passed" relative to the current stage.
+# Must match config stage names (define, research, plan, plan_assess, implement, etc.)
 FILE_TO_STAGE: dict[str, str] = {
-    "problem.md": "explore.define",
-    "research.md": "explore.research",
-    "spec.md": "explore.plan",
-    "spec_review.md": "explore.plan_review",
-    "review.md": "implement.code",
-    "independent_review.md": "implement.code_review",
-    "feedback.md": "implement.code",
+    "problem.md": "define",
+    "research.md": "research",
+    "spec.md": "plan",
+    "spec_review.md": "plan_assess",
+    "review.md": "implement",
+    "independent_review.md": "implement",
+    "feedback.md": "implement",
 }
+
+# Alias for tests that import _file_to_stage
+_file_to_stage = FILE_TO_STAGE
 
 
 def get_issue_files(
@@ -543,12 +553,14 @@ def get_issue_files(
         if is_passed:
             short_name = display_name[:3] + "..."
 
+        stage_color = f"stage-{file_stage}" if file_stage else ""
         file_info: dict[str, str] = {
             "name": f.name,
             "display_name": display_name,
             "size": str(f.stat().st_size),
             "modified": datetime.fromtimestamp(f.stat().st_mtime).isoformat(),
             "stage": file_stage or "",
+            "stage_color": stage_color,
             "is_passed": str(is_passed).lower(),
             "short_name": short_name,
         }
@@ -569,6 +581,7 @@ def get_issue_files(
                 "size": str(issue_yaml.stat().st_size),
                 "modified": datetime.fromtimestamp(issue_yaml.stat().st_mtime).isoformat(),
                 "stage": "",
+                "stage_color": "",
                 "is_passed": "false",
                 "short_name": "Issue YAML",
             }
@@ -1132,11 +1145,11 @@ async def approve_issue(
     config_path = Path(os.environ["AGENTTREE_REPO_PATH"]) if os.environ.get("AGENTTREE_REPO_PATH") else None
     config = load_config(config_path)
 
-    # Check if at human review stage
+    # Check if at human review stage (look up from config, not a flag)
     if not config.is_human_review(issue.stage):
         raise HTTPException(status_code=400, detail="Not at review stage")
 
-    next_stage, _ = config.get_next_stage(issue.stage, issue.flow)
+    next_stage, next_substage = config.get_next_stage(issue.stage, issue.substage, issue.flow)
 
     try:
         # Set processing state
@@ -1149,6 +1162,7 @@ async def approve_issue(
                 transition_issue,
                 issue_id_normalized,
                 next_stage,
+                next_substage,
                 skip_pr_approval=config.allow_self_approval,
                 trigger="web",
             )
@@ -1157,7 +1171,8 @@ async def approve_issue(
             updated = await asyncio.to_thread(
                 transition_issue,
                 issue_id_normalized,
-                redirect.target,
+                redirect.target_stage,
+                redirect.target_substage,
                 skip_pr_approval=config.allow_self_approval,
                 trigger="web",
             )

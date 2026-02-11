@@ -320,7 +320,7 @@ class TestApprovalBoundary:
                         # The key test is that host CAN run this
 
                         # Get next stage
-                        next_stage, next_substage, _ = get_next_stage("plan_review", None)
+                        next_stage, next_substage = get_next_stage("plan_review", None)
                         assert next_stage == "implement"
 
     def test_agent_reorients_after_approval_not_skip(self, workflow_repo: Path, host_environment, mock_sync: MagicMock):
@@ -383,7 +383,7 @@ class TestApprovalBoundary:
                 assert is_restart(issue.id, "implement", "setup") is False
 
                 # Verify next stage would be implementation_review (not skipping implement)
-                next_stage, next_substage, _ = get_next_stage("implement", "setup")
+                next_stage, next_substage = get_next_stage("implement", "setup")
                 # Should advance within implement or to next stage, NOT skip implement
 
 

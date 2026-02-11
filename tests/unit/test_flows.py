@@ -91,7 +91,7 @@ class TestGetNextStageWithFlows:
         default_flow = FlowConfig(name="default", stages=["define", "research", "plan", "accepted"])
         config = Config(stages=stages, flows={"default": default_flow})
 
-        next_stage, _, _ = config.get_next_stage("define", flow="default")
+        next_stage, _ = config.get_next_stage("define", flow="default")
         assert next_stage == "research"
 
     def test_get_next_stage_quick_flow(self):
@@ -108,11 +108,11 @@ class TestGetNextStageWithFlows:
         config = Config(stages=stages, flows={"default": default_flow, "quick": quick_flow})
 
         # Default flow: define -> research
-        next_stage, _, _ = config.get_next_stage("define", flow="default")
+        next_stage, _ = config.get_next_stage("define", flow="default")
         assert next_stage == "research"
 
         # Quick flow: define -> implement (skips research and plan)
-        next_stage, _, _ = config.get_next_stage("define", flow="quick")
+        next_stage, _ = config.get_next_stage("define", flow="quick")
         assert next_stage == "implement"
 
     def test_get_next_stage_terminal_stage(self):
@@ -124,7 +124,7 @@ class TestGetNextStageWithFlows:
         flow = FlowConfig(name="default", stages=["define", "accepted"])
         config = Config(stages=stages, flows={"default": flow})
 
-        next_stage, _, _ = config.get_next_stage("accepted", flow="default")
+        next_stage, _ = config.get_next_stage("accepted", flow="default")
         assert next_stage == "accepted"
 
     def test_get_next_stage_respects_substages(self):
@@ -142,12 +142,12 @@ class TestGetNextStageWithFlows:
         config = Config(stages=stages, flows={"default": flow})
 
         # Should advance within substages first
-        next_stage, next_substage, _ = config.get_next_stage("define", "draft", flow="default")
+        next_stage, next_substage = config.get_next_stage("define", "draft", flow="default")
         assert next_stage == "define"
         assert next_substage == "refine"
 
         # Then advance to next stage
-        next_stage, next_substage, _ = config.get_next_stage("define", "refine", flow="default")
+        next_stage, next_substage = config.get_next_stage("define", "refine", flow="default")
         assert next_stage == "implement"
 
 

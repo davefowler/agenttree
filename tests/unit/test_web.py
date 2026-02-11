@@ -473,7 +473,7 @@ class TestApproveIssueEndpoint:
         mock_transition.return_value = updated
 
         # Mock config.get_next_stage
-        mock_config.return_value.get_next_stage.return_value = ("accepted", None, True)
+        mock_config.return_value.get_next_stage.return_value = ("accepted", None)
 
         response = client.post("/api/issues/002/approve")
 
@@ -501,7 +501,7 @@ class TestApproveIssueEndpoint:
         updated.stage = "implement"
         mock_transition.return_value = updated
 
-        mock_config.return_value.get_next_stage.return_value = ("implement", None, True)
+        mock_config.return_value.get_next_stage.return_value = ("implement", None)
 
         response = client.post("/api/issues/001/approve")
 
@@ -538,7 +538,7 @@ class TestApproveIssueEndpoint:
         from agenttree.hooks import ValidationError
 
         mock_crud.get_issue.return_value = mock_review_issue
-        mock_config.return_value.get_next_stage.return_value = ("accepted", None, True)
+        mock_config.return_value.get_next_stage.return_value = ("accepted", None)
         mock_transition.side_effect = ValidationError("PR not ready")
 
         response = client.post("/api/issues/002/approve")
@@ -554,7 +554,7 @@ class TestApproveIssueEndpoint:
     ):
         """Test approve returns 500 when transition_issue raises RuntimeError."""
         mock_crud.get_issue.return_value = mock_review_issue
-        mock_config.return_value.get_next_stage.return_value = ("accepted", None, True)
+        mock_config.return_value.get_next_stage.return_value = ("accepted", None)
         mock_transition.side_effect = RuntimeError("Failed to update issue #2 to accepted")
 
         response = client.post("/api/issues/002/approve")
@@ -575,7 +575,7 @@ class TestApproveIssueEndpoint:
         updated = MagicMock()
         updated.stage = "accepted"
         mock_transition.return_value = updated
-        mock_config.return_value.get_next_stage.return_value = ("accepted", None, True)
+        mock_config.return_value.get_next_stage.return_value = ("accepted", None)
         mock_config.return_value.allow_self_approval = False
 
         response = client.post("/api/issues/002/approve")
@@ -1023,7 +1023,7 @@ class TestFileToStageMapping:
         (issue_dir / "review.md").write_text("# Review")
 
         mock_crud.get_issue_dir.return_value = issue_dir
-        mock_config.get_stage_names.return_value = ["backlog", "define", "research", "plan", "plan_assess", "plan_revise", "plan_review", "implement"]
+        mock_config.get_flow_stage_names.return_value = ["backlog", "define", "research", "plan", "plan_assess", "plan_revise", "plan_review", "implement"]
         mock_config.show_issue_yaml = False
 
         # Current stage is implement
