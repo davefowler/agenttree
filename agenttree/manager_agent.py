@@ -67,8 +67,8 @@ def get_stalled_agents(
             continue
 
         try:
-            with open(issue_yaml) as f:
-                issue_data = yaml.safe_load(f)
+            from agenttree.issues import safe_yaml_load
+            issue_data = safe_yaml_load(issue_yaml)
 
             # Skip if no active agent running for this issue
             from agenttree.state import get_active_agent
@@ -95,8 +95,7 @@ def get_stalled_agents(
             if not session_file.exists():
                 continue
 
-            with open(session_file) as f:
-                session_data = yaml.safe_load(f)
+            session_data = safe_yaml_load(session_file)
 
             last_advanced_at = session_data.get("last_advanced_at")
             if not last_advanced_at:
