@@ -1,5 +1,12 @@
 """Main TUI application for AgentTree issue management."""
 
+# Maps human_review stages to the stage to reject back to
+# (when user rejects at plan_review -> go back to plan; at implementation_review -> implement)
+REJECTION_MAPPINGS: dict[str, str] = {
+    "plan_review": "plan",
+    "implementation_review": "implement",
+}
+
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical

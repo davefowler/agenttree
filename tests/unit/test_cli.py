@@ -215,18 +215,25 @@ class TestApproveCommand:
         mock_issue.id = "42"
         mock_issue.title = "Test Issue"
         mock_issue.stage = "implement"  # Not a review stage
-        mock_issue.is_review = False
+        mock_issue.flow = "default"
+        mock_issue.substage = None
 
         # Mock stage config to indicate not a review stage
         mock_config.get_stage.return_value = MagicMock(human_review=False, role="developer")
         mock_config.get_human_review_stages.return_value = ["plan_review", "implementation_review"]
+        mock_config.role_for.return_value = "developer"
+        mock_config.is_human_review.return_value = False
 
+        # Patch workflow's load_config and get_issue_func. Also patch transition_issue
+        # since it would call real get_issue/update_issue_stage - we want to test the
+        # "not a human review stage" early-exit path only.
         with patch("agenttree.cli.workflow.load_config", return_value=mock_config):
             with patch("agenttree.cli.workflow.get_issue_func", return_value=mock_issue):
                 with patch("agenttree.cli.workflow.is_running_in_container", return_value=False):
                     result = cli_runner.invoke(main, ["approve", "42"])
 
         assert result.exit_code == 1
+        # Output contains "not a human review stage" (e.g. "Issue is at 'implement', not a human review stage")
         assert "not" in result.output.lower() and "review" in result.output.lower()
 
     def test_approve_blocks_in_container(self, cli_runner, mock_config):

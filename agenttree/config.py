@@ -599,6 +599,18 @@ class Config(BaseModel):
         """
         return [stage.name for stage in self.stages if stage.role != "developer"]
 
+    def role_for(self, stage_name: str) -> str:
+        """Get the role that handles a given stage.
+
+        Args:
+            stage_name: Name of the stage
+
+        Returns:
+            Role name (e.g., 'developer', 'manager') that executes this stage
+        """
+        stage_config = self.get_stage(stage_name)
+        return stage_config.role if stage_config else "developer"
+
     def role_is_containerized(self, role_name: str) -> bool:
         """Check if a role runs in a container.
 
