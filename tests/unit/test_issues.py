@@ -19,23 +19,6 @@ from agenttree.issues import (
     update_issue_priority,
     load_skill,
     set_processing,
-    STAGE_ORDER,
-    STAGE_SUBSTAGES,
-    HUMAN_REVIEW_STAGES,
-    # Stage constants (strings, not enum)
-    BACKLOG,
-    DEFINE,
-    RESEARCH,
-    PLAN,
-    PLAN_ASSESS,
-    PLAN_REVISE,
-    PLAN_REVIEW,
-    IMPLEMENT,
-    INDEPENDENT_CODE_REVIEW,
-    IMPLEMENTATION_REVIEW,
-    ACCEPTED,
-    KNOWLEDGE_BASE,
-    NOT_DOING,
 )
 
 
@@ -71,8 +54,7 @@ class TestIssueModel:
             updated="2026-01-11T12:00:00Z",
         )
         assert issue.id == "001"
-        assert issue.stage == DEFINE  # New issues start at define stage
-        assert issue.substage == "refine"  # Human provides draft, agent refines
+        assert issue.stage == "explore.define"  # New issues start at explore.define
         assert issue.priority == Priority.MEDIUM
 
     def test_issue_with_all_fields(self):
@@ -82,14 +64,12 @@ class TestIssueModel:
             title="Test",
             created="2026-01-11T12:00:00Z",
             updated="2026-01-11T12:00:00Z",
-            stage=IMPLEMENT,
-            substage="code",
+            stage="implement.code",
             branch="agenttree-3/001-test",
             labels=["bug", "critical"],
             priority=Priority.CRITICAL,
         )
-        assert issue.stage == IMPLEMENT
-        assert issue.substage == "code"
+        assert issue.stage == "implement.code"
         assert "bug" in issue.labels
 
     def test_processing_field_defaults_to_none(self):
@@ -138,8 +118,7 @@ class TestProcessingHelpers:
             "title": "Test Issue",
             "created": "2026-01-11T12:00:00Z",
             "updated": "2026-01-11T12:00:00Z",
-            "stage": "define",
-            "substage": "refine",
+            "stage": "explore.define",
             "labels": [],
             "priority": "medium",
             "dependencies": [],
@@ -222,8 +201,7 @@ class TestIssueCRUD:
         assert issue.id == "001"
         assert issue.title == "Test Issue"
         assert issue.priority == Priority.HIGH
-        assert issue.stage == DEFINE  # New issues start at define stage
-        assert issue.substage == "refine"  # Human provides draft, agent refines
+        assert issue.stage == "explore.define"  # New issues start at explore.define
 
         # Check files created
         issue_dir = temp_agenttrees / "issues" / "001-test-issue"
@@ -277,173 +255,133 @@ class TestIssueCRUD:
 
     def test_create_issue_with_custom_stage(self, temp_agenttrees):
         """Test creating an issue with a custom starting stage."""
-        issue = create_issue("Test Issue", stage=DEFINE)
+        issue = create_issue("Test Issue", stage="explore.define")
 
         assert issue.id == "001"
         assert issue.title == "Test Issue"
-        assert issue.stage == DEFINE
+        assert issue.stage == "explore.define"
 
         # Check history entry
         assert len(issue.history) == 1
-        assert issue.history[0].stage == "define"
+        assert issue.history[0].stage == "explore.define"
 
     def test_create_issue_with_research_stage(self, temp_agenttrees):
         """Test creating an issue starting at research stage."""
-        issue = create_issue("Research Task", stage=RESEARCH, priority=Priority.HIGH)
+        issue = create_issue("Research Task", stage="explore.research", priority=Priority.HIGH)
 
-        assert issue.stage == RESEARCH
+        assert issue.stage == "explore.research"
         assert issue.priority == Priority.HIGH
-        assert issue.history[0].stage == "research"
+        assert issue.history[0].stage == "explore.research"
 
     def test_create_issue_with_implement_stage(self, temp_agenttrees):
         """Test creating an issue starting at implement stage."""
-        issue = create_issue("Quick Fix", stage=IMPLEMENT)
+        issue = create_issue("Quick Fix", stage="implement.code")
 
-        assert issue.stage == IMPLEMENT
-        assert issue.history[0].stage == "implement"
+        assert issue.stage == "implement.code"
+        assert issue.history[0].stage == "implement.code"
 
     def test_create_issue_defaults_to_define(self, temp_agenttrees):
-        """Test that not providing a stage defaults to define.refine."""
+        """Test that not providing a stage defaults to explore.define."""
         issue = create_issue("Default Stage Issue")
 
-        assert issue.stage == DEFINE
-        assert issue.substage == "refine"
-        assert issue.history[0].stage == "define"
-        assert issue.history[0].substage == "refine"
+        assert issue.stage == "explore.define"
+        assert issue.history[0].stage == "explore.define"
 
 
 class TestStageTransitions:
     """Tests for stage transition functions.
 
-    Stage flow (no problem_review gate):
-    backlog -> define -> research -> plan -> plan_assess ->
-    plan_revise -> plan_review -> implement -> implementation_review -> accepted
+    Stage flow (dot paths):
+    backlog -> explore.define -> explore.research -> plan.draft -> plan.assess ->
+    plan.revise -> plan.review -> implement.code -> implement.independent_review ->
+    implement.review -> knowledge_base -> accepted
     """
 
     def test_get_next_stage_from_backlog(self):
-        """Backlog -> define.refine"""
-        next_stage, next_substage, is_review = get_next_stage(BACKLOG, None)
-        assert next_stage == DEFINE
-        assert next_substage == "refine"
+        """backlog -> explore.define"""
+        next_stage, is_review = get_next_stage("backlog")
+        assert next_stage == "explore.define"
         assert is_review is False
 
     def test_get_next_stage_define_to_research(self):
-        """define.refine -> research.explore (no problem_review gate)"""
-        next_stage, next_substage, is_review = get_next_stage(DEFINE, "refine")
-        assert next_stage == RESEARCH
-        assert next_substage == "explore"
-        assert is_review is False
-
-    def test_get_next_stage_within_research_substages(self):
-        """research.explore -> research.document"""
-        next_stage, next_substage, is_review = get_next_stage(RESEARCH, "explore")
-        assert next_stage == RESEARCH
-        assert next_substage == "document"
+        """explore.define -> explore.research"""
+        next_stage, is_review = get_next_stage("explore.define")
+        assert next_stage == "explore.research"
         assert is_review is False
 
     def test_get_next_stage_research_to_plan(self):
-        """research.document -> plan.draft (not directly to plan_review)"""
-        next_stage, next_substage, is_review = get_next_stage(RESEARCH, "document")
-        assert next_stage == PLAN
-        assert next_substage == "draft"
+        """explore.research -> plan.draft"""
+        next_stage, is_review = get_next_stage("explore.research")
+        assert next_stage == "plan.draft"
         assert is_review is False
 
-    def test_get_next_stage_plan_to_plan_assess(self):
-        """plan.refine -> plan_assess"""
-        next_stage, next_substage, is_review = get_next_stage(PLAN, "refine")
-        assert next_stage == PLAN_ASSESS
-        assert next_substage is None
+    def test_get_next_stage_plan_draft_to_plan_assess(self):
+        """plan.draft -> plan.assess"""
+        next_stage, is_review = get_next_stage("plan.draft")
+        assert next_stage == "plan.assess"
         assert is_review is False
 
     def test_get_next_stage_plan_assess_to_plan_revise(self):
-        """plan_assess -> plan_revise"""
-        next_stage, next_substage, is_review = get_next_stage(PLAN_ASSESS, None)
-        assert next_stage == PLAN_REVISE
-        assert next_substage is None
+        """plan.assess -> plan.revise"""
+        next_stage, is_review = get_next_stage("plan.assess")
+        assert next_stage == "plan.revise"
         assert is_review is False
 
     def test_get_next_stage_plan_revise_to_plan_review(self):
-        """plan_revise -> plan_review (human review)"""
-        next_stage, next_substage, is_review = get_next_stage(PLAN_REVISE, None)
-        assert next_stage == PLAN_REVIEW
-        assert next_substage is None
+        """plan.revise -> plan.review (human review)"""
+        next_stage, is_review = get_next_stage("plan.revise")
+        assert next_stage == "plan.review"
         assert is_review is True
 
-    def test_get_next_stage_within_implement_substages(self):
-        """implement.setup -> implement.code"""
-        next_stage, next_substage, is_review = get_next_stage(IMPLEMENT, "setup")
-        assert next_stage == IMPLEMENT
-        assert next_substage == "code"
+    def test_get_next_stage_plan_review_to_implement(self):
+        """plan.review -> implement.code"""
+        next_stage, is_review = get_next_stage("plan.review")
+        assert next_stage == "implement.code"
         assert is_review is False
 
-    def test_get_next_stage_implement_code_review_skips_address_review(self):
-        """implement.code_review -> implement.wrapup (address_review is redirect_only)"""
-        next_stage, next_substage, is_review = get_next_stage(IMPLEMENT, "code_review")
-        assert next_stage == IMPLEMENT
-        assert next_substage == "wrapup"
-        assert is_review is False
-
-    def test_get_next_stage_implement_to_wrapup(self):
-        """implement.address_review -> implement.wrapup"""
-        next_stage, next_substage, is_review = get_next_stage(IMPLEMENT, "address_review")
-        assert next_stage == IMPLEMENT
-        assert next_substage == "wrapup"
-        assert is_review is False
-
-    def test_get_next_stage_wrapup_to_feedback(self):
-        """implement.wrapup -> implement.feedback"""
-        next_stage, next_substage, is_review = get_next_stage(IMPLEMENT, "wrapup")
-        assert next_stage == IMPLEMENT
-        assert next_substage == "feedback"
-        assert is_review is False
-
-    def test_get_next_stage_feedback_to_independent_review(self):
-        """implement.feedback -> independent_code_review (review agent stage)"""
-        next_stage, next_substage, is_review = get_next_stage(IMPLEMENT, "feedback")
-        assert next_stage == INDEPENDENT_CODE_REVIEW
-        assert next_substage is None
-        # Not human review - it's a custom agent stage
+    def test_get_next_stage_implement_to_independent_review(self):
+        """implement.code -> implement.independent_review"""
+        next_stage, is_review = get_next_stage("implement.code")
+        assert next_stage == "implement.independent_review"
         assert is_review is False
 
     def test_get_next_stage_independent_review_to_implementation_review(self):
-        """independent_code_review -> implementation_review.ci_wait (human review)"""
-        next_stage, next_substage, is_review = get_next_stage(INDEPENDENT_CODE_REVIEW, None)
-        assert next_stage == IMPLEMENTATION_REVIEW
-        assert next_substage == "ci_wait"  # First substage of implementation_review
+        """implement.independent_review -> implement.review (human review)"""
+        next_stage, is_review = get_next_stage("implement.independent_review")
+        assert next_stage == "implement.review"
         assert is_review is True
 
     def test_get_next_stage_to_knowledge_base(self):
-        """implementation_review -> knowledge_base"""
-        next_stage, next_substage, is_review = get_next_stage(IMPLEMENTATION_REVIEW, None)
-        assert next_stage == KNOWLEDGE_BASE
-        assert next_substage is None
+        """implement.review -> knowledge_base"""
+        next_stage, is_review = get_next_stage("implement.review")
+        assert next_stage == "knowledge_base"
         assert is_review is False
 
     def test_get_next_stage_at_knowledge_base(self):
         """knowledge_base -> accepted"""
-        next_stage, next_substage, is_review = get_next_stage(KNOWLEDGE_BASE, None)
-        assert next_stage == ACCEPTED
-        assert next_substage is None
+        next_stage, is_review = get_next_stage("knowledge_base")
+        assert next_stage == "accepted"
         assert is_review is False
 
     def test_get_next_stage_at_accepted(self):
         """accepted -> stays at accepted (terminal)"""
-        next_stage, next_substage, is_review = get_next_stage(ACCEPTED, None)
-        assert next_stage == ACCEPTED
-        assert next_substage is None
+        next_stage, is_review = get_next_stage("accepted")
+        assert next_stage == "accepted"
         assert is_review is False
 
     def test_human_review_stages(self):
-        """Verify HUMAN_REVIEW_STAGES contains expected stages."""
-        assert PLAN_REVIEW in HUMAN_REVIEW_STAGES
-        assert IMPLEMENTATION_REVIEW in HUMAN_REVIEW_STAGES
-        assert len(HUMAN_REVIEW_STAGES) == 2
+        """Verify human review stages via config."""
+        from agenttree.config import load_config
+
+        config = load_config()
+        human_review_stages = config.get_human_review_stages()
+        assert "plan.review" in human_review_stages
+        assert "implement.review" in human_review_stages
 
     def test_get_next_stage_not_doing_stays_not_doing(self):
-        """NOT_DOING is a terminal state - stays at NOT_DOING."""
-        next_stage, next_substage, is_review = get_next_stage(NOT_DOING, None)
-        assert next_stage == NOT_DOING
-        assert next_substage is None
+        """not_doing is a terminal state - stays at not_doing."""
+        next_stage, is_review = get_next_stage("not_doing")
+        assert next_stage == "not_doing"
         assert is_review is False
 
 
@@ -490,7 +428,7 @@ class TestDependencies:
 
         # Create dependency issue and mark as accepted
         dep_issue = create_issue("Dependency Issue")
-        update_issue_stage(dep_issue.id, ACCEPTED, None)
+        update_issue_stage(dep_issue.id, "accepted")
 
         # Create issue with dependency
         dependent_issue = create_issue("Dependent Issue", dependencies=[dep_issue.id])
@@ -504,7 +442,7 @@ class TestDependencies:
         """Issue with incomplete dependency should return all_met=False."""
         from agenttree.issues import check_dependencies_met
 
-        # Create dependency issue (starts at define stage)
+        # Create dependency issue (starts at explore.define stage)
         dep_issue = create_issue("Dependency Issue")
 
         # Create issue with dependency
@@ -534,7 +472,7 @@ class TestDependencies:
         completed = create_issue("Completed Issue")
 
         # Create blocked issue in backlog with dependency
-        blocked = create_issue("Blocked Issue", stage=BACKLOG, dependencies=[completed.id])
+        blocked = create_issue("Blocked Issue", stage="backlog", dependencies=[completed.id])
 
         # Get issues blocked by completed issue
         blocked_issues = get_blocked_issues(completed.id)
@@ -559,10 +497,10 @@ class TestDependencies:
         base = create_issue("Base Issue")
 
         # Create issues that depend on it (in various stages)
-        dep1 = create_issue("Dependent 1 Backlog", stage=BACKLOG, dependencies=[base.id])
-        dep2 = create_issue("Dependent 2 Define", dependencies=[base.id])  # default: define
+        dep1 = create_issue("Dependent 1 Backlog", stage="backlog", dependencies=[base.id])
+        dep2 = create_issue("Dependent 2 Define", dependencies=[base.id])  # default: explore.define
         dep3 = create_issue("Dependent 3 Implement")
-        update_issue_stage(dep3.id, IMPLEMENT, None)
+        update_issue_stage(dep3.id, "implement.code")
         # Add dependency after stage change
         from agenttree.issues import get_issue_dir
         import yaml
@@ -598,10 +536,10 @@ class TestDependencies:
 
         # Create dependency and mark as accepted
         dep = create_issue("Dependency")
-        update_issue_stage(dep.id, ACCEPTED, None)
+        update_issue_stage(dep.id, "accepted")
 
         # Create blocked issue in backlog
-        blocked = create_issue("Blocked Issue", stage=BACKLOG, dependencies=[dep.id])
+        blocked = create_issue("Blocked Issue", stage="backlog", dependencies=[dep.id])
 
         ready = get_ready_issues()
 
@@ -717,27 +655,25 @@ class TestUpdateIssueStage:
     def test_update_issue_stage(self, temp_agenttrees):
         """Update issue stage."""
         issue = create_issue("Test Issue")
-        assert issue.stage == DEFINE  # New issues start at define
+        assert issue.stage == "explore.define"  # New issues start at explore.define
 
-        updated = update_issue_stage("001", RESEARCH, "explore")
+        updated = update_issue_stage("001", "explore.research")
         assert updated is not None
-        assert updated.stage == RESEARCH
-        assert updated.substage == "explore"
+        assert updated.stage == "explore.research"
 
     def test_update_issue_stage_adds_history(self, temp_agenttrees):
         """Updating stage adds history entry."""
         issue = create_issue("Test Issue")
         assert len(issue.history) == 1
 
-        updated = update_issue_stage("001", RESEARCH, "explore", agent=1)
+        updated = update_issue_stage("001", "explore.research", agent=1)
         assert len(updated.history) == 2
-        assert updated.history[-1].stage == "research"
-        assert updated.history[-1].substage == "explore"
+        assert updated.history[-1].stage == "explore.research"
         assert updated.history[-1].agent == 1
 
     def test_update_issue_stage_not_found(self, temp_agenttrees):
         """Return None for non-existent issue."""
-        result = update_issue_stage("999", DEFINE)
+        result = update_issue_stage("999", "explore.define")
         assert result is None
 
 
@@ -751,10 +687,14 @@ class TestLoadSkill:
         agenttrees_path.mkdir()
         (agenttrees_path / "issues").mkdir()
         (agenttrees_path / "skills").mkdir()
+        (agenttrees_path / "skills" / "explore").mkdir()
 
-        # Create some skill files (using new naming convention)
-        (agenttrees_path / "skills" / "define.md").write_text("# Define Skill")
+        # Create skill files using convention paths
+        # explore.define -> skills/explore/define.md
+        (agenttrees_path / "skills" / "explore" / "define.md").write_text("# Define Skill")
+        # implement.code -> falls back to skills/implement.md
         (agenttrees_path / "skills" / "implement.md").write_text("# Implement Skill")
+        # implement.test -> legacy naming skills/implement-test.md
         (agenttrees_path / "skills" / "implement-test.md").write_text("# Test Substage Skill")
 
         # Monkeypatch get_agenttree_path to return our temp dir
@@ -766,23 +706,23 @@ class TestLoadSkill:
         return agenttrees_path
 
     def test_load_define_stage_skill(self, temp_agenttrees_with_skills):
-        """Load skill for DEFINE stage."""
-        skill = load_skill(DEFINE)
+        """Load skill for explore.define stage."""
+        skill = load_skill("explore.define")
         assert skill == "# Define Skill"
 
     def test_load_substage_skill(self, temp_agenttrees_with_skills):
-        """Load skill for substage (falls back to stage skill)."""
-        skill = load_skill(IMPLEMENT, "code")
+        """Load skill for implement.code (falls back to stage skill)."""
+        skill = load_skill("implement.code")
         assert skill == "# Implement Skill"
 
     def test_load_specific_substage_skill(self, temp_agenttrees_with_skills):
-        """Load skill for specific substage when available."""
-        skill = load_skill(IMPLEMENT, "test")
+        """Load skill for specific substage when available via legacy naming."""
+        skill = load_skill("implement.test")
         assert skill == "# Test Substage Skill"
 
     def test_load_skill_not_found(self, temp_agenttrees_with_skills):
         """Return None when skill not found (convention-based)."""
-        skill = load_skill(ACCEPTED)
+        skill = load_skill("accepted")
         assert skill is None
 
     def test_load_skill_explicit_not_found_raises(self, temp_agenttrees_with_skills, monkeypatch):
@@ -803,8 +743,8 @@ class TestLoadSkill:
 
     def test_load_skill_with_command_variable(self, temp_agenttrees_with_skills, monkeypatch):
         """Command outputs should be injected into templates."""
-        # Create a template with a command variable
-        skill_path = temp_agenttrees_with_skills / "skills" / "define.md"
+        # Create a template with a command variable (using convention path)
+        skill_path = temp_agenttrees_with_skills / "skills" / "explore" / "define.md"
         skill_path.write_text("Branch: {{git_branch}}")
 
         # Mock the config to include a command
@@ -834,13 +774,13 @@ class TestLoadSkill:
             lambda x: issue_dir
         )
 
-        skill = load_skill(DEFINE, issue=issue)
+        skill = load_skill("explore.define", issue=issue)
         assert skill == "Branch: test-branch"
 
     def test_load_skill_builtin_vars_take_precedence(self, temp_agenttrees_with_skills, monkeypatch):
         """Built-in context variables should not be overwritten by commands."""
-        # Create a template using issue_id
-        skill_path = temp_agenttrees_with_skills / "skills" / "define.md"
+        # Create a template using issue_id (using convention path)
+        skill_path = temp_agenttrees_with_skills / "skills" / "explore" / "define.md"
         skill_path.write_text("Issue: {{issue_id}}")
 
         # Mock the config with a command named issue_id (should be ignored)
@@ -867,14 +807,14 @@ class TestLoadSkill:
             lambda x: issue_dir
         )
 
-        skill = load_skill(DEFINE, issue=issue)
+        skill = load_skill("explore.define", issue=issue)
         # Should use the built-in issue_id, not the command output
         assert skill == "Issue: 042"
 
     def test_load_skill_only_runs_referenced_commands(self, temp_agenttrees_with_skills, monkeypatch):
         """Only commands referenced in template should be executed."""
-        # Create a template with only one command reference
-        skill_path = temp_agenttrees_with_skills / "skills" / "define.md"
+        # Create a template with only one command reference (using convention path)
+        skill_path = temp_agenttrees_with_skills / "skills" / "explore" / "define.md"
         skill_path.write_text("Branch: {{git_branch}}")
 
         # Track which commands are executed
@@ -918,7 +858,7 @@ class TestLoadSkill:
             lambda x: issue_dir
         )
 
-        load_skill(DEFINE, issue=issue)
+        load_skill("explore.define", issue=issue)
 
         # Only git_branch should have been executed
         assert "git_branch" in executed_commands
@@ -935,6 +875,7 @@ class TestLoadSkillJinja:
         agenttrees_path.mkdir()
         (agenttrees_path / "issues").mkdir()
         (agenttrees_path / "skills").mkdir()
+        (agenttrees_path / "skills" / "explore").mkdir()
         (agenttrees_path / "templates").mkdir()
 
         # Create problem template (needed for create_issue)
@@ -957,22 +898,22 @@ class TestLoadSkillJinja:
 
     def test_load_skill_renders_basic_variables(self, temp_agenttrees_jinja):
         """load_skill should render basic issue variables with Jinja."""
-        # Create skill file with Jinja template
-        skill_path = temp_agenttrees_jinja / "skills" / "define.md"
+        # Create skill file with Jinja template (convention path)
+        skill_path = temp_agenttrees_jinja / "skills" / "explore" / "define.md"
         skill_path.write_text("Issue #{{issue_id}}: {{issue_title}}")
 
         # Create an issue
         issue = create_issue("Test Issue")
 
         # Load skill with issue context
-        skill = load_skill(DEFINE, issue=issue)
+        skill = load_skill("explore.define", issue=issue)
 
         assert skill == "Issue #001: Test Issue"
 
     def test_load_skill_renders_document_content(self, temp_agenttrees_jinja):
         """load_skill should render document content variables."""
-        # Create skill file that references problem_md
-        skill_path = temp_agenttrees_jinja / "skills" / "research.md"
+        # Create skill file that references problem_md (convention path)
+        skill_path = temp_agenttrees_jinja / "skills" / "explore" / "research.md"
         skill_path.write_text("## Problem\n{{problem_md}}")
 
         # Create an issue and update its problem.md
@@ -981,7 +922,7 @@ class TestLoadSkillJinja:
         (issue_dir / "problem.md").write_text("This is the problem description.")
 
         # Load skill with issue context
-        skill = load_skill(RESEARCH, issue=issue)
+        skill = load_skill("explore.research", issue=issue)
 
         assert "This is the problem description." in skill
 
@@ -991,15 +932,15 @@ class TestLoadSkillJinja:
         agents_md = temp_agenttrees_jinja / "skills" / "AGENTS.md"
         agents_md.write_text("# System Prompt\nYou are an AI agent.")
 
-        # Create skill file
-        skill_path = temp_agenttrees_jinja / "skills" / "define.md"
+        # Create skill file (convention path)
+        skill_path = temp_agenttrees_jinja / "skills" / "explore" / "define.md"
         skill_path.write_text("# Define Stage")
 
         # Create an issue
         issue = create_issue("Test Issue")
 
         # Load skill with include_system=True
-        skill = load_skill(DEFINE, issue=issue, include_system=True)
+        skill = load_skill("explore.define", issue=issue, include_system=True)
 
         assert skill.startswith("# System Prompt")
         assert "You are an AI agent." in skill
@@ -1007,12 +948,12 @@ class TestLoadSkillJinja:
 
     def test_load_skill_without_issue_returns_raw(self, temp_agenttrees_jinja):
         """load_skill without issue should return raw template content."""
-        # Create skill file with Jinja template
-        skill_path = temp_agenttrees_jinja / "skills" / "define.md"
+        # Create skill file with Jinja template (convention path)
+        skill_path = temp_agenttrees_jinja / "skills" / "explore" / "define.md"
         skill_path.write_text("Issue #{{issue_id}}: {{issue_title}}")
 
         # Load skill without issue context
-        skill = load_skill(DEFINE)
+        skill = load_skill("explore.define")
 
         # Should return raw template, not rendered
         assert skill == "Issue #{{issue_id}}: {{issue_title}}"
@@ -1099,11 +1040,10 @@ class TestSessionManagement:
         issue = create_issue("Test Issue")
         create_session(issue.id)
 
-        update_session_stage(issue.id, RESEARCH, "explore")
+        update_session_stage(issue.id, "explore.research")
 
         session = get_session(issue.id)
-        assert session.last_stage == RESEARCH
-        assert session.last_substage == "explore"
+        assert session.last_stage == "explore.research"
         assert session.oriented is True
 
     def test_delete_session(self, temp_agenttrees):
@@ -1174,12 +1114,11 @@ class TestLoadPersona:
         from agenttree.issues import load_persona
 
         persona = load_persona(
-            current_stage="implement",
-            current_substage="code",
+            current_stage="implement.code",
             is_takeover=False,
         )
         assert persona is not None
-        assert "Stage: implement" in persona
+        assert "Stage: implement.code" in persona
         assert "Is takeover: False" in persona
 
     def test_load_persona_calculates_completed_stages(self, temp_agenttrees_with_persona):
@@ -1187,24 +1126,22 @@ class TestLoadPersona:
         from agenttree.issues import load_persona
 
         persona = load_persona(
-            current_stage="implement",
+            current_stage="implement.code",
             is_takeover=True,
         )
         assert persona is not None
-        # Should include stages before implement (define, research, plan, plan_assess, plan_revise, plan_review)
-        assert "define" in persona
-        assert "research" in persona
-        assert "plan" in persona
-        assert "plan_review" in persona
-        # Should not include backlog or accepted
-        assert "backlog" not in persona.lower().replace("developer persona", "")
+        # Should include dot-path stages before implement.code
+        assert "explore.define" in persona
+        assert "explore.research" in persona
+        assert "plan.draft" in persona
+        assert "plan.review" in persona
 
     def test_load_persona_takeover_true_mid_workflow(self, temp_agenttrees_with_persona):
         """is_takeover should be True when starting mid-workflow."""
         from agenttree.issues import load_persona
 
         persona = load_persona(
-            current_stage="implement",
+            current_stage="implement.code",
             is_takeover=True,
         )
         assert persona is not None
@@ -1215,7 +1152,7 @@ class TestLoadPersona:
         from agenttree.issues import load_persona
 
         persona = load_persona(
-            current_stage="define",
+            current_stage="explore.define",
             is_takeover=False,
         )
         assert persona is not None
@@ -1257,7 +1194,7 @@ class TestLoadPersona:
         issue = create_issue("Test Feature")
         persona = load_persona(
             issue=issue,
-            current_stage="plan",
+            current_stage="plan.draft",
         )
         assert persona is not None
         assert issue.id in persona
@@ -1318,8 +1255,7 @@ class TestGetIssueContext:
         assert context["id"] == "001"
         assert context["slug"] == "test-issue"
         assert context["title"] == "Test Issue"
-        assert context["stage"] == DEFINE
-        assert context["substage"] == "refine"
+        assert context["stage"] == "explore.define"
         assert context["priority"] == "high"
         assert "created" in context
         assert "updated" in context
@@ -1337,20 +1273,24 @@ class TestGetIssueContext:
         assert context["issue_title"] == "Test Issue"  # alias
         assert "issue_dir" in context
         assert context["issue_dir_rel"] == "_agenttree/issues/001-test-issue"
-        assert context["stage_substage"] == "define.refine"
+        # Dot path is parsed into stage_group and substage
+        assert context["stage_group"] == "explore"
+        assert context["substage"] == "define"
 
-    def test_get_issue_context_stage_substage_without_substage(self, temp_agenttrees):
-        """stage_substage should handle missing substage."""
+    def test_get_issue_context_stage_without_substage(self, temp_agenttrees):
+        """stage_group and substage should handle single-level stages."""
         from agenttree.issues import update_issue_stage
 
         issue = create_issue("Test Issue")
-        update_issue_stage(issue.id, ACCEPTED, None)
+        update_issue_stage(issue.id, "accepted")
 
         # Reload issue to get updated data
         issue = get_issue(issue.id)
         context = get_issue_context(issue)
 
-        assert context["stage_substage"] == "accepted"
+        assert context["stage"] == "accepted"
+        assert context["stage_group"] == "accepted"
+        assert context["substage"] == ""
 
     def test_get_issue_context_includes_documents(self, temp_agenttrees):
         """get_issue_context should include document contents when include_docs=True."""
@@ -1405,7 +1345,7 @@ class TestGetIssueContext:
         from agenttree.issues import update_issue_stage
 
         issue = create_issue("Test Issue")
-        update_issue_stage(issue.id, RESEARCH, "explore", agent=1)
+        update_issue_stage(issue.id, "explore.research", agent=1)
 
         # Reload issue
         issue = get_issue(issue.id)
@@ -1413,8 +1353,8 @@ class TestGetIssueContext:
 
         assert "history" in context
         assert len(context["history"]) == 2
-        assert context["history"][0]["stage"] == "define"
-        assert context["history"][1]["stage"] == "research"
+        assert context["history"][0]["stage"] == "explore.define"
+        assert context["history"][1]["stage"] == "explore.research"
         assert context["history"][1]["agent"] == 1
 
 

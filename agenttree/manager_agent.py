@@ -21,9 +21,6 @@ class StalledAgent(TypedDict):
 
 
 
-# Human review stages that should be excluded from stall detection
-HUMAN_REVIEW_STAGES = {"plan_review", "implementation_review"}
-
 
 def get_stalled_agents(
     agents_dir: Path,
@@ -46,7 +43,7 @@ def get_stalled_agents(
     Returns:
         List of StalledAgent dicts with:
         - issue_id: Issue ID
-        - stage: Current stage (with substage if any)
+        - stage: Current stage dot path (e.g., "explore.define")
         - minutes_stalled: How many minutes since last advancement
         - title: Issue title
     """
@@ -57,6 +54,7 @@ def get_stalled_agents(
         return []
 
     config = load_config()
+    human_review_stages = set(config.get_human_review_stages())
     stalled: list[StalledAgent] = []
     now = datetime.now(timezone.utc)
 
@@ -81,12 +79,11 @@ def get_stalled_agents(
             if not active_agent:
                 continue
 
-            # Get stage info
+            # Get stage (now a dot path like "explore.define")
             stage = issue_data.get("stage", "")
-            substage = issue_data.get("substage")
 
             # Skip human review stages
-            if stage in HUMAN_REVIEW_STAGES:
+            if stage in human_review_stages:
                 continue
 
             # Skip parking lot stages (no active agent expected)
@@ -115,12 +112,9 @@ def get_stalled_agents(
             except (ValueError, TypeError):
                 continue
 
-            # Build stage string
-            stage_str = f"{stage}.{substage}" if substage else stage
-
             stalled.append({
                 "issue_id": issue_id,
-                "stage": stage_str,
+                "stage": stage,
                 "minutes_stalled": int(minutes_since),
                 "title": issue_data.get("title", ""),
             })
@@ -130,3 +124,149 @@ def get_stalled_agents(
             continue
 
     return stalled
+
+
+def log_stall(
+    agents_dir: Path,
+    issue_id: str,
+    stage: str,
+    nudge_message: str,
+    escalated: bool = False,
+) -> None:
+    """Log a stall intervention to stalls.yaml.
+
+    Args:
+        agents_dir: Path to _agenttree directory
+        issue_id: Issue ID
+        stage: Current stage (with substage if any)
+        nudge_message: The nudge message that was sent
+        escalated: Whether this triggered escalation
+    """
+    logs_dir = agents_dir / "manager_logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+
+    log_file = logs_dir / "stalls.yaml"
+
+    # Load existing data or start fresh
+    if log_file.exists():
+        with open(log_file) as f:
+            data = yaml.safe_load(f) or {}
+    else:
+        data = {}
+
+    if "stalls" not in data:
+        data["stalls"] = []
+
+    # Add new stall entry
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    entry = {
+        "issue_id": issue_id,
+        "stage": stage,
+        "detected_at": now,
+        "nudge_sent": nudge_message,
+        "escalation_needed": escalated,
+    }
+    data["stalls"].append(entry)
+
+    # Write back
+    with open(log_file, "w") as f:
+        yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+
+
+def get_nudge_count(agents_dir: Path, issue_id: str) -> int:
+    """Get the number of nudges sent to an issue without stage advancement.
+
+    Args:
+        agents_dir: Path to _agenttree directory
+        issue_id: Issue ID
+
+    Returns:
+        Number of nudges sent since last stage advancement
+    """
+    log_file = agents_dir / "manager_logs" / "stalls.yaml"
+    if not log_file.exists():
+        return 0
+
+    try:
+        with open(log_file) as f:
+            data = yaml.safe_load(f) or {}
+
+        stalls = data.get("stalls", [])
+        count = 0
+        for stall in reversed(stalls):  # Most recent first
+            if stall.get("issue_id") == issue_id:
+                count += 1
+            else:
+                # Once we see a different issue, stop counting
+                break
+        return count
+    except (OSError, yaml.YAMLError, KeyError, TypeError):
+        return 0
+
+
+def should_notify_stall(agents_dir: Path, issue_id: str, stage: str, cooldown_min: int = 10) -> bool:
+    """Check if we should notify about this stall (avoid duplicate notifications).
+
+    Args:
+        agents_dir: Path to _agenttree directory
+        issue_id: Issue ID
+        stage: Current stage string
+        cooldown_min: Minutes to wait before re-notifying about same stall
+
+    Returns:
+        True if we should notify, False if recently notified
+    """
+    state_file = agents_dir / "controller_logs" / "stall_notifications.yaml"
+
+    now = datetime.now(timezone.utc)
+
+    if state_file.exists():
+        try:
+            with open(state_file) as f:
+                data = yaml.safe_load(f) or {}
+        except (OSError, yaml.YAMLError):
+            data = {}
+    else:
+        data = {}
+
+    key = f"{issue_id}:{stage}"
+    last_notified = data.get(key)
+
+    if last_notified:
+        try:
+            last_time = datetime.fromisoformat(last_notified.replace("Z", "+00:00"))
+            minutes_since = (now - last_time).total_seconds() / 60
+            if minutes_since < cooldown_min:
+                return False  # Recently notified, skip
+        except (ValueError, TypeError):
+            pass
+
+    return True
+
+
+def mark_stall_notified(agents_dir: Path, issue_id: str, stage: str) -> None:
+    """Mark that we notified about this stall.
+
+    Args:
+        agents_dir: Path to _agenttree directory
+        issue_id: Issue ID
+        stage: Current stage string
+    """
+    logs_dir = agents_dir / "controller_logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    state_file = logs_dir / "stall_notifications.yaml"
+
+    if state_file.exists():
+        try:
+            with open(state_file) as f:
+                data = yaml.safe_load(f) or {}
+        except (OSError, yaml.YAMLError):
+            data = {}
+    else:
+        data = {}
+
+    key = f"{issue_id}:{stage}"
+    data[key] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    with open(state_file, "w") as f:
+        yaml.dump(data, f, default_flow_style=False, sort_keys=False)

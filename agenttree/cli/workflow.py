@@ -31,12 +31,6 @@ from agenttree.issues import (
     mark_session_oriented,
     update_session_stage,
     delete_session,
-    BACKLOG,
-    DEFINE,
-    PLAN_ASSESS,
-    PLAN_REVISE,
-    ACCEPTED,
-    NOT_DOING,
 )
 
 
@@ -57,7 +51,7 @@ def stage_status(issue_id: str | None) -> None:
         # Show all non-backlog, non-accepted issues
         active_issues = [
             i for i in list_issues_func()
-            if i.stage not in (BACKLOG, ACCEPTED, NOT_DOING)
+            if i.stage not in ("backlog", "accepted", "not_doing")
         ]
 
         if not active_issues:
@@ -70,10 +64,7 @@ def stage_status(issue_id: str | None) -> None:
         table.add_column("Stage", style="magenta")
 
         for active_issue in active_issues:
-            stage_str = active_issue.stage
-            if active_issue.substage:
-                stage_str += f".{active_issue.substage}"
-            table.add_row(active_issue.id, active_issue.title[:40], stage_str)
+            table.add_row(active_issue.id, active_issue.title[:40], active_issue.stage)
 
         console.print(table)
         return
@@ -84,21 +75,18 @@ def stage_status(issue_id: str | None) -> None:
         sys.exit(1)
 
     console.print(f"\n[bold cyan]Issue {issue.id}: {issue.title}[/bold cyan]")
-    console.print(f"[bold]Stage:[/bold] {issue.stage}", end="")
-    if issue.substage:
-        console.print(f".{issue.substage}")
-    else:
-        console.print()
+    console.print(f"[bold]Stage:[/bold] {issue.stage}")
 
     # Check if waiting for non-developer role
     config_for_status = load_config()
-    status_stage_config = config_for_status.get_stage(issue.stage)
+    stage_group, _ = config_for_status.parse_stage(issue.stage)
+    status_stage_config = config_for_status.get_stage(stage_group)
     if status_stage_config and status_stage_config.role != "developer":
         if status_stage_config.role == "manager":
             console.print(f"\n[yellow]⏳ Waiting for human review[/yellow]")
         else:
             console.print(f"\n[yellow]⏳ Waiting for '{status_stage_config.role}' agent[/yellow]")
-    elif issue.stage == ACCEPTED:
+    elif issue.stage == "accepted":
         console.print(f"\n[green]✓ Issue completed[/green]")
 
 
@@ -129,27 +117,25 @@ def stage_next(issue_id: str | None, reassess: bool) -> None:
         console.print(f"[red]Issue {issue_id} not found[/red]")
         sys.exit(1)
 
-    if issue.stage == ACCEPTED:
+    if issue.stage == "accepted":
         console.print(f"[yellow]Issue is already accepted[/yellow]")
         return
 
-    if issue.stage == NOT_DOING:
+    if issue.stage == "not_doing":
         console.print(f"[yellow]Issue is marked as not doing[/yellow]")
         return
 
     # Block agents from operating in manager (human review) stages only
     # Other agent stages can be advanced - hooks will enforce requirements
     config = load_config()
-    stage_config = config.get_stage(issue.stage)
-    if stage_config:
-        stage_role = stage_config.role
-        current_role = get_current_role()
-        # Only block if this is a manager stage and we're not the manager
-        if stage_role == "manager" and current_role != "manager":
-            console.print(f"\n[yellow]⏳ Waiting for human review[/yellow]")
-            console.print(f"[dim]Stage '{issue.stage}' requires human review.[/dim]")
-            console.print(f"[dim]A human will run 'agenttree approve {issue.id}' when ready.[/dim]")
-            return
+    stage_role = config.role_for(issue.stage)
+    current_role = get_current_role()
+    # Only block if this is a manager stage and we're not the manager
+    if stage_role == "manager" and current_role != "manager":
+        console.print(f"\n[yellow]⏳ Waiting for human review[/yellow]")
+        console.print(f"[dim]Stage '{issue.stage}' requires human review.[/dim]")
+        console.print(f"[dim]A human will run 'agenttree approve {issue.id}' when ready.[/dim]")
+        return
 
     # Check for restart and re-orient if needed
     session = get_session(issue_id)
@@ -157,15 +143,12 @@ def stage_next(issue_id: str | None, reassess: bool) -> None:
         # No session exists - create one (fresh start or legacy case)
         session = create_session(issue_id)
 
-    if is_restart(issue_id, issue.stage, issue.substage):
+    if is_restart(issue_id, issue.stage):
         # This is a restart - re-orient the agent instead of advancing
         console.print(f"\n[cyan]🔄 Session restart detected[/cyan]")
         console.print(f"[dim]Resuming work on issue #{issue.id}: {issue.title}[/dim]\n")
 
-        stage_str = issue.stage
-        if issue.substage:
-            stage_str += f".{issue.substage}"
-        console.print(f"[bold]Current stage:[/bold] {stage_str}")
+        console.print(f"[bold]Current stage:[/bold] {issue.stage}")
 
         # Show existing files
         issue_dir = get_issue_dir(issue_id)
@@ -187,7 +170,7 @@ def stage_next(issue_id: str | None, reassess: bool) -> None:
             console.print(f"[dim]Note: Could not check git status: {e}[/dim]")
 
         # Determine if this is a takeover (not starting from beginning)
-        is_takeover = issue.stage not in (BACKLOG, DEFINE)
+        is_takeover = issue.stage not in ("backlog", "explore.define")
 
         # Load and display persona for context
         persona = load_persona(
@@ -195,7 +178,6 @@ def stage_next(issue_id: str | None, reassess: bool) -> None:
             issue=issue,
             is_takeover=is_takeover,
             current_stage=issue.stage,
-            current_substage=issue.substage,
         )
         if persona:
             console.print(f"\n{'='*60}")
@@ -214,49 +196,47 @@ def stage_next(issue_id: str | None, reassess: bool) -> None:
                 )
 
         # Load and display current stage instructions
-        skill = load_skill(issue.stage, issue.substage, issue=issue)
+        skill = load_skill(issue.stage, issue=issue)
         if skill:
+            display_name = config.stage_display_name(issue.stage)
             console.print(f"\n{'='*60}")
-            console.print(f"[bold cyan]Continue working on: {issue.stage.upper()}[/bold cyan]")
+            console.print(f"[bold cyan]Continue working on: {display_name}[/bold cyan]")
             console.print(f"{'='*60}\n")
             console.print(skill)
 
         console.print(f"\n[dim]When ready to advance, run 'agenttree next' again.[/dim]")
 
         # Mark as oriented and sync stage so next call will advance
-        mark_session_oriented(issue_id, issue.stage, issue.substage)
+        mark_session_oriented(issue_id, issue.stage)
         return
 
     # Handle --reassess flag for plan revision cycling
     if reassess:
-        if issue.stage != PLAN_REVISE:
-            console.print(f"[red]--reassess only works from plan_revise stage[/red]")
+        if issue.stage != "plan.revise":
+            console.print(f"[red]--reassess only works from plan.revise stage[/red]")
             sys.exit(1)
-        next_stage = PLAN_ASSESS
-        next_substage = None
+        next_stage = "plan.assess"
         is_human_review = False
     else:
         # Calculate next stage (pass issue context for condition evaluation)
         issue_ctx = get_issue_context(issue, include_docs=False)
-        next_stage, next_substage, is_human_review = get_next_stage(
-            issue.stage, issue.substage, issue.flow, issue_context=issue_ctx
+        next_stage, is_human_review = get_next_stage(
+            issue.stage, issue.flow, issue_context=issue_ctx
         )
 
     # Check if we're already at the next stage (no change)
-    if next_stage == issue.stage and next_substage == issue.substage:
+    if next_stage == issue.stage:
         console.print(f"[yellow]Already at final stage[/yellow]")
         return
 
     # Execute exit hooks (can block with ValidationError or redirect with StageRedirect)
     from_stage = issue.stage
-    from_substage = issue.substage
     try:
-        execute_exit_hooks(issue, from_stage, from_substage)
+        execute_exit_hooks(issue, from_stage)
     except StageRedirect as redirect:
-        # Redirect to a different stage/substage instead of normal next
-        console.print(f"[yellow]Redirecting to {redirect.target_stage}{('.' + redirect.target_substage) if redirect.target_substage else ''}: {redirect.reason}[/yellow]")
-        next_stage = redirect.target_stage
-        next_substage = redirect.target_substage
+        # Redirect to a different stage instead of normal next
+        console.print(f"[yellow]Redirecting to {redirect.target}: {redirect.reason}[/yellow]")
+        next_stage = redirect.target
         is_human_review = False  # Redirect target is typically not human review
     except ValidationError as e:
         console.print(f"[red]Cannot proceed: {e}[/red]")
@@ -268,54 +248,46 @@ def stage_next(issue_id: str | None, reassess: bool) -> None:
         issue_dir = get_issue_dir(issue_id)
         if issue_dir:
             session_name = config.get_issue_tmux_session(issue_id)
-            stage_str = from_stage
-            if from_substage:
-                stage_str += f".{from_substage}"
             history_file = issue_dir / "tmux_history.log"
-            if save_tmux_history_to_file(session_name, history_file, stage_str):
+            if save_tmux_history_to_file(session_name, history_file, from_stage):
                 console.print(f"[dim]Saved tmux history to {history_file.name}[/dim]")
 
     # Update issue stage in database
-    updated = update_issue_stage(issue_id, next_stage, next_substage)
+    updated = update_issue_stage(issue_id, next_stage)
     if not updated:
         console.print(f"[red]Failed to update issue[/red]")
         sys.exit(1)
 
     # Update session to track stage advancement
-    update_session_stage(issue_id, next_stage, next_substage)
+    update_session_stage(issue_id, next_stage)
 
     # Execute enter hooks (after stage updated)
-    execute_enter_hooks(updated, next_stage, next_substage)
+    execute_enter_hooks(updated, next_stage)
 
-    stage_str = next_stage
-    if next_substage:
-        stage_str += f".{next_substage}"
-    console.print(f"[green]✓ Moved to {stage_str}[/green]")
+    console.print(f"[green]✓ Moved to {next_stage}[/green]")
 
     # Check if next stage requires a different role
-    next_stage_config = config.get_stage(next_stage)
-    if next_stage_config and next_stage_config.role != "developer" and is_running_in_container():
-        if next_stage_config.role == "manager" or is_human_review:
+    next_role = config.role_for(next_stage)
+    if next_role != "developer" and is_running_in_container():
+        if next_role == "manager" or is_human_review:
             console.print(f"\n[yellow]⏳ Waiting for human review[/yellow]")
             console.print(f"[dim]Your work has been submitted for review.[/dim]")
             console.print(f"[dim]You will receive instructions when the review is complete.[/dim]")
         else:
-            console.print(f"\n[yellow]⏳ Waiting for '{next_stage_config.role}' agent[/yellow]")
-            console.print(f"[dim]The '{next_stage_config.role}' agent will handle the next stage.[/dim]")
+            console.print(f"\n[yellow]⏳ Waiting for '{next_role}' agent[/yellow]")
+            console.print(f"[dim]The '{next_role}' agent will handle the next stage.[/dim]")
             console.print(f"[dim]You will receive instructions when that stage is complete.[/dim]")
         return
 
     # Determine if this is first agent entry (should include AGENTS.md system prompt)
-    is_first_stage = next_stage == DEFINE and from_stage == BACKLOG
+    is_first_stage = next_stage == "explore.define" and from_stage == "backlog"
 
     # Load and display skill for next stage with Jinja rendering
-    skill = load_skill(next_stage, next_substage, issue=updated, include_system=is_first_stage)
+    skill = load_skill(next_stage, issue=updated, include_system=is_first_stage)
     if skill:
+        display_name = config.stage_display_name(next_stage)
         console.print(f"\n{'='*60}")
-        header = f"Stage Instructions: {next_stage.upper()}"
-        if next_substage:
-            header += f" ({next_substage})"
-        console.print(f"[bold cyan]{header}[/bold cyan]")
+        console.print(f"[bold cyan]Stage Instructions: {display_name}[/bold cyan]")
         console.print(f"{'='*60}\n")
         console.print(skill)
 
@@ -353,8 +325,8 @@ def approve_issue(issue_id: str, skip_approval: bool) -> None:
 
     # Check if at a stage that requires human approval (human_review=true or role=manager)
     approve_config = load_config()
-    approve_stage_config = approve_config.get_stage(issue.stage)
-    if not approve_stage_config or not (approve_stage_config.human_review or approve_stage_config.role == "manager"):
+    approve_role = approve_config.role_for(issue.stage)
+    if not (approve_config.is_human_review(issue.stage) or approve_role == "manager"):
         human_review_stages = approve_config.get_human_review_stages()
         console.print(f"[red]Issue is at '{issue.stage}', not a human review stage[/red]")
         console.print(f"[dim]Human review stages: {', '.join(human_review_stages)}[/dim]")
@@ -362,8 +334,8 @@ def approve_issue(issue_id: str, skip_approval: bool) -> None:
 
     # Calculate next stage (pass issue context for condition evaluation)
     issue_ctx = get_issue_context(issue, include_docs=False)
-    next_stage, next_substage, _ = get_next_stage(
-        issue.stage, issue.substage, issue.flow, issue_context=issue_ctx
+    next_stage, _ = get_next_stage(
+        issue.stage, issue.flow, issue_context=issue_ctx
     )
 
     # Use consolidated transition_issue() — handles exit hooks, stage update, enter hooks
@@ -372,12 +344,11 @@ def approve_issue(issue_id: str, skip_approval: bool) -> None:
         updated = transition_issue(
             issue_id_normalized,
             next_stage,
-            next_substage,
             skip_pr_approval=skip_approval,
             trigger="cli",
         )
     except StageRedirect as redirect:
-        console.print(f"[yellow]Redirecting to {redirect.target_stage}: {redirect.reason}[/yellow]")
+        console.print(f"[yellow]Redirecting to {redirect.target}: {redirect.reason}[/yellow]")
         return
     except ValidationError as e:
         console.print(f"[red]Cannot approve: {e}[/red]")
@@ -386,10 +357,7 @@ def approve_issue(issue_id: str, skip_approval: bool) -> None:
         console.print(f"[red]Failed: {e}[/red]")
         sys.exit(1)
 
-    stage_str = updated.stage
-    if updated.substage:
-        stage_str += f".{updated.substage}"
-    console.print(f"[green]✓ Approved! Issue #{issue.id} moved to {stage_str}[/green]")
+    console.print(f"[green]✓ Approved! Issue #{issue.id} moved to {updated.stage}[/green]")
 
     # Auto-notify agent to continue (if active)
     from agenttree.state import get_active_agent
@@ -427,16 +395,16 @@ def defer_issue(issue_id: str) -> None:
         console.print(f"[red]Issue {issue_id} not found[/red]")
         sys.exit(1)
 
-    if issue.stage == BACKLOG:
+    if issue.stage == "backlog":
         console.print(f"[yellow]Issue is already in backlog[/yellow]")
         return
 
-    if issue.stage == ACCEPTED:
+    if issue.stage == "accepted":
         console.print(f"[yellow]Issue is already accepted, cannot defer[/yellow]")
         return
 
     # Move to backlog
-    updated = update_issue_stage(issue_id_normalized, BACKLOG, None)
+    updated = update_issue_stage(issue_id_normalized, "backlog")
     if not updated:
         console.print(f"[red]Failed to update issue[/red]")
         sys.exit(1)
@@ -655,7 +623,7 @@ def shutdown_issue(
 
     # Update issue stage
     if issue.stage != stage:
-        updated = update_issue_stage(issue_id_normalized, stage, None)
+        updated = update_issue_stage(issue_id_normalized, stage)
         if not updated:
             console.print(f"[red]Failed to update issue stage[/red]")
             sys.exit(1)
@@ -715,19 +683,19 @@ def rollback_issue(
         console.print(f"[red]Issue {issue_id} not found[/red]")
         sys.exit(1)
 
-    # Load config and validate stage
+    # Load config and validate stage (stage_name can be a dot path)
     config = load_config()
-    stage_names = config.get_stage_names()
+    flow_stages = config.get_flow_stage_names(issue.flow)
 
-    if stage_name not in stage_names:
+    if stage_name not in flow_stages:
         console.print(f"[red]Invalid stage: '{stage_name}'[/red]")
-        console.print(f"[dim]Valid stages: {', '.join(stage_names)}[/dim]")
+        console.print(f"[dim]Valid stages: {', '.join(flow_stages)}[/dim]")
         sys.exit(1)
 
     # Check if target stage is before or same as current stage
     try:
-        current_idx = stage_names.index(issue.stage)
-        target_idx = stage_names.index(stage_name)
+        current_idx = flow_stages.index(issue.stage)
+        target_idx = flow_stages.index(stage_name)
     except ValueError:
         console.print(f"[red]Issue is at unknown stage: {issue.stage}[/red]")
         sys.exit(1)
@@ -738,38 +706,29 @@ def rollback_issue(
         sys.exit(1)
 
     # Cannot rollback to redirect_only stages (they're not in normal progression)
-    target_stage_config = config.get_stage(stage_name)
+    target_group, _ = config.parse_stage(stage_name)
+    target_stage_config = config.get_stage(target_group)
     if target_stage_config and target_stage_config.redirect_only:
         console.print(f"[red]Cannot rollback to redirect-only stage '{stage_name}'[/red]")
         sys.exit(1)
 
-    # Determine first substage of target stage
-    target_substage = None
-    if target_stage_config:
-        substages = target_stage_config.substage_order()
-        if substages:
-            target_substage = substages[0]
+    # Collect output files from stages after target that are being rolled back
+    stages_to_archive = flow_stages[target_idx + 1 : current_idx + 1]
 
-    # Collect stages after target that will have output files archived
-    stages_to_archive = stage_names[target_idx + 1 : current_idx + 1]
-
-    # Collect output files from stages being rolled back
     files_to_archive: list[str] = []
-    for stage in stages_to_archive:
-        stage_config = config.get_stage(stage)
-        if stage_config:
-            # Stage-level output
-            if stage_config.output:
-                files_to_archive.append(stage_config.output)
-            # Substage outputs
-            for substage_config in stage_config.substages.values():
-                if substage_config.output:
-                    files_to_archive.append(substage_config.output)
+    for dot_path in stages_to_archive:
+        output = config.output_for(dot_path)
+        if output:
+            files_to_archive.append(output)
 
     # Determine worktree reset behavior
-    # Auto-reset if rolling back to before implement stage
-    implement_idx = stage_names.index("implement") if "implement" in stage_names else -1
-    auto_reset = target_idx < implement_idx if implement_idx >= 0 else False
+    # Auto-reset if rolling back to before any implement stage
+    implement_paths = [dp for dp in flow_stages if dp.startswith("implement")]
+    if implement_paths:
+        first_implement_idx = flow_stages.index(implement_paths[0])
+        auto_reset = target_idx < first_implement_idx
+    else:
+        auto_reset = False
 
     should_reset = reset_worktree or (auto_reset and not keep_changes)
 
@@ -783,10 +742,7 @@ def rollback_issue(
 
     console.print(f"\n[bold]Rollback Issue #{issue.id}: {issue.title}[/bold]")
     console.print(f"\n  Current stage: [yellow]{issue.stage}[/yellow]")
-    target_str = stage_name
-    if target_substage:
-        target_str += f".{target_substage}"
-    console.print(f"  Target stage:  [green]{target_str}[/green]")
+    console.print(f"  Target stage:  [green]{stage_name}[/green]")
 
     if files_to_archive:
         console.print(f"\n  Files to archive:")
@@ -845,13 +801,11 @@ def rollback_issue(
             # Update stage
             now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
             data["stage"] = stage_name
-            data["substage"] = target_substage
             data["updated"] = now
 
             # Add rollback history entry
             history_entry = {
                 "stage": stage_name,
-                "substage": target_substage,
                 "timestamp": now,
                 "type": "rollback",
             }
@@ -868,7 +822,7 @@ def rollback_issue(
             with open(yaml_path, "w") as fh:
                 pyyaml.dump(data, fh, default_flow_style=False, sort_keys=False)
 
-            console.print(f"[green]✓ Issue stage set to {target_str}[/green]")
+            console.print(f"[green]✓ Issue stage set to {stage_name}[/green]")
 
     # 3. Clear agent session
     delete_session(issue_id_normalized)
@@ -901,7 +855,7 @@ def rollback_issue(
     agents_path = get_agenttree_path()
     sync_agents_repo(agents_path, pull_only=False, commit_message=f"Rollback issue {issue_id} to {stage_name}")
 
-    console.print(f"\n[green]✓ Issue #{issue.id} rolled back to {target_str}[/green]")
+    console.print(f"\n[green]✓ Issue #{issue.id} rolled back to {stage_name}[/green]")
     if active_agent:
         console.print(f"\n[dim]Restart the agent when ready:[/dim]")
         console.print(f"  agenttree start {issue.id}")

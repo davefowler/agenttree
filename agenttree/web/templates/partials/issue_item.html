@@ -6,12 +6,12 @@ Optional:
   - 'selected_issue' - for active state
   - 'draggable' - enable drag (kanban only)
 #}
-<a class="issue-item {% if selected_issue and issue.number == selected_issue.number %}active{% endif %}{% if issue.stage.value in ['accepted', 'not_doing'] %} issue-old{% endif %}"
+<a class="issue-item {% if selected_issue and issue.number == selected_issue.number %}active{% endif %}{% if issue.stage in ['accepted', 'not_doing'] %} issue-old{% endif %}"
    href="{{ base_url }}?issue={{ issue.number }}"
    data-issue="{{ issue.number }}"
-   data-stage="{{ issue.stage.value }}"
+   data-stage="{{ issue.stage }}"
    data-has-agent="{{ 'true' if issue.tmux_active else 'false' }}"
-   style="--stage-color: {{ stage_color(issue.stage.value) }}"
+   data-is-review="{{ 'true' if issue.is_review else 'false' }}"
    {% if draggable %}
    draggable="{{ 'true' if issue.is_review else 'false' }}"
    {% endif %}>
@@ -21,9 +21,6 @@ Optional:
                  onclick="event.preventDefault(); event.stopPropagation(); toggleAgent('{{ issue.number }}', this)"
                  title="{% if issue.processing %}Processing hooks...{% elif issue.tmux_active %}Agent running{% else %}No agent{% endif %}"></div>
             <span class="issue-number">#{{ issue.number }}</span>
-            {% if issue.flow and issue.flow != 'default' %}
-            <span class="flow-badge flow-{{ issue.flow }}" title="{{ issue.flow | title }} flow">⚡</span>
-            {% endif %}
             {% if issue.priority != 'medium' %}
             <span class="priority-badge priority-{{ issue.priority }}" title="Priority: {{ issue.priority }}">{{ issue.priority[:1] | upper }}</span>
             {% endif %}
@@ -35,7 +32,7 @@ Optional:
             {% endif %}
             {% endfor %}
             {% if show_stage %}
-            <span class="issue-stage-label {% if issue.is_review %}needs-approval{% endif %}">{% if issue.substage %}{{ issue.substage | replace('_', ' ') | title }}{% else %}{{ issue.stage.value | stage_name }}{% endif %}</span>
+            <span class="issue-stage-label {% if issue.is_review %}needs-approval{% endif %}">{{ issue.stage | stage_name }}</span>
             {% endif %}
         </div>
     </div>

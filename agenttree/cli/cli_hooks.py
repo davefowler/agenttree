@@ -38,7 +38,8 @@ def hooks_check(issue_id: str, event: str) -> None:
         sys.exit(1)
 
     config = load_config()
-    stage_config = config.get_stage(issue.stage)
+    stage_name, substage_name = config.parse_stage(issue.stage)
+    stage_config = config.get_stage(stage_name)
     if not stage_config:
         console.print(f"[yellow]No hooks configured for stage: {issue.stage}[/yellow]")
         return
@@ -47,7 +48,7 @@ def hooks_check(issue_id: str, event: str) -> None:
     context = "container" if in_container else "host"
 
     console.print(f"\n[bold]Issue #{issue.id}[/bold]: {issue.title}")
-    console.print(f"[dim]Stage: {issue.stage}" + (f".{issue.substage}" if issue.substage else "") + f"[/dim]")
+    console.print(f"[dim]Stage: {issue.stage}[/dim]")
     console.print(f"[dim]Context: {context}[/dim]")
     console.print()
 
@@ -87,40 +88,28 @@ def hooks_check(issue_id: str, event: str) -> None:
 
             console.print(f"  - [green]{hook_type}[/green]: {param_str}{optional_str}{skipped}")
 
-    # Get substage config if applicable
-    substage_config = None
-    if issue.substage:
-        substage_config = stage_config.get_substage(issue.substage)
-
     # Show hooks based on event filter
     if event in ("pre_completion", "both"):
-        # Substage pre_completion hooks
-        if substage_config:
-            show_hooks(substage_config.pre_completion, "pre_completion", f"{issue.stage}.{issue.substage}")
-
-        # Check if exiting stage (last substage or no substages)
-        substages = stage_config.substage_order()
-        is_exiting_stage = not substages or (issue.substage and substages[-1] == issue.substage)
-
-        if is_exiting_stage:
-            show_hooks(stage_config.pre_completion, "pre_completion", f"{issue.stage} (stage-level)")
-        elif not substage_config:
+        if substage_name:
+            substage_config = stage_config.get_substage(substage_name)
+            if substage_config:
+                show_hooks(substage_config.pre_completion, "pre_completion", issue.stage)
+        else:
             show_hooks(stage_config.pre_completion, "pre_completion", issue.stage)
 
     if event in ("post_start", "both"):
         # For post_start, show what would run on NEXT stage
         issue_ctx = get_issue_context(issue, include_docs=False)
-        next_stage, next_substage, _ = get_next_stage(
-            issue.stage, issue.substage, issue.flow, issue_context=issue_ctx
-        )
-        if next_stage:
-            next_stage_config = config.get_stage(next_stage)
+        next_dot_path, _ = get_next_stage(issue.stage, issue.flow, issue_context=issue_ctx)
+        if next_dot_path:
+            next_stage_name, next_substage_name = config.parse_stage(next_dot_path)
+            next_stage_config = config.get_stage(next_stage_name)
             if next_stage_config:
-                if next_substage:
-                    next_substage_config = next_stage_config.get_substage(next_substage)
-                    if next_substage_config:
-                        show_hooks(next_substage_config.post_start, "post_start", f"{next_stage}.{next_substage} (next)")
+                if next_substage_name:
+                    next_sub_config = next_stage_config.get_substage(next_substage_name)
+                    if next_sub_config:
+                        show_hooks(next_sub_config.post_start, "post_start", f"{next_dot_path} (next)")
                 else:
-                    show_hooks(next_stage_config.post_start, "post_start", f"{next_stage} (next)")
+                    show_hooks(next_stage_config.post_start, "post_start", f"{next_dot_path} (next)")
 
     console.print()

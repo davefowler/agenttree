@@ -1,13 +1,12 @@
 """Main TUI application for AgentTree issue management."""
 
-from typing import Optional
-
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.widgets import DataTable, Footer, Header, Input, Static
 from textual.worker import Worker, get_current_worker
 
+from agenttree.config import load_config
 from agenttree.hooks import (
     ValidationError,
     StageRedirect,
@@ -24,14 +23,6 @@ from agenttree.issues import (
 )
 
 
-# Rejection stage mappings: where to send issues back when rejected
-# Only valid human review stages (plan_review, implementation_review) are included
-REJECTION_MAPPINGS = {
-    "plan_review": "plan",
-    "implementation_review": "implement",
-}
-
-
 class DetailPanel(Static):
     """Panel showing detailed information about the selected issue."""
 
@@ -45,7 +36,7 @@ class DetailPanel(Static):
 
     def __init__(self) -> None:
         super().__init__("Select an issue to view details", id="detail-panel")
-        self._issue: Optional[Issue] = None
+        self._issue: Issue | None = None
 
     def show_issue(self, issue: Issue) -> None:
         """Display details for the given issue."""
@@ -54,10 +45,7 @@ class DetailPanel(Static):
         # Build detail content
         content = f"[bold]{issue.title}[/bold]\n\n"
         content += f"[dim]ID:[/dim] {issue.id}\n"
-        content += f"[dim]Stage:[/dim] {issue.stage}"
-        if issue.substage:
-            content += f".{issue.substage}"
-        content += "\n"
+        content += f"[dim]Stage:[/dim] {issue.stage}\n"
         content += f"[dim]Priority:[/dim] {issue.priority.value}\n"
 
         if issue.labels:
@@ -91,7 +79,7 @@ class DetailPanel(Static):
         self.update("Select an issue to view details")
 
     @property
-    def issue(self) -> Optional[Issue]:
+    def issue(self) -> Issue | None:
         """Return the currently displayed issue."""
         return self._issue
 
@@ -163,14 +151,10 @@ class IssueTable(DataTable):  # type: ignore[type-arg]
         """Rebuild table rows from filtered issues."""
         self.clear()
         for issue in self._filtered_issues:
-            stage_str = issue.stage
-            if issue.substage:
-                stage_str += f".{issue.substage}"
-
             self.add_row(
                 issue.id,
                 issue.title[:40] + "..." if len(issue.title) > 40 else issue.title,
-                stage_str,
+                issue.stage,
                 issue.priority.value,
                 key=issue.id,
             )
@@ -189,7 +173,7 @@ class IssueTable(DataTable):  # type: ignore[type-arg]
             ]
         self._rebuild_rows()
 
-    def get_selected_issue(self) -> Optional[Issue]:
+    def get_selected_issue(self) -> Issue | None:
         """Get the currently selected issue."""
         if not self._filtered_issues:
             return None
@@ -321,38 +305,32 @@ class TUIApp(App):  # type: ignore[type-arg]
             return
 
         try:
-            next_stage, next_substage, _ = get_next_stage(issue.stage, issue.substage, issue.flow)
+            next_dot_path, _ = get_next_stage(issue.stage, issue.flow)
 
             # Execute pre-completion hooks (can block with ValidationError or redirect)
-            from_stage = issue.stage
-            from_substage = issue.substage
             try:
-                execute_exit_hooks(issue, from_stage, from_substage)
+                execute_exit_hooks(issue, issue.stage)
             except StageRedirect as redirect:
-                # Redirect to a different stage/substage
-                next_stage = redirect.target_stage
-                next_substage = redirect.target_substage
-                status.show_message(f"Redirecting to {next_stage}: {redirect.reason}")
+                # Redirect to a different stage
+                next_dot_path = redirect.target
+                status.show_message(f"Redirecting to {next_dot_path}: {redirect.reason}")
 
             # Update issue stage
-            updated = update_issue_stage(issue.id, next_stage, next_substage)
+            updated = update_issue_stage(issue.id, next_dot_path)
             if not updated:
                 status.show_message(f"Failed to update issue #{issue.id}")
                 return
 
             # Execute post-start hooks (may redirect on merge conflict etc.)
             try:
-                execute_enter_hooks(updated, next_stage, next_substage)
+                execute_enter_hooks(updated, next_dot_path)
             except StageRedirect as redirect:
-                redirect_stage = redirect.target_stage
-                redirect_substage = redirect.target_substage
-                update_issue_stage(issue.id, redirect_stage, redirect_substage)
-                stage_str = redirect_stage + (f".{redirect_substage}" if redirect_substage else "")
-                status.show_message(f"Redirected #{issue.id} to {stage_str}: {redirect.reason}")
+                update_issue_stage(issue.id, redirect.target)
+                status.show_message(f"Redirected #{issue.id} to {redirect.target}: {redirect.reason}")
                 self._load_issues()
                 return
 
-            status.show_message(f"Advanced #{issue.id} to {next_stage}")
+            status.show_message(f"Advanced #{issue.id} to {next_dot_path}")
             self._load_issues()
         except ValidationError as e:
             status.show_message(f"Cannot advance: {e}")
@@ -376,17 +354,26 @@ class TUIApp(App):  # type: ignore[type-arg]
             return
 
         # Check if issue is in a human review stage
-        if issue.stage not in REJECTION_MAPPINGS:
+        config = load_config()
+        if not config.is_human_review(issue.stage):
             status.show_message(f"Cannot reject: {issue.stage} is not a review stage")
             return
 
         try:
-            reject_to = REJECTION_MAPPINGS[issue.stage]
+            # Find the previous stage in the flow to reject back to
+            flow_stages = config.get_flow_stage_names(issue.flow)
+            try:
+                idx = flow_stages.index(issue.stage)
+            except ValueError:
+                status.show_message(f"Cannot reject: {issue.stage} not found in flow")
+                return
+            if idx == 0:
+                status.show_message(f"Cannot reject: {issue.stage} is the first stage")
+                return
+            reject_to = flow_stages[idx - 1]
 
             # Execute exit hooks for the current stage (consistent with web UI)
-            from_stage = issue.stage
-            from_substage = issue.substage
-            execute_exit_hooks(issue, from_stage, from_substage)
+            execute_exit_hooks(issue, issue.stage)
 
             # Update issue stage
             updated = update_issue_stage(issue.id, reject_to)
@@ -395,7 +382,7 @@ class TUIApp(App):  # type: ignore[type-arg]
                 return
 
             # Execute post-start hooks for the target stage
-            execute_enter_hooks(updated, reject_to, None)
+            execute_enter_hooks(updated, reject_to)
 
             status.show_message(f"Rejected #{issue.id} back to {reject_to}")
             self._load_issues()
