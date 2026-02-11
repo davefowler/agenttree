@@ -301,13 +301,16 @@ def list_issues(
         if not yaml_path.exists():
             continue
 
-        with open(yaml_path) as f:
-            data = yaml.safe_load(f)
-
         try:
+            with open(yaml_path) as f:
+                data = yaml.safe_load(f)
             issue = Issue(**data)
+        except yaml.YAMLError as e:
+            # Skip corrupted YAML files with a warning
+            print(f"Warning: Skipping corrupted issue file {yaml_path}: {e}")
+            continue
         except Exception:
-            # Skip malformed issues
+            # Skip malformed issues (e.g., missing required fields)
             continue
 
         # Apply filters
@@ -352,9 +355,16 @@ def get_issue(issue_id: str, sync: bool = True) -> Optional[Issue]:
         if dir_id == normalized_id or issue_dir.name == issue_id:
             yaml_path = issue_dir / "issue.yaml"
             if yaml_path.exists():
-                with open(yaml_path) as f:
-                    data = yaml.safe_load(f)
-                return Issue(**data)
+                try:
+                    with open(yaml_path) as f:
+                        data = yaml.safe_load(f)
+                    return Issue(**data)
+                except yaml.YAMLError as e:
+                    print(f"Warning: Corrupted issue file {yaml_path}: {e}")
+                    return None
+                except Exception:
+                    # Malformed issue data (missing required fields, etc.)
+                    return None
 
     return None
 
@@ -435,10 +445,16 @@ def remove_dependency(issue_id: str, dep_id: str) -> Optional[Issue]:
     if not yaml_path.exists():
         return None
 
-    with open(yaml_path) as f:
-        data = yaml.safe_load(f)
-
-    issue = Issue(**data)
+    try:
+        with open(yaml_path) as f:
+            data = yaml.safe_load(f)
+        issue = Issue(**data)
+    except yaml.YAMLError as e:
+        print(f"Warning: Corrupted issue file {yaml_path}: {e}")
+        return None
+    except Exception:
+        # Malformed issue data
+        return None
 
     # Normalize dep_id to match format in dependencies list
     dep_normalized = f"{int(dep_id.lstrip('0') or '0'):03d}"
@@ -644,10 +660,16 @@ def update_issue_stage(
     if not yaml_path.exists():
         return None
 
-    with open(yaml_path) as f:
-        data = yaml.safe_load(f)
-
-    issue = Issue(**data)
+    try:
+        with open(yaml_path) as f:
+            data = yaml.safe_load(f)
+        issue = Issue(**data)
+    except yaml.YAMLError as e:
+        print(f"Warning: Corrupted issue file {yaml_path}: {e}")
+        return None
+    except Exception:
+        # Malformed issue data
+        return None
 
     # Update stage
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -716,10 +738,16 @@ def update_issue_metadata(
     if not yaml_path.exists():
         return None
 
-    with open(yaml_path) as f:
-        data = yaml.safe_load(f)
-
-    issue = Issue(**data)
+    try:
+        with open(yaml_path) as f:
+            data = yaml.safe_load(f)
+        issue = Issue(**data)
+    except yaml.YAMLError as e:
+        print(f"Warning: Corrupted issue file {yaml_path}: {e}")
+        return None
+    except Exception:
+        # Malformed issue data
+        return None
 
     # Update fields if provided
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -778,8 +806,12 @@ def set_processing(issue_id: str, processing_state: str | None) -> bool:
     if not yaml_path.exists():
         return False
 
-    with open(yaml_path) as f:
-        data = yaml.safe_load(f)
+    try:
+        with open(yaml_path) as f:
+            data = yaml.safe_load(f)
+    except yaml.YAMLError as e:
+        print(f"Warning: Corrupted issue file {yaml_path}: {e}")
+        return False
 
     data["processing"] = processing_state
 
