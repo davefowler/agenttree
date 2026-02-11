@@ -1211,6 +1211,8 @@ async def approve_issue(
 async def create_issue_api(
     request: Request,
     description: str = Form(""),
+    problem: str = Form(""),
+    solutions: str = Form(""),
     title: str = Form(""),
     user: Optional[str] = Depends(get_current_user)
 ) -> dict:
@@ -1218,15 +1220,18 @@ async def create_issue_api(
 
     Creates an issue in the 'define' stage with default substage 'refine'.
     If no title is provided, one is auto-generated from the description.
+    Accepts either 'problem' (preferred) or 'description' (legacy) for backwards compatibility.
     """
     from agenttree.issues import Priority
 
-    description = description.strip()
+    # Use problem if provided, else fall back to description for backwards compatibility
+    problem_text = problem.strip() or description.strip()
+    solutions_text = solutions.strip()
     title = title.strip()
 
-    # Require at least a description
-    if not description:
-        raise HTTPException(status_code=400, detail="Please provide a description")
+    # Require at least a problem description
+    if not problem_text:
+        raise HTTPException(status_code=400, detail="Please provide a problem description")
 
     # Use placeholder if no title - agent will fill it in during define stage
     if not title:
@@ -1239,7 +1244,8 @@ async def create_issue_api(
         issue = issue_crud.create_issue(
             title=title,
             priority=Priority.MEDIUM,
-            problem=description,
+            problem=problem_text,
+            solutions=solutions_text if solutions_text else None,
         )
 
         # Auto-start agent for the new issue

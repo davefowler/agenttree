@@ -106,13 +106,14 @@
                 <h2>Create New Issue</h2>
                 <form id="new-issue-form" onsubmit="submitNewIssue(event)">
                     <div class="form-group">
-                        <label for="issue-description">Description</label>
-                        <textarea id="issue-description" name="description" rows="12" autofocus
-                                  placeholder="Describe the problem and any ideas for solutions...">Problem:
-
-
-Possible solutions:
-</textarea>
+                        <label for="issue-problem">Problem Description</label>
+                        <textarea id="issue-problem" name="problem" rows="8" autofocus
+                                  placeholder="Describe the problem you're trying to solve. What's currently broken or missing? Why does it need to be fixed?"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="issue-solutions">Possible Solutions <span class="label-hint">(optional)</span></label>
+                        <textarea id="issue-solutions" name="solutions" rows="4"
+                                  placeholder="Any ideas for how to solve this? Technical approaches, potential implementations, or alternatives to consider."></textarea>
                     </div>
                     <div class="form-group">
                         <label for="issue-title">Title <span class="label-hint">(optional - auto-generated if blank)</span></label>

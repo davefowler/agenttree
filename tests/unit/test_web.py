@@ -1104,3 +1104,113 @@ class TestFileToStageMapping:
         problem_file = files[0]
         assert problem_file["is_passed"] == "false"
         assert problem_file["short_name"] == "Problem"  # Not truncated
+
+
+class TestCreateIssueAPI:
+    """Tests for the create issue API endpoint."""
+
+    @patch("agenttree.web.app.start_agent")
+    @patch("agenttree.web.app.issue_crud")
+    def test_create_issue_with_problem_and_solutions(self, mock_crud, mock_start, client):
+        """Test creating issue with new problem and solutions parameters."""
+        mock_issue = Mock(id="001", title="Test Issue")
+        mock_crud.create_issue.return_value = mock_issue
+
+        response = client.post(
+            "/api/issues",
+            data={
+                "title": "Test Issue",
+                "problem": "This is a detailed problem description that explains the issue.",
+                "solutions": "Possible fix: do something about it."
+            }
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["ok"] is True
+        assert data["issue_id"] == "001"
+
+        # Verify create_issue was called with correct params
+        mock_crud.create_issue.assert_called_once()
+        call_kwargs = mock_crud.create_issue.call_args.kwargs
+        assert call_kwargs["problem"] == "This is a detailed problem description that explains the issue."
+        assert call_kwargs["solutions"] == "Possible fix: do something about it."
+
+    @patch("agenttree.web.app.start_agent")
+    @patch("agenttree.web.app.issue_crud")
+    def test_create_issue_legacy_description_fallback(self, mock_crud, mock_start, client):
+        """Test that legacy description parameter still works for backwards compatibility."""
+        mock_issue = Mock(id="002", title="Legacy Issue")
+        mock_crud.create_issue.return_value = mock_issue
+
+        response = client.post(
+            "/api/issues",
+            data={
+                "title": "Legacy Issue",
+                "description": "This is a legacy description for backwards compatibility."
+            }
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["ok"] is True
+
+        # Verify description was used as problem
+        call_kwargs = mock_crud.create_issue.call_args.kwargs
+        assert call_kwargs["problem"] == "This is a legacy description for backwards compatibility."
+
+    @patch("agenttree.web.app.start_agent")
+    @patch("agenttree.web.app.issue_crud")
+    def test_create_issue_problem_takes_precedence(self, mock_crud, mock_start, client):
+        """Test that problem takes precedence over description when both provided."""
+        mock_issue = Mock(id="003", title="Precedence Test")
+        mock_crud.create_issue.return_value = mock_issue
+
+        response = client.post(
+            "/api/issues",
+            data={
+                "title": "Precedence Test",
+                "problem": "This is the problem field.",
+                "description": "This is the description field."
+            }
+        )
+
+        assert response.status_code == 200
+
+        # Verify problem was used, not description
+        call_kwargs = mock_crud.create_issue.call_args.kwargs
+        assert call_kwargs["problem"] == "This is the problem field."
+
+    @patch("agenttree.web.app.start_agent")
+    @patch("agenttree.web.app.issue_crud")
+    def test_create_issue_with_problem_only_no_solutions(self, mock_crud, mock_start, client):
+        """Test creating issue with only problem, no solutions."""
+        mock_issue = Mock(id="004", title="Problem Only")
+        mock_crud.create_issue.return_value = mock_issue
+
+        response = client.post(
+            "/api/issues",
+            data={
+                "title": "Problem Only",
+                "problem": "This is just a problem without suggested solutions."
+            }
+        )
+
+        assert response.status_code == 200
+
+        # Verify solutions is None when not provided
+        call_kwargs = mock_crud.create_issue.call_args.kwargs
+        assert call_kwargs["solutions"] is None
+
+    def test_create_issue_validation_empty_problem_and_description(self, client):
+        """Test that validation error is returned when both problem and description are empty."""
+        response = client.post(
+            "/api/issues",
+            data={
+                "title": "Empty Test"
+            }
+        )
+
+        assert response.status_code == 400
+        data = response.json()
+        assert "problem description" in data["detail"].lower()
