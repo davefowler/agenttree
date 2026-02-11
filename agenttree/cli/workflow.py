@@ -228,7 +228,7 @@ def stage_next(issue_id: str | None, reassess: bool) -> None:
         return
 
     # Block agents from advancing past human_review stages — only `agenttree approve` can do that
-    current_stage_config = load_config().get_stage(issue.stage)
+    current_stage_config = config.get_stage(issue.stage)
     if current_stage_config and current_stage_config.human_review and is_running_in_container():
         console.print(f"\n[yellow]⏳ Waiting for human review at {issue.stage}[/yellow]")
         console.print(f"[dim]This stage requires human approval.[/dim]")
@@ -265,13 +265,14 @@ def stage_next(issue_id: str | None, reassess: bool) -> None:
         console.print(f"[yellow]Redirecting to {redirect.target_stage}{('.' + redirect.target_substage) if redirect.target_substage else ''}: {redirect.reason}[/yellow]")
         next_stage = redirect.target_stage
         next_substage = redirect.target_substage
-        is_human_review = False  # Redirect target is typically not human review
+        # Check if redirect target requires human review
+        redirect_target_config = config.get_stage(next_stage)
+        is_human_review = redirect_target_config.human_review if redirect_target_config else False
     except ValidationError as e:
         console.print(f"[red]Cannot proceed: {e}[/red]")
         sys.exit(1)
 
     # Save tmux history if enabled in config
-    config = load_config()
     if config.save_tmux_history:
         issue_dir = get_issue_dir(issue_id)
         if issue_dir:
