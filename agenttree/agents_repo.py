@@ -245,18 +245,16 @@ def check_manager_stages(agents_dir: Path) -> int:
                 issue = Issue(**data)
 
                 try:
-                    execute_enter_hooks(issue, stage, data.get("substage"))
+                    execute_enter_hooks(issue, stage)
                 except StageRedirect as redirect:
                     # Hook wants to redirect (e.g., merge conflict → developer)
                     from agenttree.issues import update_issue_stage
-                    update_issue_stage(
-                        issue.id, redirect.target_stage, redirect.target_substage
-                    )
+                    update_issue_stage(issue.id, redirect.target)
                     # Notify agent about the redirect so it knows to act
                     from agenttree.api import _notify_agent
                     _notify_agent(
                         issue.id,
-                        f"Issue redirected to {redirect.target_stage}: {redirect.reason}. Run `agenttree next` for instructions.",
+                        f"Issue redirected to {redirect.target}: {redirect.reason}. Run `agenttree next` for instructions.",
                         interrupt=True,
                     )
                     # Clear the flag since we redirected away from this stage
@@ -281,9 +279,9 @@ def check_manager_stages(agents_dir: Path) -> int:
 
 
 def ensure_review_branches(agents_dir: Path) -> int:
-    """Ensure PRs exist and branches are up-to-date for issues in implementation_review.
+    """Ensure PRs exist and branches are up-to-date for issues in implement.review.
 
-    Runs on every sync heartbeat. For each issue at implementation_review:
+    Runs on every sync heartbeat. For each issue at implement.review:
     1. If no PR exists: create one via ensure_pr_for_issue()
     2. If PR exists: check if branch is behind main, try to update
     3. If conflicts on update: redirect issue to implement.code for developer to rebase
@@ -321,7 +319,7 @@ def ensure_review_branches(agents_dir: Path) -> int:
                 data = yaml.safe_load(f)
 
             stage = data.get("stage", "")
-            if stage != "implementation_review":
+            if stage != "implement.review":
                 continue
 
             issue_id = data.get("id", "")
@@ -349,7 +347,7 @@ def ensure_review_branches(agents_dir: Path) -> int:
                     # Conflicts - redirect to developer to rebase
                     console.print(f"[yellow]PR #{pr_number} (issue #{issue_id}) has conflicts with main - redirecting to developer[/yellow]")
                     from agenttree.issues import update_issue_stage
-                    update_issue_stage(issue_id, "implement", "code")
+                    update_issue_stage(issue_id, "implement.code")
                     # Try to notify developer agent
                     try:
                         from agenttree.state import get_active_agent
@@ -486,7 +484,7 @@ def check_custom_agent_stages(agents_dir: Path) -> int:
     return spawned
 
 
-def _update_issue_stage_direct(yaml_path: Path, data: dict, new_stage: str, new_substage: str | None = None) -> None:
+def _update_issue_stage_direct(yaml_path: Path, data: dict, new_stage: str) -> None:
     """Update issue stage directly without triggering sync (to avoid recursion).
 
     Used by check_merged_prs to avoid infinite loop since update_issue_stage
@@ -495,8 +493,7 @@ def _update_issue_stage_direct(yaml_path: Path, data: dict, new_stage: str, new_
     Args:
         yaml_path: Path to issue.yaml
         data: Issue data dict
-        new_stage: Target stage name
-        new_substage: Target substage (required for stages with substages like 'implement')
+        new_stage: Target stage dot path (e.g., "implement.code")
     """
     from datetime import datetime, timezone
     import yaml as yaml_module
@@ -504,11 +501,11 @@ def _update_issue_stage_direct(yaml_path: Path, data: dict, new_stage: str, new_
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     old_stage = data.get("stage")
     data["stage"] = new_stage
-    data["substage"] = new_substage
+    data.pop("substage", None)
     data["updated"] = now
 
-    # Clear ci_escalated flag when moving out of implementation_review
-    if old_stage == "implementation_review" and new_stage != "implementation_review":
+    # Clear ci_escalated flag when moving out of implement.review
+    if old_stage == "implement.review" and new_stage != "implement.review":
         data["ci_escalated"] = False
 
     # Add history entry
@@ -516,7 +513,6 @@ def _update_issue_stage_direct(yaml_path: Path, data: dict, new_stage: str, new_
         data["history"] = []
     data["history"].append({
         "stage": new_stage,
-        "substage": new_substage,
         "timestamp": now,
         "agent": None,
     })
@@ -533,7 +529,7 @@ def check_merged_prs(agents_dir: Path) -> int:
     - Merged PR → advances to `accepted`
     - Closed (not merged) PR → advances to `not_doing`
 
-    Checks ANY non-terminal issue that has a pr_number, not just implementation_review.
+    Checks ANY non-terminal issue that has a pr_number, not just implement.review.
     This handles cases where PRs are merged while the issue is still in implement,
     code_review, or any other stage.
 
@@ -562,7 +558,7 @@ def check_merged_prs(agents_dir: Path) -> int:
     config = load_config()
 
     # Stages where the issue is already done - no need to check PR
-    parking_lot_stages = {s.name for s in config.stages if s.is_parking_lot}
+    parking_lot_stages = {name for name, s in config.stages.items() if s.is_parking_lot}
 
     issues_advanced = 0
 
@@ -610,7 +606,7 @@ def check_merged_prs(agents_dir: Path) -> int:
             if pr_state == "MERGED" or merged_at:
                 # PR was merged externally - advance to accepted
                 console.print(f"[green]PR #{pr_number} was merged externally (issue was at {stage}), advancing issue #{issue_id} to accepted[/green]")
-                _update_issue_stage_direct(issue_yaml, data, "accepted", new_substage=None)
+                _update_issue_stage_direct(issue_yaml, data, "accepted")
                 issues_advanced += 1
                 from agenttree.hooks import cleanup_issue_agent
                 from agenttree.issues import Issue
@@ -618,7 +614,7 @@ def check_merged_prs(agents_dir: Path) -> int:
             elif pr_state == "CLOSED":
                 # PR was closed without merging - advance to not_doing
                 console.print(f"[yellow]PR #{pr_number} was closed without merge (issue was at {stage}), advancing issue #{issue_id} to not_doing[/yellow]")
-                _update_issue_stage_direct(issue_yaml, data, "not_doing", new_substage=None)
+                _update_issue_stage_direct(issue_yaml, data, "not_doing")
                 issues_advanced += 1
                 from agenttree.hooks import cleanup_issue_agent
                 from agenttree.issues import Issue
@@ -634,9 +630,9 @@ def check_merged_prs(agents_dir: Path) -> int:
 
 
 def check_ci_status(agents_dir: Path) -> int:
-    """Check CI status for issues at implementation_review and notify agents on failure.
+    """Check CI status for issues at implement.review and notify agents on failure.
 
-    For issues at implementation_review with a PR:
+    For issues at implement.review with a PR:
     - Checks CI status via get_pr_checks()
     - If CI failed: writes ci_feedback.md, sends tmux message, transitions to implement
 
@@ -678,8 +674,8 @@ def check_ci_status(agents_dir: Path) -> int:
             with open(issue_yaml) as f:
                 data = yaml.safe_load(f)
 
-            # Only check issues at implementation_review WITH a PR
-            if data.get("stage") != "implementation_review":
+            # Only check issues at implement.review WITH a PR
+            if data.get("stage") != "implement.review":
                 continue
             pr_number = data.get("pr_number")
             if not pr_number:
@@ -761,8 +757,8 @@ def check_ci_status(agents_dir: Path) -> int:
             history = data.get("history", [])
             ci_bounce_count = sum(
                 1 for i, entry in enumerate(history)
-                if entry.get("stage") == "implement" and entry.get("substage") == "debug"
-                and i > 0 and history[i - 1].get("stage") == "implementation_review"
+                if entry.get("stage") == "implement.debug"
+                and i > 0 and history[i - 1].get("stage") == "implement.review"
             )
 
             max_ci_bounces = 3
@@ -774,7 +770,7 @@ def check_ci_status(agents_dir: Path) -> int:
 
                 console.print(f"[red]CI failed {ci_bounce_count}x for issue #{issue_id} — escalating to human review[/red]")
                 data["ci_escalated"] = True
-                _update_issue_stage_direct(issue_yaml, data, "implementation_review", "review")
+                _update_issue_stage_direct(issue_yaml, data, "implement.review")
                 issues_notified += 1
                 continue
 
@@ -784,7 +780,7 @@ def check_ci_status(agents_dir: Path) -> int:
             console.print(f"[yellow]CI failed for PR #{pr_number} (attempt {ci_bounce_count + 1}/{max_ci_bounces}), notifying issue #{issue_id}[/yellow]")
 
             # Transition issue back to implement.debug stage for CI fix
-            _update_issue_stage_direct(issue_yaml, data, "implement", "debug")
+            _update_issue_stage_direct(issue_yaml, data, "implement.debug")
             console.print(f"[yellow]Issue #{issue_id} moved back to implement.debug stage for CI fix[/yellow]")
 
             # Ensure agent is running and notify it
@@ -1470,7 +1466,7 @@ Run `./scripts/submit.sh` which will:
 
 ## Important: Do NOT Merge Your Own PR
 
-PRs are reviewed and merged by humans using `agenttree approve`. Never use `gh pr merge` directly—this bypasses the workflow and leaves issues stuck at `implementation_review`.
+PRs are reviewed and merged by humans using `agenttree approve`. Never use `gh pr merge` directly—this bypasses the workflow and leaves issues stuck at `implement.review`.
 
 ## Questions?
 

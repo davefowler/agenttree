@@ -332,6 +332,16 @@ button[disabled] {
     margin-bottom: 8px;
 }
 
+/* Flow badges */
+.flow-badge {
+    font-size: 12px;
+    cursor: default;
+}
+
+.flow-badge.flow-quick {
+    color: #eab308;
+}
+
 /* Priority badges - text color only */
 .priority-badge {
     padding: 2px 6px;
@@ -440,8 +450,8 @@ button[disabled] {
 }
 
 .file-tab[data-stage="plan"],
-.file-tab[data-stage="plan_assess"],
-.file-tab[data-stage="plan_revise"] {
+.file-tab[data-stage="plan.assess"],
+.file-tab[data-stage="plan.revise"] {
     border-top-color: #60a5fa;
 }
 
@@ -449,29 +459,18 @@ button[disabled] {
     border-top-color: #8b5cf6;
 }
 
-.file-tab[data-stage="implementation_review"],
-.file-tab[data-stage="independent_code_review"] {
+.file-tab[data-stage="implement.review"],
+.file-tab[data-stage="implement.independent_review"] {
     border-top-color: #f59e0b;
 }
 
 /* Passed-stage tabs are truncated and slightly faded */
-.file-tab[data-passed="true"] {
+.file-tab[data-passed="true"]:not(.active) {
     max-width: 60px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     opacity: 0.8;
-}
-
-/* Active tab overrides stage color with accent */
-.file-tab.active[data-stage] {
-    border-top-color: var(--text-accent);
-}
-
-/* Dark theme overrides for stage colors */
-[data-theme="dark"] .file-tab[data-stage="define"] {
-    border-top-color: #a8a29e;
-}
-
-[data-theme="dark"] .file-tab[data-stage="research"] {
-    border-top-color: #2dd4bf;
 }
 
 .no-files {
@@ -711,15 +710,6 @@ button[disabled] {
     font-size: inherit;
 }
 
-.substage-pill {
-    display: inline-block;
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    padding: 1px 8px;
-    font-size: 12px;
-    color: var(--text-accent);
-    background: var(--bg-tertiary);
-}
 
 .detail-meta .dependency-info,
 .detail-meta .dependent-info {
@@ -1430,7 +1420,7 @@ button[disabled] {
     border-left-color: #60a5fa;
 }
 
-.kanban-column .issue-item[data-stage="plan_review"] {
+.kanban-column .issue-item[data-stage="plan.review"] {
     border-left-color: #f59e0b;
     background: #fffbeb;
 }
@@ -1440,7 +1430,7 @@ button[disabled] {
     border-left-color: #8b5cf6;
 }
 
-.kanban-column .issue-item[data-stage="implementation_review"] {
+.kanban-column .issue-item[data-stage="implement.review"] {
     border-left-color: #f59e0b;
     background: #fffbeb;
 }
@@ -1456,8 +1446,8 @@ button[disabled] {
 }
 
 /* Dark theme overrides for stage backgrounds */
-[data-theme="dark"] .kanban-column .issue-item[data-stage="plan_review"],
-[data-theme="dark"] .kanban-column .issue-item[data-stage="implementation_review"] {
+[data-theme="dark"] .kanban-column .issue-item[data-stage="plan.review"],
+[data-theme="dark"] .kanban-column .issue-item[data-stage="implement.review"] {
     background: #451a03;
 }
 
@@ -1741,7 +1731,7 @@ button[disabled] {
     border-left-color: #60a5fa;
 }
 
-.flow-sidebar .issue-item[data-stage="plan_review"] {
+.flow-sidebar .issue-item[data-stage="plan.review"] {
     border-left-color: #f59e0b;
 }
 
@@ -1750,7 +1740,7 @@ button[disabled] {
     border-left-color: #8b5cf6;
 }
 
-.flow-sidebar .issue-item[data-stage="implementation_review"] {
+.flow-sidebar .issue-item[data-stage="implement.review"] {
     border-left-color: #f59e0b;
 }
 
@@ -2386,7 +2376,7 @@ button[disabled] {
     border-left-color: #60a5fa;
 }
 
-.mobile-container .issue-item[data-stage="plan_review"] {
+.mobile-container .issue-item[data-stage="plan.review"] {
     border-left-color: #f59e0b;
 }
 
@@ -2395,7 +2385,7 @@ button[disabled] {
     border-left-color: #8b5cf6;
 }
 
-.mobile-container .issue-item[data-stage="implementation_review"] {
+.mobile-container .issue-item[data-stage="implement.review"] {
     border-left-color: #f59e0b;
 }
 

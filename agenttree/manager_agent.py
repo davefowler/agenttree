@@ -21,9 +21,6 @@ class StalledAgent(TypedDict):
 
 
 
-# Human review stages that should be excluded from stall detection
-HUMAN_REVIEW_STAGES = {"plan_review", "implementation_review"}
-
 
 def get_stalled_agents(
     agents_dir: Path,
@@ -46,7 +43,7 @@ def get_stalled_agents(
     Returns:
         List of StalledAgent dicts with:
         - issue_id: Issue ID
-        - stage: Current stage (with substage if any)
+        - stage: Current stage dot path (e.g., "explore.define")
         - minutes_stalled: How many minutes since last advancement
         - title: Issue title
     """
@@ -57,6 +54,7 @@ def get_stalled_agents(
         return []
 
     config = load_config()
+    human_review_stages = set(config.get_human_review_stages())
     stalled: list[StalledAgent] = []
     now = datetime.now(timezone.utc)
 
@@ -81,12 +79,11 @@ def get_stalled_agents(
             if not active_agent:
                 continue
 
-            # Get stage info
+            # Get stage (now a dot path like "explore.define")
             stage = issue_data.get("stage", "")
-            substage = issue_data.get("substage")
 
             # Skip human review stages
-            if stage in HUMAN_REVIEW_STAGES:
+            if stage in human_review_stages:
                 continue
 
             # Skip parking lot stages (no active agent expected)
@@ -115,12 +112,9 @@ def get_stalled_agents(
             except (ValueError, TypeError):
                 continue
 
-            # Build stage string
-            stage_str = f"{stage}.{substage}" if substage else stage
-
             stalled.append({
                 "issue_id": issue_id,
-                "stage": stage_str,
+                "stage": stage,
                 "minutes_stalled": int(minutes_since),
                 "title": issue_data.get("title", ""),
             })

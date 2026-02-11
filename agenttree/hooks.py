@@ -316,11 +316,6 @@ from rich.console import Console
 
 from agenttree.issues import (
     Issue,
-    DEFINE,
-    RESEARCH,
-    PLAN,
-    IMPLEMENT,
-    ACCEPTED,
     get_issue_context,
 )
 from agenttree.config import load_config
@@ -335,17 +330,16 @@ class ValidationError(Exception):
 
 
 class StageRedirect(Exception):
-    """Raised when a hook failure should redirect to a different stage/substage instead of blocking.
+    """Raised when a hook failure should redirect to a different stage.
 
-    Used with on_fail_stage and on_fail_substage options in hooks.
+    Used with on_fail option in hooks. Target is a dot path (e.g., "implement.code")
+    or a relative substage name that gets resolved by the caller.
     """
 
-    def __init__(self, target_stage: str, reason: str = "", target_substage: str | None = None):
-        self.target_stage = target_stage
-        self.target_substage = target_substage
+    def __init__(self, target: str, reason: str = ""):
+        self.target = target
         self.reason = reason
-        target = f"'{target_stage}.{target_substage}'" if target_substage else f"'{target_stage}'"
-        super().__init__(f"Redirect to stage {target}: {reason}")
+        super().__init__(f"Redirect to stage '{target}': {reason}")
 
 
 def _extract_markdown_section(content: str, section: str) -> tuple[bool, str]:
@@ -707,15 +701,13 @@ def _action_merge_pr(pr_number: Optional[int], **kwargs: Any) -> None:
             except RuntimeError:
                 # Still can't merge after update - redirect to developer
                 raise StageRedirect(
-                    target_stage="implement",
-                    target_substage="code",
+                    "implement.code",
                     reason=f"PR #{pr_number} can't be merged after branch update. Developer needs to rebase on main.",
                 )
         else:
             # Can't auto-update (real conflicts) - redirect to developer
             raise StageRedirect(
-                target_stage="implement",
-                target_substage="code",
+                "implement.code",
                 reason=f"PR #{pr_number} has merge conflicts. Developer needs to rebase on main.",
             )
 
@@ -816,8 +808,7 @@ def run_builtin_validator(
 
     elif hook_type == "section_check":
         file_path = issue_dir / params["file"]
-        on_fail_stage = params.get("on_fail_stage")
-        on_fail_substage = params.get("on_fail_substage")
+        on_fail = params.get("on_fail") or params.get("on_fail_substage") or params.get("on_fail_stage")
         if not file_path.exists():
             errors.append(f"File '{params['file']}' not found for section check")
         else:
@@ -857,15 +848,18 @@ def run_builtin_validator(
                         fail_msg = f"Unchecked items in '{section}': {items}"
 
                 if check_failed:
-                    if on_fail_substage:
-                        # Redirect to a substage within the current stage
-                        raise StageRedirect(
-                            kwargs.get("stage", ""),
-                            fail_msg,
-                            target_substage=on_fail_substage,
-                        )
-                    elif on_fail_stage:
-                        raise StageRedirect(on_fail_stage, fail_msg)
+                    if on_fail:
+                        # Resolve relative substage names to full dot paths
+                        target = on_fail
+                        if "." not in target:
+                            # Relative: resolve against current stage group
+                            current_stage = kwargs.get("stage", "")
+                            if "." in current_stage:
+                                group, _ = current_stage.split(".", 1)
+                                target = f"{group}.{target}"
+                            else:
+                                target = f"{current_stage}.{target}"
+                        raise StageRedirect(target, fail_msg)
                     else:
                         errors.append(fail_msg)
 
@@ -1202,8 +1196,7 @@ def run_builtin_validator(
         # Supports on_fail_stage/on_fail_substage for conditional routing
         file_path = issue_dir / params["file"]
         checkbox_text = params.get("checkbox", "")
-        on_fail_stage = params.get("on_fail_stage")
-        on_fail_substage = params.get("on_fail_substage")
+        on_fail = params.get("on_fail") or params.get("on_fail_substage") or params.get("on_fail_stage")
 
         if not file_path.exists():
             errors.append(f"File '{params['file']}' not found for checkbox check")
@@ -1220,14 +1213,16 @@ def run_builtin_validator(
             elif re.search(unchecked_pattern, content):
                 # Checkbox exists but is unchecked
                 fail_msg = f"Checkbox '{checkbox_text}' is not checked in {params['file']}"
-                if on_fail_substage:
-                    raise StageRedirect(
-                        kwargs.get("stage", ""),
-                        fail_msg,
-                        target_substage=on_fail_substage,
-                    )
-                elif on_fail_stage:
-                    raise StageRedirect(on_fail_stage, fail_msg)
+                if on_fail:
+                    target = on_fail
+                    if "." not in target:
+                        current_stage = kwargs.get("stage", "")
+                        if "." in current_stage:
+                            group, _ = current_stage.split(".", 1)
+                            target = f"{group}.{target}"
+                        else:
+                            target = f"{current_stage}.{target}"
+                    raise StageRedirect(target, fail_msg)
                 else:
                     errors.append(fail_msg)
             else:
@@ -1272,11 +1267,18 @@ def run_builtin_validator(
     elif hook_type == "rollback":
         # Programmatic rollback to an earlier stage
         # Used in post_completion to loop back for re-review
-        to_stage = params.get("to_stage", "")
+        to_stage = params.get("to") or params.get("to_stage", "")
         auto_yes = params.get("yes", True)  # Default to auto-confirm for programmatic rollback
 
+        # Resolve relative substage name to full dot path
+        if to_stage and "." not in to_stage:
+            current_stage = kwargs.get("stage", "")
+            if "." in current_stage:
+                group, _ = current_stage.split(".", 1)
+                to_stage = f"{group}.{to_stage}"
+
         if not to_stage:
-            errors.append("rollback hook requires 'to_stage' parameter")
+            errors.append("rollback hook requires 'to' parameter")
         else:
             issue = kwargs.get("issue")
             if issue:
@@ -1581,6 +1583,8 @@ def execute_hooks(
     Returns:
         List of all error messages from failed hooks
     """
+    # Make stage available in kwargs for on_fail resolution in validators
+    kwargs["stage"] = stage
     errors: List[str] = []
 
     # Auto-check output file on pre_completion (if not optional)
@@ -1636,30 +1640,24 @@ def execute_hooks(
     return errors
 
 
-def execute_exit_hooks(issue: "Issue", stage: str, substage: Optional[str] = None, **extra_kwargs: Any) -> None:
-    """Execute pre_completion hooks for a stage/substage. Raises ValidationError if any fail.
-
-    This is the config-driven replacement for execute_pre_hooks.
-
-    Hook execution order: stage → substage (outer to inner).
-    When exiting the LAST substage, runs stage-level hooks first, then substage hooks.
-    This ensures stage-level requirements are checked before substage-specific ones.
+def execute_exit_hooks(issue: "Issue", dot_path: str, **extra_kwargs: Any) -> None:
+    """Execute pre_completion hooks for a dot path. Raises ValidationError if any fail.
 
     Args:
         issue: Issue being transitioned
-        stage: Current stage name
-        substage: Current substage name (optional)
+        dot_path: Current dot path (e.g., "explore.define", "implement.code_review")
         **extra_kwargs: Additional args (e.g., skip_pr_approval=True)
 
     Raises:
         ValidationError: If any validation fails (blocks transition)
-        StageRedirect: If a hook with on_fail_stage fails (redirect to different stage)
+        StageRedirect: If a hook with on_fail fails (redirect to different stage)
     """
     from agenttree.config import load_config
     from agenttree.issues import get_issue_dir
 
     config = load_config()
-    stage_config = config.get_stage(stage)
+    stage_name, substage_name = config.parse_stage(dot_path)
+    stage_config = config.get_stage(stage_name)
     if not stage_config:
         return  # Unknown stage, skip hooks
 
@@ -1673,38 +1671,31 @@ def execute_exit_hooks(issue: "Issue", stage: str, substage: Optional[str] = Non
         "issue_id": issue.id,
         "issue_title": issue.title,
         "branch": issue.branch or "",
-        "substage": substage or "",
         "issue": issue,  # Pass issue for worktree_dir access in run hooks
         **extra_kwargs,  # Pass through extra kwargs like skip_pr_approval
     }
 
-    # Check if we're exiting the stage (last substage or no substages)
-    substages = stage_config.substage_order()
-    is_exiting_stage = not substages or (substage and substages[-1] == substage)
-
-    # Execute stage-level hooks FIRST when exiting the stage (stage → substage order)
-    if is_exiting_stage:
-        errors.extend(execute_hooks(
-            issue_dir,
-            stage,
-            stage_config,
-            "pre_completion",
-            pr_number=issue.pr_number,
-            **hook_kwargs,
-        ))
-
-    # Execute substage hooks SECOND (if applicable)
-    if substage:
-        substage_config = stage_config.get_substage(substage)
+    # Execute hooks from the substage config (if a substage), else from stage config
+    if substage_name:
+        substage_config = stage_config.get_substage(substage_name)
         if substage_config:
             errors.extend(execute_hooks(
                 issue_dir,
-                stage,
+                dot_path,
                 substage_config,
                 "pre_completion",
                 pr_number=issue.pr_number,
                 **hook_kwargs,
             ))
+    else:
+        errors.extend(execute_hooks(
+            issue_dir,
+            dot_path,
+            stage_config,
+            "pre_completion",
+            pr_number=issue.pr_number,
+            **hook_kwargs,
+        ))
 
     if errors:
         if len(errors) == 1:
@@ -1716,22 +1707,18 @@ def execute_exit_hooks(issue: "Issue", stage: str, substage: Optional[str] = Non
             raise ValidationError(msg.strip())
 
 
-def execute_enter_hooks(issue: "Issue", stage: str, substage: Optional[str] = None) -> None:
-    """Execute post_start hooks for a stage/substage.
+def execute_enter_hooks(issue: "Issue", dot_path: str) -> None:
+    """Execute post_start hooks for a dot path.
 
     Non-critical errors are logged as warnings. Critical failures (like merge conflicts)
     raise StageRedirect so the issue can be routed back for developer intervention.
-
-    Hook execution order: substage → stage (inner to outer).
-    When entering the FIRST substage, runs substage hooks first, then stage-level hooks.
 
     For manager stages (role: manager), hooks are skipped when running in a container.
     The host will execute them via check_manager_stages() during sync.
 
     Args:
         issue: Issue that was transitioned
-        stage: New stage name
-        substage: New substage name (optional)
+        dot_path: New dot path (e.g., "explore.define", "implement.code")
 
     Raises:
         StageRedirect: If a hook needs to route the issue elsewhere (e.g., merge conflict).
@@ -1740,13 +1727,16 @@ def execute_enter_hooks(issue: "Issue", stage: str, substage: Optional[str] = No
     from agenttree.issues import get_issue_dir
 
     config = load_config()
-    stage_config = config.get_stage(stage)
+    stage_name, substage_name = config.parse_stage(dot_path)
+    stage_config = config.get_stage(stage_name)
     if not stage_config:
         return  # Unknown stage, skip hooks
 
+    # Determine effective role for this dot path
+    effective_role = config.role_for(dot_path)
+
     # Skip hooks for manager stages when in a container
-    # Host will run them via check_manager_stages() during sync
-    if stage_config.role == "manager" and is_running_in_container():
+    if effective_role == "manager" and is_running_in_container():
         console.print(f"[dim]Manager stage - hooks will run on host sync[/dim]")
         return
 
@@ -1760,32 +1750,25 @@ def execute_enter_hooks(issue: "Issue", stage: str, substage: Optional[str] = No
         "issue_id": issue.id,
         "issue_title": issue.title,
         "branch": issue.branch or "",
-        "substage": substage or "",
         "issue": issue,  # Pass issue object for cleanup_agent and start_blocked_issues hooks
     }
 
-    # Execute substage hooks FIRST (if applicable)
-    if substage:
-        substage_config = stage_config.get_substage(substage)
+    # Execute hooks from the substage config (if a substage), else from stage config
+    if substage_name:
+        substage_config = stage_config.get_substage(substage_name)
         if substage_config:
             errors.extend(execute_hooks(
                 issue_dir,
-                stage,
+                dot_path,
                 substage_config,
                 "post_start",
                 pr_number=issue.pr_number,
                 **hook_kwargs,
             ))
-
-    # Check if we're entering the stage (first substage or no substages)
-    substages = stage_config.substage_order()
-    is_entering_stage = not substages or (substage and substages[0] == substage)
-
-    # Execute stage-level hooks SECOND when entering the stage (substage → stage order)
-    if is_entering_stage:
+    else:
         errors.extend(execute_hooks(
             issue_dir,
-            stage,
+            dot_path,
             stage_config,
             "post_start",
             pr_number=issue.pr_number,
@@ -2264,13 +2247,14 @@ def generate_commit_message(issue: Issue, stage: str) -> str:
         Formatted commit message with GitHub issue linking
     """
     stage_prefixes = {
-        DEFINE: "Define problem for",
-        RESEARCH: "Research for",
-        PLAN: "Plan for",
-        IMPLEMENT: "Implement",
-        ACCEPTED: "Complete",
+        "explore": "Explore",
+        "plan": "Plan",
+        "implement": "Implement",
+        "accepted": "Complete",
     }
-    prefix = stage_prefixes.get(stage, stage.replace("_", " ").title() + " for")
+    # Use the top-level stage group for the prefix
+    group = stage.split(".")[0] if "." in stage else stage
+    prefix = stage_prefixes.get(group, group.replace("_", " ").title() + " for")
 
     # Build message with issue reference
     message = f"{prefix} issue #{issue.id}: {issue.title}"
@@ -2681,7 +2665,7 @@ def run_resource_cleanup(dry_run: bool = False, log_file: str | None = None) -> 
     from agenttree.config import load_config
     from agenttree.worktree import list_worktrees, remove_worktree
     from agenttree.tmux import list_sessions, kill_session
-    from agenttree.issues import list_issues, BACKLOG
+    from agenttree.issues import list_issues
     from agenttree.state import get_active_agent
     from agenttree.container import get_container_runtime
 
@@ -2720,7 +2704,7 @@ def run_resource_cleanup(dry_run: bool = False, log_file: str | None = None) -> 
             elif config.is_parking_lot(issue.stage):
                 # Parking lot stages may have worktrees cleaned up
                 # For backlog, keep worktree if there are uncommitted changes
-                if issue.stage == BACKLOG:
+                if issue.stage == "backlog":
                     status_result = subprocess.run(
                         ["git", "status", "--porcelain"],
                         cwd=wt_path,
@@ -2781,7 +2765,7 @@ def run_resource_cleanup(dry_run: bool = False, log_file: str | None = None) -> 
                 issue = issue_by_id.get(branch_issue_id)
                 if not issue:
                     reason = "issue not found"
-                elif config.is_parking_lot(issue.stage) and issue.stage != BACKLOG:
+                elif config.is_parking_lot(issue.stage) and issue.stage != "backlog":
                     # Clean branches for done/abandoned stages, but keep backlog branches
                     reason = f"issue in {issue.stage} stage"
 
