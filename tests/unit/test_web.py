@@ -633,29 +633,162 @@ class TestRebaseIssueEndpoint:
 class TestAgentTmuxEndpoint:
     """Tests for agent tmux output endpoint."""
 
-    @patch("subprocess.run")
+    @patch("agenttree.tmux.is_claude_running")
+    @patch("agenttree.tmux.capture_pane")
     @patch("agenttree.web.app.load_config")
-    def test_agent_tmux_returns_output(self, mock_config, mock_run, client):
+    def test_agent_tmux_returns_output(self, mock_config, mock_capture, mock_is_running, client):
         """Test getting tmux output for agent."""
         mock_config.return_value.project = "test"
-        mock_run.return_value = Mock(returncode=0, stdout="Agent output here")
+        mock_config.return_value.get_issue_session_patterns.return_value = ["test-developer-001"]
+        mock_capture.return_value = "Agent output here"
+        mock_is_running.return_value = True
 
         response = client.get("/agent/001/tmux")
 
         assert response.status_code == 200
         assert "text/html" in response.headers["content-type"]
+        # Verify ETag header is present
+        assert "etag" in response.headers
+        assert response.headers["etag"].startswith('"')
+        assert response.headers["etag"].endswith('"')
 
-    @patch("subprocess.run")
+    @patch("agenttree.tmux.capture_pane")
     @patch("agenttree.web.app.load_config")
-    def test_agent_tmux_session_not_active(self, mock_config, mock_run, client):
+    def test_agent_tmux_session_not_active(self, mock_config, mock_capture, client):
         """Test getting tmux output when session not active."""
+        from subprocess import CalledProcessError
         mock_config.return_value.project = "test"
-        mock_run.return_value = Mock(returncode=1, stdout="", stderr="session not found")
+        mock_config.return_value.get_issue_session_patterns.return_value = ["test-developer-001"]
+        mock_capture.side_effect = CalledProcessError(1, "tmux")
 
         response = client.get("/agent/001/tmux")
 
         assert response.status_code == 200
         assert "not active" in response.text.lower()
+        # ETag should still be present for "not active" message
+        assert "etag" in response.headers
+
+    @patch("agenttree.tmux.is_claude_running")
+    @patch("agenttree.tmux.capture_pane")
+    @patch("agenttree.web.app.load_config")
+    def test_agent_tmux_returns_etag_header(self, mock_config, mock_capture, mock_is_running, client):
+        """Test that /agent/{num}/tmux returns ETag header."""
+        mock_config.return_value.project = "test"
+        mock_config.return_value.get_issue_session_patterns.return_value = ["test-developer-001"]
+        mock_capture.return_value = "Test output content"
+        mock_is_running.return_value = True
+
+        response = client.get("/agent/001/tmux")
+
+        assert response.status_code == 200
+        assert "etag" in response.headers
+        etag = response.headers["etag"]
+        # ETag should be a quoted string
+        assert etag.startswith('"')
+        assert etag.endswith('"')
+        # ETag content should be a valid hex hash
+        assert len(etag) > 2  # More than just quotes
+
+    @patch("agenttree.tmux.is_claude_running")
+    @patch("agenttree.tmux.capture_pane")
+    @patch("agenttree.web.app.load_config")
+    def test_agent_tmux_304_when_unchanged(self, mock_config, mock_capture, mock_is_running, client):
+        """Test that endpoint returns 304 when content unchanged."""
+        mock_config.return_value.project = "test"
+        mock_config.return_value.get_issue_session_patterns.return_value = ["test-developer-001"]
+        mock_capture.return_value = "Same content"
+        mock_is_running.return_value = True
+
+        # First request to get ETag
+        response1 = client.get("/agent/001/tmux")
+        assert response1.status_code == 200
+        etag = response1.headers["etag"]
+
+        # Second request with If-None-Match header
+        response2 = client.get("/agent/001/tmux", headers={"If-None-Match": etag})
+
+        assert response2.status_code == 304
+        assert response2.text == "" or len(response2.content) == 0
+
+    @patch("agenttree.tmux.is_claude_running")
+    @patch("agenttree.tmux.capture_pane")
+    @patch("agenttree.web.app.load_config")
+    def test_agent_tmux_200_when_changed(self, mock_config, mock_capture, mock_is_running, client):
+        """Test that endpoint returns 200 with new ETag when content changed."""
+        mock_config.return_value.project = "test"
+        mock_config.return_value.get_issue_session_patterns.return_value = ["test-developer-001"]
+        mock_capture.return_value = "Original content"
+        mock_is_running.return_value = True
+
+        # First request
+        response1 = client.get("/agent/001/tmux")
+        old_etag = response1.headers["etag"]
+
+        # Change the content
+        mock_capture.return_value = "New content"
+
+        # Second request with old ETag
+        response2 = client.get("/agent/001/tmux", headers={"If-None-Match": old_etag})
+
+        assert response2.status_code == 200
+        new_etag = response2.headers["etag"]
+        assert new_etag != old_etag
+
+    @patch("agenttree.tmux.is_claude_running")
+    @patch("agenttree.tmux.capture_pane")
+    @patch("agenttree.web.app.load_config")
+    def test_agent_tmux_uses_capture_pane(self, mock_config, mock_capture, mock_is_running, client):
+        """Test that endpoint uses capture_pane() from tmux module."""
+        mock_config.return_value.project = "test"
+        mock_config.return_value.get_issue_session_patterns.return_value = ["test-developer-001"]
+        mock_capture.return_value = "Output from capture_pane"
+        mock_is_running.return_value = True
+
+        response = client.get("/agent/001/tmux")
+
+        assert response.status_code == 200
+        # Verify capture_pane was called with the session name and lines parameter
+        mock_capture.assert_called_once()
+        call_args = mock_capture.call_args
+        assert call_args[0][0] == "test-developer-001"  # session name
+        assert call_args[1].get("lines", 100) == 100  # lines parameter
+
+    def test_websocket_endpoint_removed(self, client):
+        """Test that WebSocket endpoint /ws/agent/{num}/tmux no longer exists."""
+        # Attempting to connect to removed WebSocket should fail
+        # TestClient doesn't support websocket_connect returning 404,
+        # so we test by checking the route doesn't exist
+        from agenttree.web.app import app
+
+        ws_routes = [
+            route for route in app.routes
+            if hasattr(route, 'path') and route.path == "/ws/agent/{agent_num}/tmux"
+        ]
+        assert len(ws_routes) == 0, "WebSocket endpoint should be removed"
+
+    @patch("agenttree.tmux.is_claude_running")
+    @patch("agenttree.tmux.capture_pane")
+    @patch("agenttree.web.app.load_config")
+    def test_agent_tmux_strips_prompt_before_hash(self, mock_config, mock_capture, mock_is_running, client):
+        """Test that ETag is computed after stripping Claude prompt separator."""
+        mock_config.return_value.project = "test"
+        mock_config.return_value.get_issue_session_patterns.return_value = ["test-developer-001"]
+        mock_is_running.return_value = True
+
+        # First call: content with prompt separator
+        content_with_separator = "Some content\n" + "─" * 25 + "\nPrompt here"
+        mock_capture.return_value = content_with_separator
+        response1 = client.get("/agent/001/tmux")
+        etag1 = response1.headers["etag"]
+
+        # Second call: same content before separator, different after
+        content_with_different_prompt = "Some content\n" + "─" * 25 + "\nDifferent prompt"
+        mock_capture.return_value = content_with_different_prompt
+        response2 = client.get("/agent/001/tmux")
+        etag2 = response2.headers["etag"]
+
+        # ETags should be the same since we strip at the separator
+        assert etag1 == etag2
 
 
 class TestSendToAgentEndpoint:
