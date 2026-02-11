@@ -26,10 +26,7 @@
             {% endif %}
             <div class="detail-meta-row">
                 <div class="detail-meta">
-                    <span>Stage: <span class="stage-tag">{{ (issue.stage if issue.stage is string else issue.stage.value) | stage_name }}</span></span>
-                    {% if issue.substage %}
-                    <span class="substage-pill">{{ issue.substage | replace('_', ' ') | title }}</span>
-                    {% endif %}
+                    <span>Stage: <span class="stage-tag">{{ issue.stage | stage_name }}</span></span>
                     <span>Priority:
                         <select class="priority-select" onchange="updatePriority('{{ issue.number }}', this.value, this)">
                             <option value="low" {% if issue.priority == 'low' %}selected{% endif %}>Low</option>
@@ -59,7 +56,7 @@
                     {% endif %}
                 </div>
                 <div class="detail-actions" id="detail-actions-{{ issue.number }}">
-                    {% set stage_value = issue.stage if issue.stage is string else issue.stage.value %}
+                    {% set stage_value = issue.stage %}
                     {% if issue.tmux_active and commits_behind is defined and commits_behind > 0 %}
                     <button class="btn btn-rebase"
                             onclick="rebaseIssue('{{ issue.number }}', this)"

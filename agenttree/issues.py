@@ -1039,6 +1039,10 @@ def load_skill(
                     config.commands, cmd_name, cwd=cwd
                 )
 
+    # Add available flows from config (for define stage flow selection)
+    context["available_flows"] = list(config.flows.keys())
+    context["default_flow"] = config.default_flow
+
     # Render with Jinja
     try:
         template = Template(skill_content)

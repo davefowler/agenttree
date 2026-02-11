@@ -17,10 +17,9 @@ import subprocess
 import secrets
 import os
 import re
-from typing import List, Dict, Optional, AsyncIterator, Callable, Awaitable
+from typing import Optional, AsyncIterator, Callable, Awaitable
 from datetime import datetime, timezone
 from contextlib import asynccontextmanager
-import logging
 import yaml
 
 from agenttree import __version__
@@ -31,7 +30,7 @@ from agenttree.worktree import WorktreeManager
 _config: Config = load_config()
 from agenttree import issues as issue_crud
 from agenttree.agents_repo import sync_agents_repo
-from agenttree.web.models import StageEnum, KanbanBoard, Issue as WebIssue, IssueMoveRequest, PriorityUpdateRequest
+from agenttree.web.models import KanbanBoard, Issue as WebIssue, IssueMoveRequest, PriorityUpdateRequest
 
 # Module-level logger for web app
 logger = logging.getLogger("agenttree.web")
@@ -167,26 +166,10 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="stat
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 templates.env.globals["version"] = __version__
 
-# Short display names for stages (used in column headers, cards, etc.)
-STAGE_DISPLAY_NAMES: dict[str, str] = {
-    "implementation_review": "Imp Review",
-    "independent_code_review": "Code Review",
-    "address_independent_review": "Address Review",
-    "knowledge_base": "Knowledge Base",
-}
-
 
 def stage_display_name(value: str) -> str:
-    """Convert a stage slug to a human-readable display name."""
-    if isinstance(value, str):
-        if value in STAGE_DISPLAY_NAMES:
-            return STAGE_DISPLAY_NAMES[value]
-        return value.replace("_", " ").title()
-    # StageEnum
-    raw = value.value if hasattr(value, "value") else str(value)
-    if raw in STAGE_DISPLAY_NAMES:
-        return STAGE_DISPLAY_NAMES[raw]
-    return raw.replace("_", " ").title()
+    """Convert a dot-path stage to a human-readable display name."""
+    return _config.stage_display_name(value)
 
 
 templates.env.filters["stage_name"] = stage_display_name
@@ -312,12 +295,6 @@ def convert_issue_to_web(issue: issue_crud.Issue, load_dependents: bool = False)
         issue: The issue to convert
         load_dependents: If True, also load dependent issues (issues blocked by this one)
     """
-    # Map stage string to StageEnum
-    try:
-        stage = StageEnum(issue.stage)
-    except ValueError:
-        stage = StageEnum.BACKLOG
-
     # Check if tmux session is active for this issue
     tmux_active = agent_manager._check_issue_tmux_session(issue.id)
 
@@ -325,7 +302,7 @@ def convert_issue_to_web(issue: issue_crud.Issue, load_dependents: bool = False)
     dependencies = [int(d.lstrip("0") or "0") for d in issue.dependencies]
 
     # Load dependents if requested (issues blocked by this one)
-    dependents: List[int] = []
+    dependents: list[int] = []
     if load_dependents:
         dependent_issues = issue_crud.get_dependent_issues(issue.id)
         dependents = [int(d.id) for d in dependent_issues]
@@ -336,8 +313,7 @@ def convert_issue_to_web(issue: issue_crud.Issue, load_dependents: bool = False)
         body="",  # Loaded separately from problem.md
         labels=issue.labels,
         assignees=[],
-        stage=stage,
-        substage=issue.substage,
+        stage=issue.stage,  # Dot path (e.g., "explore.define", "backlog")
         priority=issue.priority.value,
         tmux_active=tmux_active,
         has_worktree=bool(issue.worktree_dir),
@@ -353,7 +329,7 @@ def convert_issue_to_web(issue: issue_crud.Issue, load_dependents: bool = False)
     )
 
 
-def filter_issues(issues: List[WebIssue], search: Optional[str]) -> List[WebIssue]:
+def filter_issues(issues: list[WebIssue], search: Optional[str]) -> list[WebIssue]:
     """Filter issues by search query.
 
     Matches against issue number, title, and labels (case-insensitive).
@@ -383,13 +359,17 @@ def filter_issues(issues: List[WebIssue], search: Optional[str]) -> List[WebIssu
 def get_kanban_board(search: Optional[str] = None) -> KanbanBoard:
     """Build a kanban board from issues.
 
+    Groups issues by their top-level stage group (the part before the dot).
+    E.g., "explore.define" and "explore.research" both go in the "explore" column.
+
     Args:
         search: Optional search query to filter issues
     """
-    # Initialize all stages with empty lists
-    stages: Dict[StageEnum, List[WebIssue]] = {stage: [] for stage in StageEnum}
+    # Initialize columns for all top-level stage groups
+    stage_names = _config.get_stage_names()
+    stages: dict[str, list[WebIssue]] = {name: [] for name in stage_names}
 
-    # Get all issues and organize by stage (no sync for fast web reads)
+    # Get all issues and organize by stage group (no sync for fast web reads)
     issues = issue_crud.list_issues(sync=False)
     web_issues = [convert_issue_to_web(issue) for issue in issues]
 
@@ -398,8 +378,9 @@ def get_kanban_board(search: Optional[str] = None) -> KanbanBoard:
         web_issues = filter_issues(web_issues, search)
 
     for web_issue in web_issues:
-        if web_issue.stage in stages:
-            stages[web_issue.stage].append(web_issue)
+        group = _config.stage_group_name(web_issue.stage)
+        if group in stages:
+            stages[group].append(web_issue)
 
     return KanbanBoard(stages=stages, total_issues=len(web_issues))
 
@@ -472,7 +453,7 @@ async def kanban(
         {
             "request": request,
             "board": board,
-            "stages": list(StageEnum),
+            "stages": _config.get_stage_names(),
             "active_page": "kanban",
             "selected_issue": selected_issue,
             "files": files,
@@ -495,19 +476,16 @@ STAGE_FILE_ORDER = [
     "implementation.md",
 ]
 
-# Mapping of filenames to their associated workflow stage.
-# Note: Not all stages are in STAGE_ORDER (e.g., independent_code_review is a
-# separate review workflow). Files with stages not in STAGE_ORDER will get
-# stage-based colors but won't be marked as "passed" since they're outside
-# the main linear progression.
+# Mapping of filenames to their associated workflow dot path.
+# Used to determine if a file's stage has been "passed" relative to the current stage.
 FILE_TO_STAGE: dict[str, str] = {
-    "problem.md": "define",
-    "research.md": "research",
-    "spec.md": "plan",
-    "spec_review.md": "plan_assess",
-    "review.md": "implement",
-    "independent_review.md": "independent_code_review",
-    "feedback.md": "implement",
+    "problem.md": "explore.define",
+    "research.md": "explore.research",
+    "spec.md": "explore.plan",
+    "spec_review.md": "explore.plan_review",
+    "review.md": "implement.code",
+    "independent_review.md": "implement.code_review",
+    "feedback.md": "implement.code",
 }
 
 
@@ -543,11 +521,11 @@ def get_issue_files(
             return (STAGE_FILE_ORDER.index(f.name), f.name)
         return (len(STAGE_FILE_ORDER), f.name)  # Unknown files sorted after known ones
 
-    # Get current stage index for is_passed calculation.
-    # Stages not in STAGE_ORDER (e.g., sub-workflows) won't have files marked as passed.
+    # Get current stage index for is_passed calculation using flow ordering.
+    dot_paths = _config.get_flow_stage_names()
     current_stage_index = -1
-    if current_stage and current_stage in issue_crud.STAGE_ORDER:
-        current_stage_index = issue_crud.STAGE_ORDER.index(current_stage)
+    if current_stage and current_stage in dot_paths:
+        current_stage_index = dot_paths.index(current_stage)
 
     files: list[dict[str, str]] = []
     for f in sorted(file_list, key=file_sort_key):
@@ -555,10 +533,9 @@ def get_issue_files(
         file_stage = FILE_TO_STAGE.get(f.name)
 
         # Calculate is_passed: file's stage is earlier than current stage.
-        # Files with stages not in STAGE_ORDER (sub-workflows) remain is_passed=False.
         is_passed = False
-        if file_stage and current_stage_index >= 0 and file_stage in issue_crud.STAGE_ORDER:
-            file_stage_index = issue_crud.STAGE_ORDER.index(file_stage)
+        if file_stage and current_stage_index >= 0 and file_stage in dot_paths:
+            file_stage_index = dot_paths.index(file_stage)
             is_passed = file_stage_index < current_stage_index
 
         # Generate short_name for passed stages (first 3 chars + "...")
@@ -605,12 +582,14 @@ def get_issue_files(
     return files
 
 
-def get_default_doc(stage: str) -> str | None:
-    """Get the default document to show for a stage.
+def get_default_doc(dot_path: str) -> str | None:
+    """Get the default document to show for a dot-path stage.
 
-    Returns the review_doc for the stage if configured, otherwise None.
+    Returns the review_doc for the substage/stage if configured, otherwise None.
     """
-    stage_config = _config.get_stage(stage)
+    stage_config, sub_config = _config.resolve_stage(dot_path)
+    if sub_config and sub_config.review_doc:
+        return sub_config.review_doc
     if stage_config and stage_config.review_doc:
         return stage_config.review_doc
     return None
@@ -699,10 +678,6 @@ def get_issue_diff(issue_id: str) -> dict:
         return {"diff": "", "stat": "", "has_changes": False, "error": str(e), "truncated": False, "pr_diff_url": None}
 
 
-# Cache stage list for sorting efficiency
-_STAGE_LIST = list(StageEnum)
-
-
 def _sort_flow_issues(issues: list[WebIssue], sort_by: Optional[str] = None) -> list[WebIssue]:
     """Sort issues for flow view based on sort parameter.
 
@@ -724,7 +699,17 @@ def _sort_flow_issues(issues: list[WebIssue], sort_by: Optional[str] = None) -> 
         return sorted(issues, key=lambda x: x.number)
     else:
         # Default: stage order with review stages first
-        return sorted(issues, key=lambda x: (not x.is_review, -_STAGE_LIST.index(x.stage), x.number))
+        # Use flow dot paths for ordering; unknown stages sort last
+        dot_paths = _config.get_flow_stage_names()
+
+        def _stage_sort_key(x: WebIssue) -> tuple[bool, int, int]:
+            try:
+                idx = dot_paths.index(x.stage)
+            except ValueError:
+                idx = -1  # Unknown stages sort last (after negation: first in reverse)
+            return (not x.is_review, -idx, x.number)
+
+        return sorted(issues, key=_stage_sort_key)
 
 
 def _filter_flow_issues(issues: list[WebIssue], filter_by: Optional[str] = None) -> list[WebIssue]:
@@ -744,9 +729,9 @@ def _filter_flow_issues(issues: list[WebIssue], filter_by: Optional[str] = None)
         # Only issues with active agents
         return [i for i in issues if i.tmux_active]
     elif filter_by == "open":
-        # Hide accepted and not_doing
-        closed_stages = {StageEnum.ACCEPTED, StageEnum.NOT_DOING}
-        return [i for i in issues if i.stage not in closed_stages]
+        # Hide parking-lot stages (accepted, not_doing, etc.)
+        parking_lots = _config.get_parking_lot_stages()
+        return [i for i in issues if _config.stage_group_name(i.stage) not in parking_lots]
     else:
         # Default: show all
         return issues
@@ -1090,12 +1075,12 @@ async def move_issue(
     DEPRECATED: Use /approve for human review stages instead.
     This bypasses workflow validation and should only be used for backlog management.
     """
-    # Only allow moving TO backlog or not_doing (safe operations)
-    safe_targets = ["backlog", "not_doing"]
-    if move_request.stage.value not in safe_targets:
+    # Only allow moving TO parking-lot stages (safe operations)
+    parking_lots = _config.get_parking_lot_stages()
+    if move_request.stage not in parking_lots:
         raise HTTPException(
             status_code=400,
-            detail=f"Direct stage changes only allowed to: {', '.join(safe_targets)}. Use approve for workflow transitions."
+            detail=f"Direct stage changes only allowed to: {', '.join(sorted(parking_lots))}. Use approve for workflow transitions."
         )
 
     # Get issue first to pass to cleanup
@@ -1105,23 +1090,22 @@ async def move_issue(
 
     updated_issue = issue_crud.update_issue_stage(
         issue_id=issue_id,
-        stage=move_request.stage.value,
-        substage=None,
+        stage=move_request.stage,
     )
 
     if not updated_issue:
         raise HTTPException(status_code=500, detail=f"Failed to update issue {issue_id}")
 
-    # Clean up agent when moving to backlog or not_doing
+    # Clean up agent when moving to parking-lot stages
     # backlog = pause work (stop agent, keep worktree for later)
     # not_doing = abandon work (stop agent, worktree can be cleaned up)
-    if move_request.stage.value in ["backlog", "not_doing"]:
+    if _config.is_parking_lot(move_request.stage):
         import asyncio
         from agenttree.hooks import cleanup_issue_agent
         # Run cleanup in thread to avoid blocking event loop
         await asyncio.to_thread(cleanup_issue_agent, updated_issue)
 
-    return {"success": True, "stage": move_request.stage.value}
+    return {"success": True, "stage": move_request.stage}
 
 
 @app.post("/api/issues/{issue_id}/approve")
@@ -1138,21 +1122,20 @@ async def approve_issue(
     from agenttree.config import load_config
     from agenttree.hooks import ValidationError, StageRedirect
 
-    HUMAN_REVIEW_STAGES = ["plan_review", "implementation_review", "independent_code_review"]
-
     # Get issue
     issue_id_normalized = issue_id.lstrip("0") or "0"
     issue = issue_crud.get_issue(issue_id_normalized, sync=False)
     if not issue:
         raise HTTPException(status_code=404, detail="Issue not found")
 
-    # Check if at human review stage
-    if issue.stage not in HUMAN_REVIEW_STAGES:
-        raise HTTPException(status_code=400, detail="Not at review stage")
-
     # Load config from repo path (Path.cwd() can be wrong in uvicorn workers)
     config_path = Path(os.environ["AGENTTREE_REPO_PATH"]) if os.environ.get("AGENTTREE_REPO_PATH") else None
     config = load_config(config_path)
+
+    # Check if at human review stage (look up from config, not a flag)
+    if not config.is_human_review(issue.stage):
+        raise HTTPException(status_code=400, detail="Not at review stage")
+
     next_stage, next_substage = config.get_next_stage(issue.stage, issue.substage, issue.flow)
 
     try:
@@ -1166,7 +1149,6 @@ async def approve_issue(
                 transition_issue,
                 issue_id_normalized,
                 next_stage,
-                next_substage,
                 skip_pr_approval=config.allow_self_approval,
                 trigger="web",
             )
@@ -1176,7 +1158,6 @@ async def approve_issue(
                 transition_issue,
                 issue_id_normalized,
                 redirect.target_stage,
-                redirect.target_substage,
                 skip_pr_approval=config.allow_self_approval,
                 trigger="web",
             )
@@ -1216,7 +1197,7 @@ async def create_issue_api(
 ) -> dict:
     """Create a new issue via the web UI.
 
-    Creates an issue in the 'define' stage with default substage 'refine'.
+    Creates a new issue with the default starting stage.
     If no title is provided, one is auto-generated from the description.
     """
     from agenttree.issues import Priority

@@ -257,6 +257,7 @@ def check_manager_stages(agents_dir: Path) -> int:
                     _notify_agent(
                         issue.id,
                         f"Issue redirected to {redirect.target_stage}: {redirect.reason}. Run `agenttree next` for instructions.",
+                        interrupt=True,
                     )
                     # Clear the flag since we redirected away from this stage
                     data["manager_hooks_executed"] = None

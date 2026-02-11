@@ -253,8 +253,6 @@ def issue_list(stage: str | None, priority: str | None, as_json: bool) -> None:
 
     for issue in issues:
         stage_str = issue.stage
-        if issue.substage:
-            stage_str += f".{issue.substage}"
 
         # Color priority
         priority_style = {
@@ -330,11 +328,7 @@ def issue_show(issue_id: str, as_json: bool, field_name: str | None) -> None:
     console.print(f"\n[bold cyan]Issue {issue.id}: {issue.title}[/bold cyan]\n")
 
     # Basic info
-    console.print(f"[bold]Stage:[/bold] {issue.stage}", end="")
-    if issue.substage:
-        console.print(f".{issue.substage}")
-    else:
-        console.print()
+    console.print(f"[bold]Stage:[/bold] {issue.stage}")
 
     console.print(f"[bold]Priority:[/bold] {issue.priority.value}")
 
@@ -372,11 +366,8 @@ def issue_show(issue_id: str, as_json: bool, field_name: str | None) -> None:
     if issue.history:
         console.print(f"\n[bold]History:[/bold]")
         for entry in issue.history[-5:]:  # Last 5 entries
-            stage_str = entry.stage
-            if entry.substage:
-                stage_str += f".{entry.substage}"
             agent_str = f" (agent {entry.agent})" if entry.agent else ""
-            console.print(f"  • {entry.timestamp[:10]} → {stage_str}{agent_str}")
+            console.print(f"  • {entry.timestamp[:10]} → {entry.stage}{agent_str}")
 
     console.print(f"\n[dim]Directory: {issue_dir}[/dim]")
 

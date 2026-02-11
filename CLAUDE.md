@@ -149,7 +149,16 @@ When working on web UI (HTML, CSS, templates):
 - Run the web server: `uv run python -m agenttree.web.app`
 - Use Playwright to screenshot pages: "use playwright to screenshot http://localhost:8080/kanban"
 - Check for layout issues, color contrast, responsive behavior
-- The web app uses a vintage green color palette — maintain consistency. A rogue blue button on a green page is the kind of thing that makes designers cry and reviewers reject.
+- The web app uses a minimal, neutral gray color palette inspired by Linear/Cursor — maintain consistency. Keep the design clean and uncluttered with subtle accent colors.
+
+## Workflow Flows
+
+Issues follow a **flow** that determines which stages they pass through:
+
+- **default** (the vast majority of issues): Full workflow — define → research → plan → plan_review (human) → implement → code_review → implementation_review (human) → accepted. Use for anything that requires thought, investigation, or touches non-trivial code.
+- **quick** (very rare — truly trivial tasks only): Abbreviated — define → implement → implementation_review (human) → accepted. Skips research, planning, and plan review. **Only** for tasks where the solution is already fully obvious and requires zero decision-making: typo fixes, color changes, config constant updates. If you have to think about it at all, it's not quick.
+
+**When in doubt, use `default`.** The quick flow has no human review before coding starts. Misusing it wastes time when the implementation goes in the wrong direction.
 
 ## Workflow
 

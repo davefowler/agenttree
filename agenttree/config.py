@@ -138,6 +138,7 @@ class StageConfig(BaseModel):
     """Configuration for a workflow stage."""
 
     name: str
+    group: str | None = None      # Color group for UI (stages with same group share a color)
     output: Optional[str] = None  # Document created by this stage
     output_optional: bool = False  # If True, missing output file doesn't error
     skill: Optional[str] = None   # Override skill file path
@@ -289,40 +290,41 @@ class Config(BaseModel):
     rate_limit_fallback: RateLimitFallbackConfig = Field(default_factory=RateLimitFallbackConfig)
     allow_self_approval: bool = False  # Skip PR approval check when approving own PRs (solo projects)
 
+    @property
+    def server_port(self) -> int:
+        """Port for the AgentTree server (one below port_range start, i.e. issue 0)."""
+        start_port = int(self.port_range.split("-")[0])
+        return start_port - 1
+
     def get_port_for_agent(self, agent_num: int) -> int:
         """Get port number for a specific agent.
+
+        Uses modulo to wrap around within the port range, so any agent
+        number maps to a valid port (though high numbers may collide
+        with low numbers if many agents run simultaneously).
 
         Args:
             agent_num: Agent number (1-based)
 
         Returns:
             Port number for the agent
-
-        Raises:
-            ValueError: If agent number exceeds port range
         """
         start_port, end_port = map(int, self.port_range.split("-"))
-        port = start_port + (agent_num - 1)
-
-        if port > end_port:
-            raise ValueError(
-                f"Agent number {agent_num} exceeds port range {self.port_range}"
-            )
-
-        return port
+        range_size = end_port - start_port + 1
+        return start_port + ((agent_num - 1) % range_size)
 
     def get_port_for_issue(self, issue_id: str) -> Optional[int]:
         """Get port number for a specific issue.
 
         Port is calculated from issue ID using the configured port_range.
-        Returns None if issue_id is not a valid integer or if the port
-        would exceed the configured range.
+        Wraps around via modulo if issue number exceeds the range.
+        Returns None only if issue_id is not a valid integer.
 
         Args:
             issue_id: Issue ID (string, typically numeric like "001", "042")
 
         Returns:
-            Port number, or None if issue_id is invalid or exceeds range
+            Port number, or None if issue_id is invalid
         """
         try:
             issue_num = int(issue_id)
@@ -478,6 +480,21 @@ class Config(BaseModel):
             List of stage names that require human review
         """
         return [stage.name for stage in self.stages if stage.human_review]
+
+    def is_human_review(self, stage_name: str) -> bool:
+        """Check if a stage requires human review.
+
+        This is a convenience method for checking a single stage.
+        Looks up the human_review property from the stage config.
+
+        Args:
+            stage_name: Stage name to check
+
+        Returns:
+            True if the stage has human_review: true in config
+        """
+        stage_config = self.get_stage(stage_name)
+        return stage_config.human_review if stage_config else False
 
     def get_manager_stages(self) -> list[str]:
         """Get list of stages executed by the manager (host), not developer.
