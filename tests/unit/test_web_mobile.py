@@ -37,6 +37,7 @@ def mock_issue():
     mock.priority = Priority.MEDIUM
     mock.processing = None
     mock.ci_escalated = False
+    mock.flow = "default"
     return mock
 
 
@@ -58,6 +59,7 @@ def mock_issue_with_agent():
     mock.priority = Priority.MEDIUM
     mock.processing = None
     mock.ci_escalated = False
+    mock.flow = "default"
     return mock
 
 
