@@ -132,7 +132,7 @@ def start_agent(
         AgentStartError: If agent fails to start
     """
     from agenttree.config import load_config
-    from agenttree.container import get_container_runtime, find_container_by_worktree
+    from agenttree.container import get_container_runtime
     from agenttree.issues import get_issue, update_issue_stage, update_issue_metadata
     from agenttree.preflight import run_preflight
     from agenttree.state import (
