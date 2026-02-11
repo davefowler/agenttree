@@ -6,7 +6,7 @@ from pathlib import Path
 
 import yaml
 
-from agenttree.config import Config, FlowConfig, StageConfig, load_config
+from agenttree.config import Config, FlowConfig, StageConfig, SubstageConfig, load_config
 from agenttree.issues import Issue, create_issue, Priority
 
 
@@ -15,9 +15,9 @@ class TestFlowConfig:
 
     def test_flow_config_creation(self):
         """Test creating a FlowConfig."""
-        flow = FlowConfig(name="quick", stages=["define", "implement", "accepted"])
+        flow = FlowConfig(name="quick", stages=["explore.define", "implement.code", "accepted"])
         assert flow.name == "quick"
-        assert flow.stages == ["define", "implement", "accepted"]
+        assert flow.stages == ["explore.define", "implement.code", "accepted"]
 
     def test_flow_config_empty_stages(self):
         """Test FlowConfig with empty stages list."""
@@ -42,7 +42,7 @@ class TestConfigFlows:
 
     def test_get_flow(self):
         """Test get_flow method."""
-        flow = FlowConfig(name="quick", stages=["define", "implement"])
+        flow = FlowConfig(name="quick", stages=["explore.define", "implement.code"])
         config = Config(flows={"quick": flow})
 
         assert config.get_flow("quick") == flow
@@ -50,10 +50,10 @@ class TestConfigFlows:
 
     def test_get_flow_stage_names(self):
         """Test get_flow_stage_names returns correct stages."""
-        flow = FlowConfig(name="quick", stages=["define", "implement", "accepted"])
+        flow = FlowConfig(name="quick", stages=["explore.define", "implement.code", "accepted"])
         config = Config(flows={"quick": flow})
 
-        assert config.get_flow_stage_names("quick") == ["define", "implement", "accepted"]
+        assert config.get_flow_stage_names("quick") == ["explore.define", "implement.code", "accepted"]
 
     def test_get_flow_stage_names_nonexistent(self):
         """Test get_flow_stage_names for nonexistent flow."""
@@ -61,20 +61,20 @@ class TestConfigFlows:
         assert config.get_flow_stage_names("nonexistent") == []
 
     def test_get_flow_stage_names_default_fallback(self):
-        """Test get_flow_stage_names falls back to stages list for default.
+        """Test get_flow_stage_names falls back to stages dict for default.
 
         When Config is created directly without flows (e.g., in tests or legacy configs),
         requesting the "default" flow falls back to using all stages in definition order.
         """
-        stages = [
-            StageConfig(name="backlog"),
-            StageConfig(name="define"),
-            StageConfig(name="accepted", is_parking_lot=True),
-        ]
+        stages = {
+            "backlog": StageConfig(name="backlog"),
+            "explore.define": StageConfig(name="explore.define"),
+            "accepted": StageConfig(name="accepted", is_parking_lot=True),
+        }
         config = Config(stages=stages)  # No flows defined
 
-        # Falls back to stages list for "default" flow when no flows defined
-        assert config.get_flow_stage_names("default") == ["backlog", "define", "accepted"]
+        # Falls back to stages dict keys for "default" flow when no flows defined
+        assert config.get_flow_stage_names("default") == ["backlog", "explore.define", "accepted"]
 
 
 class TestGetNextStageWithFlows:
@@ -82,73 +82,87 @@ class TestGetNextStageWithFlows:
 
     def test_get_next_stage_default_flow(self):
         """Test get_next_stage uses default flow."""
-        stages = [
-            StageConfig(name="define"),
-            StageConfig(name="research"),
-            StageConfig(name="plan"),
-            StageConfig(name="accepted", is_parking_lot=True),
-        ]
-        default_flow = FlowConfig(name="default", stages=["define", "research", "plan", "accepted"])
+        from agenttree.config import SubstageConfig
+        stages = {
+            "explore": StageConfig(name="explore", substages={
+                "define": SubstageConfig(name="define"),
+                "research": SubstageConfig(name="research"),
+            }),
+            "plan": StageConfig(name="plan", substages={
+                "draft": SubstageConfig(name="draft"),
+            }),
+            "accepted": StageConfig(name="accepted", is_parking_lot=True),
+        }
+        default_flow = FlowConfig(name="default", stages=["explore.define", "explore.research", "plan.draft", "accepted"])
         config = Config(stages=stages, flows={"default": default_flow})
 
-        next_stage, _, _ = config.get_next_stage("define", flow="default")
-        assert next_stage == "research"
+        next_stage, _ = config.get_next_stage("explore.define", flow="default")
+        assert next_stage == "explore.research"
 
     def test_get_next_stage_quick_flow(self):
         """Test get_next_stage uses quick flow that skips stages."""
-        stages = [
-            StageConfig(name="define"),
-            StageConfig(name="research"),
-            StageConfig(name="plan"),
-            StageConfig(name="implement"),
-            StageConfig(name="accepted", is_parking_lot=True),
-        ]
-        default_flow = FlowConfig(name="default", stages=["define", "research", "plan", "implement", "accepted"])
-        quick_flow = FlowConfig(name="quick", stages=["define", "implement", "accepted"])
+        from agenttree.config import SubstageConfig
+        stages = {
+            "explore": StageConfig(name="explore", substages={
+                "define": SubstageConfig(name="define"),
+                "research": SubstageConfig(name="research"),
+            }),
+            "plan": StageConfig(name="plan", substages={
+                "draft": SubstageConfig(name="draft"),
+            }),
+            "implement": StageConfig(name="implement", substages={
+                "code": SubstageConfig(name="code"),
+            }),
+            "accepted": StageConfig(name="accepted", is_parking_lot=True),
+        }
+        default_flow = FlowConfig(name="default", stages=["explore.define", "explore.research", "plan.draft", "implement.code", "accepted"])
+        quick_flow = FlowConfig(name="quick", stages=["explore.define", "implement.code", "accepted"])
         config = Config(stages=stages, flows={"default": default_flow, "quick": quick_flow})
 
-        # Default flow: define -> research
-        next_stage, _, _ = config.get_next_stage("define", flow="default")
-        assert next_stage == "research"
+        # Default flow: explore.define -> explore.research
+        next_stage, _ = config.get_next_stage("explore.define", flow="default")
+        assert next_stage == "explore.research"
 
-        # Quick flow: define -> implement (skips research and plan)
-        next_stage, _, _ = config.get_next_stage("define", flow="quick")
-        assert next_stage == "implement"
+        # Quick flow: explore.define -> implement.code (skips research and plan)
+        next_stage, _ = config.get_next_stage("explore.define", flow="quick")
+        assert next_stage == "implement.code"
 
     def test_get_next_stage_terminal_stage(self):
         """Test get_next_stage stays at terminal stage."""
-        stages = [
-            StageConfig(name="define"),
-            StageConfig(name="accepted", is_parking_lot=True),
-        ]
-        flow = FlowConfig(name="default", stages=["define", "accepted"])
+        stages = {
+            "explore": StageConfig(name="explore", substages={
+                "define": SubstageConfig(name="define"),
+            }),
+            "accepted": StageConfig(name="accepted", is_parking_lot=True),
+        }
+        flow = FlowConfig(name="default", stages=["explore.define", "accepted"])
         config = Config(stages=stages, flows={"default": flow})
 
-        next_stage, _, _ = config.get_next_stage("accepted", flow="default")
+        next_stage, _ = config.get_next_stage("accepted", flow="default")
         assert next_stage == "accepted"
 
-    def test_get_next_stage_respects_substages(self):
-        """Test get_next_stage respects substages within a flow."""
+    def test_get_next_stage_advances_through_flow(self):
+        """Test get_next_stage advances through dot-path stages in a flow."""
         from agenttree.config import SubstageConfig
-
-        stages = [
-            StageConfig(name="define", substages={
-                "draft": SubstageConfig(name="draft"),
-                "refine": SubstageConfig(name="refine"),
+        stages = {
+            "explore": StageConfig(name="explore", substages={
+                "define": SubstageConfig(name="define"),
+                "research": SubstageConfig(name="research"),
             }),
-            StageConfig(name="implement"),
-        ]
-        flow = FlowConfig(name="default", stages=["define", "implement"])
+            "implement": StageConfig(name="implement", substages={
+                "code": SubstageConfig(name="code"),
+            }),
+        }
+        flow = FlowConfig(name="default", stages=["explore.define", "explore.research", "implement.code"])
         config = Config(stages=stages, flows={"default": flow})
 
-        # Should advance within substages first
-        next_stage, next_substage, _ = config.get_next_stage("define", "draft", flow="default")
-        assert next_stage == "define"
-        assert next_substage == "refine"
+        # Should advance to next stage in flow
+        next_stage, _ = config.get_next_stage("explore.define", flow="default")
+        assert next_stage == "explore.research"
 
         # Then advance to next stage
-        next_stage, next_substage, _ = config.get_next_stage("define", "refine", flow="default")
-        assert next_stage == "implement"
+        next_stage, _ = config.get_next_stage("explore.research", flow="default")
+        assert next_stage == "implement.code"
 
 
 class TestLoadConfigWithFlows:
@@ -157,16 +171,14 @@ class TestLoadConfigWithFlows:
     def test_load_config_with_flows_section(self, tmp_path):
         """Test loading config with flows section."""
         config_content = """
-stages:
-  - name: backlog
-  - name: define
-  - name: implement
-  - name: accepted
-    terminal: true
-
 flows:
   default:
-    stages: [backlog, define, implement, accepted]
+    stages:
+      backlog:
+      define:
+      implement:
+      accepted:
+        is_parking_lot: true
   quick:
     stages: [backlog, define, accepted]
 
@@ -186,11 +198,13 @@ default_flow: default
     def test_load_config_implicit_default_flow(self, tmp_path):
         """Test load_config creates implicit default flow when none defined."""
         config_content = """
-stages:
-  - name: backlog
-  - name: define
-  - name: accepted
-    terminal: true
+flows:
+  default:
+    stages:
+      backlog:
+      define:
+      accepted:
+        is_parking_lot: true
 """
         config_file = tmp_path / ".agenttree.yaml"
         config_file.write_text(config_content)
@@ -203,13 +217,13 @@ stages:
     def test_load_config_invalid_flow_reference(self, tmp_path):
         """Test load_config raises error for invalid stage reference in flow."""
         config_content = """
-stages:
-  - name: define
-  - name: accepted
-    terminal: true
-
 flows:
   default:
+    stages:
+      define:
+      accepted:
+        is_parking_lot: true
+  broken:
     stages: [define, nonexistent, accepted]
 """
         config_file = tmp_path / ".agenttree.yaml"
@@ -218,28 +232,27 @@ flows:
         with pytest.raises(ValueError) as exc_info:
             load_config(tmp_path)
 
-        assert "references unknown stage" in str(exc_info.value)
+        assert "references unknown" in str(exc_info.value)
         assert "nonexistent" in str(exc_info.value)
 
     def test_load_config_empty_flow_stages(self, tmp_path):
-        """Test load_config raises error for flow with empty stages."""
+        """Test load_config handles flow with empty stages list."""
         config_content = """
-stages:
-  - name: define
-  - name: accepted
-    terminal: true
-
 flows:
+  default:
+    stages:
+      define:
+      accepted:
+        is_parking_lot: true
   empty:
     stages: []
 """
         config_file = tmp_path / ".agenttree.yaml"
         config_file.write_text(config_content)
 
-        with pytest.raises(ValueError) as exc_info:
-            load_config(tmp_path)
-
-        assert "has no stages" in str(exc_info.value)
+        config = load_config(tmp_path)
+        # Empty flow should have empty stages list
+        assert config.flows["empty"].stages == []
 
 
 class TestIssueFlowField:

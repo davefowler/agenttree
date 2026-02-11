@@ -206,17 +206,17 @@ class TestConfigWithCustomRoles:
                     skill="agents/review.md"
                 )
             },
-            stages=[
-                StageConfig(name="implement", role="developer"),
-                StageConfig(name="independent_code_review", role="review"),
-                StageConfig(name="implementation_review", role="manager"),
-                StageConfig(name="accepted", role="manager"),
-            ]
+            stages={
+                "implement.code": StageConfig(name="implement.code", role="developer"),
+                "implement.independent_review": StageConfig(name="implement.independent_review", role="review"),
+                "implement.review": StageConfig(name="implement.review", role="manager"),
+                "accepted": StageConfig(name="accepted", role="manager"),
+            }
         )
         custom_stages = config.get_custom_role_stages()
-        assert "independent_code_review" in custom_stages
-        assert "implement" not in custom_stages
-        assert "implementation_review" not in custom_stages
+        assert "implement.independent_review" in custom_stages
+        assert "implement.code" not in custom_stages
+        assert "implement.review" not in custom_stages
 
     def test_get_non_developer_stages(self):
         """Test get_non_developer_stages method."""
@@ -230,16 +230,16 @@ class TestConfigWithCustomRoles:
                     skill="agents/review.md"
                 )
             },
-            stages=[
-                StageConfig(name="implement", role="developer"),
-                StageConfig(name="independent_code_review", role="review"),
-                StageConfig(name="implementation_review", role="manager"),
-            ]
+            stages={
+                "implement.code": StageConfig(name="implement.code", role="developer"),
+                "implement.independent_review": StageConfig(name="implement.independent_review", role="review"),
+                "implement.review": StageConfig(name="implement.review", role="manager"),
+            }
         )
         non_agent = config.get_non_developer_stages()
-        assert "independent_code_review" in non_agent
-        assert "implementation_review" in non_agent
-        assert "implement" not in non_agent
+        assert "implement.independent_review" in non_agent
+        assert "implement.review" in non_agent
+        assert "implement.code" not in non_agent
 
 
 class TestLoadConfigWithRoles:
@@ -376,13 +376,13 @@ class TestCheckCustomAgentStages:
             "title": "Test Issue",
             "created": "2024-01-01",
             "updated": "2024-01-01",
-            "stage": "independent_code_review",
+            "stage": "implement.independent_review",
         }
         (issue_dir / "issue.yaml").write_text(yaml.safe_dump(issue_data))
 
         mock_config = MagicMock()
         mock_config.project = "testproj"
-        mock_config.get_custom_role_stages.return_value = ["independent_code_review"]
+        mock_config.get_custom_role_stages.return_value = ["implement.independent_review"]
         mock_stage_config = MagicMock()
         mock_stage_config.role = "review"
         mock_config.get_stage.return_value = mock_stage_config

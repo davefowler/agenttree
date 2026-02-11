@@ -45,9 +45,9 @@
 
     <div class="kanban-board">
         {% for stage in stages %}
-        <div class="kanban-column" data-stage="{{ stage.value }}">
+        <div class="kanban-column" data-stage="{{ stage }}">
             <div class="column-header">
-                <span>{{ stage.value | stage_name }}</span>
+                <span>{{ stage | stage_name }}</span>
                 <span class="column-count">{{ board.stages[stage]|length }}</span>
             </div>
             <div class="column-cards">
@@ -168,9 +168,6 @@ Possible solutions:
         if (window._kanbanScriptLoaded) return;
         window._kanbanScriptLoaded = true;
 
-        // Human review stages - only these can be dragged
-        const HUMAN_REVIEW_STAGES = ['plan_review', 'implementation_review'];
-
         // Parking lot stages - hidden by default, toggleable
         const PARKING_STAGES = ['backlog', 'accepted', 'not_doing'];
 
@@ -179,9 +176,8 @@ Possible solutions:
 
         document.addEventListener('dragstart', (e) => {
             if (e.target.classList.contains('issue-item')) {
-                const cardStage = e.target.dataset.stage;
                 // Only allow dragging from human review stages
-                if (!HUMAN_REVIEW_STAGES.includes(cardStage)) {
+                if (e.target.dataset.isReview !== 'true') {
                     e.preventDefault();
                     return;
                 }
@@ -215,7 +211,7 @@ Possible solutions:
                 const oldStage = draggedCard.dataset.stage;
 
                 // Only process if from a human review stage
-                if (!HUMAN_REVIEW_STAGES.includes(oldStage)) {
+                if (draggedCard.dataset.isReview !== 'true') {
                     location.reload();
                     return;
                 }
@@ -392,9 +388,11 @@ Possible solutions:
             setTimeout(() => location.reload(), 1000);
         };
 
-        // Stage toggle functionality
-        const reviewStages = ['backlog', 'plan_review', 'implementation_review'];
-        const preReviewStages = ['define', 'research', 'plan', 'plan_assess', 'plan_revise'];
+        // Stage toggle functionality — column data-stage values are top-level stage groups
+        // Review stages: columns whose issues commonly need human review
+        const reviewStages = ['backlog', 'explore', 'implement'];
+        // Pre-review: exploration columns shown as collapsed indicator in review mode
+        const preReviewStages = ['explore'];
         const preImplStages = ['implement'];
 
         function updateMiniDropzones() {

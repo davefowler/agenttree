@@ -132,7 +132,7 @@ def start_agent(
         AgentStartError: If agent fails to start
     """
     from agenttree.config import load_config
-    from agenttree.container import get_container_runtime, find_container_by_worktree
+    from agenttree.container import get_container_runtime
     from agenttree.issues import get_issue, update_issue_stage, update_issue_metadata
     from agenttree.preflight import run_preflight
     from agenttree.state import (
@@ -173,12 +173,12 @@ def start_agent(
     if not issue:
         raise IssueNotFoundError(issue_id)
 
-    # If issue is in backlog, move it to define stage first
+    # If issue is in backlog, move it to first real stage
     if issue.stage == "backlog":
         if not quiet:
-            console.print(f"[cyan]Moving issue from backlog to define...[/cyan]")
-        update_issue_stage(issue.id, "define")
-        issue.stage = "define"
+            console.print(f"[cyan]Moving issue from backlog to explore.define...[/cyan]")
+        update_issue_stage(issue.id, "explore.define")
+        issue.stage = "explore.define"
 
     # Check if agent already running
     existing_agent = get_active_agent(issue.id, host)
@@ -241,6 +241,8 @@ def start_agent(
 
     # Get deterministic port using config method
     port = config.get_port_for_issue(issue.id)
+    if port is None:
+        raise AgentStartError(issue.id, f"Could not derive port for issue #{issue.id}")
     if not quiet:
         console.print(f"[dim]Using port: {port} (derived from issue #{issue.id})[/dim]")
 
@@ -266,7 +268,7 @@ def start_agent(
 
     # Start agent in container
     tool_name = tool or config.default_tool
-    model_name = config.model_for(issue.stage, issue.substage)
+    model_name = config.model_for(issue.stage)
     runtime = get_container_runtime()
 
     if not runtime.is_available():
@@ -294,22 +296,6 @@ def start_agent(
 
     if not quiet:
         console.print(f"[green]✓ Started {tool_name} in container[/green]")
-
-    # For Apple Containers, look up the UUID
-    if runtime.get_runtime_name() == "container":
-        from agenttree.state import update_agent_container_id
-
-        for _ in range(10):
-            time.sleep(0.5)
-            container_uuid = find_container_by_worktree(worktree_path)
-            if container_uuid:
-                update_agent_container_id(issue.id, container_uuid, host)
-                if not quiet:
-                    console.print(f"[dim]Container UUID: {container_uuid[:12]}...[/dim]")
-                break
-        else:
-            if not quiet:
-                console.print(f"[yellow]Warning: Could not find container UUID for cleanup tracking[/yellow]")
 
     if not quiet:
         console.print(f"\n[bold]Agent{role_label} ready for issue #{issue.id}[/bold]")
@@ -514,7 +500,6 @@ def send_message(
 def transition_issue(
     issue_id: str,
     next_stage: str,
-    next_substage: str | None = None,
     *,
     skip_pr_approval: bool = False,
     trigger: str = "cli",
@@ -527,8 +512,7 @@ def transition_issue(
 
     Args:
         issue_id: Issue ID
-        next_stage: Target stage
-        next_substage: Target substage (optional)
+        next_stage: Target dot path (e.g., "explore.define", "implement.code")
         skip_pr_approval: Skip PR approval check (for self-approval)
         trigger: What triggered this transition ("cli", "web", "manager")
 
@@ -548,49 +532,53 @@ def transition_issue(
         raise RuntimeError(f"Issue #{issue_id} not found")
 
     from_stage = issue.stage
-    from_substage = issue.substage
 
     # 1. Execute exit hooks (validation — can block)
     # ValidationError propagates to caller (blocks transition)
     # StageRedirect from exit hooks changes the target
     try:
-        execute_exit_hooks(issue, from_stage, from_substage, skip_pr_approval=skip_pr_approval)
+        execute_exit_hooks(issue, from_stage, skip_pr_approval=skip_pr_approval)
     except StageRedirect as redirect:
-        next_stage = redirect.target_stage
-        next_substage = redirect.target_substage
+        next_stage = redirect.target
 
     # 2. Update issue stage
-    updated = update_issue_stage(issue_id, next_stage, next_substage)
+    updated = update_issue_stage(issue_id, next_stage)
     if not updated:
         raise RuntimeError(f"Failed to update issue #{issue_id} to {next_stage}")
 
     # 3. Execute enter hooks
     # StageRedirect here means e.g. merge_pr hit conflicts -> redirect to implement
     try:
-        execute_enter_hooks(updated, next_stage, next_substage)
+        execute_enter_hooks(updated, next_stage)
     except StageRedirect as redirect:
         log.info("Enter hook redirected issue #%s to %s: %s",
-                 issue_id, redirect.target_stage, redirect.reason)
-        redirected = update_issue_stage(issue_id, redirect.target_stage, redirect.target_substage)
+                 issue_id, redirect.target, redirect.reason)
+        redirected = update_issue_stage(issue_id, redirect.target)
         if redirected:
-            _notify_agent(issue_id, f"Issue redirected to {redirect.target_stage}: {redirect.reason}. Run `agenttree next` for instructions.")
+            _notify_agent(issue_id, f"Issue redirected to {redirect.target}: {redirect.reason}. Run `agenttree next` for instructions.", interrupt=True)
             return redirected
-        raise RuntimeError(f"Failed to redirect issue #{issue_id} to {redirect.target_stage}")
+        raise RuntimeError(f"Failed to redirect issue #{issue_id} to {redirect.target}")
     except Exception as e:
         log.warning("Enter hooks failed for issue #%s (%s trigger): %s", issue_id, trigger, e)
 
     return updated
 
 
-def _notify_agent(issue_id: str, message: str) -> None:
-    """Best-effort notify an active agent via tmux. Never raises."""
+def _notify_agent(issue_id: str, message: str, *, interrupt: bool = False) -> None:
+    """Best-effort notify an active agent via tmux. Never raises.
+
+    Args:
+        issue_id: The issue ID to notify
+        message: Message to send to the agent
+        interrupt: If True, send Ctrl+C first to interrupt current task
+    """
     try:
         from agenttree.state import get_active_agent
         from agenttree.tmux import send_message as tmux_send, session_exists as tmux_session_exists
 
         agent = get_active_agent(issue_id)
         if agent and agent.tmux_session and tmux_session_exists(agent.tmux_session):
-            tmux_send(agent.tmux_session, message)
+            tmux_send(agent.tmux_session, message, interrupt=interrupt)
             log.info("Notified agent for issue #%s", issue_id)
     except Exception as e:
         log.warning("Failed to notify agent for issue #%s: %s", issue_id, e)

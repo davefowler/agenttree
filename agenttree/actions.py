@@ -114,7 +114,7 @@ def auto_start_agents(agents_dir: Path, **kwargs: Any) -> None:
     """
     import subprocess
     from agenttree.config import load_config
-    from agenttree.issues import list_issues, BACKLOG, ACCEPTED, NOT_DOING
+    from agenttree.issues import list_issues
     from agenttree.tmux import session_exists
     
     config = load_config()
@@ -122,7 +122,7 @@ def auto_start_agents(agents_dir: Path, **kwargs: Any) -> None:
     # Get active issues (not parking lot stages)
     issues = [
         i for i in list_issues(sync=False)
-        if i.stage not in (BACKLOG, ACCEPTED, NOT_DOING)
+        if not config.is_parking_lot(i.stage)
     ]
     
     started = 0
@@ -280,16 +280,16 @@ def check_stalled_agents(
     import yaml
     from datetime import datetime, timezone
     from agenttree.config import load_config
-    from agenttree.issues import list_issues, BACKLOG, ACCEPTED, NOT_DOING
+    from agenttree.issues import list_issues
     from agenttree.tmux import session_exists, send_message, is_claude_running
     
     config = load_config()
     manager_session = config.get_manager_tmux_session()
     
-    # Get active issues (not backlog/accepted/not_doing)
+    # Get active issues (not parking lot stages)
     issues = [
         i for i in list_issues(sync=False)
-        if i.stage not in (BACKLOG, ACCEPTED, NOT_DOING)
+        if not config.is_parking_lot(i.stage)
     ]
     
     stalled: list[dict[str, Any]] = []
@@ -338,18 +338,44 @@ def check_stalled_agents(
         except (ValueError, TypeError):
             continue
     
-    # Read previous stall data to detect changes
+    # Read previous stall data to detect changes and track re-notification
     stall_file = agents_dir / "stalled.yaml"
     prev_dead_ids: set[str] = set()
-    prev_stalled_ids: set[str] = set()
+    # Track when each agent was last notified (by stalled_minutes at that time)
+    prev_notified_at: dict[str, int] = {}
     
     if stall_file.exists():
         try:
             prev_data = yaml.safe_load(stall_file.read_text())
             prev_dead_ids = {a["id"] for a in prev_data.get("dead_agents", [])}
-            prev_stalled_ids = {a["id"] for a in prev_data.get("stalled_agents", [])}
+            for a in prev_data.get("stalled_agents", []):
+                prev_notified_at[a["id"]] = a.get("notified_at_minutes", 0)
         except Exception:
             pass
+    
+    # Determine which agents need (re-)notification
+    needs_notify_dead: list[dict[str, Any]] = []
+    needs_notify_stalled: list[dict[str, Any]] = []
+    
+    for agent in dead:
+        if agent["id"] not in prev_dead_ids:
+            needs_notify_dead.append(agent)
+    
+    for agent in stalled:
+        aid = agent["id"]
+        mins = agent["stalled_minutes"]
+        prev_mins = prev_notified_at.get(aid)
+        if prev_mins is None:
+            # New stall — notify and record
+            agent["notified_at_minutes"] = mins
+            needs_notify_stalled.append(agent)
+        elif mins >= prev_mins + threshold_min:
+            # Still stalled and grown by another threshold — re-notify
+            agent["notified_at_minutes"] = mins
+            needs_notify_stalled.append(agent)
+        else:
+            # Still stalled but not long enough to re-ping — carry forward prev
+            agent["notified_at_minutes"] = prev_mins
     
     # Write to stalled.yaml (always, even if empty - so manager knows state is fresh)
     stall_data = {
@@ -364,13 +390,8 @@ def check_stalled_agents(
     if not stalled and not dead:
         return
     
-    # Only notify manager if there are NEW dead/stalled agents (not already alerted)
-    current_dead_ids = {a["id"] for a in dead}
-    current_stalled_ids = {a["id"] for a in stalled}
-    new_dead = current_dead_ids - prev_dead_ids
-    new_stalled = current_stalled_ids - prev_stalled_ids
-    
-    if not new_dead and not new_stalled:
+    # Check if any agents need notification
+    if not needs_notify_dead and not needs_notify_stalled:
         console.print(f"[dim]Stall state unchanged ({len(dead)} dead, {len(stalled)} stalled) - not re-alerting manager[/dim]")
         return
     
@@ -384,19 +405,20 @@ def check_stalled_agents(
     # Send brief notification pointing to file
     lines = ["STALL REPORT - Check _agenttree/stalled.yaml for details:"]
     
-    if dead:
-        lines.append(f"  {len(dead)} dead agent(s) need restart")
-        for agent in dead[:3]:  # Show first 3
+    if needs_notify_dead:
+        lines.append(f"  {len(needs_notify_dead)} dead agent(s) need restart")
+        for agent in needs_notify_dead[:3]:
             lines.append(f"    #{agent['id']}: {agent['title'][:30]}")
-        if len(dead) > 3:
-            lines.append(f"    ... and {len(dead) - 3} more")
+        if len(needs_notify_dead) > 3:
+            lines.append(f"    ... and {len(needs_notify_dead) - 3} more")
     
-    if stalled:
-        lines.append(f"  {len(stalled)} stalled agent(s)")
-        for agent in stalled[:3]:  # Show first 3
-            lines.append(f"    #{agent['id']}: {agent['title'][:30]} ({agent['stalled_minutes']}min)")
-        if len(stalled) > 3:
-            lines.append(f"    ... and {len(stalled) - 3} more")
+    if needs_notify_stalled:
+        for agent in needs_notify_stalled[:3]:
+            prev = prev_notified_at.get(agent["id"])
+            label = "STILL STALLED" if prev is not None else "stalled"
+            lines.append(f"  #{agent['id']}: {agent['title'][:30]} — {label} ({agent['stalled_minutes']}min)")
+        if len(needs_notify_stalled) > 3:
+            lines.append(f"    ... and {len(needs_notify_stalled) - 3} more")
     
     lines.append("\nUse: agenttree start <id> --force --skip-preflight (restart) or agenttree output <id> (diagnose)")
     
@@ -404,7 +426,7 @@ def check_stalled_agents(
     result = send_message(manager_session, message)
     
     if result == "sent":
-        console.print(f"[dim]Wrote stalled.yaml, notified manager ({len(new_dead)} new dead, {len(new_stalled)} new stalled)[/dim]")
+        console.print(f"[dim]Wrote stalled.yaml, notified manager ({len(needs_notify_dead)} dead, {len(needs_notify_stalled)} stalled)[/dim]")
 
 
 @register_action("check_ci_status")

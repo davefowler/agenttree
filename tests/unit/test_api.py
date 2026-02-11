@@ -39,8 +39,7 @@ class TestStartAgent:
         issue.id = "042"
         issue.slug = "test-issue"
         issue.title = "Test Issue"
-        issue.stage = "define"
-        issue.substage = None
+        issue.stage = "explore.define"
         return issue
 
     @pytest.fixture
@@ -738,8 +737,7 @@ class TestTransitionIssue:
     def mock_issue(self):
         issue = MagicMock()
         issue.id = "42"
-        issue.stage = "plan_review"
-        issue.substage = None
+        issue.stage = "plan.review"
         issue.slug = "test-issue"
         return issue
 
@@ -748,20 +746,19 @@ class TestTransitionIssue:
         from agenttree.api import transition_issue
 
         updated_issue = MagicMock()
-        updated_issue.stage = "implement"
-        updated_issue.substage = "code"
+        updated_issue.stage = "implement.code"
 
         with patch("agenttree.issues.get_issue", return_value=mock_issue), \
              patch("agenttree.hooks.execute_exit_hooks") as mock_exit, \
              patch("agenttree.issues.update_issue_stage", return_value=updated_issue) as mock_update, \
              patch("agenttree.hooks.execute_enter_hooks") as mock_enter:
 
-            result = transition_issue("42", "implement", "code")
+            result = transition_issue("42", "implement.code")
 
         assert result == updated_issue
-        mock_exit.assert_called_once_with(mock_issue, "plan_review", None, skip_pr_approval=False)
-        mock_update.assert_called_once_with("42", "implement", "code")
-        mock_enter.assert_called_once_with(updated_issue, "implement", "code")
+        mock_exit.assert_called_once_with(mock_issue, "plan.review", skip_pr_approval=False)
+        mock_update.assert_called_once_with("42", "implement.code")
+        mock_enter.assert_called_once_with(updated_issue, "implement.code")
 
     def test_transition_exit_hook_redirect(self, mock_issue):
         """Exit hook StageRedirect changes the target stage."""
@@ -769,17 +766,17 @@ class TestTransitionIssue:
         from agenttree.hooks import StageRedirect
 
         updated_issue = MagicMock()
-        updated_issue.stage = "define"
+        updated_issue.stage = "explore.define"
 
         with patch("agenttree.issues.get_issue", return_value=mock_issue), \
-             patch("agenttree.hooks.execute_exit_hooks", side_effect=StageRedirect("define", "needs more work")), \
+             patch("agenttree.hooks.execute_exit_hooks", side_effect=StageRedirect("explore.define", "needs more work")), \
              patch("agenttree.issues.update_issue_stage", return_value=updated_issue) as mock_update, \
              patch("agenttree.hooks.execute_enter_hooks"):
 
-            result = transition_issue("42", "implement", "code")
+            result = transition_issue("42", "implement.code")
 
         # Should have updated to the redirected stage, not original target
-        mock_update.assert_called_once_with("42", "define", None)
+        mock_update.assert_called_once_with("42", "explore.define")
         assert result == updated_issue
 
     def test_transition_enter_hook_redirect(self, mock_issue):
@@ -789,13 +786,12 @@ class TestTransitionIssue:
 
         updated_issue = MagicMock()
         redirected_issue = MagicMock()
-        redirected_issue.stage = "implement"
-        redirected_issue.substage = "code"
+        redirected_issue.stage = "implement.code"
 
         with patch("agenttree.issues.get_issue", return_value=mock_issue), \
              patch("agenttree.hooks.execute_exit_hooks"), \
              patch("agenttree.issues.update_issue_stage", side_effect=[updated_issue, redirected_issue]), \
-             patch("agenttree.hooks.execute_enter_hooks", side_effect=StageRedirect("implement", "merge conflict", "code")), \
+             patch("agenttree.hooks.execute_enter_hooks", side_effect=StageRedirect("implement.code", "merge conflict")), \
              patch("agenttree.api._notify_agent") as mock_notify:
 
             result = transition_issue("42", "accepted")
@@ -840,7 +836,22 @@ class TestNotifyAgent:
 
             _notify_agent("42", "Test message")
 
-        mock_send.assert_called_once_with("testproj-dev-042", "Test message")
+        mock_send.assert_called_once_with("testproj-dev-042", "Test message", interrupt=False)
+
+    def test_notify_sends_with_interrupt(self):
+        """Sends message with interrupt=True when specified."""
+        from agenttree.api import _notify_agent
+
+        agent = MagicMock()
+        agent.tmux_session = "testproj-dev-042"
+
+        with patch("agenttree.state.get_active_agent", return_value=agent), \
+             patch("agenttree.tmux.session_exists", return_value=True), \
+             patch("agenttree.tmux.send_message") as mock_send:
+
+            _notify_agent("42", "Test message", interrupt=True)
+
+        mock_send.assert_called_once_with("testproj-dev-042", "Test message", interrupt=True)
 
     def test_notify_no_agent(self):
         """Does nothing if no active agent."""

@@ -23,6 +23,13 @@ def mock_config():
     config.get_issue_tmux_session.return_value = "testproject-developer-042"
     # Add flows dict for flow validation in issue create
     config.flows = {"default": MagicMock()}
+    # parse_stage returns (stage_group, substage_or_none) for dot path strings
+    def _parse_stage(dot_path: str) -> tuple:
+        if "." in dot_path:
+            parts = dot_path.split(".", 1)
+            return (parts[0], parts[1])
+        return (dot_path, None)
+    config.parse_stage.side_effect = _parse_stage
     return config
 
 
@@ -181,7 +188,6 @@ class TestIssueListCommand:
         mock_issue.id = "42"
         mock_issue.title = "Test Issue"
         mock_issue.stage = "backlog"  # Stages are just strings
-        mock_issue.substage = None
         mock_issue.priority = Priority.MEDIUM  # Priority is an enum
         mock_issue.assigned_agent = None
 
@@ -214,19 +220,25 @@ class TestApproveCommand:
         mock_issue = MagicMock()
         mock_issue.id = "42"
         mock_issue.title = "Test Issue"
-        mock_issue.stage = "implement"  # Not a review stage
+        mock_issue.stage = "implement.code"  # Not a review stage
         mock_issue.is_review = False
 
         # Mock stage config to indicate not a review stage
         mock_config.get_stage.return_value = MagicMock(human_review=False, role="developer")
-        mock_config.get_human_review_stages.return_value = ["plan_review", "implementation_review"]
+        mock_config.get_human_review_stages.return_value = ["plan.review", "implement.review"]
+        mock_config.is_human_review.return_value = False
+        mock_config.role_for.return_value = "developer"
 
+        # Patch workflow's load_config and get_issue_func. Also patch transition_issue
+        # since it would call real get_issue/update_issue_stage - we want to test the
+        # "not a human review stage" early-exit path only.
         with patch("agenttree.cli.workflow.load_config", return_value=mock_config):
             with patch("agenttree.cli.workflow.get_issue_func", return_value=mock_issue):
                 with patch("agenttree.cli.workflow.is_running_in_container", return_value=False):
                     result = cli_runner.invoke(main, ["approve", "42"])
 
         assert result.exit_code == 1
+        # Output contains "not a human review stage" (e.g. "Issue is at 'implement', not a human review stage")
         assert "not" in result.output.lower() and "review" in result.output.lower()
 
     def test_approve_blocks_in_container(self, cli_runner, mock_config):
@@ -413,8 +425,7 @@ class TestStatusCommand:
         mock_issue = MagicMock()
         mock_issue.id = "42"
         mock_issue.title = "Test Issue"
-        mock_issue.stage = "implement"  # Active stage
-        mock_issue.substage = None
+        mock_issue.stage = "implement.code"  # Active stage
         mock_issue.assigned_agent = 1
         mock_issue.updated = "2026-02-04T00:00:00Z"
         mock_issue.flow = "default"
@@ -872,10 +883,11 @@ class TestRollbackCommand:
         mock_issue = MagicMock()
         mock_issue.id = "42"
         mock_issue.stage = "implement"
+        mock_issue.flow = "default"
 
-        mock_config.get_stage_names.return_value = [
-            "backlog", "define", "research", "plan", "implement", "accepted"
-        ]
+        stage_list = ["backlog", "explore.define", "explore.research", "plan.draft", "implement.code", "accepted"]
+        mock_config.get_stage_names.return_value = stage_list
+        mock_config.get_flow_stage_names.return_value = stage_list
 
         with patch("agenttree.cli.workflow.load_config", return_value=mock_config):
             with patch("agenttree.cli.workflow.get_issue_func", return_value=mock_issue):
@@ -891,16 +903,16 @@ class TestRollbackCommand:
 
         mock_issue = MagicMock()
         mock_issue.id = "42"
-        mock_issue.stage = "research"
+        mock_issue.stage = "explore.research"
 
-        mock_config.get_stage_names.return_value = [
-            "backlog", "define", "research", "plan", "implement", "accepted"
-        ]
+        stage_list = ["backlog", "explore.define", "explore.research", "plan.draft", "implement.code", "accepted"]
+        mock_config.get_stage_names.return_value = stage_list
+        mock_config.get_flow_stage_names.return_value = stage_list
 
         with patch("agenttree.cli.workflow.load_config", return_value=mock_config):
             with patch("agenttree.cli.workflow.get_issue_func", return_value=mock_issue):
                 with patch("agenttree.cli.workflow.is_running_in_container", return_value=False):
-                    result = cli_runner.invoke(main, ["rollback", "42", "implement"])
+                    result = cli_runner.invoke(main, ["rollback", "42", "implement.code"])
 
         assert result.exit_code == 1
         assert "not before" in result.output.lower()
@@ -911,13 +923,14 @@ class TestRollbackCommand:
 
         mock_issue = MagicMock()
         mock_issue.id = "42"
-        mock_issue.stage = "implement"
+        mock_issue.stage = "implement.code"
 
-        # not_doing is positioned before implement so we can test the redirect_only check
+        # not_doing is positioned before implement.code so we can test the redirect_only check
         # (position check must pass before redirect_only check is reached)
-        mock_config.get_stage_names.return_value = [
-            "backlog", "not_doing", "define", "research", "plan", "implement", "accepted"
-        ]
+        stage_list = ["backlog", "not_doing", "explore.define", "explore.research", "plan.draft", "implement.code", "accepted"]
+        mock_config.get_stage_names.return_value = stage_list
+        mock_config.get_flow_stage_names.return_value = stage_list
+        mock_config.parse_stage.return_value = ("not_doing", None)
         mock_stage_config = MagicMock()
         mock_stage_config.redirect_only = True
         mock_config.get_stage.return_value = mock_stage_config
@@ -949,17 +962,14 @@ class TestRollbackCommand:
         mock_issue = MagicMock()
         mock_issue.id = "42"
         mock_issue.title = "Test Issue"
-        mock_issue.stage = "implement"
-        mock_issue.substage = None
+        mock_issue.stage = "implement.code"
 
-        mock_config.get_stage_names.return_value = [
-            "backlog", "define", "research", "plan", "implement", "accepted"
-        ]
+        stage_list = ["backlog", "explore.define", "explore.research", "plan.draft", "implement.code", "accepted"]
+        mock_config.get_stage_names.return_value = stage_list
+        mock_config.get_flow_stage_names.return_value = stage_list
         mock_stage_config = MagicMock()
         mock_stage_config.redirect_only = False
-        mock_stage_config.substage_order.return_value = []
         mock_stage_config.output = None
-        mock_stage_config.substages = {}
         mock_config.get_stage.return_value = mock_stage_config
 
         issue_dir = tmp_path / "_agenttree" / "issues" / "042-test-issue"
@@ -971,7 +981,7 @@ class TestRollbackCommand:
                     with patch("agenttree.cli.workflow.is_running_in_container", return_value=False):
                         with patch("agenttree.state.get_active_agent", return_value=None):
                             # User answers 'n' to confirmation
-                            result = cli_runner.invoke(main, ["rollback", "42", "research"], input="n\n")
+                            result = cli_runner.invoke(main, ["rollback", "42", "explore.research"], input="n\n")
 
         assert "Cancelled" in result.output
 
@@ -982,17 +992,14 @@ class TestRollbackCommand:
         mock_issue = MagicMock()
         mock_issue.id = "42"
         mock_issue.title = "Test Issue"
-        mock_issue.stage = "implement"
-        mock_issue.substage = "code"
+        mock_issue.stage = "implement.code"
 
-        mock_config.get_stage_names.return_value = [
-            "backlog", "define", "research", "plan", "implement", "accepted"
-        ]
+        stage_list = ["backlog", "explore.define", "explore.research", "plan.draft", "implement.code", "accepted"]
+        mock_config.get_stage_names.return_value = stage_list
+        mock_config.get_flow_stage_names.return_value = stage_list
         mock_stage_config = MagicMock()
         mock_stage_config.redirect_only = False
-        mock_stage_config.substage_order.return_value = ["explore", "document"]
         mock_stage_config.output = "research.md"
-        mock_stage_config.substages = {}
         mock_config.get_stage.return_value = mock_stage_config
 
         issue_dir = tmp_path / "_agenttree" / "issues" / "042-test-issue"
@@ -1006,8 +1013,7 @@ class TestRollbackCommand:
             "title": "Test Issue",
             "created": "2024-01-01T00:00:00Z",
             "updated": "2024-01-01T00:00:00Z",
-            "stage": "implement",
-            "substage": "code",
+            "stage": "implement.code",
             "history": [],
         }
         with open(issue_dir / "issue.yaml", "w") as f:
@@ -1024,7 +1030,7 @@ class TestRollbackCommand:
                             with patch("agenttree.cli.workflow.delete_session"):
                                 with patch("agenttree.agents_repo.sync_agents_repo"):
                                     with patch("agenttree.issues.get_agenttree_path", return_value=tmp_path):
-                                        result = cli_runner.invoke(main, ["rollback", "42", "research", "--yes"])
+                                        result = cli_runner.invoke(main, ["rollback", "42", "explore.research", "--yes"])
 
         assert result.exit_code == 0
         assert "rolled back" in result.output.lower()
@@ -1032,8 +1038,7 @@ class TestRollbackCommand:
         # Verify issue.yaml was updated
         with open(issue_dir / "issue.yaml") as f:
             updated_data = yaml.safe_load(f)
-        assert updated_data["stage"] == "research"
-        assert updated_data["substage"] == "explore"
+        assert updated_data["stage"] == "explore.research"
         assert len(updated_data["history"]) == 1
         assert updated_data["history"][0]["type"] == "rollback"
 
@@ -1044,31 +1049,33 @@ class TestRollbackCommand:
         mock_issue = MagicMock()
         mock_issue.id = "42"
         mock_issue.title = "Test Issue"
-        mock_issue.stage = "implement"
-        mock_issue.substage = "code"
+        mock_issue.stage = "implement.code"
 
-        mock_config.get_stage_names.return_value = [
-            "backlog", "define", "research", "plan", "implement", "accepted"
-        ]
+        stage_list = ["backlog", "explore.define", "explore.research", "plan.draft", "implement.code", "accepted"]
+        mock_config.get_stage_names.return_value = stage_list
+        mock_config.get_flow_stage_names.return_value = stage_list
 
         # Set up stage configs with output files
         def get_stage_side_effect(name):
             stage_config = MagicMock()
             stage_config.redirect_only = False
-            stage_config.substage_order.return_value = []
-            stage_config.substages = {}
-            if name == "plan":
+            if name == "plan.draft":
                 stage_config.output = "spec.md"
-            elif name == "implement":
+            elif name == "implement.code":
                 stage_config.output = None
-                review_substage = MagicMock()
-                review_substage.output = "review.md"
-                stage_config.substages = {"code_review": review_substage}
             else:
                 stage_config.output = None
             return stage_config
 
         mock_config.get_stage.side_effect = get_stage_side_effect
+
+        def output_for_side_effect(dot_path):
+            if dot_path == "plan.draft":
+                return "spec.md"
+            if dot_path == "implement.code":
+                return "review.md"
+            return None
+        mock_config.output_for.side_effect = output_for_side_effect
 
         issue_dir = tmp_path / "_agenttree" / "issues" / "042-test-issue"
         issue_dir.mkdir(parents=True)
@@ -1081,8 +1088,7 @@ class TestRollbackCommand:
             "title": "Test Issue",
             "created": "2024-01-01T00:00:00Z",
             "updated": "2024-01-01T00:00:00Z",
-            "stage": "implement",
-            "substage": "code",
+            "stage": "implement.code",
             "history": [],
         }
         with open(issue_dir / "issue.yaml", "w") as f:
@@ -1100,7 +1106,7 @@ class TestRollbackCommand:
                             with patch("agenttree.cli.workflow.delete_session"):
                                 with patch("agenttree.agents_repo.sync_agents_repo"):
                                     with patch("agenttree.issues.get_agenttree_path", return_value=tmp_path):
-                                        result = cli_runner.invoke(main, ["rollback", "42", "research", "--yes"])
+                                        result = cli_runner.invoke(main, ["rollback", "42", "explore.research", "--yes"])
 
         assert result.exit_code == 0
 
@@ -1123,22 +1129,19 @@ class TestRollbackCommand:
         mock_issue = MagicMock()
         mock_issue.id = "42"
         mock_issue.title = "Test Issue"
-        mock_issue.stage = "implement"
-        mock_issue.substage = "code"
+        mock_issue.stage = "implement.code"
 
         mock_agent = MagicMock()
         mock_agent.issue_id = "42"
         mock_agent.worktree = tmp_path / "worktree"
         mock_agent.worktree.mkdir(parents=True)
 
-        mock_config.get_stage_names.return_value = [
-            "backlog", "define", "research", "plan", "implement", "accepted"
-        ]
+        stage_list = ["backlog", "explore.define", "explore.research", "plan.draft", "implement.code", "accepted"]
+        mock_config.get_stage_names.return_value = stage_list
+        mock_config.get_flow_stage_names.return_value = stage_list
         mock_stage_config = MagicMock()
         mock_stage_config.redirect_only = False
-        mock_stage_config.substage_order.return_value = []
         mock_stage_config.output = None
-        mock_stage_config.substages = {}
         mock_config.get_stage.return_value = mock_stage_config
 
         issue_dir = tmp_path / "_agenttree" / "issues" / "042-test-issue"
@@ -1152,8 +1155,7 @@ class TestRollbackCommand:
             "title": "Test Issue",
             "created": "2024-01-01T00:00:00Z",
             "updated": "2024-01-01T00:00:00Z",
-            "stage": "implement",
-            "substage": "code",
+            "stage": "implement.code",
             "history": [],
         }
         with open(issue_dir / "issue.yaml", "w") as f:
@@ -1168,7 +1170,7 @@ class TestRollbackCommand:
                                 with patch("agenttree.cli.workflow.delete_session"):
                                     with patch("agenttree.agents_repo.sync_agents_repo"):
                                         with patch("agenttree.issues.get_agenttree_path", return_value=tmp_path):
-                                            result = cli_runner.invoke(main, ["rollback", "42", "research", "--yes"])
+                                            result = cli_runner.invoke(main, ["rollback", "42", "explore.research", "--yes"])
 
         assert result.exit_code == 0
         mock_unregister.assert_called_once_with("42")
@@ -1277,8 +1279,7 @@ class TestIssueShowCommand:
             title="Test Issue",
             created="2026-01-11T12:00:00Z",
             updated="2026-01-11T12:00:00Z",
-            stage="implement",
-            substage="code",
+            stage="implement.code",
             priority=Priority.HIGH,
             branch="issue-042-test-issue",
         )
@@ -1297,12 +1298,10 @@ class TestIssueShowCommand:
         data = json.loads(result.output)
         assert data["id"] == "042"
         assert data["title"] == "Test Issue"
-        assert data["stage"] == "implement"
-        assert data["substage"] == "code"
+        assert data["stage"] == "implement.code"
         assert data["branch"] == "issue-042-test-issue"
         assert data["priority"] == "high"
         assert data["issue_dir_rel"] == "_agenttree/issues/042-test-issue"
-        assert data["stage_substage"] == "implement.code"
         # JSON includes docs
         assert "problem_md" in data
 
@@ -1317,8 +1316,7 @@ class TestIssueShowCommand:
             title="Test Issue",
             created="2026-01-11T12:00:00Z",
             updated="2026-01-11T12:00:00Z",
-            stage="implement",
-            substage="code",
+            stage="implement.code",
             branch="issue-042-test-issue",
             worktree_dir="/path/to/worktree",
         )
@@ -1361,8 +1359,8 @@ class TestIssueShowCommand:
         assert result.exit_code == 0
         assert result.output.strip() == "/path/to/worktree"
 
-    def test_issue_show_field_stage_substage(self, cli_runner, mock_config, tmp_path):
-        """Should output combined stage_substage field."""
+    def test_issue_show_field_stage(self, cli_runner, mock_config, tmp_path):
+        """Should output stage field (dot-path format)."""
         from agenttree.cli import main
         from agenttree.issues import Issue
 
@@ -1372,8 +1370,7 @@ class TestIssueShowCommand:
             title="Test Issue",
             created="2026-01-11T12:00:00Z",
             updated="2026-01-11T12:00:00Z",
-            stage="implement",
-            substage="code",
+            stage="implement.code",
         )
 
         issue_dir = tmp_path / "_agenttree" / "issues" / "042-test-issue"
@@ -1383,7 +1380,7 @@ class TestIssueShowCommand:
             with patch("agenttree.cli.issues.get_issue_func", return_value=mock_issue):
                 with patch("agenttree.cli.issues.get_issue_dir", return_value=issue_dir):
                     with patch("agenttree.issues.get_issue_dir", return_value=issue_dir):
-                        result = cli_runner.invoke(main, ["issue", "show", "042", "--field", "stage_substage"])
+                        result = cli_runner.invoke(main, ["issue", "show", "042", "--field", "stage"])
 
         assert result.exit_code == 0
         assert result.output.strip() == "implement.code"
@@ -1506,7 +1503,7 @@ class TestCleanupCommand:
     def test_cleanup_finds_stale_worktree_accepted_issue(self, cli_runner, mock_config):
         """Should identify worktree for accepted issue as stale."""
         from agenttree.cli import main
-        from agenttree.issues import Issue, ACCEPTED
+        from agenttree.issues import Issue
 
         mock_issue = Issue(
             id="042",
@@ -1514,7 +1511,7 @@ class TestCleanupCommand:
             title="Test Issue",
             created="2026-01-11T12:00:00Z",
             updated="2026-01-11T12:00:00Z",
-            stage=ACCEPTED,
+            stage="accepted",
         )
 
         mock_worktrees = [
@@ -1599,7 +1596,7 @@ class TestCleanupCommand:
     def test_cleanup_force_no_prompt(self, cli_runner, mock_config):
         """Should skip confirmation with --force."""
         from agenttree.cli import main
-        from agenttree.issues import Issue, ACCEPTED
+        from agenttree.issues import Issue
 
         mock_issue = Issue(
             id="042",
@@ -1607,7 +1604,7 @@ class TestCleanupCommand:
             title="Test Issue",
             created="2026-01-11T12:00:00Z",
             updated="2026-01-11T12:00:00Z",
-            stage=ACCEPTED,
+            stage="accepted",
         )
 
         mock_worktrees = [

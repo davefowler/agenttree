@@ -23,27 +23,9 @@ class Priority(str, Enum):
     CRITICAL = "critical"
 
 
-# Stage constants for convenience (stages are now config-driven strings)
-# Full stage configuration is loaded from .agenttree.yaml via config.py
-BACKLOG = "backlog"
-DEFINE = "define"
-RESEARCH = "research"
-PLAN = "plan"
-PLAN_ASSESS = "plan_assess"
-PLAN_REVISE = "plan_revise"
-PLAN_REVIEW = "plan_review"
-IMPLEMENT = "implement"
-INDEPENDENT_CODE_REVIEW = "independent_code_review"
-IMPLEMENTATION_REVIEW = "implementation_review"
-ACCEPTED = "accepted"
-KNOWLEDGE_BASE = "knowledge_base"
-NOT_DOING = "not_doing"
-
-
 class HistoryEntry(BaseModel):
     """A single entry in issue history."""
-    stage: str
-    substage: Optional[str] = None
+    stage: str  # Dot path (e.g., "explore.define", "backlog")
     timestamp: str
     agent: Optional[int] = None
     type: str = "transition"  # "transition" (normal), "rollback", etc.
@@ -57,8 +39,7 @@ class Issue(BaseModel):
     created: str
     updated: str
 
-    stage: str = DEFINE
-    substage: Optional[str] = "refine"
+    stage: str = "explore.define"  # Dot path (e.g., "explore.define", "backlog")
     flow: str = "default"  # Which workflow flow this issue follows
 
     branch: Optional[str] = None
@@ -77,8 +58,8 @@ class Issue(BaseModel):
 
     history: list[HistoryEntry] = Field(default_factory=list)
 
-    custom_agent_spawned: Optional[str] = None  # Stage name where custom agent was spawned
-    needs_ui_review: bool = False  # If True, ui_review stage will run
+    custom_agent_spawned: Optional[str] = None  # Dot path where custom agent was spawned
+    needs_ui_review: bool = False  # If True, ui_review substage will run
 
     # Processing state: "exit", "enter", or None (not processing)
     processing: Optional[str] = None
@@ -159,8 +140,7 @@ def create_issue(
     title: str,
     priority: Priority = Priority.MEDIUM,
     labels: Optional[list[str]] = None,
-    stage: str = DEFINE,
-    substage: Optional[str] = None,
+    stage: str = "explore.define",
     flow: str = "default",
     problem: Optional[str] = None,
     context: Optional[str] = None,
@@ -174,21 +154,17 @@ def create_issue(
         title: Issue title
         priority: Issue priority
         labels: Optional list of labels
-        stage: Starting stage for the issue (default: DEFINE)
-        substage: Starting substage (default: "refine" for define stage)
+        stage: Starting stage dot path (default: "explore.define")
         flow: Workflow flow for this issue (default: "default")
         problem: Problem statement text (fills problem.md)
         context: Context/background text (fills problem.md)
         solutions: Possible solutions text (fills problem.md)
         dependencies: Optional list of issue IDs that must be completed first
-        needs_ui_review: If True, ui_review stage will run for this issue
+        needs_ui_review: If True, ui_review substage will run for this issue
 
     Returns:
         The created Issue object
     """
-    # Default substage for define stage
-    if stage == DEFINE and substage is None:
-        substage = "refine"
     # Sync before and after writing
     agents_path = get_agenttree_path()
     sync_agents_repo(agents_path, pull_only=True)
@@ -229,14 +205,13 @@ def create_issue(
         created=now,
         updated=now,
         stage=stage,
-        substage=substage,
         flow=flow,
         priority=priority,
         labels=labels or [],
         dependencies=normalized_deps,
         needs_ui_review=needs_ui_review,
         history=[
-            HistoryEntry(stage=stage, substage=substage, timestamp=now)
+            HistoryEntry(stage=stage, timestamp=now)
         ]
     )
 
@@ -432,7 +407,7 @@ def check_dependencies_met(issue: Issue) -> tuple[bool, list[str]]:
         if dep_issue is None:
             # Dependency doesn't exist - treat as unmet
             unmet.append(dep_id)
-        elif dep_issue.stage != ACCEPTED:
+        elif dep_issue.stage != "accepted":
             unmet.append(dep_id)
 
     return len(unmet) == 0, unmet
@@ -563,7 +538,7 @@ def get_blocked_issues(completed_issue_id: str) -> list[Issue]:
     normalized_id = completed_issue_id.lstrip("0") or "0"
 
     blocked = []
-    for issue in list_issues(stage=BACKLOG):
+    for issue in list_issues(stage="backlog"):
         # Check if this issue depends on the completed issue
         for dep_id in issue.dependencies:
             dep_normalized = dep_id.lstrip("0") or "0"
@@ -608,7 +583,7 @@ def get_ready_issues() -> list[Issue]:
         List of issues that are ready to start
     """
     ready = []
-    for issue in list_issues(stage=BACKLOG):
+    for issue in list_issues(stage="backlog"):
         if issue.dependencies:
             all_met, _ = check_dependencies_met(issue)
             if all_met:
@@ -619,78 +594,39 @@ def get_ready_issues() -> list[Issue]:
     return ready
 
 
-# Stage workflow definitions are now config-driven via .agenttree.yaml
-# These compatibility constants are provided for backward compatibility with tests
-# but the actual workflow logic uses Config.get_next_stage()
-
-# Legacy compatibility: stage lists now derived from Config
-# NOTE: For most use cases, import and use load_config() from agenttree.config
-STAGE_ORDER = [
-    BACKLOG,
-    DEFINE,
-    RESEARCH,
-    PLAN,
-    PLAN_ASSESS,
-    PLAN_REVISE,
-    PLAN_REVIEW,
-    IMPLEMENT,
-    IMPLEMENTATION_REVIEW,
-    KNOWLEDGE_BASE,
-    ACCEPTED,
-    NOT_DOING,
-]
-
-STAGE_SUBSTAGES = {
-    DEFINE: ["draft", "refine"],
-    RESEARCH: ["explore", "document"],
-    PLAN: ["draft", "refine"],
-    IMPLEMENT: ["setup", "test", "code", "debug", "code_review", "address_review"],
-}
-
-HUMAN_REVIEW_STAGES = {
-    PLAN_REVIEW,
-    IMPLEMENTATION_REVIEW,
-}
-
-
 def get_next_stage(
-    current_stage: str,
-    current_substage: Optional[str] = None,
+    current: str,
     flow: str = "default",
     issue_context: dict | None = None,
-) -> tuple[str, Optional[str], bool]:
-    """Calculate the next stage/substage.
+) -> tuple[str, bool]:
+    """Calculate the next stage from a dot path.
 
     Delegates to Config.get_next_stage() for config-driven workflow.
 
     Args:
-        current_stage: Current stage name (string)
-        current_substage: Current substage (if any)
+        current: Current dot path (e.g., "explore.define")
         flow: Workflow flow to use for stage progression (default: "default")
         issue_context: Optional dict of issue context for condition evaluation
 
     Returns:
-        Tuple of (next_stage, next_substage, is_human_review)
-        is_human_review is True if the next stage requires human approval
+        Tuple of (next_dot_path, is_human_review)
     """
     from agenttree.config import load_config
 
     config = load_config()
-    return config.get_next_stage(current_stage, current_substage, flow, issue_context)
+    return config.get_next_stage(current, flow, issue_context)
 
 
 def update_issue_stage(
     issue_id: str,
     stage: str,
-    substage: Optional[str] = None,
     agent: Optional[int] = None,
 ) -> Optional[Issue]:
-    """Update an issue's stage and substage.
+    """Update an issue's stage.
 
     Args:
         issue_id: Issue ID
-        stage: New stage (string)
-        substage: New substage (optional)
+        stage: New stage dot path (e.g., "explore.define", "implement.code")
         agent: Agent number making the change (optional)
 
     Returns:
@@ -716,13 +652,11 @@ def update_issue_stage(
     # Update stage
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     issue.stage = stage
-    issue.substage = substage
     issue.updated = now
 
     # Add history entry
     history_entry = HistoryEntry(
         stage=stage,
-        substage=substage,
         timestamp=now,
         agent=agent,
     )
@@ -734,10 +668,7 @@ def update_issue_stage(
         yaml.dump(data, f, default_flow_style=False, sort_keys=False)
 
     # Sync after updating stage
-    stage_str = stage
-    if substage:
-        stage_str += f".{substage}"
-    sync_agents_repo(agents_path, pull_only=False, commit_message=f"Update issue {issue_id} to stage {stage_str}")
+    sync_agents_repo(agents_path, pull_only=False, commit_message=f"Update issue {issue_id} to stage {stage}")
 
     return issue
 
@@ -916,19 +847,17 @@ def get_issue_from_branch() -> Optional[str]:
 
 
 def load_skill(
-    stage: str,
-    substage: Optional[str] = None,
+    dot_path: str,
     issue: Optional["Issue"] = None,
     include_system: bool = False,
 ) -> Optional[str]:
     """Load skill/instructions for a stage, rendered with Jinja if issue provided.
 
     Uses Config.skill_path() for resolving skill file locations.
-    Convention: skills/{stage}.md or skills/{stage}/{substage}.md
+    Convention: skills/{stage}/{substage}.md or skills/{stage}.md
 
     Args:
-        stage: Stage name (string) to load skill for
-        substage: Optional substage for more specific skill
+        dot_path: Stage dot path (e.g., "explore.define", "implement.code")
         issue: Optional Issue object for Jinja context
         include_system: If True, prepend AGENTS.md system prompt (for first stage)
 
@@ -946,19 +875,20 @@ def load_skill(
     sync_agents_repo(agents_path, pull_only=True)
 
     config = load_config()
+    stage_name, substage_name = config.parse_stage(dot_path)
 
     # Check if skill is explicitly configured (not convention-based)
-    stage_config = config.get_stage(stage)
+    stage_config = config.get_stage(stage_name)
     explicit_skill = None
-    if substage and stage_config:
-        substage_config = stage_config.get_substage(substage)
+    if substage_name and stage_config:
+        substage_config = stage_config.get_substage(substage_name)
         if substage_config and substage_config.skill:
             explicit_skill = substage_config.skill
     if not explicit_skill and stage_config and stage_config.skill:
         explicit_skill = stage_config.skill
 
     # Get skill path from config
-    skill_rel_path = config.skill_path(stage, substage)
+    skill_rel_path = config.skill_path(dot_path)
     skill_path = agents_path / skill_rel_path
 
     skill_content = None
@@ -969,20 +899,20 @@ def load_skill(
     elif explicit_skill:
         # Config explicitly specified this skill file - it MUST exist
         raise FileNotFoundError(
-            f"Skill file '{explicit_skill}' configured for stage '{stage}' "
+            f"Skill file '{explicit_skill}' configured for stage '{dot_path}' "
             f"does not exist at {skill_path}"
         )
     else:
         # Try legacy naming convention: {stage}-{substage}.md
         skills_dir = agents_path / "skills"
-        if substage:
-            legacy_path = skills_dir / f"{stage}-{substage}.md"
+        if substage_name:
+            legacy_path = skills_dir / f"{stage_name}-{substage_name}.md"
             if legacy_path.exists():
                 skill_content = legacy_path.read_text()
 
         # Fall back to stage skill without substage
         if skill_content is None:
-            stage_skill = skills_dir / f"{stage}.md"
+            stage_skill = skills_dir / f"{stage_name}.md"
             if stage_skill.exists():
                 skill_content = stage_skill.read_text()
 
@@ -1003,13 +933,14 @@ def load_skill(
     # Build Jinja context using unified function
     context = get_issue_context(issue, include_docs=True)
 
-    # Override stage/substage with what was passed to load_skill
+    # Override stage with what was passed to load_skill
     # (may differ from current issue state when loading a specific stage skill)
-    context["stage"] = stage
-    context["substage"] = substage or ""
+    context["stage"] = dot_path
+    # Also provide parsed components for templates that need them
+    context["stage_group"] = stage_name
+    context["substage"] = substage_name or ""
 
-    # Load project-level review checklist if it exists (for project-specific patterns)
-    # Look in skills directory to keep all skill-related files together
+    # Load project-level review checklist if it exists
     project_review_path = agents_path / "skills" / "project_review.md"
     if project_review_path.exists():
         context["project_review_md"] = project_review_path.read_text()
@@ -1017,31 +948,29 @@ def load_skill(
         context["project_review_md"] = ""
 
     # Inject command outputs for referenced commands
-    # Commands run in worktree directory if available, otherwise issue directory
     from agenttree.commands import get_referenced_commands, get_command_output
     from agenttree.hooks import get_code_directory
 
     issue_dir = get_issue_dir(issue.id)
     if config.commands:
-        # Determine working directory for commands (container-aware)
         cwd = get_code_directory(issue, issue_dir) if issue_dir else None
-
-        # Find commands referenced in the template
         referenced = get_referenced_commands(skill_content, config.commands)
 
         for cmd_name in referenced:
-            # Don't overwrite built-in context variables
             if cmd_name not in context:
                 context[cmd_name] = get_command_output(
                     config.commands, cmd_name, cwd=cwd
                 )
+
+    # Add available flows from config (for define stage flow selection)
+    context["available_flows"] = list(config.flows.keys())
+    context["default_flow"] = config.default_flow
 
     # Render with Jinja
     try:
         template = Template(skill_content)
         return template.render(**context)
     except Exception:
-        # If rendering fails, return raw content
         return skill_content
 
 
@@ -1050,23 +979,20 @@ def load_persona(
     issue: Optional["Issue"] = None,
     is_takeover: bool = False,
     current_stage: Optional[str] = None,
-    current_substage: Optional[str] = None,
 ) -> Optional[str]:
     """Load the persona document for an agent type.
-
-    Used when an agent starts to provide context about their role and the AgentTree workflow.
 
     Args:
         agent_type: Type of agent (developer, manager, reviewer)
         issue: Optional Issue object for Jinja context
-        is_takeover: True if agent is taking over mid-workflow (not from backlog/define)
-        current_stage: Current stage name for template context
-        current_substage: Current substage name for template context
+        is_takeover: True if agent is taking over mid-workflow
+        current_stage: Current dot path for template context
 
     Returns:
         Persona content as string (rendered with Jinja if issue provided), or None if not found
     """
     from jinja2 import Template
+    from agenttree.config import load_config
 
     # Sync before reading
     agents_path = get_agenttree_path()
@@ -1075,32 +1001,32 @@ def load_persona(
     # Load agent-specific persona
     persona_path = agents_path / "skills" / "roles" / f"{agent_type}.md"
     if not persona_path.exists():
-        # Fallback to legacy overview.md
         persona_path = agents_path / "skills" / "overview.md"
         if not persona_path.exists():
             return None
 
     persona_content = persona_path.read_text()
 
-    # Calculate completed stages (stages before current_stage)
+    # Calculate completed stages (dot paths before current_stage)
     completed_stages: list[str] = []
     if current_stage:
-        for stage in STAGE_ORDER:
-            if stage == current_stage:
+        config = load_config()
+        flow_stages = config.get_flow_stage_names(issue.flow if issue else "default")
+        parking = config.get_parking_lot_stages()
+        for dp in flow_stages:
+            if dp == current_stage:
                 break
-            # Skip backlog and terminal stages
-            if stage not in (BACKLOG, ACCEPTED, NOT_DOING):
-                completed_stages.append(stage)
+            stage_name, _ = config.parse_stage(dp)
+            if stage_name not in parking:
+                completed_stages.append(dp)
 
     # Build Jinja context
-    context = {
+    context: dict = {
         "is_takeover": is_takeover,
         "current_stage": current_stage or "",
-        "current_substage": current_substage or "",
         "completed_stages": completed_stages,
     }
 
-    # Add issue context if available
     if issue:
         issue_dir = get_issue_dir(issue.id)
         context.update({
@@ -1110,12 +1036,10 @@ def load_persona(
             "issue_dir_rel": f"_agenttree/issues/{issue.id}-{issue.slug}" if issue_dir else "",
         })
 
-    # Render with Jinja
     try:
         template = Template(persona_content)
         return template.render(**context)
     except Exception:
-        # If rendering fails, return raw content
         return persona_content
 
 
@@ -1128,8 +1052,7 @@ class AgentSession(BaseModel):
     session_id: str  # Unique ID per agent start
     issue_id: str
     started_at: str
-    last_stage: str
-    last_substage: Optional[str] = None
+    last_stage: str  # Dot path (e.g., "explore.define")
     last_advanced_at: str
     oriented: bool = False  # True if agent has been oriented in this session
 
@@ -1170,7 +1093,6 @@ def create_session(issue_id: str) -> AgentSession:
         issue_id=issue_id,
         started_at=now,
         last_stage=issue.stage,
-        last_substage=issue.substage,
         last_advanced_at=now,
         oriented=False,
     )
@@ -1193,7 +1115,7 @@ def save_session(session: AgentSession) -> None:
         print(f"Warning: Failed to save session for {session.issue_id}: {e}")
 
 
-def update_session_stage(issue_id: str, stage: str, substage: Optional[str] = None) -> None:
+def update_session_stage(issue_id: str, stage: str) -> None:
     """Update session after stage advancement."""
     session = get_session(issue_id)
     if not session:
@@ -1201,16 +1123,15 @@ def update_session_stage(issue_id: str, stage: str, substage: Optional[str] = No
 
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     session.last_stage = stage
-    session.last_substage = substage
     session.last_advanced_at = now
     session.oriented = True  # After advancing, agent is oriented
     save_session(session)
 
 
-def mark_session_oriented(issue_id: str, stage: Optional[str] = None, substage: Optional[str] = None) -> None:
+def mark_session_oriented(issue_id: str, stage: Optional[str] = None) -> None:
     """Mark that agent has been oriented in this session.
 
-    Also syncs last_stage/last_substage if provided, so is_restart()
+    Also syncs last_stage if provided, so is_restart()
     won't keep detecting a stage mismatch.
     """
     session = get_session(issue_id)
@@ -1220,12 +1141,10 @@ def mark_session_oriented(issue_id: str, stage: Optional[str] = None, substage: 
     session.oriented = True
     if stage:
         session.last_stage = stage
-    if substage is not None:
-        session.last_substage = substage
     save_session(session)
 
 
-def is_restart(issue_id: str, current_stage: Optional[str] = None, current_substage: Optional[str] = None) -> bool:
+def is_restart(issue_id: str, current_stage: Optional[str] = None) -> bool:
     """Check if agent should re-orient (show instructions without advancing).
 
     Returns True if:
@@ -1242,10 +1161,7 @@ def is_restart(issue_id: str, current_stage: Optional[str] = None, current_subst
         return False  # No session = fresh start
 
     # Stage changed externally (e.g., human approval advanced us)
-    # This handles the case where manager moved us to a new stage
     if current_stage and session.last_stage != current_stage:
-        return True
-    if current_substage is not None and session.last_substage != current_substage:
         return True
 
     # Tmux restarted but same stage - use oriented flag
@@ -1259,42 +1175,37 @@ def delete_session(issue_id: str) -> None:
         session_path.unlink()
 
 
-def get_output_files_after_stage(target_stage: str) -> list[str]:
+def get_output_files_after_stage(target_dot_path: str, flow: str = "default") -> list[str]:
     """Get list of output files for stages AFTER the target stage.
 
     Used by rollback to determine which files need to be archived.
 
     Args:
-        target_stage: The stage being rolled back to (files from this stage are NOT included)
+        target_dot_path: The dot path being rolled back to (files from this stage are NOT included)
+        flow: Flow name to use for stage ordering
 
     Returns:
         List of output filenames (e.g., ["spec.md", "spec_review.md", "review.md"])
 
     Raises:
-        ValueError: If target_stage is not a valid stage name
+        ValueError: If target_dot_path is not a valid dot path in the flow
     """
     from agenttree.config import load_config
 
     config = load_config()
 
-    # Find target stage index
-    stage_names = [s.name for s in config.stages]
-    if target_stage not in stage_names:
-        raise ValueError(f"Unknown stage: {target_stage}")
+    flow_stages = config.get_flow_stage_names(flow)
+    if target_dot_path not in flow_stages:
+        raise ValueError(f"Unknown stage: {target_dot_path}")
 
-    target_idx = stage_names.index(target_stage)
+    target_idx = flow_stages.index(target_dot_path)
 
     # Collect output files from stages after target
     output_files: set[str] = set()
-    for stage in config.stages[target_idx + 1 :]:
-        # Stage-level output
-        if stage.output:
-            output_files.add(stage.output)
-
-        # Substage outputs
-        for substage in stage.substages.values():
-            if substage.output:
-                output_files.add(substage.output)
+    for dp in flow_stages[target_idx + 1:]:
+        output = config.output_for(dp)
+        if output:
+            output_files.add(output)
 
     return list(output_files)
 
@@ -1363,16 +1274,17 @@ def get_issue_context(issue: Issue, include_docs: bool = True) -> dict:
     issue_dir = get_issue_dir(issue.id)
 
     # Add derived fields
-    context["issue_id"] = issue.id  # Alias for backward compat with templates
-    context["issue_title"] = issue.title  # Alias for backward compat with templates
+    context["issue_id"] = issue.id  # Alias for templates
+    context["issue_title"] = issue.title  # Alias for templates
     context["issue_dir"] = str(issue_dir) if issue_dir else ""
     context["issue_dir_rel"] = f"_agenttree/issues/{issue.id}-{issue.slug}" if issue_dir else ""
 
-    # Combined stage.substage
-    if issue.substage:
-        context["stage_substage"] = f"{issue.stage}.{issue.substage}"
-    else:
-        context["stage_substage"] = issue.stage
+    # Parse dot path into group and substage for templates
+    from agenttree.config import load_config
+    cfg = load_config()
+    stage_group, substage = cfg.parse_stage(issue.stage)
+    context["stage_group"] = stage_group
+    context["substage"] = substage or ""
 
     # Load document contents if requested
     if include_docs and issue_dir:

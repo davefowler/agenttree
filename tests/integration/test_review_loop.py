@@ -1,7 +1,7 @@
 """Integration tests for the independent code review loop.
 
 Tests the full flow:
-1. independent_code_review → (approved) → implementation_review
+1. independent_code_review → (approved) → implement.review
 2. independent_code_review → (not approved) → address_independent_review
 3. address_independent_review → rollback → independent_code_review
 4. Version file creation during loop
@@ -32,43 +32,52 @@ def review_loop_config() -> dict:
             "agent": {"description": "Default agent"},
             "review": {"description": "Review agent", "skill": "agents/review.md"},
         },
-        "stages": [
-            {"name": "backlog"},
-            {"name": "implement", "substages": {"code": {}, "feedback": {}}},
-            {
-                "name": "independent_code_review",
-                "host": "review",
-                "output": "independent_review.md",
-                "pre_completion": [
-                    {"file_exists": "independent_review.md"},
-                    {"section_check": {"file": "independent_review.md", "section": "Review Findings", "expect": "not_empty"}},
-                    {"checkbox_checked": {"file": "independent_review.md", "checkbox": "Approve", "on_fail_stage": "address_independent_review"}},
-                ],
+        "flows": {
+            "default": {
+                "stages": {
+                    "backlog": {},
+                    "implement": {
+                        "substages": {
+                            "code": {},
+                            "feedback": {},
+                        },
+                    },
+                    "independent_code_review": {
+                        "role": "review",
+                        "output": "independent_review.md",
+                        "pre_completion": [
+                            {"file_exists": "independent_review.md"},
+                            {"section_check": {"file": "independent_review.md", "section": "Review Findings", "expect": "not_empty"}},
+                            {"checkbox_checked": {"file": "independent_review.md", "checkbox": "Approve", "on_fail": "address_independent_review"}},
+                        ],
+                    },
+                    "address_independent_review": {
+                        "redirect_only": True,
+                        "role": "agent",
+                        "output": "independent_review_response.md",
+                        "post_start": [
+                            {"version_file": {"file": "independent_review.md"}},
+                            {"version_file": {"file": "independent_review_response.md"}},
+                        ],
+                        "pre_completion": [
+                            {"loop_check": {"count_files": "independent_review_v*.md", "max": 3, "error": "Review loop exceeded 3 iterations"}},
+                            {"section_check": {"file": "independent_review_response.md", "section": "Changes Made", "expect": "not_empty"}},
+                        ],
+                        "post_completion": [
+                            {"rollback": {"to": "independent_code_review"}},
+                        ],
+                    },
+                    "implementation_review": {
+                        "human_review": True,
+                        "role": "manager",
+                    },
+                    "accepted": {
+                        "is_parking_lot": True,
+                    },
+                },
             },
-            {
-                "name": "address_independent_review",
-                "redirect_only": True,
-                "host": "agent",
-                "output": "independent_review_response.md",
-                "post_start": [
-                    {"version_file": {"file": "independent_review.md"}},
-                    {"version_file": {"file": "independent_review_response.md"}},
-                ],
-                "pre_completion": [
-                    {"loop_check": {"count_files": "independent_review_v*.md", "max": 3, "error": "Review loop exceeded 3 iterations"}},
-                    {"section_check": {"file": "independent_review_response.md", "section": "Changes Made", "expect": "not_empty"}},
-                ],
-                "post_completion": [
-                    {"rollback": {"to_stage": "independent_code_review"}},
-                ],
-            },
-            {
-                "name": "implementation_review",
-                "human_review": True,
-                "role": "manager",
-            },
-            {"name": "accepted", "is_parking_lot": True},
-        ],
+        },
+        "default_flow": "default",
     }
 
 
@@ -208,7 +217,7 @@ class TestCheckboxApprovalFlow:
                 with pytest.raises(StageRedirect) as exc_info:
                     execute_hooks(issue_dir, "independent_code_review", stage_config, "pre_completion")
 
-                assert exc_info.value.target_stage == "address_independent_review"
+                assert exc_info.value.target == "address_independent_review"
                 assert "Approve" in exc_info.value.reason
 
 
@@ -329,10 +338,9 @@ class TestRedirectOnlyStage:
 
             # From independent_code_review, next should be implementation_review
             # (skipping address_independent_review which is redirect_only)
-            next_stage, next_substage, is_review = config.get_next_stage("independent_code_review", None)
+            next_stage, is_review = config.get_next_stage("independent_code_review")
 
             assert next_stage == "implementation_review"
-            assert next_substage is None
 
 
 class TestFullReviewLoop:
@@ -357,7 +365,7 @@ class TestFullReviewLoop:
                 stage_config = config.get_stage("independent_code_review")
                 with pytest.raises(StageRedirect) as exc_info:
                     execute_hooks(issue_dir, "independent_code_review", stage_config, "pre_completion")
-                assert exc_info.value.target_stage == "address_independent_review"
+                assert exc_info.value.target == "address_independent_review"
 
                 # Step 3: Enter address_independent_review - version files
                 stage_config = config.get_stage("address_independent_review")

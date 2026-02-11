@@ -11,8 +11,8 @@ pytest.importorskip("httpx")
 
 from starlette.testclient import TestClient
 
-from agenttree.web.app import app, AgentManager, convert_issue_to_web, filter_issues
-from agenttree.web.models import StageEnum, Issue as WebIssue
+from agenttree.web.app import app, AgentManager, convert_issue_to_web, filter_issues, FILE_TO_STAGE
+from agenttree.web.models import Issue as WebIssue
 from agenttree.issues import Priority
 
 
@@ -29,7 +29,6 @@ def mock_issue():
     mock.id = "001"
     mock.title = "Test Issue"
     mock.stage = "backlog"
-    mock.substage = None
     mock.labels = ["bug"]
     mock.assigned_agent = None
     mock.pr_url = None
@@ -41,17 +40,17 @@ def mock_issue():
     mock.priority = Priority.MEDIUM
     mock.processing = None
     mock.ci_escalated = False
+    mock.flow = "default"
     return mock
 
 
 @pytest.fixture
 def mock_review_issue():
-    """Create a mock issue at implementation_review stage."""
+    """Create a mock issue at implement.review stage."""
     mock = Mock()
     mock.id = "002"
     mock.title = "Review Issue"
-    mock.stage = "implementation_review"
-    mock.substage = None
+    mock.stage = "implement.review"
     mock.labels = []
     mock.assigned_agent = "1"
     mock.pr_url = "https://github.com/test/repo/pull/123"
@@ -63,6 +62,7 @@ def mock_review_issue():
     mock.priority = Priority.MEDIUM
     mock.processing = None
     mock.ci_escalated = False
+    mock.flow = "default"
     return mock
 
 
@@ -179,18 +179,18 @@ class TestFlowSortingFunctions:
     def test_sort_flow_issues_by_updated(self):
         """Test sorting by updated date."""
         from agenttree.web.app import _sort_flow_issues
-        from agenttree.web.models import Issue as WebIssue, StageEnum
+        from agenttree.web.models import Issue as WebIssue
 
         issue1 = WebIssue(
             number=1, title="Older", body="", labels=[], assignees=[],
-            stage=StageEnum.BACKLOG, substage=None, assigned_agent=None,
+            stage="backlog", assigned_agent=None,
             tmux_active=False, pr_url=None, pr_number=None,
             created_at=datetime(2024, 1, 1), updated_at=datetime(2024, 1, 1),
             dependencies=[], dependents=[],
         )
         issue2 = WebIssue(
             number=2, title="Newer", body="", labels=[], assignees=[],
-            stage=StageEnum.BACKLOG, substage=None, assigned_agent=None,
+            stage="backlog", assigned_agent=None,
             tmux_active=False, pr_url=None, pr_number=None,
             created_at=datetime(2024, 1, 1), updated_at=datetime(2024, 1, 2),
             dependencies=[], dependents=[],
@@ -205,18 +205,18 @@ class TestFlowSortingFunctions:
     def test_sort_flow_issues_by_number(self):
         """Test sorting by issue number."""
         from agenttree.web.app import _sort_flow_issues
-        from agenttree.web.models import Issue as WebIssue, StageEnum
+        from agenttree.web.models import Issue as WebIssue
 
         issue10 = WebIssue(
             number=10, title="Ten", body="", labels=[], assignees=[],
-            stage=StageEnum.BACKLOG, substage=None, assigned_agent=None,
+            stage="backlog", assigned_agent=None,
             tmux_active=False, pr_url=None, pr_number=None,
             created_at=datetime(2024, 1, 1), updated_at=datetime(2024, 1, 1),
             dependencies=[], dependents=[],
         )
         issue5 = WebIssue(
             number=5, title="Five", body="", labels=[], assignees=[],
-            stage=StageEnum.BACKLOG, substage=None, assigned_agent=None,
+            stage="backlog", assigned_agent=None,
             tmux_active=False, pr_url=None, pr_number=None,
             created_at=datetime(2024, 1, 1), updated_at=datetime(2024, 1, 1),
             dependencies=[], dependents=[],
@@ -231,18 +231,18 @@ class TestFlowSortingFunctions:
     def test_sort_flow_issues_by_created(self):
         """Test sorting by created date."""
         from agenttree.web.app import _sort_flow_issues
-        from agenttree.web.models import Issue as WebIssue, StageEnum
+        from agenttree.web.models import Issue as WebIssue
 
         issue1 = WebIssue(
             number=1, title="Older", body="", labels=[], assignees=[],
-            stage=StageEnum.BACKLOG, substage=None, assigned_agent=None,
+            stage="backlog", assigned_agent=None,
             tmux_active=False, pr_url=None, pr_number=None,
             created_at=datetime(2024, 1, 1), updated_at=datetime(2024, 1, 1),
             dependencies=[], dependents=[],
         )
         issue2 = WebIssue(
             number=2, title="Newer", body="", labels=[], assignees=[],
-            stage=StageEnum.BACKLOG, substage=None, assigned_agent=None,
+            stage="backlog", assigned_agent=None,
             tmux_active=False, pr_url=None, pr_number=None,
             created_at=datetime(2024, 1, 2), updated_at=datetime(2024, 1, 1),
             dependencies=[], dependents=[],
@@ -254,21 +254,26 @@ class TestFlowSortingFunctions:
         assert result[0].number == 2
         assert result[1].number == 1
 
-    def test_filter_flow_issues_review(self):
+    @patch("agenttree.config.load_config")
+    def test_filter_flow_issues_review(self, mock_load_config):
         """Test filtering to review stages."""
         from agenttree.web.app import _filter_flow_issues
-        from agenttree.web.models import Issue as WebIssue, StageEnum
+        from agenttree.web.models import Issue as WebIssue
+
+        mock_config = Mock()
+        mock_config.is_human_review.side_effect = lambda s: s == "implement.review"
+        mock_load_config.return_value = mock_config
 
         review_issue = WebIssue(
             number=1, title="Review", body="", labels=[], assignees=[],
-            stage=StageEnum.IMPLEMENTATION_REVIEW, substage=None,
-            assigned_agent="1", tmux_active=False, pr_url=None, pr_number=None,
+            stage="implement.review",
+            tmux_active=False, pr_url=None, pr_number=None,
             created_at=datetime(2024, 1, 1), updated_at=datetime(2024, 1, 1),
             dependencies=[], dependents=[],
         )
         other_issue = WebIssue(
             number=2, title="Other", body="", labels=[], assignees=[],
-            stage=StageEnum.IMPLEMENT, substage=None, assigned_agent=None,
+            stage="implement.code",
             tmux_active=False, pr_url=None, pr_number=None,
             created_at=datetime(2024, 1, 1), updated_at=datetime(2024, 1, 1),
             dependencies=[], dependents=[],
@@ -283,18 +288,18 @@ class TestFlowSortingFunctions:
     def test_filter_flow_issues_running(self):
         """Test filtering to running agents."""
         from agenttree.web.app import _filter_flow_issues
-        from agenttree.web.models import Issue as WebIssue, StageEnum
+        from agenttree.web.models import Issue as WebIssue
 
         running_issue = WebIssue(
             number=1, title="Running", body="", labels=[], assignees=[],
-            stage=StageEnum.IMPLEMENT, substage=None, assigned_agent="1",
+            stage="implement.code", assigned_agent="1",
             tmux_active=True, pr_url=None, pr_number=None,
             created_at=datetime(2024, 1, 1), updated_at=datetime(2024, 1, 1),
             dependencies=[], dependents=[],
         )
         stopped_issue = WebIssue(
             number=2, title="Stopped", body="", labels=[], assignees=[],
-            stage=StageEnum.IMPLEMENT, substage=None, assigned_agent=None,
+            stage="implement.code", assigned_agent=None,
             tmux_active=False, pr_url=None, pr_number=None,
             created_at=datetime(2024, 1, 1), updated_at=datetime(2024, 1, 1),
             dependencies=[], dependents=[],
@@ -309,18 +314,18 @@ class TestFlowSortingFunctions:
     def test_filter_flow_issues_open(self):
         """Test filtering to hide closed issues."""
         from agenttree.web.app import _filter_flow_issues
-        from agenttree.web.models import Issue as WebIssue, StageEnum
+        from agenttree.web.models import Issue as WebIssue
 
         open_issue = WebIssue(
             number=1, title="Open", body="", labels=[], assignees=[],
-            stage=StageEnum.IMPLEMENT, substage=None, assigned_agent=None,
+            stage="implement.code", assigned_agent=None,
             tmux_active=False, pr_url=None, pr_number=None,
             created_at=datetime(2024, 1, 1), updated_at=datetime(2024, 1, 1),
             dependencies=[], dependents=[],
         )
         accepted_issue = WebIssue(
             number=2, title="Accepted", body="", labels=[], assignees=[],
-            stage=StageEnum.ACCEPTED, substage=None, assigned_agent=None,
+            stage="accepted", assigned_agent=None,
             tmux_active=False, pr_url=None, pr_number=None,
             created_at=datetime(2024, 1, 1), updated_at=datetime(2024, 1, 1),
             dependencies=[], dependents=[],
@@ -467,11 +472,10 @@ class TestApproveIssueEndpoint:
 
         updated = MagicMock()
         updated.stage = "accepted"
-        updated.substage = None
         mock_transition.return_value = updated
 
         # Mock config.get_next_stage
-        mock_config.return_value.get_next_stage.return_value = ("accepted", None, True)
+        mock_config.return_value.get_next_stage.return_value = ("accepted", True)
 
         response = client.post("/api/issues/002/approve")
 
@@ -491,7 +495,7 @@ class TestApproveIssueEndpoint:
         client, mock_issue
     ):
         """Test approving issue at plan_review stage."""
-        mock_issue.stage = "plan_review"
+        mock_issue.stage = "plan.review"
         mock_crud.get_issue.return_value = mock_issue
         mock_get_agent.return_value = None
 
@@ -499,7 +503,7 @@ class TestApproveIssueEndpoint:
         updated.stage = "implement"
         mock_transition.return_value = updated
 
-        mock_config.return_value.get_next_stage.return_value = ("implement", None, True)
+        mock_config.return_value.get_next_stage.return_value = ("implement.code", True)
 
         response = client.post("/api/issues/001/approve")
 
@@ -536,7 +540,7 @@ class TestApproveIssueEndpoint:
         from agenttree.hooks import ValidationError
 
         mock_crud.get_issue.return_value = mock_review_issue
-        mock_config.return_value.get_next_stage.return_value = ("accepted", None, True)
+        mock_config.return_value.get_next_stage.return_value = ("accepted", True)
         mock_transition.side_effect = ValidationError("PR not ready")
 
         response = client.post("/api/issues/002/approve")
@@ -552,7 +556,7 @@ class TestApproveIssueEndpoint:
     ):
         """Test approve returns 500 when transition_issue raises RuntimeError."""
         mock_crud.get_issue.return_value = mock_review_issue
-        mock_config.return_value.get_next_stage.return_value = ("accepted", None, True)
+        mock_config.return_value.get_next_stage.return_value = ("accepted", True)
         mock_transition.side_effect = RuntimeError("Failed to update issue #2 to accepted")
 
         response = client.post("/api/issues/002/approve")
@@ -573,14 +577,14 @@ class TestApproveIssueEndpoint:
         updated = MagicMock()
         updated.stage = "accepted"
         mock_transition.return_value = updated
-        mock_config.return_value.get_next_stage.return_value = ("accepted", None, True)
+        mock_config.return_value.get_next_stage.return_value = ("accepted", True)
         mock_config.return_value.allow_self_approval = False
 
         response = client.post("/api/issues/002/approve")
 
         assert response.status_code == 200
         mock_transition.assert_called_once_with(
-            "2", "accepted", None,
+            "2", "accepted",
             skip_pr_approval=False,
             trigger="web",
         )
@@ -745,7 +749,7 @@ class TestConvertIssueToWeb:
 
         assert web_issue.number == 1
         assert web_issue.title == "Test Issue"
-        assert web_issue.stage == StageEnum.BACKLOG
+        assert web_issue.stage == "backlog"
         assert web_issue.tmux_active is False
 
     @patch("agenttree.web.app.agent_manager")
@@ -759,13 +763,13 @@ class TestConvertIssueToWeb:
 
     @patch("agenttree.web.app.agent_manager")
     def test_convert_issue_unknown_stage(self, mock_agent_mgr, mock_issue):
-        """Test converting issue with unknown stage falls back to backlog."""
+        """Test converting issue with unknown stage passes it through."""
         mock_agent_mgr._check_issue_tmux_session.return_value = False
         mock_issue.stage = "unknown_stage"
 
         web_issue = convert_issue_to_web(mock_issue)
 
-        assert web_issue.stage == StageEnum.BACKLOG
+        assert web_issue.stage == "unknown_stage"
 
 
 class TestFilterIssues:
@@ -781,7 +785,7 @@ class TestFilterIssues:
                 body="",
                 labels=["enhancement", "auth"],
                 assignees=[],
-                stage=StageEnum.IMPLEMENT,
+                stage="implement.code",
                 assigned_agent=None,
                 tmux_active=False,
                 pr_url=None,
@@ -795,7 +799,7 @@ class TestFilterIssues:
                 body="",
                 labels=["bug", "urgent"],
                 assignees=[],
-                stage=StageEnum.PLAN_REVIEW,
+                stage="plan.review",
                 assigned_agent=None,
                 tmux_active=False,
                 pr_url=None,
@@ -809,7 +813,7 @@ class TestFilterIssues:
                 body="",
                 labels=["docs"],
                 assignees=[],
-                stage=StageEnum.ACCEPTED,
+                stage="accepted",
                 assigned_agent=None,
                 tmux_active=False,
                 pr_url=None,
@@ -870,7 +874,7 @@ class TestFilterIssues:
         result = filter_issues(sample_web_issues, "documentation")
 
         assert len(result) == 1
-        assert result[0].stage == StageEnum.ACCEPTED
+        assert result[0].stage == "accepted"
 
     def test_filter_issues_whitespace_only_returns_all(self, sample_web_issues):
         """Test that whitespace-only search returns all issues."""
@@ -964,27 +968,23 @@ class TestFileToStageMapping:
     """Tests for file-to-stage mapping in get_issue_files."""
 
     def test_file_to_stage_mapping_exists(self):
-        """Test that FILE_TO_STAGE mapping is defined."""
-        from agenttree.web.app import FILE_TO_STAGE
-
+        """Test that FILE_TO_STAGE mapping maps files to dot-path stages."""
         assert "problem.md" in FILE_TO_STAGE
-        assert FILE_TO_STAGE["problem.md"] == "define"
-        assert FILE_TO_STAGE["research.md"] == "research"
-        assert FILE_TO_STAGE["spec.md"] == "plan"
-        assert FILE_TO_STAGE["spec_review.md"] == "plan_assess"
-        assert FILE_TO_STAGE["review.md"] == "implement"
+        assert FILE_TO_STAGE["problem.md"] == "explore.define"
+        assert FILE_TO_STAGE["research.md"] == "explore.research"
+        assert FILE_TO_STAGE["spec.md"] == "explore.plan"
+        assert FILE_TO_STAGE["spec_review.md"] == "explore.plan_review"
+        assert FILE_TO_STAGE["review.md"] == "implement.code"
 
     def test_file_to_stage_unknown_file(self):
         """Test that unknown files are not in FILE_TO_STAGE."""
-        from agenttree.web.app import FILE_TO_STAGE
-
         assert "unknown.md" not in FILE_TO_STAGE
         assert "issue.yaml" not in FILE_TO_STAGE
 
     @patch("agenttree.web.app.issue_crud")
     @patch("agenttree.web.app._config")
     def test_get_issue_files_includes_stage(self, mock_config, mock_crud, tmp_path):
-        """Test that get_issue_files includes stage field."""
+        """Test that get_issue_files includes stage and stage_color fields."""
         from agenttree.web.app import get_issue_files
 
         # Create test files
@@ -999,12 +999,12 @@ class TestFileToStageMapping:
         files = get_issue_files("001")
 
         assert len(files) == 2
-        # Check problem.md has stage=define
+        # Check problem.md has stage=explore.define
         problem_file = next(f for f in files if f["name"] == "problem.md")
-        assert problem_file["stage"] == "define"
-        # Check spec.md has stage=plan
+        assert problem_file["stage"] == "explore.define"
+        # Check spec.md has stage=explore.plan
         spec_file = next(f for f in files if f["name"] == "spec.md")
-        assert spec_file["stage"] == "plan"
+        assert spec_file["stage"] == "explore.plan"
 
     @patch("agenttree.web.app.issue_crud")
     @patch("agenttree.web.app._config")
@@ -1020,21 +1020,24 @@ class TestFileToStageMapping:
         (issue_dir / "review.md").write_text("# Review")
 
         mock_crud.get_issue_dir.return_value = issue_dir
-        mock_crud.STAGE_ORDER = ["backlog", "define", "research", "plan", "plan_assess", "plan_revise", "plan_review", "implement"]
         mock_config.show_issue_yaml = False
+        mock_config.get_flow_stage_names.return_value = [
+            "backlog", "explore.define", "explore.research", "explore.plan",
+            "explore.plan_review", "plan.draft", "plan.review", "implement.code",
+        ]
 
-        # Current stage is implement
-        files = get_issue_files("001", current_stage="implement")
+        # Current stage is implement.code
+        files = get_issue_files("001", current_stage="implement.code")
 
         problem_file = next(f for f in files if f["name"] == "problem.md")
         spec_file = next(f for f in files if f["name"] == "spec.md")
         review_file = next(f for f in files if f["name"] == "review.md")
 
-        # problem.md (define) should be passed when at implement
+        # problem.md (explore.define) should be passed when at implement.code
         assert problem_file["is_passed"] == "true"
-        # spec.md (plan) should be passed when at implement
+        # spec.md (explore.plan) should be passed when at implement.code
         assert spec_file["is_passed"] == "true"
-        # review.md (implement) should NOT be passed when at implement
+        # review.md (implement.code) should NOT be passed when at implement.code
         assert review_file["is_passed"] == "false"
 
     @patch("agenttree.web.app.issue_crud")
@@ -1050,11 +1053,14 @@ class TestFileToStageMapping:
         (issue_dir / "review.md").write_text("# Review")
 
         mock_crud.get_issue_dir.return_value = issue_dir
-        mock_crud.STAGE_ORDER = ["backlog", "define", "research", "plan", "plan_assess", "plan_revise", "plan_review", "implement"]
         mock_config.show_issue_yaml = False
+        mock_config.get_flow_stage_names.return_value = [
+            "backlog", "explore.define", "explore.research", "explore.plan",
+            "explore.plan_review", "plan.draft", "plan.review", "implement.code",
+        ]
 
-        # Current stage is implement
-        files = get_issue_files("001", current_stage="implement")
+        # Current stage is implement.code
+        files = get_issue_files("001", current_stage="implement.code")
 
         problem_file = next(f for f in files if f["name"] == "problem.md")
         review_file = next(f for f in files if f["name"] == "review.md")
@@ -1082,6 +1088,7 @@ class TestFileToStageMapping:
 
         custom_file = files[0]
         assert custom_file["stage"] == ""
+        assert custom_file["stage_color"] == ""
         assert custom_file["is_passed"] == "false"
 
     @patch("agenttree.web.app.issue_crud")
@@ -1097,10 +1104,10 @@ class TestFileToStageMapping:
 
         mock_crud.get_issue_dir.return_value = issue_dir
         mock_config.show_issue_yaml = False
+        mock_config.get_stage_names.return_value = []
 
         # No current_stage provided
         files = get_issue_files("001")
 
         problem_file = files[0]
         assert problem_file["is_passed"] == "false"
-        assert problem_file["short_name"] == "Problem"  # Not truncated
