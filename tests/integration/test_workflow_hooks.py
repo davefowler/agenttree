@@ -19,7 +19,7 @@ from tests.integration.helpers import (
 
 
 class TestDefineStageValidation:
-    """Test DEFINE stage validation hooks."""
+    """Test explore.define stage validation hooks."""
 
     def test_blocks_without_context_section(self, workflow_repo: Path, mock_sync: MagicMock):
         """Define stage should block if Context section is empty."""
@@ -49,9 +49,9 @@ class TestDefineStageValidation:
                     (issue_dir / "problem.md").write_text(content)
 
                     config = load_config()
-                    stage_config = config.get_stage("define")
+                    _, substage_config = config.resolve_stage("explore.define")
 
-                    errors = execute_hooks(issue_dir, "define", stage_config, "pre_completion")
+                    errors = execute_hooks(issue_dir, "explore.define", substage_config, "pre_completion")
 
                     assert len(errors) > 0
                     assert any("context" in e.lower() or "empty" in e.lower() for e in errors)
@@ -73,15 +73,15 @@ class TestDefineStageValidation:
                     create_valid_problem_md(issue_dir)
 
                     config = load_config()
-                    stage_config = config.get_stage("define")
+                    _, substage_config = config.resolve_stage("explore.define")
 
-                    errors = execute_hooks(issue_dir, "define", stage_config, "pre_completion")
+                    errors = execute_hooks(issue_dir, "explore.define", substage_config, "pre_completion")
 
                     assert errors == []
 
 
 class TestResearchStageValidation:
-    """Test RESEARCH stage validation hooks."""
+    """Test explore.research stage validation hooks."""
 
     def test_blocks_without_relevant_files(self, workflow_repo: Path, mock_sync: MagicMock):
         """Research stage should block if Relevant Files section is empty."""
@@ -111,9 +111,9 @@ Some patterns here.
                     (issue_dir / "research.md").write_text(content)
 
                     config = load_config()
-                    stage_config = config.get_stage("research")
+                    _, substage_config = config.resolve_stage("explore.research")
 
-                    errors = execute_hooks(issue_dir, "research", stage_config, "pre_completion")
+                    errors = execute_hooks(issue_dir, "explore.research", substage_config, "pre_completion")
 
                     assert len(errors) > 0
 
@@ -134,15 +134,15 @@ Some patterns here.
                     create_valid_research_md(issue_dir)
 
                     config = load_config()
-                    stage_config = config.get_stage("research")
+                    _, substage_config = config.resolve_stage("explore.research")
 
-                    errors = execute_hooks(issue_dir, "research", stage_config, "pre_completion")
+                    errors = execute_hooks(issue_dir, "explore.research", substage_config, "pre_completion")
 
                     assert errors == []
 
 
 class TestPlanStageValidation:
-    """Test PLAN stage validation hooks."""
+    """Test plan.draft stage validation hooks."""
 
     def test_blocks_without_approach(self, workflow_repo: Path, mock_sync: MagicMock):
         """Plan stage should block if Approach section is empty."""
@@ -180,9 +180,9 @@ Test here.
                     (issue_dir / "spec.md").write_text(content)
 
                     config = load_config()
-                    stage_config = config.get_stage("plan")
+                    _, substage_config = config.resolve_stage("plan.draft")
 
-                    errors = execute_hooks(issue_dir, "plan", stage_config, "pre_completion")
+                    errors = execute_hooks(issue_dir, "plan.draft", substage_config, "pre_completion")
 
                     assert len(errors) > 0
                     assert any("approach" in e.lower() or "empty" in e.lower() for e in errors)
@@ -204,15 +204,15 @@ Test here.
                     create_valid_spec_md(issue_dir)
 
                     config = load_config()
-                    stage_config = config.get_stage("plan")
+                    _, substage_config = config.resolve_stage("plan.draft")
 
-                    errors = execute_hooks(issue_dir, "plan", stage_config, "pre_completion")
+                    errors = execute_hooks(issue_dir, "plan.draft", substage_config, "pre_completion")
 
                     assert errors == []
 
 
 class TestPlanReviewValidation:
-    """Test PLAN_REVIEW stage validation hooks."""
+    """Test plan.review stage validation hooks."""
 
     def test_blocks_without_spec_file(self, workflow_repo: Path, mock_sync: MagicMock):
         """Plan review should block if spec.md doesn't exist."""
@@ -231,16 +231,16 @@ class TestPlanReviewValidation:
                     # Don't create spec.md
 
                     config = load_config()
-                    stage_config = config.get_stage("plan_review")
+                    _, substage_config = config.resolve_stage("plan.review")
 
-                    errors = execute_hooks(issue_dir, "plan_review", stage_config, "pre_completion")
+                    errors = execute_hooks(issue_dir, "plan.review", substage_config, "pre_completion")
 
                     assert len(errors) > 0
                     assert any("spec.md" in e.lower() or "not exist" in e.lower() for e in errors)
 
 
 class TestImplementCodeReviewValidation:
-    """Test IMPLEMENT code_review substage validation."""
+    """Test implement.code_review substage validation."""
 
     def test_blocks_with_unchecked_items(self, workflow_repo: Path, mock_sync: MagicMock):
         """Code review should block if checklist items are unchecked."""
@@ -259,10 +259,9 @@ class TestImplementCodeReviewValidation:
                     create_failing_review_md(issue_dir, reason="unchecked")
 
                     config = load_config()
-                    stage_config = config.get_stage("implement")
-                    substage_config = stage_config.substages.get("code_review")
+                    _, substage_config = config.resolve_stage("implement.code_review")
 
-                    errors = execute_hooks(issue_dir, "implement", substage_config, "pre_completion")
+                    errors = execute_hooks(issue_dir, "implement.code_review", substage_config, "pre_completion")
 
                     assert len(errors) > 0
 
@@ -283,16 +282,15 @@ class TestImplementCodeReviewValidation:
                     create_valid_review_md(issue_dir)
 
                     config = load_config()
-                    stage_config = config.get_stage("implement")
-                    substage_config = stage_config.substages.get("code_review")
+                    _, substage_config = config.resolve_stage("implement.code_review")
 
-                    errors = execute_hooks(issue_dir, "implement", substage_config, "pre_completion")
+                    errors = execute_hooks(issue_dir, "implement.code_review", substage_config, "pre_completion")
 
                     assert errors == []
 
 
 class TestImplementWrapupValidation:
-    """Test IMPLEMENT wrapup substage validation."""
+    """Test implement.wrapup substage validation."""
 
     def test_blocks_with_low_score(self, workflow_repo: Path, mock_sync: MagicMock):
         """Wrapup should block if average score < 7."""
@@ -311,10 +309,9 @@ class TestImplementWrapupValidation:
                     create_failing_review_md(issue_dir, reason="low_score")
 
                     config = load_config()
-                    stage_config = config.get_stage("implement")
-                    substage_config = stage_config.substages.get("wrapup")
+                    _, substage_config = config.resolve_stage("implement.wrapup")
 
-                    errors = execute_hooks(issue_dir, "implement", substage_config, "pre_completion")
+                    errors = execute_hooks(issue_dir, "implement.wrapup", substage_config, "pre_completion")
 
                     assert len(errors) > 0
                     assert any("7" in e or "average" in e.lower() or "minimum" in e.lower() for e in errors)
@@ -336,10 +333,9 @@ class TestImplementWrapupValidation:
                     create_valid_review_md(issue_dir, average=7.0)
 
                     config = load_config()
-                    stage_config = config.get_stage("implement")
-                    substage_config = stage_config.substages.get("wrapup")
+                    _, substage_config = config.resolve_stage("implement.wrapup")
 
-                    errors = execute_hooks(issue_dir, "implement", substage_config, "pre_completion")
+                    errors = execute_hooks(issue_dir, "implement.wrapup", substage_config, "pre_completion")
 
                     assert errors == []
 
@@ -360,16 +356,15 @@ class TestImplementWrapupValidation:
                     create_valid_review_md(issue_dir, average=9.0)
 
                     config = load_config()
-                    stage_config = config.get_stage("implement")
-                    substage_config = stage_config.substages.get("wrapup")
+                    _, substage_config = config.resolve_stage("implement.wrapup")
 
-                    errors = execute_hooks(issue_dir, "implement", substage_config, "pre_completion")
+                    errors = execute_hooks(issue_dir, "implement.wrapup", substage_config, "pre_completion")
 
                     assert errors == []
 
 
 class TestImplementFeedbackValidation:
-    """Test IMPLEMENT feedback substage validation."""
+    """Test implement.feedback substage validation."""
 
     def test_blocks_without_commits(self, workflow_repo: Path, mock_sync: MagicMock):
         """Feedback should block if no commits to push."""
@@ -389,10 +384,9 @@ class TestImplementFeedbackValidation:
                         create_valid_review_md(issue_dir)
 
                         config = load_config()
-                        stage_config = config.get_stage("implement")
-                        substage_config = stage_config.substages.get("feedback")
+                        _, substage_config = config.resolve_stage("implement.feedback")
 
-                        errors = execute_hooks(issue_dir, "implement", substage_config, "pre_completion")
+                        errors = execute_hooks(issue_dir, "implement.feedback", substage_config, "pre_completion")
 
                         assert len(errors) > 0
                         assert any("commit" in e.lower() for e in errors)
@@ -415,10 +409,9 @@ class TestImplementFeedbackValidation:
                         create_failing_review_md(issue_dir, reason="critical_issues")
 
                         config = load_config()
-                        stage_config = config.get_stage("implement")
-                        substage_config = stage_config.substages.get("feedback")
+                        _, substage_config = config.resolve_stage("implement.feedback")
 
-                        errors = execute_hooks(issue_dir, "implement", substage_config, "pre_completion")
+                        errors = execute_hooks(issue_dir, "implement.feedback", substage_config, "pre_completion")
 
                         assert len(errors) > 0
 
@@ -440,10 +433,9 @@ class TestImplementFeedbackValidation:
                         create_valid_review_md(issue_dir)
 
                         config = load_config()
-                        stage_config = config.get_stage("implement")
-                        substage_config = stage_config.substages.get("feedback")
+                        _, substage_config = config.resolve_stage("implement.feedback")
 
-                        errors = execute_hooks(issue_dir, "implement", substage_config, "pre_completion")
+                        errors = execute_hooks(issue_dir, "implement.feedback", substage_config, "pre_completion")
 
                         assert errors == []
 
@@ -479,9 +471,9 @@ This is the context section with content.
                     (issue_dir / "problem.md").write_text(content)
 
                     config = load_config()
-                    stage_config = config.get_stage("define")
+                    _, substage_config = config.resolve_stage("explore.define")
 
-                    errors = execute_hooks(issue_dir, "define", stage_config, "pre_completion")
+                    errors = execute_hooks(issue_dir, "explore.define", substage_config, "pre_completion")
 
                     assert errors == []
 
@@ -517,9 +509,9 @@ More details here.
                     (issue_dir / "problem.md").write_text(content)
 
                     config = load_config()
-                    stage_config = config.get_stage("define")
+                    _, substage_config = config.resolve_stage("explore.define")
 
-                    errors = execute_hooks(issue_dir, "define", stage_config, "pre_completion")
+                    errors = execute_hooks(issue_dir, "explore.define", substage_config, "pre_completion")
 
                     assert errors == []
 
@@ -563,9 +555,9 @@ class TestMultipleHookErrors:
                     (issue_dir / "spec.md").write_text(content)
 
                     config = load_config()
-                    stage_config = config.get_stage("plan")
+                    _, substage_config = config.resolve_stage("plan.draft")
 
-                    errors = execute_hooks(issue_dir, "plan", stage_config, "pre_completion")
+                    errors = execute_hooks(issue_dir, "plan.draft", substage_config, "pre_completion")
 
                     # Should have multiple errors
                     assert len(errors) >= 2, f"Expected multiple errors, got: {errors}"

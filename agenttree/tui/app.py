@@ -1,12 +1,5 @@
 """Main TUI application for AgentTree issue management."""
 
-# Maps human_review stages to the stage to reject back to
-# (when user rejects at plan_review -> go back to plan; at implementation_review -> implement)
-REJECTION_MAPPINGS: dict[str, str] = {
-    "plan_review": "plan",
-    "implementation_review": "implement",
-}
-
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
@@ -312,36 +305,32 @@ class TUIApp(App):  # type: ignore[type-arg]
             return
 
         try:
-            next_stage, next_substage = get_next_stage(issue.stage, issue.substage, issue.flow)
+            next_dot_path, _ = get_next_stage(issue.stage, issue.flow)
 
             # Execute pre-completion hooks (can block with ValidationError or redirect)
             try:
                 execute_exit_hooks(issue, issue.stage)
             except StageRedirect as redirect:
                 # Redirect to a different stage
-                next_stage = redirect.target_stage
-                next_substage = redirect.target_substage
-                redirect_display = f"{next_stage}.{next_substage}" if next_substage else next_stage
-                status.show_message(f"Redirecting to {redirect_display}: {redirect.reason}")
+                next_dot_path = redirect.target
+                status.show_message(f"Redirecting to {next_dot_path}: {redirect.reason}")
 
             # Update issue stage
-            updated = update_issue_stage(issue.id, next_stage, next_substage)
+            updated = update_issue_stage(issue.id, next_dot_path)
             if not updated:
                 status.show_message(f"Failed to update issue #{issue.id}")
                 return
 
             # Execute post-start hooks (may redirect on merge conflict etc.)
-            next_display = f"{next_stage}.{next_substage}" if next_substage else next_stage
             try:
-                execute_enter_hooks(updated, next_stage)
+                execute_enter_hooks(updated, next_dot_path)
             except StageRedirect as redirect:
-                update_issue_stage(issue.id, redirect.target_stage, redirect.target_substage)
-                redirect_display = f"{redirect.target_stage}.{redirect.target_substage}" if redirect.target_substage else redirect.target_stage
-                status.show_message(f"Redirected #{issue.id} to {redirect_display}: {redirect.reason}")
+                update_issue_stage(issue.id, redirect.target)
+                status.show_message(f"Redirected #{issue.id} to {redirect.target}: {redirect.reason}")
                 self._load_issues()
                 return
 
-            status.show_message(f"Advanced #{issue.id} to {next_display}")
+            status.show_message(f"Advanced #{issue.id} to {next_dot_path}")
             self._load_issues()
         except ValidationError as e:
             status.show_message(f"Cannot advance: {e}")
@@ -371,21 +360,17 @@ class TUIApp(App):  # type: ignore[type-arg]
             return
 
         try:
-            # Use REJECTION_MAPPINGS for human_review stages (reject to parent/earlier stage)
-            if issue.stage in REJECTION_MAPPINGS:
-                reject_to = REJECTION_MAPPINGS[issue.stage]
-            else:
-                # Fallback: previous stage in flow
-                flow_stages = config.get_flow_stage_names(issue.flow)
-                try:
-                    idx = flow_stages.index(issue.stage)
-                except ValueError:
-                    status.show_message(f"Cannot reject: {issue.stage} not found in flow")
-                    return
-                if idx == 0:
-                    status.show_message(f"Cannot reject: {issue.stage} is the first stage")
-                    return
-                reject_to = flow_stages[idx - 1]
+            # Find the previous stage in the flow to reject back to
+            flow_stages = config.get_flow_stage_names(issue.flow)
+            try:
+                idx = flow_stages.index(issue.stage)
+            except ValueError:
+                status.show_message(f"Cannot reject: {issue.stage} not found in flow")
+                return
+            if idx == 0:
+                status.show_message(f"Cannot reject: {issue.stage} is the first stage")
+                return
+            reject_to = flow_stages[idx - 1]
 
             # Execute exit hooks for the current stage (consistent with web UI)
             execute_exit_hooks(issue, issue.stage)

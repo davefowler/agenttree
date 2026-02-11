@@ -26,8 +26,8 @@ class TestStageTransitions:
     """Test individual stage transitions."""
 
     def test_define_to_research(self, workflow_repo: Path, mock_sync: MagicMock):
-        """Test transition from define.refine to research.explore."""
-        from agenttree.issues import create_issue, get_issue, get_next_stage
+        """Test transition from explore.define to explore.research."""
+        from agenttree.issues import create_issue, get_next_stage
         from agenttree.hooks import execute_hooks
         from agenttree.config import load_config
 
@@ -40,22 +40,20 @@ class TestStageTransitions:
                     issue = create_issue(title="Test Define to Research")
                     issue_dir = agenttree_path / "issues" / f"{issue.id}-{issue.slug}"
 
-                    # Issue starts at define.refine
-                    assert issue.stage == "define"
-                    assert issue.substage == "refine"
+                    # Issue starts at explore.define
+                    assert issue.stage == "explore.define"
 
                     # Create valid content for define stage
                     create_valid_problem_md(issue_dir)
 
                     # Get config for hooks
                     config = load_config()
-                    stage_config = config.get_stage("define")
-                    substage_config = stage_config.substages.get("refine") if stage_config.substages else None
+                    stage_config, substage_config = config.resolve_stage("explore.define")
 
                     # Execute pre_completion hooks
                     errors = execute_hooks(
                         issue_dir=issue_dir,
-                        stage="define",
+                        stage="explore.define",
                         substage_config=substage_config or stage_config,
                         event="pre_completion"
                     )
@@ -64,13 +62,13 @@ class TestStageTransitions:
                     assert errors == [], f"Hooks failed: {errors}"
 
                     # Get next stage
-                    next_stage, next_substage = get_next_stage("define", "refine")
+                    next_stage, is_human_review = get_next_stage("explore.define")
 
-                    assert next_stage == "research"
-                    assert next_substage == "explore"
+                    assert next_stage == "explore.research"
+                    assert is_human_review is False
 
     def test_research_to_plan(self, workflow_repo: Path, mock_sync: MagicMock):
-        """Test transition from research.document to plan.draft."""
+        """Test transition from explore.research to plan.draft."""
         from agenttree.issues import create_issue, get_next_stage
         from agenttree.hooks import execute_hooks
         from agenttree.config import load_config
@@ -88,24 +86,22 @@ class TestStageTransitions:
                     create_valid_research_md(issue_dir)
 
                     config = load_config()
-                    stage_config = config.get_stage("research")
-                    substage_config = stage_config.substages.get("document") if stage_config.substages else None
+                    stage_config, substage_config = config.resolve_stage("explore.research")
 
                     errors = execute_hooks(
                         issue_dir=issue_dir,
-                        stage="research",
+                        stage="explore.research",
                         substage_config=substage_config or stage_config,
                         event="pre_completion"
                     )
 
                     assert errors == [], f"Hooks failed: {errors}"
 
-                    next_stage, next_substage = get_next_stage("research", "document")
-                    assert next_stage == "plan"
-                    assert next_substage == "draft"
+                    next_stage, _ = get_next_stage("explore.research")
+                    assert next_stage == "plan.draft"
 
     def test_plan_to_plan_assess(self, workflow_repo: Path, mock_sync: MagicMock):
-        """Test transition from plan.refine to plan_assess."""
+        """Test transition from plan.draft to plan.assess."""
         from agenttree.issues import create_issue, get_next_stage
         from agenttree.hooks import execute_hooks
         from agenttree.config import load_config
@@ -124,75 +120,63 @@ class TestStageTransitions:
                     create_valid_spec_md(issue_dir)
 
                     config = load_config()
-                    stage_config = config.get_stage("plan")
-                    substage_config = stage_config.substages.get("refine") if stage_config.substages else None
+                    stage_config, substage_config = config.resolve_stage("plan.draft")
 
                     errors = execute_hooks(
                         issue_dir=issue_dir,
-                        stage="plan",
+                        stage="plan.draft",
                         substage_config=substage_config or stage_config,
                         event="pre_completion"
                     )
 
                     assert errors == [], f"Hooks failed: {errors}"
 
-                    next_stage, next_substage = get_next_stage("plan", "refine")
-                    assert next_stage == "plan_assess"
-                    assert next_substage is None
+                    next_stage, _ = get_next_stage("plan.draft")
+                    assert next_stage == "plan.assess"
 
     def test_plan_revise_to_plan_review(self, workflow_repo: Path, mock_sync: MagicMock):
-        """Test transition from plan_revise to plan_review (human gate)."""
-        from agenttree.issues import create_issue, get_next_stage
+        """Test transition from plan.revise to plan.review (human gate)."""
+        from agenttree.issues import get_next_stage
 
-        agenttree_path = workflow_repo / "_agenttree"
+        with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
+            next_stage, is_human_review = get_next_stage("plan.revise")
 
-        with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
-            with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
-                next_stage, next_substage = get_next_stage("plan_revise", None)
-
-                assert next_stage == "plan_review"
-                assert next_substage is None
-
-                # Verify plan_review is a human review stage via config lookup
-                from agenttree.config import load_config
-                config = load_config()
-                assert config.get_stage("plan_review").human_review is True
+            assert next_stage == "plan.review"
+            assert is_human_review is True  # Human review gate!
 
 
 class TestHumanReviewGates:
     """Test that human review gates block agent progression."""
 
     def test_agent_blocked_at_plan_review(self, workflow_repo: Path, mock_sync: MagicMock):
-        """Agent should not be able to advance past plan_review."""
-        from agenttree.issues import create_issue, get_next_stage, HUMAN_REVIEW_STAGES
-
-        agenttree_path = workflow_repo / "_agenttree"
-
-        with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
-            with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
-                # Verify plan_review is a human review stage
-                assert "plan_review" in HUMAN_REVIEW_STAGES
-
-                # Get next stage from plan_review
-                next_stage, next_substage = get_next_stage("plan_review", None)
-
-                # Check if plan_review requires human review via config lookup
-                from agenttree.config import load_config
-                config = load_config()
-                stage = config.get_stage("plan_review")
-                assert stage.human_review is True
-
-    def test_agent_blocked_at_implementation_review(self, workflow_repo: Path, mock_sync: MagicMock):
-        """Agent should not be able to advance past implementation_review."""
-        from agenttree.issues import HUMAN_REVIEW_STAGES
+        """Agent should not be able to advance past plan.review."""
         from agenttree.config import load_config
 
         with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
-            assert "implementation_review" in HUMAN_REVIEW_STAGES
-
             config = load_config()
-            stage = config.get_stage("implementation_review")
-            assert stage.human_review is True
+
+            # Verify plan.review is a human review stage
+            human_review_stages = config.get_human_review_stages()
+            assert "plan.review" in human_review_stages
+
+            # Verify the substage config has human_review=True
+            _, substage_config = config.resolve_stage("plan.review")
+            assert substage_config is not None
+            assert substage_config.human_review is True
+
+    def test_agent_blocked_at_implementation_review(self, workflow_repo: Path, mock_sync: MagicMock):
+        """Agent should not be able to advance past implement.review."""
+        from agenttree.config import load_config
+
+        with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
+            config = load_config()
+
+            human_review_stages = config.get_human_review_stages()
+            assert "implement.review" in human_review_stages
+
+            _, substage_config = config.resolve_stage("implement.review")
+            assert substage_config is not None
+            assert substage_config.human_review is True
 
 
 class TestImplementSubstages:
@@ -200,14 +184,12 @@ class TestImplementSubstages:
 
     def test_implement_code_to_code_review(self, workflow_repo: Path, mock_sync: MagicMock):
         """Test transition from implement.code to implement.code_review."""
-        from agenttree.issues import create_issue, get_next_stage
-        from agenttree.config import load_config
+        from agenttree.issues import get_next_stage
 
         with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
-            next_stage, next_substage = get_next_stage("implement", "code")
+            next_stage, _ = get_next_stage("implement.code")
 
-            assert next_stage == "implement"
-            assert next_substage == "code_review"
+            assert next_stage == "implement.code_review"
 
     def test_code_review_requires_checklist(self, workflow_repo: Path, mock_sync: MagicMock):
         """Test that code_review exit requires all checklist items checked."""
@@ -228,12 +210,11 @@ class TestImplementSubstages:
                     create_failing_review_md(issue_dir, reason="unchecked")
 
                     config = load_config()
-                    stage_config = config.get_stage("implement")
-                    substage_config = stage_config.substages.get("code_review")
+                    _, substage_config = config.resolve_stage("implement.code_review")
 
                     errors = execute_hooks(
                         issue_dir=issue_dir,
-                        stage="implement",
+                        stage="implement.code_review",
                         substage_config=substage_config,
                         event="pre_completion"
                     )
@@ -261,12 +242,11 @@ class TestImplementSubstages:
                     create_failing_review_md(issue_dir, reason="low_score")
 
                     config = load_config()
-                    stage_config = config.get_stage("implement")
-                    substage_config = stage_config.substages.get("wrapup")
+                    _, substage_config = config.resolve_stage("implement.wrapup")
 
                     errors = execute_hooks(
                         issue_dir=issue_dir,
-                        stage="implement",
+                        stage="implement.wrapup",
                         substage_config=substage_config,
                         event="pre_completion"
                     )
@@ -294,12 +274,11 @@ class TestImplementSubstages:
                         create_valid_review_md(issue_dir)
 
                         config = load_config()
-                        stage_config = config.get_stage("implement")
-                        substage_config = stage_config.substages.get("feedback")
+                        _, substage_config = config.resolve_stage("implement.feedback")
 
                         errors = execute_hooks(
                             issue_dir=issue_dir,
-                            stage="implement",
+                            stage="implement.feedback",
                             substage_config=substage_config,
                             event="pre_completion"
                         )
@@ -328,12 +307,11 @@ class TestImplementSubstages:
                         create_failing_review_md(issue_dir, reason="critical_issues")
 
                         config = load_config()
-                        stage_config = config.get_stage("implement")
-                        substage_config = stage_config.substages.get("feedback")
+                        _, substage_config = config.resolve_stage("implement.feedback")
 
                         errors = execute_hooks(
                             issue_dir=issue_dir,
-                            stage="implement",
+                            stage="implement.feedback",
                             substage_config=substage_config,
                             event="pre_completion"
                         )
@@ -402,45 +380,46 @@ class TestFullWorkflowHappyPath:
 
                     # Verify all stage hooks would pass with this content
 
-                    # Define stage
-                    stage_config = config.get_stage("define")
-                    errors = execute_hooks(issue_dir, "define", stage_config, "pre_completion")
+                    # Define stage (explore.define)
+                    _, sub_config = config.resolve_stage("explore.define")
+                    errors = execute_hooks(issue_dir, "explore.define", sub_config, "pre_completion")
                     assert errors == [], f"Define hooks failed: {errors}"
 
-                    # Research stage
-                    stage_config = config.get_stage("research")
-                    errors = execute_hooks(issue_dir, "research", stage_config, "pre_completion")
+                    # Research stage (explore.research)
+                    _, sub_config = config.resolve_stage("explore.research")
+                    errors = execute_hooks(issue_dir, "explore.research", sub_config, "pre_completion")
                     assert errors == [], f"Research hooks failed: {errors}"
 
-                    # Plan stage
-                    stage_config = config.get_stage("plan")
-                    errors = execute_hooks(issue_dir, "plan", stage_config, "pre_completion")
+                    # Plan stage (plan.draft)
+                    _, sub_config = config.resolve_stage("plan.draft")
+                    errors = execute_hooks(issue_dir, "plan.draft", sub_config, "pre_completion")
                     assert errors == [], f"Plan hooks failed: {errors}"
 
-                    # Plan assess stage
-                    stage_config = config.get_stage("plan_assess")
-                    errors = execute_hooks(issue_dir, "plan_assess", stage_config, "pre_completion")
+                    # Plan assess stage (plan.assess)
+                    _, sub_config = config.resolve_stage("plan.assess")
+                    errors = execute_hooks(issue_dir, "plan.assess", sub_config, "pre_completion")
                     assert errors == [], f"Plan assess hooks failed: {errors}"
 
-                    # Plan review stage (pre_completion - just file checks)
-                    stage_config = config.get_stage("plan_review")
-                    # Skip rebase hook by filtering
-                    errors = execute_hooks(issue_dir, "plan_review", stage_config, "pre_completion")
+                    # Plan review stage (plan.review)
+                    _, sub_config = config.resolve_stage("plan.review")
+                    errors = execute_hooks(issue_dir, "plan.review", sub_config, "pre_completion")
                     # May have rebase-related errors in container mode, that's OK
                     non_rebase_errors = [e for e in errors if "rebase" not in e.lower()]
                     assert non_rebase_errors == [], f"Plan review hooks failed: {non_rebase_errors}"
 
     def test_stage_order_is_complete(self, workflow_repo: Path, mock_sync: MagicMock):
-        """Test that STAGE_ORDER contains all stages."""
-        from agenttree.issues import STAGE_ORDER
+        """Test that flow stage names contain all stages."""
         from agenttree.config import load_config
 
         with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
             config = load_config()
 
-            # Get all stage names from config
-            config_stages = {stage.name for stage in config.stages}
+            # Get all dot paths from config
+            all_dot_paths = config.get_all_dot_paths()
 
-            # Verify STAGE_ORDER matches
-            assert set(STAGE_ORDER) == config_stages, \
-                f"STAGE_ORDER mismatch. Missing: {config_stages - set(STAGE_ORDER)}, Extra: {set(STAGE_ORDER) - config_stages}"
+            # Get flow stage names
+            flow_stages = config.get_flow_stage_names()
+
+            # Flow stages should cover all dot paths
+            assert set(flow_stages) == set(all_dot_paths), \
+                f"Flow mismatch. Missing: {set(all_dot_paths) - set(flow_stages)}, Extra: {set(flow_stages) - set(all_dot_paths)}"

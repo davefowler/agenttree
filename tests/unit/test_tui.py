@@ -12,7 +12,6 @@ from agenttree.tui.app import (
     DetailPanel,
     FilterInput,
     IssueTable,
-    REJECTION_MAPPINGS,
     StatusBar,
     TUIApp,
 )
@@ -30,9 +29,7 @@ def sample_issues() -> list[Issue]:
             created="2024-01-01T00:00:00Z",
             updated="2024-01-01T00:00:00Z",
             stage="backlog",
-            substage=None,
             priority=Priority.HIGH,
-            assigned_agent=None,
         ),
         Issue(
             id="002",
@@ -40,10 +37,8 @@ def sample_issues() -> list[Issue]:
             title="Add dashboard feature",
             created="2024-01-02T00:00:00Z",
             updated="2024-01-02T00:00:00Z",
-            stage="implement",
-            substage="code",
+            stage="implement.code",
             priority=Priority.MEDIUM,
-            assigned_agent="1",
         ),
         Issue(
             id="003",
@@ -51,10 +46,8 @@ def sample_issues() -> list[Issue]:
             title="Review PR changes",
             created="2024-01-03T00:00:00Z",
             updated="2024-01-03T00:00:00Z",
-            stage="plan_review",
-            substage=None,
+            stage="plan.review",
             priority=Priority.CRITICAL,
-            assigned_agent=None,
         ),
     ]
 
@@ -257,7 +250,7 @@ class TestActions:
 
             mock_list.return_value = sample_issues
             mock_get_issue.return_value = sample_issues[0]  # Return issue 001
-            mock_next.return_value = ("define", "refine")
+            mock_next.return_value = ("explore.define", False)
             mock_update.return_value = sample_issues[0]  # Return updated issue
 
             app = TUIApp()
@@ -286,12 +279,19 @@ class TestActions:
              patch("agenttree.tui.app.get_issue") as mock_get_issue, \
              patch("agenttree.tui.app.update_issue_stage") as mock_update, \
              patch("agenttree.tui.app.execute_exit_hooks") as mock_exit_hooks, \
-             patch("agenttree.tui.app.execute_enter_hooks") as mock_enter_hooks:
+             patch("agenttree.tui.app.execute_enter_hooks") as mock_enter_hooks, \
+             patch("agenttree.tui.app.load_config") as mock_config:
 
             mock_list.return_value = sample_issues
             # Return issue 003 (plan_review) when get_issue is called
             mock_get_issue.return_value = sample_issues[2]
             mock_update.return_value = sample_issues[2]  # Return updated issue
+
+            # Configure mock config for rejection
+            mock_config.return_value.is_human_review.return_value = True
+            mock_config.return_value.get_flow_stage_names.return_value = [
+                "plan.draft", "plan.review", "implement.code", "implement.review",
+            ]
 
             app = TUIApp()
             async with app.run_test() as pilot:
@@ -310,8 +310,8 @@ class TestActions:
 
                 # Exit hooks should be called for the current stage
                 mock_exit_hooks.assert_called()
-                # update_issue_stage should be called with "plan" (rejection mapping)
-                mock_update.assert_called_with("003", "plan")
+                # update_issue_stage should be called with "plan.draft" (rejection mapping)
+                mock_update.assert_called_with("003", "plan.draft")
                 # Enter hooks should be called for the target stage
                 mock_enter_hooks.assert_called()
 
@@ -374,18 +374,41 @@ class TestActions:
             assert hasattr(app, "action_refresh")
 
 
-class TestRejectionMappings:
-    """Tests for rejection stage mappings."""
+class TestRejectionBehavior:
+    """Tests for rejection stage behavior (dynamic, computed from flow)."""
 
-    def test_rejection_mappings_exist(self) -> None:
-        """Verify rejection mappings are defined for valid human review stages."""
-        # Only plan_review and implementation_review are valid human review stages
-        assert "plan_review" in REJECTION_MAPPINGS
-        assert "implementation_review" in REJECTION_MAPPINGS
-        # problem_review is NOT a valid human review stage
-        assert "problem_review" not in REJECTION_MAPPINGS
+    @patch("agenttree.tui.app.load_config")
+    def test_reject_finds_previous_stage_in_flow(self, mock_config: MagicMock) -> None:
+        """Verify rejection navigates to the previous stage in the flow."""
+        from agenttree.config import Config, StageConfig, SubstageConfig, FlowConfig
 
-    def test_rejection_mappings_correct(self) -> None:
-        """Verify rejection mappings map to correct stages."""
-        assert REJECTION_MAPPINGS["plan_review"] == "plan"
-        assert REJECTION_MAPPINGS["implementation_review"] == "implement"
+        config = Config(
+            stages={
+                "plan": StageConfig(name="plan", substages={
+                    "draft": SubstageConfig(name="draft"),
+                    "review": SubstageConfig(name="review", human_review=True),
+                }),
+                "implement": StageConfig(name="implement", substages={
+                    "code": SubstageConfig(name="code"),
+                    "review": SubstageConfig(name="review", human_review=True),
+                }),
+            },
+            flows={
+                "default": FlowConfig(
+                    name="default",
+                    stages=["plan.draft", "plan.review", "implement.code", "implement.review"],
+                ),
+            },
+        )
+        mock_config.return_value = config
+
+        # plan.review should reject to plan.draft (previous in flow)
+        flow_stages = config.get_flow_stage_names("default")
+        idx = flow_stages.index("plan.review")
+        assert idx > 0
+        assert flow_stages[idx - 1] == "plan.draft"
+
+        # implement.review should reject to implement.code
+        idx = flow_stages.index("implement.review")
+        assert idx > 0
+        assert flow_stages[idx - 1] == "implement.code"

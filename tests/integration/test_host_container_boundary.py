@@ -161,7 +161,7 @@ class TestPRCreationBoundary:
 
     @pytest.mark.skip(reason="ensure_pr_for_issue/create_pull_request not yet implemented")
     def test_host_sync_creates_pr_for_container_issues(self, workflow_repo: Path, host_environment, mock_sync: MagicMock):
-        """Test that host sync creates PRs for issues at implementation_review."""
+        """Test that host sync creates PRs for issues at implement.review."""
         from agenttree.hooks import ensure_pr_for_issue
         from agenttree.issues import create_issue, update_issue_stage
 
@@ -177,8 +177,8 @@ class TestPRCreationBoundary:
                     create_valid_spec_md(issue_dir)
                     create_valid_review_md(issue_dir)
 
-                    # Move to implementation_review
-                    update_issue_stage(issue.id, "implementation_review")
+                    # Move to implement.review
+                    update_issue_stage(issue.id, "implement.review")
 
                     # On host, ensure_pr_for_issue should work
                     with patch("agenttree.hooks.create_pull_request") as mock_create_pr:
@@ -267,27 +267,33 @@ class TestApprovalBoundary:
     """Test the approval boundary between agent and host."""
 
     def test_agent_cannot_approve_plan_review(self, workflow_repo: Path, monkeypatch, mock_sync: MagicMock):
-        """Agent (container) should not be able to advance past plan_review."""
-        from agenttree.issues import HUMAN_REVIEW_STAGES
+        """Agent (container) should not be able to advance past plan.review."""
+        from agenttree.config import load_config
 
         monkeypatch.setenv("AGENTTREE_CONTAINER", "1")
 
-        # plan_review is a human review stage
-        assert "plan_review" in HUMAN_REVIEW_STAGES
+        with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
+            config = load_config()
+            # plan.review is a human review stage
+            human_review_stages = config.get_human_review_stages()
+            assert "plan.review" in human_review_stages
 
         # The workflow should block advancement at this stage when in container
 
     def test_agent_cannot_approve_implementation_review(self, workflow_repo: Path, monkeypatch, mock_sync: MagicMock):
-        """Agent (container) should not be able to advance past implementation_review."""
-        from agenttree.issues import HUMAN_REVIEW_STAGES
+        """Agent (container) should not be able to advance past implement.review."""
+        from agenttree.config import load_config
 
         monkeypatch.setenv("AGENTTREE_CONTAINER", "1")
 
-        # implementation_review is a human review stage
-        assert "implementation_review" in HUMAN_REVIEW_STAGES
+        with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
+            config = load_config()
+            # implement.review is a human review stage
+            human_review_stages = config.get_human_review_stages()
+            assert "implement.review" in human_review_stages
 
     def test_host_can_approve_plan_review(self, workflow_repo: Path, host_environment, mock_sync: MagicMock):
-        """Host should be able to advance past plan_review via approve command."""
+        """Host should be able to advance past plan.review via approve command."""
         from agenttree.issues import create_issue, get_next_stage
         from agenttree.hooks import execute_hooks
         from agenttree.config import load_config
@@ -300,19 +306,19 @@ class TestApprovalBoundary:
                     issue = create_issue(title="Test Host Approval")
                     issue_dir = agenttree_path / "issues" / f"{issue.id}-{issue.slug}"
 
-                    # Create valid content for plan_review
+                    # Create valid content for plan.review
                     create_valid_spec_md(issue_dir)
 
                     config = load_config()
-                    stage_config = config.get_stage("plan_review")
+                    _, substage_config = config.resolve_stage("plan.review")
 
                     # Run pre_completion hooks (excluding rebase which needs git)
                     # Host should be able to run these
                     with patch("agenttree.hooks.rebase_issue_branch", return_value=True):
                         errors = execute_hooks(
                             issue_dir=issue_dir,
-                            stage="plan_review",
-                            substage_config=stage_config,
+                            stage="plan.review",
+                            substage_config=substage_config,
                             event="pre_completion"
                         )
 
@@ -320,15 +326,15 @@ class TestApprovalBoundary:
                         # The key test is that host CAN run this
 
                         # Get next stage
-                        next_stage, next_substage = get_next_stage("plan_review", None)
-                        assert next_stage == "implement"
+                        next_stage, _ = get_next_stage("plan.review")
+                        assert next_stage == "implement.setup"
 
     def test_agent_reorients_after_approval_not_skip(self, workflow_repo: Path, host_environment, mock_sync: MagicMock):
         """After human approval, agent should re-orient at new stage, not skip past it.
 
         This tests the critical bug where:
-        1. Agent reaches plan_review, session.last_stage = plan_review
-        2. Human approves -> issue.stage = implement (session.last_stage unchanged)
+        1. Agent reaches plan.review, session.last_stage = plan.review
+        2. Human approves -> issue.stage = implement.setup (session.last_stage unchanged)
         3. Agent runs `next` -> should detect stage mismatch and re-orient
         4. Agent runs `next` again -> should advance normally
 
@@ -343,48 +349,49 @@ class TestApprovalBoundary:
 
         with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
-                # Create issue and simulate agent reaching plan_review
+                # Create issue and simulate agent reaching plan.review
                 issue = create_issue(title="Test Agent Reorient After Approval")
                 issue_dir = agenttree_path / "issues" / f"{issue.id}-{issue.slug}"
 
-                # Agent creates session and works through to plan_review
+                # Agent creates session and works through to plan.review
                 session = create_session(issue.id)
-                update_issue_stage(issue.id, "plan_review", None)
+                update_issue_stage(issue.id, "plan.review")
 
-                # Simulate agent having worked on plan_review (oriented = True, last_stage synced)
-                mark_session_oriented(issue.id, "plan_review", None)
+                # Simulate agent having worked on plan.review (oriented = True, last_stage synced)
+                mark_session_oriented(issue.id, "plan.review")
 
-                # Verify agent is oriented at plan_review
+                # Verify agent is oriented at plan.review
                 session = get_session(issue.id)
-                assert session.last_stage == "plan_review"
+                assert session.last_stage == "plan.review"
                 assert session.oriented is True
-                assert is_restart(issue.id, "plan_review", None) is False  # Not a restart
+                assert is_restart(issue.id, "plan.review") is False  # Not a restart
 
                 # === HUMAN APPROVAL ===
                 # Human approves - updates issue stage but NOT session
                 # (This is what approve command does - intentionally skips update_session_stage)
-                update_issue_stage(issue.id, "implement", "setup")
+                update_issue_stage(issue.id, "implement.setup")
 
                 # === AGENT RUNS NEXT ===
                 # Agent calls next - should detect stage mismatch
-                # issue.stage = implement, session.last_stage = plan_review
-                assert is_restart(issue.id, "implement", "setup") is True  # Stage changed externally!
+                # issue.stage = implement.setup, session.last_stage = plan.review
+                assert is_restart(issue.id, "implement.setup") is True  # Stage changed externally!
 
                 # Agent re-orients (shows implement instructions, syncs session)
-                mark_session_oriented(issue.id, "implement", "setup")
+                mark_session_oriented(issue.id, "implement.setup")
 
                 # Verify session is now synced
                 session = get_session(issue.id)
-                assert session.last_stage == "implement"
+                assert session.last_stage == "implement.setup"
                 assert session.oriented is True
 
                 # === AGENT RUNS NEXT AGAIN ===
                 # Now it should NOT be a restart - can advance normally
-                assert is_restart(issue.id, "implement", "setup") is False
+                assert is_restart(issue.id, "implement.setup") is False
 
-                # Verify next stage would be implementation_review (not skipping implement)
-                next_stage, next_substage = get_next_stage("implement", "setup")
-                # Should advance within implement or to next stage, NOT skip implement
+                # Verify next stage would be implement.code (not skipping implement)
+                next_stage, _ = get_next_stage("implement.setup")
+                # Should advance within implement, NOT skip implement
+                assert next_stage == "implement.code"
 
 
 class TestCleanupBoundary:
@@ -450,7 +457,7 @@ class TestStartBlockedIssuesBoundary:
     @pytest.mark.skip(reason="check_and_start_blocked_issues not yet implemented")
     def test_blocked_issues_started_after_dependency_accepted(self, workflow_repo: Path, host_environment, mock_sync: MagicMock):
         """Issues blocked by an accepted issue should be auto-started on host."""
-        from agenttree.issues import create_issue, update_issue_stage, check_dependencies_met
+        from agenttree.issues import create_issue, update_issue_stage, check_dependencies_met, get_issue
         from agenttree.agents_repo import check_and_start_blocked_issues
 
         agenttree_path = workflow_repo / "_agenttree"
@@ -468,19 +475,21 @@ class TestStartBlockedIssuesBoundary:
                 yaml_path = agenttree_path / "issues" / f"{blocked_issue.id}-{blocked_issue.slug}" / "issue.yaml"
                 with open(yaml_path) as f:
                     data = yaml.safe_load(f)
-                data["blocked_by"] = [dep_issue.id]
+                data["dependencies"] = [dep_issue.id]
                 with open(yaml_path, "w") as f:
                     yaml.dump(data, f)
 
                 # Initially blocked
-                met, _ = check_dependencies_met(blocked_issue.id)
+                blocked = get_issue(blocked_issue.id)
+                met, _ = check_dependencies_met(blocked)
                 assert met is False
 
                 # Accept dependency
                 update_issue_stage(dep_issue.id, "accepted")
 
                 # Now should be unblocked
-                met, _ = check_dependencies_met(blocked_issue.id)
+                blocked = get_issue(blocked_issue.id)
+                met, _ = check_dependencies_met(blocked)
                 assert met is True
 
                 # check_and_start_blocked_issues would start the blocked issue

@@ -26,7 +26,6 @@ def mock_issue():
     mock.id = "001"
     mock.title = "Test Issue Title"
     mock.stage = "backlog"
-    mock.substage = None
     mock.labels = ["bug"]
     mock.pr_url = None
     mock.pr_number = None
@@ -47,8 +46,7 @@ def mock_issue_with_agent():
     mock = Mock()
     mock.id = "002"
     mock.title = "Issue With Agent"
-    mock.stage = "implement"
-    mock.substage = "code"
+    mock.stage = "implement.code"
     mock.labels = []
     mock.pr_url = None
     mock.pr_number = None

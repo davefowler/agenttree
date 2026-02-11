@@ -13,12 +13,6 @@ import pytest
 from agenttree.issues import (
     Issue,
     Priority,
-    IMPLEMENT,
-    IMPLEMENTATION_REVIEW,
-    RESEARCH,
-    DEFINE,
-    ACCEPTED,
-    BACKLOG,
 )
 
 
@@ -1077,12 +1071,11 @@ class TestExecuteExitHooks:
         from agenttree.hooks import execute_exit_hooks, ValidationError
         from agenttree.config import Config, StageConfig, SubstageConfig
 
-        # Create config with stages (stages are now required)
-        config = Config(stages=[
-            StageConfig(name="implement", substages={
+        config = Config(stages={
+            "implement": StageConfig(name="implement", substages={
                 "code": SubstageConfig(name="code", pre_completion=[{"file_exists": "test.md"}])
             })
-        ])
+        })
         mock_load_config.return_value = config
         mock_get_dir.return_value = Path("/tmp/issue")
         mock_execute_hooks.return_value = ["Error 1"]
@@ -1094,7 +1087,7 @@ class TestExecuteExitHooks:
         issue.pr_number = None
 
         with pytest.raises(ValidationError, match="Error 1"):
-            execute_exit_hooks(issue, "implement", "code")
+            execute_exit_hooks(issue, "implement.code")
 
     @patch('agenttree.hooks.execute_hooks')
     @patch('agenttree.config.load_config')
@@ -1106,12 +1099,11 @@ class TestExecuteExitHooks:
         from agenttree.hooks import execute_exit_hooks, ValidationError
         from agenttree.config import Config, StageConfig, SubstageConfig
 
-        # Create config with stages (stages are now required)
-        config = Config(stages=[
-            StageConfig(name="implement", substages={
+        config = Config(stages={
+            "implement": StageConfig(name="implement", substages={
                 "code": SubstageConfig(name="code", pre_completion=[{"file_exists": "test.md"}])
             })
-        ])
+        })
         mock_load_config.return_value = config
         mock_get_dir.return_value = Path("/tmp/issue")
         mock_execute_hooks.return_value = ["Error 1", "Error 2"]
@@ -1123,7 +1115,7 @@ class TestExecuteExitHooks:
         issue.pr_number = None
 
         with pytest.raises(ValidationError) as exc_info:
-            execute_exit_hooks(issue, "implement", "code")
+            execute_exit_hooks(issue, "implement.code")
 
         error_msg = str(exc_info.value)
         assert "Multiple validation errors" in error_msg
@@ -1156,7 +1148,7 @@ class TestExecuteEnterHooks:
         issue.pr_number = None
 
         # Should not raise
-        execute_enter_hooks(issue, "implement", "code")
+        execute_enter_hooks(issue, "implement.code")
 
 
 @pytest.fixture
@@ -1168,8 +1160,7 @@ def mock_issue():
         title="Test Issue",
         created="2026-01-11T12:00:00Z",
         updated="2026-01-11T12:00:00Z",
-        stage=IMPLEMENT,
-        substage="code",
+        stage="implement.code",
         branch="agenttree-agent-1-work",
     )
 
@@ -1477,7 +1468,7 @@ class TestGitUtilities:
             returncode=0
         )
 
-        result = auto_commit_changes(Mock(), IMPLEMENT)
+        result = auto_commit_changes(Mock(), "implement.code")
 
         assert result is False
         # Should only call git status, not git add or commit
@@ -1498,10 +1489,10 @@ class TestGitUtilities:
             title="Test Issue",
             created="2026-01-11T12:00:00Z",
             updated="2026-01-11T12:00:00Z",
-            stage=IMPLEMENT,
+            stage="implement.code",
         )
 
-        result = auto_commit_changes(issue, IMPLEMENT)
+        result = auto_commit_changes(issue, "implement.code")
 
         assert result is True
         # Should call git add -A and git commit
@@ -1516,7 +1507,7 @@ class TestGitUtilities:
         """Should generate appropriate commit message."""
         from agenttree.hooks import generate_commit_message
 
-        msg = generate_commit_message(mock_issue, IMPLEMENT)
+        msg = generate_commit_message(mock_issue, "implement.code")
 
         assert "Implement" in msg
         assert "#023" in msg
@@ -1714,14 +1705,14 @@ class TestCheckAndStartBlockedIssues:
 
     @pytest.fixture
     def accepted_issue(self):
-        """Create an issue that just reached ACCEPTED stage."""
+        """Create an issue that just reached accepted stage."""
         return Issue(
             id="001",
             slug="completed-issue",
             title="Completed Issue",
             created="2026-01-15T12:00:00Z",
             updated="2026-01-15T12:00:00Z",
-            stage=ACCEPTED,
+            stage="accepted",
         )
 
     @pytest.fixture
@@ -1733,7 +1724,7 @@ class TestCheckAndStartBlockedIssues:
             title="Blocked Issue",
             created="2026-01-15T12:00:00Z",
             updated="2026-01-15T12:00:00Z",
-            stage=BACKLOG,
+            stage="backlog",
             dependencies=["001"],
         )
 
@@ -1849,7 +1840,7 @@ class TestCheckAndStartBlockedIssues:
             title="Blocked 1",
             created="2026-01-15T12:00:00Z",
             updated="2026-01-15T12:00:00Z",
-            stage=BACKLOG,
+            stage="backlog",
             dependencies=["001"],
         )
         blocked2 = Issue(
@@ -1858,7 +1849,7 @@ class TestCheckAndStartBlockedIssues:
             title="Blocked 2",
             created="2026-01-15T12:00:00Z",
             updated="2026-01-15T12:00:00Z",
-            stage=BACKLOG,
+            stage="backlog",
             dependencies=["001"],
         )
 
@@ -1894,7 +1885,7 @@ class TestCleanupIssueAgent:
             title="Test Issue",
             created="2026-01-11T12:00:00Z",
             updated="2026-01-11T12:00:00Z",
-            stage=ACCEPTED,
+            stage="accepted",
         )
 
         with patch("agenttree.api.stop_all_agents_for_issue", return_value=0) as mock_stop:
@@ -1911,7 +1902,7 @@ class TestCleanupIssueAgent:
             title="Test Issue",
             created="2026-01-11T12:00:00Z",
             updated="2026-01-11T12:00:00Z",
-            stage=ACCEPTED,
+            stage="accepted",
         )
 
         with patch("agenttree.api.stop_all_agents_for_issue", return_value=2) as mock_stop:
@@ -2034,7 +2025,7 @@ class TestHostActionHooks:
             title="Test Issue",
             created="2026-01-01T00:00:00Z",
             updated="2026-01-01T00:00:00Z",
-            stage="implementation_review",
+            stage="implement.review",
             branch="issue-001-test",
             worktree_dir=str(worktree_dir),
         )
@@ -2112,7 +2103,7 @@ class TestHostActionHooks:
             title="Test Issue",
             created="2026-01-11T12:00:00Z",
             updated="2026-01-11T12:00:00Z",
-            stage=ACCEPTED,
+            stage="accepted",
         )
 
         check_and_start_blocked_issues(issue)
@@ -2413,12 +2404,11 @@ class TestPreCompletionPostStartHooks:
         from agenttree.hooks import execute_exit_hooks
         from agenttree.config import Config, StageConfig, SubstageConfig
 
-        # Create config with stages (stages are now required)
-        config = Config(stages=[
-            StageConfig(name="implement", substages={
+        config = Config(stages={
+            "implement": StageConfig(name="implement", substages={
                 "code": SubstageConfig(name="code", pre_completion=[{"file_exists": "test.md"}])
             })
-        ])
+        })
         mock_load_config.return_value = config
         mock_get_dir.return_value = Path("/tmp/issue")
         mock_execute_hooks.return_value = []
@@ -2429,13 +2419,12 @@ class TestPreCompletionPostStartHooks:
         issue.branch = "test-branch"
         issue.pr_number = None
 
-        execute_exit_hooks(issue, "implement", "code")
+        execute_exit_hooks(issue, "implement.code")
 
         # Verify execute_hooks was called with "pre_completion" event
-        # May be called multiple times (substage + stage level)
         mock_execute_hooks.assert_called()
-        for call in mock_execute_hooks.call_args_list:
-            assert call[0][3] == "pre_completion"
+        for call_item in mock_execute_hooks.call_args_list:
+            assert call_item[0][3] == "pre_completion"
 
     @patch('agenttree.hooks.execute_hooks')
     @patch('agenttree.config.load_config')
@@ -2447,12 +2436,11 @@ class TestPreCompletionPostStartHooks:
         from agenttree.hooks import execute_enter_hooks
         from agenttree.config import Config, StageConfig, SubstageConfig
 
-        # Create config with stages (stages are now required)
-        config = Config(stages=[
-            StageConfig(name="implement", substages={
+        config = Config(stages={
+            "implement": StageConfig(name="implement", substages={
                 "code": SubstageConfig(name="code", post_start=[{"create_file": {"template": "t.md", "dest": "d.md"}}])
             })
-        ])
+        })
         mock_load_config.return_value = config
         mock_get_dir.return_value = Path("/tmp/issue")
         mock_execute_hooks.return_value = []
@@ -2462,15 +2450,14 @@ class TestPreCompletionPostStartHooks:
         issue.title = "Test"
         issue.branch = "test-branch"
         issue.pr_number = None
-        issue.stage = IMPLEMENT
+        issue.stage = "implement.code"
 
-        execute_enter_hooks(issue, "implement", "code")
+        execute_enter_hooks(issue, "implement.code")
 
         # Verify execute_hooks was called with "post_start" event
-        # May be called multiple times (substage + stage level on first substage)
         mock_execute_hooks.assert_called()
-        for call in mock_execute_hooks.call_args_list:
-            assert call[0][3] == "post_start"
+        for call_item in mock_execute_hooks.call_args_list:
+            assert call_item[0][3] == "post_start"
 
 
 class TestAsyncHookExecution:
@@ -2609,21 +2596,25 @@ class TestAsyncHookExecution:
 
 
 class TestHookExecutionOrder:
-    """Tests for hook execution order in stage/substage transitions."""
+    """Tests for hook execution in stage/substage transitions.
+
+    In the dot-path model, execute_exit_hooks/execute_enter_hooks take a single
+    dot_path argument and run hooks from either the substage config (if dot_path
+    has a substage) or the stage config (if not).
+    """
 
     @patch('agenttree.hooks.execute_hooks')
     @patch('agenttree.config.load_config')
     @patch('agenttree.issues.get_issue_dir')
-    def test_exit_hooks_stage_before_substage(
+    def test_exit_hooks_runs_substage_hooks(
         self, mock_get_dir, mock_load_config, mock_execute_hooks
     ):
-        """execute_exit_hooks should run stage hooks before substage hooks (on last substage)."""
+        """execute_exit_hooks should run substage pre_completion hooks."""
         from agenttree.hooks import execute_exit_hooks
         from agenttree.config import Config, StageConfig, SubstageConfig
 
-        # Create config with stage and substage, both with pre_completion hooks
-        config = Config(stages=[
-            StageConfig(
+        config = Config(stages={
+            "implement": StageConfig(
                 name="implement",
                 pre_completion=[{"file_exists": "stage.md"}],
                 substages={
@@ -2631,7 +2622,7 @@ class TestHookExecutionOrder:
                     "review": SubstageConfig(name="review", pre_completion=[{"file_exists": "review.md"}]),
                 }
             )
-        ])
+        })
         mock_load_config.return_value = config
         mock_get_dir.return_value = Path("/tmp/issue")
         mock_execute_hooks.return_value = []
@@ -2642,34 +2633,26 @@ class TestHookExecutionOrder:
         issue.branch = "test-branch"
         issue.pr_number = None
 
-        # Exit from last substage (review) - should run both stage and substage hooks
-        execute_exit_hooks(issue, "implement", "review")
+        # Exit from substage review
+        execute_exit_hooks(issue, "implement.review")
 
-        # Should be called twice: once for stage, once for substage
-        assert mock_execute_hooks.call_count == 2
-
-        # Verify order: stage hooks first (position 0), substage hooks second (position 1)
-        calls = mock_execute_hooks.call_args_list
-        # First call should be with stage_config (stage hooks)
-        first_call_config = calls[0][0][2]  # Third positional arg is the config
-        assert hasattr(first_call_config, 'substages'), "First call should be stage config (has substages)"
-        # Second call should be with substage_config
-        second_call_config = calls[1][0][2]
-        assert not hasattr(second_call_config, 'substages') or second_call_config.substages is None, \
-            "Second call should be substage config (no substages)"
+        # Should be called once with the substage config
+        assert mock_execute_hooks.call_count == 1
+        call_config = mock_execute_hooks.call_args[0][2]
+        assert call_config.name == "review"
 
     @patch('agenttree.hooks.execute_hooks')
     @patch('agenttree.config.load_config')
     @patch('agenttree.issues.get_issue_dir')
-    def test_exit_hooks_only_stage_on_non_last_substage(
+    def test_exit_hooks_runs_different_substage(
         self, mock_get_dir, mock_load_config, mock_execute_hooks
     ):
-        """execute_exit_hooks should only run substage hooks on non-last substage."""
+        """execute_exit_hooks should run the correct substage hooks for the given dot path."""
         from agenttree.hooks import execute_exit_hooks
         from agenttree.config import Config, StageConfig, SubstageConfig
 
-        config = Config(stages=[
-            StageConfig(
+        config = Config(stages={
+            "implement": StageConfig(
                 name="implement",
                 pre_completion=[{"file_exists": "stage.md"}],
                 substages={
@@ -2677,7 +2660,7 @@ class TestHookExecutionOrder:
                     "review": SubstageConfig(name="review", pre_completion=[{"file_exists": "review.md"}]),
                 }
             )
-        ])
+        })
         mock_load_config.return_value = config
         mock_get_dir.return_value = Path("/tmp/issue")
         mock_execute_hooks.return_value = []
@@ -2688,28 +2671,26 @@ class TestHookExecutionOrder:
         issue.branch = "test-branch"
         issue.pr_number = None
 
-        # Exit from first substage (code) - should only run substage hooks, not stage
-        execute_exit_hooks(issue, "implement", "code")
+        # Exit from substage code
+        execute_exit_hooks(issue, "implement.code")
 
-        # Should only be called once (substage hooks only, since not last substage)
+        # Should be called once with the code substage config
         assert mock_execute_hooks.call_count == 1
-
-        # Verify it was the substage config
         call_config = mock_execute_hooks.call_args[0][2]
-        assert not hasattr(call_config, 'substages') or call_config.substages is None
+        assert call_config.name == "code"
 
     @patch('agenttree.hooks.execute_hooks')
     @patch('agenttree.config.load_config')
     @patch('agenttree.issues.get_issue_dir')
-    def test_enter_hooks_substage_before_stage(
+    def test_enter_hooks_runs_substage_hooks(
         self, mock_get_dir, mock_load_config, mock_execute_hooks
     ):
-        """execute_enter_hooks should run substage hooks before stage hooks (on first substage)."""
+        """execute_enter_hooks should run substage post_start hooks."""
         from agenttree.hooks import execute_enter_hooks
         from agenttree.config import Config, StageConfig, SubstageConfig
 
-        config = Config(stages=[
-            StageConfig(
+        config = Config(stages={
+            "implementation_review": StageConfig(
                 name="implementation_review",
                 post_start=[{"create_pr": {}}],
                 substages={
@@ -2717,7 +2698,7 @@ class TestHookExecutionOrder:
                     "review": SubstageConfig(name="review", post_start=[{"file_exists": "review.md"}]),
                 }
             )
-        ])
+        })
         mock_load_config.return_value = config
         mock_get_dir.return_value = Path("/tmp/issue")
         mock_execute_hooks.return_value = []
@@ -2728,34 +2709,26 @@ class TestHookExecutionOrder:
         issue.branch = "test-branch"
         issue.pr_number = None
 
-        # Enter first substage (ci_wait) - should run both substage and stage hooks
-        execute_enter_hooks(issue, "implementation_review", "ci_wait")
+        # Enter substage ci_wait
+        execute_enter_hooks(issue, "implementation_review.ci_wait")
 
-        # Should be called twice: once for substage, once for stage
-        assert mock_execute_hooks.call_count == 2
-
-        # Verify order: substage hooks first (position 0), stage hooks second (position 1)
-        calls = mock_execute_hooks.call_args_list
-        # First call should be with substage_config (no substages attribute)
-        first_call_config = calls[0][0][2]
-        assert not hasattr(first_call_config, 'substages') or first_call_config.substages is None, \
-            "First call should be substage config"
-        # Second call should be with stage_config (has substages)
-        second_call_config = calls[1][0][2]
-        assert hasattr(second_call_config, 'substages'), "Second call should be stage config"
+        # Should be called once with the substage config
+        assert mock_execute_hooks.call_count == 1
+        call_config = mock_execute_hooks.call_args[0][2]
+        assert call_config.name == "ci_wait"
 
     @patch('agenttree.hooks.execute_hooks')
     @patch('agenttree.config.load_config')
     @patch('agenttree.issues.get_issue_dir')
-    def test_enter_hooks_only_substage_on_non_first(
+    def test_enter_hooks_different_substage(
         self, mock_get_dir, mock_load_config, mock_execute_hooks
     ):
-        """execute_enter_hooks should only run substage hooks on non-first substage."""
+        """execute_enter_hooks should run the correct substage hooks for the given dot path."""
         from agenttree.hooks import execute_enter_hooks
         from agenttree.config import Config, StageConfig, SubstageConfig
 
-        config = Config(stages=[
-            StageConfig(
+        config = Config(stages={
+            "implementation_review": StageConfig(
                 name="implementation_review",
                 post_start=[{"create_pr": {}}],
                 substages={
@@ -2763,7 +2736,7 @@ class TestHookExecutionOrder:
                     "review": SubstageConfig(name="review", post_start=[{"file_exists": "review.md"}]),
                 }
             )
-        ])
+        })
         mock_load_config.return_value = config
         mock_get_dir.return_value = Path("/tmp/issue")
         mock_execute_hooks.return_value = []
@@ -2774,15 +2747,13 @@ class TestHookExecutionOrder:
         issue.branch = "test-branch"
         issue.pr_number = None
 
-        # Enter second substage (review) - should only run substage hooks, not stage
-        execute_enter_hooks(issue, "implementation_review", "review")
+        # Enter substage review
+        execute_enter_hooks(issue, "implementation_review.review")
 
-        # Should only be called once (substage hooks only, since not first substage)
+        # Should be called once with the review substage config
         assert mock_execute_hooks.call_count == 1
-
-        # Verify it was the substage config
         call_config = mock_execute_hooks.call_args[0][2]
-        assert not hasattr(call_config, 'substages') or call_config.substages is None
+        assert call_config.name == "review"
 
     @patch('agenttree.hooks.execute_hooks')
     @patch('agenttree.config.load_config')
@@ -2790,16 +2761,16 @@ class TestHookExecutionOrder:
     def test_enter_hooks_stage_only_when_no_substages(
         self, mock_get_dir, mock_load_config, mock_execute_hooks
     ):
-        """execute_enter_hooks should run stage hooks when entering without substage."""
+        """execute_enter_hooks should run stage hooks when entering a stage without substage."""
         from agenttree.hooks import execute_enter_hooks
         from agenttree.config import Config, StageConfig
 
-        config = Config(stages=[
-            StageConfig(
+        config = Config(stages={
+            "backlog": StageConfig(
                 name="backlog",
                 post_start=[{"file_exists": "issue.yaml"}],
             )
-        ])
+        })
         mock_load_config.return_value = config
         mock_get_dir.return_value = Path("/tmp/issue")
         mock_execute_hooks.return_value = []
@@ -2810,8 +2781,8 @@ class TestHookExecutionOrder:
         issue.branch = "test-branch"
         issue.pr_number = None
 
-        # Enter stage without substage
-        execute_enter_hooks(issue, "backlog", None)
+        # Enter stage without substage (dot path has no dot)
+        execute_enter_hooks(issue, "backlog")
 
         # Should be called once (stage hooks)
         assert mock_execute_hooks.call_count == 1
@@ -2824,16 +2795,15 @@ class TestHookExecutionOrder:
     @patch('agenttree.hooks.execute_hooks')
     @patch('agenttree.config.load_config')
     @patch('agenttree.issues.get_issue_dir')
-    def test_enter_hooks_fixes_pr_creation_bug(
+    def test_enter_hooks_substage_only_not_stage_level(
         self, mock_get_dir, mock_load_config, mock_execute_hooks, mock_container
     ):
-        """Stage-level post_start hooks should run when entering first substage (PR creation bug fix)."""
+        """execute_enter_hooks with a substage dot path runs only substage hooks, not stage-level."""
         from agenttree.hooks import execute_enter_hooks
         from agenttree.config import Config, StageConfig, SubstageConfig
 
-        # This mimics the real implementation_review config that caused the bug
-        config = Config(stages=[
-            StageConfig(
+        config = Config(stages={
+            "implementation_review": StageConfig(
                 name="implementation_review",
                 role="manager",
                 post_start=[{"create_pr": {}}],  # Stage-level hook
@@ -2842,7 +2812,7 @@ class TestHookExecutionOrder:
                     "review": SubstageConfig(name="review"),
                 }
             )
-        ])
+        })
         mock_load_config.return_value = config
         mock_get_dir.return_value = Path("/tmp/issue")
         mock_execute_hooks.return_value = []
@@ -2853,24 +2823,14 @@ class TestHookExecutionOrder:
         issue.branch = "issue-048-tui"
         issue.pr_number = None
 
-        # Enter implementation_review.ci_wait (first substage)
-        # This is where the bug was - create_pr never ran because only substage hooks were executed
-        execute_enter_hooks(issue, "implementation_review", "ci_wait")
+        # Enter implementation_review.ci_wait (substage)
+        # In the dot-path model, only the substage hooks run
+        execute_enter_hooks(issue, "implementation_review.ci_wait")
 
-        # Should be called at least once for stage-level hooks
-        assert mock_execute_hooks.call_count >= 1
-
-        # Verify stage-level hooks were called (the one with create_pr)
-        stage_hooks_called = False
-        for call in mock_execute_hooks.call_args_list:
-            config_arg = call[0][2]
-            if hasattr(config_arg, 'post_start') and config_arg.post_start:
-                for hook in config_arg.post_start:
-                    if 'create_pr' in hook:
-                        stage_hooks_called = True
-                        break
-
-        assert stage_hooks_called, "Stage-level post_start hooks (with create_pr) should have been called"
+        # Called once with the substage config (ci_wait has no post_start hooks)
+        assert mock_execute_hooks.call_count == 1
+        call_config = mock_execute_hooks.call_args[0][2]
+        assert call_config.name == "ci_wait"
 
 
 class TestStageRedirect:
@@ -2883,19 +2843,19 @@ class TestStageRedirect:
         assert issubclass(StageRedirect, Exception)
 
     def test_stage_redirect_attributes(self):
-        """StageRedirect should store target_stage and reason."""
+        """StageRedirect should store target and reason."""
         from agenttree.hooks import StageRedirect
 
-        redirect = StageRedirect("address_independent_review", "Checkbox not checked")
-        assert redirect.target_stage == "address_independent_review"
+        redirect = StageRedirect("implement.address_independent", "Checkbox not checked")
+        assert redirect.target == "implement.address_independent"
         assert redirect.reason == "Checkbox not checked"
 
     def test_stage_redirect_message(self):
         """StageRedirect should have descriptive message."""
         from agenttree.hooks import StageRedirect
 
-        redirect = StageRedirect("target_stage", "test reason")
-        assert "target_stage" in str(redirect)
+        redirect = StageRedirect("implement.code", "test reason")
+        assert "implement.code" in str(redirect)
         assert "test reason" in str(redirect)
 
 
@@ -2947,7 +2907,7 @@ class TestCheckboxCheckedHook:
         assert "not checked" in errors[0]
 
     def test_checkbox_checked_raises_redirect_on_fail_stage(self, tmp_path):
-        """Should raise StageRedirect when on_fail_stage is set and checkbox unchecked."""
+        """Should raise StageRedirect when on_fail is set and checkbox unchecked."""
         from agenttree.hooks import run_builtin_validator, StageRedirect
 
         content = """# Review
@@ -2958,14 +2918,15 @@ class TestCheckboxCheckedHook:
             "checkbox_checked": {
                 "file": "review.md",
                 "checkbox": "Approve",
-                "on_fail_stage": "address_independent_review"
+                "on_fail": "address_independent_review"
             }
         }
 
         with pytest.raises(StageRedirect) as exc_info:
-            run_builtin_validator(tmp_path, hook)
+            # Pass stage context so relative on_fail resolves correctly
+            run_builtin_validator(tmp_path, hook, stage="implement.review")
 
-        assert exc_info.value.target_stage == "address_independent_review"
+        assert exc_info.value.target == "implement.address_independent_review"
 
     def test_checkbox_checked_file_not_found(self, tmp_path):
         """Should return error when file doesn't exist."""
@@ -3123,7 +3084,7 @@ class TestRollbackHook:
     """Tests for rollback hook action."""
 
     def test_rollback_hook_requires_to_stage(self, tmp_path):
-        """Should return error when to_stage not provided."""
+        """Should return error when 'to' parameter not provided."""
         from agenttree.hooks import run_builtin_validator
         from agenttree.issues import Issue
 
@@ -3131,7 +3092,7 @@ class TestRollbackHook:
             id="42",
             slug="test",
             title="Test",
-            stage="implement",
+            stage="implement.code",
             created="2026-01-01T00:00:00Z",
             updated="2026-01-01T00:00:00Z",
         )
@@ -3140,13 +3101,13 @@ class TestRollbackHook:
 
         errors = run_builtin_validator(tmp_path, hook, issue=mock_issue)
         assert len(errors) == 1
-        assert "to_stage" in errors[0].lower()
+        assert "'to'" in errors[0].lower()
 
     def test_rollback_hook_requires_issue_context(self, tmp_path):
         """Should return error when issue not provided."""
         from agenttree.hooks import run_builtin_validator
 
-        hook = {"rollback": {"to_stage": "research"}}
+        hook = {"rollback": {"to": "explore.research"}}
 
         errors = run_builtin_validator(tmp_path, hook)  # No issue kwarg
         assert len(errors) == 1
@@ -3163,18 +3124,18 @@ class TestRollbackHook:
             id="42",
             slug="test",
             title="Test",
-            stage="implement",
+            stage="implement.code",
             created="2026-01-01T00:00:00Z",
             updated="2026-01-01T00:00:00Z",
         )
 
-        hook = {"rollback": {"to_stage": "research"}}
+        hook = {"rollback": {"to": "explore.research"}}
 
         errors = run_builtin_validator(tmp_path, hook, issue=mock_issue)
 
         mock_rollback.assert_called_once_with(
             issue_id="42",
-            target_stage="research",
+            target_stage="explore.research",
             yes=True,  # Default auto-confirm
             reset_worktree=False,
             keep_changes=True,
@@ -3192,12 +3153,12 @@ class TestRollbackHook:
             id="42",
             slug="test",
             title="Test",
-            stage="implement",
+            stage="implement.code",
             created="2026-01-01T00:00:00Z",
             updated="2026-01-01T00:00:00Z",
         )
 
-        hook = {"rollback": {"to_stage": "research"}}
+        hook = {"rollback": {"to": "explore.research"}}
 
         errors = run_builtin_validator(tmp_path, hook, issue=mock_issue)
         assert len(errors) == 1

@@ -19,20 +19,6 @@ from agenttree.issues import (
     update_issue_priority,
     load_skill,
     set_processing,
-    # Stage constants
-    BACKLOG,
-    DEFINE,
-    RESEARCH,
-    PLAN,
-    PLAN_ASSESS,
-    PLAN_REVISE,
-    PLAN_REVIEW,
-    IMPLEMENT,
-    INDEPENDENT_CODE_REVIEW,
-    IMPLEMENTATION_REVIEW,
-    KNOWLEDGE_BASE,
-    ACCEPTED,
-    NOT_DOING,
 )
 
 
@@ -68,7 +54,7 @@ class TestIssueModel:
             updated="2026-01-11T12:00:00Z",
         )
         assert issue.id == "001"
-        assert issue.stage == "define"  # New issues start at define
+        assert issue.stage == "explore.define"  # New issues start at explore.define
         assert issue.priority == Priority.MEDIUM
 
     def test_issue_with_all_fields(self):
@@ -132,7 +118,7 @@ class TestProcessingHelpers:
             "title": "Test Issue",
             "created": "2026-01-11T12:00:00Z",
             "updated": "2026-01-11T12:00:00Z",
-            "stage": "define",
+            "stage": "explore.define",
             "labels": [],
             "priority": "medium",
             "dependencies": [],
@@ -215,7 +201,7 @@ class TestIssueCRUD:
         assert issue.id == "001"
         assert issue.title == "Test Issue"
         assert issue.priority == Priority.HIGH
-        assert issue.stage == "define"  # New issues start at define
+        assert issue.stage == "explore.define"  # New issues start at explore.define
 
         # Check files created
         issue_dir = temp_agenttrees / "issues" / "001-test-issue"
@@ -269,23 +255,23 @@ class TestIssueCRUD:
 
     def test_create_issue_with_custom_stage(self, temp_agenttrees):
         """Test creating an issue with a custom starting stage."""
-        issue = create_issue("Test Issue", stage="define")
+        issue = create_issue("Test Issue", stage="explore.define")
 
         assert issue.id == "001"
         assert issue.title == "Test Issue"
-        assert issue.stage == "define"
+        assert issue.stage == "explore.define"
 
         # Check history entry
         assert len(issue.history) == 1
-        assert issue.history[0].stage == "define"
+        assert issue.history[0].stage == "explore.define"
 
     def test_create_issue_with_research_stage(self, temp_agenttrees):
         """Test creating an issue starting at research stage."""
-        issue = create_issue("Research Task", stage="research", priority=Priority.HIGH)
+        issue = create_issue("Research Task", stage="explore.research", priority=Priority.HIGH)
 
-        assert issue.stage == "research"
+        assert issue.stage == "explore.research"
         assert issue.priority == Priority.HIGH
-        assert issue.history[0].stage == "research"
+        assert issue.history[0].stage == "explore.research"
 
     def test_create_issue_with_implement_stage(self, temp_agenttrees):
         """Test creating an issue starting at implement stage."""
@@ -295,11 +281,11 @@ class TestIssueCRUD:
         assert issue.history[0].stage == "implement.code"
 
     def test_create_issue_defaults_to_define(self, temp_agenttrees):
-        """Test that not providing a stage defaults to define."""
+        """Test that not providing a stage defaults to explore.define."""
         issue = create_issue("Default Stage Issue")
 
-        assert issue.stage == "define"
-        assert issue.history[0].stage == "define"
+        assert issue.stage == "explore.define"
+        assert issue.history[0].stage == "explore.define"
 
 
 class TestStageTransitions:
@@ -312,101 +298,76 @@ class TestStageTransitions:
     """
 
     def test_get_next_stage_from_backlog(self):
-        """Backlog -> define.refine"""
-        next_stage, next_substage = get_next_stage(BACKLOG, None)
-        assert next_stage == DEFINE
-        assert next_substage == "refine"
+        """backlog -> explore.define"""
+        next_stage, is_review = get_next_stage("backlog")
+        assert next_stage == "explore.define"
+        assert is_review is False
 
     def test_get_next_stage_define_to_research(self):
-        """define.refine -> research.explore (no problem_review gate)"""
-        next_stage, next_substage = get_next_stage(DEFINE, "refine")
-        assert next_stage == RESEARCH
-        assert next_substage == "explore"
-
-    def test_get_next_stage_within_research_substages(self):
-        """research.explore -> research.document"""
-        next_stage, next_substage = get_next_stage(RESEARCH, "explore")
-        assert next_stage == RESEARCH
-        assert next_substage == "document"
+        """explore.define -> explore.research"""
+        next_stage, is_review = get_next_stage("explore.define")
+        assert next_stage == "explore.research"
+        assert is_review is False
 
     def test_get_next_stage_research_to_plan(self):
-        """research.document -> plan.draft (not directly to plan_review)"""
-        next_stage, next_substage = get_next_stage(RESEARCH, "document")
-        assert next_stage == PLAN
-        assert next_substage == "draft"
+        """explore.research -> plan.draft"""
+        next_stage, is_review = get_next_stage("explore.research")
+        assert next_stage == "plan.draft"
+        assert is_review is False
 
-    def test_get_next_stage_plan_to_plan_assess(self):
-        """plan.refine -> plan_assess"""
-        next_stage, next_substage = get_next_stage(PLAN, "refine")
-        assert next_stage == PLAN_ASSESS
-        assert next_substage is None
+    def test_get_next_stage_plan_draft_to_plan_assess(self):
+        """plan.draft -> plan.assess"""
+        next_stage, is_review = get_next_stage("plan.draft")
+        assert next_stage == "plan.assess"
+        assert is_review is False
 
     def test_get_next_stage_plan_assess_to_plan_revise(self):
-        """plan_assess -> plan_revise"""
-        next_stage, next_substage = get_next_stage(PLAN_ASSESS, None)
-        assert next_stage == PLAN_REVISE
-        assert next_substage is None
+        """plan.assess -> plan.revise"""
+        next_stage, is_review = get_next_stage("plan.assess")
+        assert next_stage == "plan.revise"
+        assert is_review is False
 
     def test_get_next_stage_plan_revise_to_plan_review(self):
-        """plan_revise -> plan_review (human review)"""
-        next_stage, next_substage = get_next_stage(PLAN_REVISE, None)
-        assert next_stage == PLAN_REVIEW
-        assert next_substage is None
+        """plan.revise -> plan.review (human review)"""
+        next_stage, is_review = get_next_stage("plan.revise")
+        assert next_stage == "plan.review"
+        assert is_review is True
 
-    def test_get_next_stage_within_implement_substages(self):
-        """implement.setup -> implement.code"""
-        next_stage, next_substage = get_next_stage(IMPLEMENT, "setup")
-        assert next_stage == IMPLEMENT
-        assert next_substage == "code"
+    def test_get_next_stage_plan_review_to_implement(self):
+        """plan.review -> implement.setup"""
+        next_stage, is_review = get_next_stage("plan.review")
+        assert next_stage == "implement.setup"
+        assert is_review is False
 
-    def test_get_next_stage_implement_code_review_skips_address_review(self):
-        """implement.code_review -> implement.wrapup (address_review is redirect_only)"""
-        next_stage, next_substage = get_next_stage(IMPLEMENT, "code_review")
-        assert next_stage == IMPLEMENT
-        assert next_substage == "wrapup"
+    def test_get_next_stage_implement_to_debug(self):
+        """implement.code -> implement.debug"""
+        next_stage, is_review = get_next_stage("implement.code")
+        assert next_stage == "implement.debug"
+        assert is_review is False
 
-    def test_get_next_stage_implement_to_wrapup(self):
-        """implement.address_review -> implement.wrapup"""
-        next_stage, next_substage = get_next_stage(IMPLEMENT, "address_review")
-        assert next_stage == IMPLEMENT
-        assert next_substage == "wrapup"
-
-    def test_get_next_stage_wrapup_to_feedback(self):
-        """implement.wrapup -> implement.feedback"""
-        next_stage, next_substage = get_next_stage(IMPLEMENT, "wrapup")
-        assert next_stage == IMPLEMENT
-        assert next_substage == "feedback"
-
-    def test_get_next_stage_feedback_to_independent_review(self):
-        """implement.feedback -> independent_code_review (review agent stage)"""
-        next_stage, next_substage = get_next_stage(IMPLEMENT, "feedback")
-        assert next_stage == INDEPENDENT_CODE_REVIEW
-        assert next_substage is None
-        # Not human review - it's a custom agent stage
-
-    def test_get_next_stage_independent_review_to_implementation_review(self):
-        """independent_code_review -> implementation_review.ci_wait (human review)"""
-        next_stage, next_substage = get_next_stage(INDEPENDENT_CODE_REVIEW, None)
-        assert next_stage == IMPLEMENTATION_REVIEW
-        assert next_substage == "ci_wait"  # First substage of implementation_review
+    def test_get_next_stage_independent_review_to_ci_wait(self):
+        """implement.independent_review -> implement.ci_wait (conditional stages skipped)"""
+        next_stage, is_review = get_next_stage("implement.independent_review")
+        assert next_stage == "implement.ci_wait"
+        assert is_review is False
 
     def test_get_next_stage_to_knowledge_base(self):
-        """implementation_review -> knowledge_base"""
-        next_stage, next_substage = get_next_stage(IMPLEMENTATION_REVIEW, None)
-        assert next_stage == KNOWLEDGE_BASE
-        assert next_substage is None
+        """implement.review -> knowledge_base"""
+        next_stage, is_review = get_next_stage("implement.review")
+        assert next_stage == "knowledge_base"
+        assert is_review is False
 
     def test_get_next_stage_at_knowledge_base(self):
         """knowledge_base -> accepted"""
-        next_stage, next_substage = get_next_stage(KNOWLEDGE_BASE, None)
-        assert next_stage == ACCEPTED
-        assert next_substage is None
+        next_stage, is_review = get_next_stage("knowledge_base")
+        assert next_stage == "accepted"
+        assert is_review is False
 
     def test_get_next_stage_at_accepted(self):
         """accepted -> stays at accepted (terminal)"""
-        next_stage, next_substage = get_next_stage(ACCEPTED, None)
-        assert next_stage == ACCEPTED
-        assert next_substage is None
+        next_stage, is_review = get_next_stage("accepted")
+        assert next_stage == "accepted"
+        assert is_review is False
 
     def test_human_review_stages(self):
         """Verify human review stages via config."""
@@ -414,14 +375,14 @@ class TestStageTransitions:
 
         config = load_config()
         human_review_stages = config.get_human_review_stages()
-        assert PLAN_REVIEW in human_review_stages  # plan_review
-        assert IMPLEMENTATION_REVIEW in human_review_stages  # implementation_review
+        assert "plan.review" in human_review_stages
+        assert "implement.review" in human_review_stages
 
     def test_get_next_stage_not_doing_stays_not_doing(self):
-        """NOT_DOING is a terminal state - stays at NOT_DOING."""
-        next_stage, next_substage = get_next_stage(NOT_DOING, None)
-        assert next_stage == NOT_DOING
-        assert next_substage is None
+        """not_doing is a terminal state - stays at not_doing."""
+        next_stage, is_review = get_next_stage("not_doing")
+        assert next_stage == "not_doing"
+        assert is_review is False
 
 
 class TestDependencies:
@@ -694,7 +655,7 @@ class TestUpdateIssueStage:
     def test_update_issue_stage(self, temp_agenttrees):
         """Update issue stage."""
         issue = create_issue("Test Issue")
-        assert issue.stage == "define"  # New issues start at define
+        assert issue.stage == "explore.define"  # New issues start at explore.define
 
         updated = update_issue_stage("001", "explore.research")
         assert updated is not None
@@ -705,14 +666,14 @@ class TestUpdateIssueStage:
         issue = create_issue("Test Issue")
         assert len(issue.history) == 1
 
-        updated = update_issue_stage("001", "research", agent=1)
+        updated = update_issue_stage("001", "explore.research", agent=1)
         assert len(updated.history) == 2
-        assert updated.history[-1].stage == "research"
+        assert updated.history[-1].stage == "explore.research"
         assert updated.history[-1].agent == 1
 
     def test_update_issue_stage_not_found(self, temp_agenttrees):
         """Return None for non-existent issue."""
-        result = update_issue_stage("999", "define")
+        result = update_issue_stage("999", "explore.define")
         assert result is None
 
 
@@ -770,7 +731,7 @@ class TestLoadSkill:
 
         # Create a config that explicitly references a non-existent skill file
         mock_config = Config(
-            stages=[StageConfig(name="test_stage", skill="nonexistent/skill.md")]
+            stages={"test_stage": StageConfig(name="test_stage", skill="nonexistent/skill.md")}
         )
         monkeypatch.setattr("agenttree.config.load_config", lambda *args, **kwargs: mock_config)
 
@@ -1079,10 +1040,10 @@ class TestSessionManagement:
         issue = create_issue("Test Issue")
         create_session(issue.id)
 
-        update_session_stage(issue.id, "research")
+        update_session_stage(issue.id, "explore.research")
 
         session = get_session(issue.id)
-        assert session.last_stage == "research"
+        assert session.last_stage == "explore.research"
         assert session.oriented is True
 
     def test_delete_session(self, temp_agenttrees):
@@ -1169,11 +1130,11 @@ class TestLoadPersona:
             is_takeover=True,
         )
         assert persona is not None
-        # Should include stages before implement.code
-        assert "define" in persona
-        assert "research" in persona
-        assert "plan" in persona
-        assert "plan_review" in persona
+        # Should include dot-path stages before implement.code
+        assert "explore.define" in persona
+        assert "explore.research" in persona
+        assert "plan.draft" in persona
+        assert "plan.review" in persona
 
     def test_load_persona_takeover_true_mid_workflow(self, temp_agenttrees_with_persona):
         """is_takeover should be True when starting mid-workflow."""
@@ -1191,7 +1152,7 @@ class TestLoadPersona:
         from agenttree.issues import load_persona
 
         persona = load_persona(
-            current_stage="define",
+            current_stage="explore.define",
             is_takeover=False,
         )
         assert persona is not None
@@ -1294,7 +1255,7 @@ class TestGetIssueContext:
         assert context["id"] == "001"
         assert context["slug"] == "test-issue"
         assert context["title"] == "Test Issue"
-        assert context["stage"] == "define"
+        assert context["stage"] == "explore.define"
         assert context["priority"] == "high"
         assert "created" in context
         assert "updated" in context
@@ -1312,9 +1273,9 @@ class TestGetIssueContext:
         assert context["issue_title"] == "Test Issue"  # alias
         assert "issue_dir" in context
         assert context["issue_dir_rel"] == "_agenttree/issues/001-test-issue"
-        # Stage parsed into stage_group and substage (define defaults to refine)
-        assert context["stage_group"] == "define"
-        assert context["substage"] == "refine"
+        # Dot path is parsed into stage_group and substage
+        assert context["stage_group"] == "explore"
+        assert context["substage"] == "define"
 
     def test_get_issue_context_stage_without_substage(self, temp_agenttrees):
         """stage_group and substage should handle single-level stages."""
@@ -1384,7 +1345,7 @@ class TestGetIssueContext:
         from agenttree.issues import update_issue_stage
 
         issue = create_issue("Test Issue")
-        update_issue_stage(issue.id, "research", agent=1)
+        update_issue_stage(issue.id, "explore.research", agent=1)
 
         # Reload issue
         issue = get_issue(issue.id)
@@ -1392,8 +1353,8 @@ class TestGetIssueContext:
 
         assert "history" in context
         assert len(context["history"]) == 2
-        assert context["history"][0]["stage"] == "define"
-        assert context["history"][1]["stage"] == "research"
+        assert context["history"][0]["stage"] == "explore.define"
+        assert context["history"][1]["stage"] == "explore.research"
         assert context["history"][1]["agent"] == 1
 
 
@@ -1565,12 +1526,12 @@ class TestConfigValidation:
         config = load_config()
         missing_skills = []
 
-        for stage in config.stages:
+        for stage_name, stage in config.stages.items():
             # Check stage-level explicit skill
             if stage.skill:
                 skill_path = agenttree_path / "skills" / stage.skill
                 if not skill_path.exists():
-                    missing_skills.append(f"{stage.name}: {stage.skill}")
+                    missing_skills.append(f"{stage_name}: {stage.skill}")
 
             # Check substage-level explicit skills
             if stage.substages:
@@ -1578,7 +1539,7 @@ class TestConfigValidation:
                     if substage and substage.skill:
                         skill_path = agenttree_path / "skills" / substage.skill
                         if not skill_path.exists():
-                            missing_skills.append(f"{stage.name}.{substage_name}: {substage.skill}")
+                            missing_skills.append(f"{stage_name}.{substage_name}: {substage.skill}")
 
         assert not missing_skills, f"Missing skill files: {missing_skills}"
 
@@ -1604,16 +1565,16 @@ class TestConfigValidation:
                         if not template_path.exists():
                             missing_templates.append(f"{context}: {template_name}")
 
-        for stage in config.stages:
+        for stage_name, stage in config.stages.items():
             # Check stage-level hooks
-            check_hooks(stage.post_start, f"{stage.name}.post_start")
-            check_hooks(stage.pre_completion, f"{stage.name}.pre_completion")
+            check_hooks(stage.post_start, f"{stage_name}.post_start")
+            check_hooks(stage.pre_completion, f"{stage_name}.pre_completion")
 
             # Check substage-level hooks
             if stage.substages:
                 for substage_name, substage in stage.substages.items():
                     if substage:
-                        check_hooks(substage.post_start, f"{stage.name}.{substage_name}.post_start")
-                        check_hooks(substage.pre_completion, f"{stage.name}.{substage_name}.pre_completion")
+                        check_hooks(substage.post_start, f"{stage_name}.{substage_name}.post_start")
+                        check_hooks(substage.pre_completion, f"{stage_name}.{substage_name}.pre_completion")
 
         assert not missing_templates, f"Missing template files: {missing_templates}"

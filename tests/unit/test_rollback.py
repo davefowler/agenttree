@@ -24,33 +24,29 @@ def mock_config():
 
     config = Config(
         project="testproject",
-        stages=[
-            StageConfig(name="backlog"),
-            StageConfig(name="define", output="problem.md"),
-            StageConfig(name="research", output="research.md"),
-            StageConfig(
-                name="plan",
-                output="spec.md",
-                substages={"draft": SubstageConfig(name="draft"), "refine": SubstageConfig(name="refine")},
-            ),
-            StageConfig(name="plan_assess", output="spec_review.md"),
-            StageConfig(name="plan_revise", output="spec.md"),
-            StageConfig(name="plan_review", human_review=True),
-            StageConfig(
-                name="implement",
-                substages={
-                    "setup": SubstageConfig(name="setup"),
-                    "code": SubstageConfig(name="code"),
-                    "code_review": SubstageConfig(name="code_review", output="review.md"),
-                    "address_review": SubstageConfig(name="address_review"),
-                    "wrapup": SubstageConfig(name="wrapup"),
-                    "feedback": SubstageConfig(name="feedback", output="feedback.md"),
-                },
-            ),
-            StageConfig(name="implementation_review", human_review=True),
-            StageConfig(name="accepted", is_parking_lot=True),
-            StageConfig(name="not_doing", is_parking_lot=True, redirect_only=True),
-        ],
+        stages={
+            "backlog": StageConfig(name="backlog"),
+            "explore": StageConfig(name="explore", substages={
+                "define": SubstageConfig(name="define", output="problem.md"),
+                "research": SubstageConfig(name="research", output="research.md"),
+            }),
+            "plan": StageConfig(name="plan", substages={
+                "draft": SubstageConfig(name="draft", output="spec.md"),
+                "assess": SubstageConfig(name="assess", output="spec_review.md"),
+                "revise": SubstageConfig(name="revise", output="spec.md"),
+                "review": SubstageConfig(name="review", human_review=True),
+            }),
+            "implement": StageConfig(name="implement", substages={
+                "code": SubstageConfig(name="code"),
+                "code_review": SubstageConfig(name="code_review", output="review.md"),
+                "address_review": SubstageConfig(name="address_review"),
+                "wrapup": SubstageConfig(name="wrapup"),
+                "feedback": SubstageConfig(name="feedback", output="feedback.md"),
+                "review": SubstageConfig(name="review", human_review=True),
+            }),
+            "accepted": StageConfig(name="accepted", is_parking_lot=True),
+            "not_doing": StageConfig(name="not_doing", is_parking_lot=True, redirect_only=True),
+        },
     )
     return config
 
@@ -66,8 +62,7 @@ def temp_issue_dir(tmp_path):
         "id": "42",
         "slug": "test-issue",
         "title": "Test Issue",
-        "stage": "implement",
-        "substage": "code",
+        "stage": "implement.code",
         "created": "2026-01-01T00:00:00Z",
         "updated": "2026-01-01T00:00:00Z",
         "history": [],
@@ -92,14 +87,14 @@ class TestGetOutputFilesAfterStage:
     """Tests for get_output_files_after_stage function."""
 
     def test_after_research_returns_plan_and_later_files(self, mock_config):
-        """Given stage research, should return files from plan and later stages."""
+        """Given stage explore.research, should return files from plan and later stages."""
         from agenttree.issues import get_output_files_after_stage
 
         with patch("agenttree.config.load_config", return_value=mock_config):
-            files = get_output_files_after_stage("research")
+            files = get_output_files_after_stage("explore.research")
 
-        # After research: plan (spec.md), plan_assess (spec_review.md),
-        # plan_revise (spec.md), implement.code_review (review.md), implement.feedback (feedback.md)
+        # After explore.research: plan.draft (spec.md), plan.assess (spec_review.md),
+        # plan.revise (spec.md), implement.code_review (review.md), implement.feedback (feedback.md)
         assert "spec.md" in files
         assert "spec_review.md" in files
         assert "review.md" in files
@@ -108,27 +103,27 @@ class TestGetOutputFilesAfterStage:
         assert "problem.md" not in files
 
     def test_after_plan_returns_later_files(self, mock_config):
-        """Given stage plan, should return files from plan_assess and later."""
+        """Given stage plan.draft, should return files from plan.assess and later."""
         from agenttree.issues import get_output_files_after_stage
 
         with patch("agenttree.config.load_config", return_value=mock_config):
-            files = get_output_files_after_stage("plan")
+            files = get_output_files_after_stage("plan.draft")
 
         assert "spec_review.md" in files
         assert "review.md" in files
         assert "feedback.md" in files
-        # spec.md IS included because plan_revise (after plan) also outputs spec.md
+        # spec.md IS included because plan.revise (after plan.draft) also outputs spec.md
         assert "spec.md" in files
         assert "research.md" not in files
 
     def test_after_implement_returns_empty(self, mock_config):
-        """Given stage implement, should return empty (no files after implement)."""
+        """Given stage implement.review, should return empty (no files after)."""
         from agenttree.issues import get_output_files_after_stage
 
         with patch("agenttree.config.load_config", return_value=mock_config):
-            files = get_output_files_after_stage("implement")
+            files = get_output_files_after_stage("implement.review")
 
-        # Only implementation_review and terminal stages after implement, none have output
+        # Only terminal stages after implement.review, none have output
         assert files == []
 
     def test_invalid_stage_raises_error(self, mock_config):
@@ -143,9 +138,9 @@ class TestGetOutputFilesAfterStage:
         """Should deduplicate files that appear in multiple stages."""
         from agenttree.issues import get_output_files_after_stage
 
-        # plan and plan_revise both have spec.md as output
+        # plan.draft and plan.revise both have spec.md as output
         with patch("agenttree.config.load_config", return_value=mock_config):
-            files = get_output_files_after_stage("define")
+            files = get_output_files_after_stage("explore.define")
 
         # Count occurrences of spec.md
         spec_count = sum(1 for f in files if f == "spec.md")
@@ -240,8 +235,7 @@ class TestRollbackValidation:
             id="42",
             slug="test",
             title="Test",
-            stage="implement",
-            substage="code",
+            stage="implement.code",
             created="2026-01-01T00:00:00Z",
             updated="2026-01-01T00:00:00Z",
         )
@@ -263,8 +257,7 @@ class TestRollbackValidation:
             id="42",
             slug="test",
             title="Test",
-            stage="implement",
-            substage="code",
+            stage="implement.code",
             created="2026-01-01T00:00:00Z",
             updated="2026-01-01T00:00:00Z",
         )
@@ -286,8 +279,7 @@ class TestRollbackValidation:
             id="42",
             slug="test",
             title="Test",
-            stage="research",
-            substage=None,
+            stage="explore.research",
             created="2026-01-01T00:00:00Z",
             updated="2026-01-01T00:00:00Z",
         )
@@ -295,7 +287,7 @@ class TestRollbackValidation:
         with patch("agenttree.cli.workflow.load_config", return_value=mock_config):
             with patch("agenttree.cli.workflow.get_issue_func", return_value=mock_issue):
                 with patch("agenttree.cli.workflow.is_running_in_container", return_value=False):
-                    result = cli_runner.invoke(main, ["rollback", "42", "implement", "-y"])
+                    result = cli_runner.invoke(main, ["rollback", "42", "implement.code", "-y"])
 
         assert result.exit_code == 1
         # The message says target stage is "not before" current stage
@@ -316,8 +308,8 @@ class TestRollbackValidation:
 class TestRollbackUpdatesState:
     """Tests for rollback state updates."""
 
-    def test_updates_stage_and_substage(self, cli_runner, mock_config, temp_issue_dir):
-        """Should update issue stage and substage after rollback."""
+    def test_updates_stage(self, cli_runner, mock_config, temp_issue_dir):
+        """Should update issue stage after rollback."""
         from agenttree.cli import main
         from agenttree.issues import Issue
 
@@ -325,8 +317,7 @@ class TestRollbackUpdatesState:
             id="42",
             slug="test-issue",
             title="Test",
-            stage="implement",
-            substage="code",
+            stage="implement.code",
             created="2026-01-01T00:00:00Z",
             updated="2026-01-01T00:00:00Z",
         )
@@ -338,15 +329,14 @@ class TestRollbackUpdatesState:
                         with patch("agenttree.cli.workflow.delete_session"):
                             with patch("agenttree.agents_repo.sync_agents_repo"):
                                 with patch("agenttree.state.get_active_agent", return_value=None):
-                                    result = cli_runner.invoke(main, ["rollback", "42", "plan", "-y"])
+                                    result = cli_runner.invoke(main, ["rollback", "42", "plan.draft", "-y"])
 
         assert result.exit_code == 0
         # Check the issue.yaml was updated
         yaml_path = temp_issue_dir / "issue.yaml"
         with open(yaml_path) as f:
             data = yaml.safe_load(f)
-        assert data["stage"] == "plan"
-        assert data["substage"] == "draft"  # first substage of plan
+        assert data["stage"] == "plan.draft"
 
     def test_clears_pr_metadata(self, cli_runner, mock_config, temp_issue_dir):
         """Should clear PR metadata when rolling back."""
@@ -357,8 +347,7 @@ class TestRollbackUpdatesState:
             id="42",
             slug="test-issue",
             title="Test",
-            stage="implementation_review",
-            substage=None,
+            stage="implement.review",
             created="2026-01-01T00:00:00Z",
             updated="2026-01-01T00:00:00Z",
             pr_number=123,
@@ -369,8 +358,7 @@ class TestRollbackUpdatesState:
         yaml_path = temp_issue_dir / "issue.yaml"
         with open(yaml_path) as f:
             data = yaml.safe_load(f)
-        data["stage"] = "implementation_review"
-        data["substage"] = None
+        data["stage"] = "implement.review"
         data["pr_number"] = 123
         data["pr_url"] = "https://github.com/org/repo/pull/123"
         with open(yaml_path, "w") as f:
@@ -383,7 +371,7 @@ class TestRollbackUpdatesState:
                         with patch("agenttree.cli.workflow.delete_session"):
                             with patch("agenttree.agents_repo.sync_agents_repo"):
                                 with patch("agenttree.state.get_active_agent", return_value=None):
-                                    result = cli_runner.invoke(main, ["rollback", "42", "implement", "-y"])
+                                    result = cli_runner.invoke(main, ["rollback", "42", "implement.code", "-y"])
 
         assert result.exit_code == 0
         # Check the issue.yaml had PR metadata cleared
@@ -406,8 +394,7 @@ class TestRollbackHandlesAgent:
             id="42",
             slug="test-issue",
             title="Test",
-            stage="implement",
-            substage="code",
+            stage="implement.code",
             assigned_agent="1",
             created="2026-01-01T00:00:00Z",
             updated="2026-01-01T00:00:00Z",
@@ -432,7 +419,7 @@ class TestRollbackHandlesAgent:
                             with patch("agenttree.agents_repo.sync_agents_repo"):
                                 with patch("agenttree.state.get_active_agents_for_issue", return_value=[mock_agent]):
                                     with patch("agenttree.state.unregister_all_agents_for_issue", side_effect=capture_unregister):
-                                        result = cli_runner.invoke(main, ["rollback", "42", "research", "-y"])
+                                        result = cli_runner.invoke(main, ["rollback", "42", "explore.research", "-y"])
 
         assert result.exit_code == 0
         assert agent_unregistered is True
@@ -451,8 +438,7 @@ class TestRollbackWorktreeReset:
             id="42",
             slug="test-issue",
             title="Test",
-            stage="implement",
-            substage="code",
+            stage="implement.code",
             worktree_dir="/path/to/worktree",
             created="2026-01-01T00:00:00Z",
             updated="2026-01-01T00:00:00Z",
@@ -484,7 +470,7 @@ class TestRollbackWorktreeReset:
                                     with patch("agenttree.state.unregister_all_agents_for_issue"):
                                         with patch("subprocess.run", side_effect=mock_run):
                                             result = cli_runner.invoke(
-                                                main, ["rollback", "42", "research", "-y", "--reset-worktree"]
+                                                main, ["rollback", "42", "explore.research", "-y", "--reset-worktree"]
                                             )
 
         assert result.exit_code == 0
@@ -499,8 +485,7 @@ class TestRollbackWorktreeReset:
             id="42",
             slug="test-issue",
             title="Test",
-            stage="implement",
-            substage="code",
+            stage="implement.code",
             worktree_dir="/path/to/worktree",
             created="2026-01-01T00:00:00Z",
             updated="2026-01-01T00:00:00Z",
@@ -524,8 +509,8 @@ class TestRollbackWorktreeReset:
                             with patch("agenttree.agents_repo.sync_agents_repo"):
                                 with patch("agenttree.state.get_active_agent", return_value=None):
                                     with patch("subprocess.run", side_effect=mock_run):
-                                        # Rolling back to plan (before implement) but with --keep-changes
-                                        result = cli_runner.invoke(main, ["rollback", "42", "plan", "-y", "--keep-changes"])
+                                        # Rolling back to plan.draft (before implement) but with --keep-changes
+                                        result = cli_runner.invoke(main, ["rollback", "42", "plan.draft", "-y", "--keep-changes"])
 
         # With --keep-changes, git reset should not be called even for pre-implement rollback
         assert git_reset_called is False
@@ -543,8 +528,7 @@ class TestRollbackCLIIntegration:
             id="42",
             slug="test-issue",
             title="Test",
-            stage="implement",
-            substage="code",
+            stage="implement.code",
             created="2026-01-01T00:00:00Z",
             updated="2026-01-01T00:00:00Z",
         )
@@ -555,7 +539,7 @@ class TestRollbackCLIIntegration:
                     with patch("agenttree.cli.workflow.get_issue_dir", return_value=temp_issue_dir):
                         with patch("agenttree.state.get_active_agent", return_value=None):
                             # Send 'n' to decline confirmation
-                            result = cli_runner.invoke(main, ["rollback", "42", "research"], input="n\n")
+                            result = cli_runner.invoke(main, ["rollback", "42", "explore.research"], input="n\n")
 
         # Should prompt for confirmation and abort (Cancelled or Aborted)
         assert "Cancelled" in result.output or "Aborted" in result.output or result.exit_code != 0
@@ -569,8 +553,7 @@ class TestRollbackCLIIntegration:
             id="42",
             slug="test-issue",
             title="Test",
-            stage="implement",
-            substage="code",
+            stage="implement.code",
             created="2026-01-01T00:00:00Z",
             updated="2026-01-01T00:00:00Z",
         )
@@ -580,7 +563,7 @@ class TestRollbackCLIIntegration:
                 with patch("agenttree.cli.workflow.is_running_in_container", return_value=False):
                     with patch("agenttree.cli.workflow.get_issue_dir", return_value=temp_issue_dir):
                         with patch("agenttree.state.get_active_agent", return_value=None):
-                            result = cli_runner.invoke(main, ["rollback", "42", "research"], input="n\n")
+                            result = cli_runner.invoke(main, ["rollback", "42", "explore.research"], input="n\n")
 
         # Should show files to archive or the target stage
         assert "spec.md" in result.output or "research" in result.output
@@ -594,8 +577,7 @@ class TestRollbackCLIIntegration:
             id="42",
             slug="test-issue",
             title="Test",
-            stage="implement",
-            substage="code",
+            stage="implement.code",
             created="2026-01-01T00:00:00Z",
             updated="2026-01-01T00:00:00Z",
         )
@@ -607,7 +589,7 @@ class TestRollbackCLIIntegration:
                         with patch("agenttree.cli.workflow.delete_session"):
                             with patch("agenttree.agents_repo.sync_agents_repo"):
                                 with patch("agenttree.state.get_active_agent", return_value=None):
-                                    result = cli_runner.invoke(main, ["rollback", "42", "research", "-y"])
+                                    result = cli_runner.invoke(main, ["rollback", "42", "explore.research", "-y"])
 
         assert result.exit_code == 0
         assert "research" in result.output.lower() or "rolled back" in result.output.lower()
