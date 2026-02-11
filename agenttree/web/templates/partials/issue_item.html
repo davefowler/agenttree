@@ -11,8 +11,9 @@ Optional:
    data-issue="{{ issue.number }}"
    data-stage="{{ issue.stage.value }}"
    data-has-agent="{{ 'true' if issue.tmux_active else 'false' }}"
+   style="--stage-color: {{ stage_color(issue.stage.value) }}"
    {% if draggable %}
-   draggable="{{ 'true' if issue.stage.value in ['plan_review', 'implementation_review'] else 'false' }}"
+   draggable="{{ 'true' if issue.is_review else 'false' }}"
    {% endif %}>
     <div class="issue-header">
         <div class="issue-header-left">

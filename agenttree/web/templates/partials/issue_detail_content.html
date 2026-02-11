@@ -26,10 +26,7 @@
             {% endif %}
             <div class="detail-meta-row">
                 <div class="detail-meta">
-                    <span>Stage: <span class="stage-tag">{{ (issue.stage if issue.stage is string else issue.stage.value) | stage_name }}</span></span>
-                    {% if issue.substage %}
-                    <span class="substage-pill">{{ issue.substage | replace('_', ' ') | title }}</span>
-                    {% endif %}
+                    <span>Stage: <span class="stage-tag">{{ (issue.stage if issue.stage is string else issue.stage.value) | stage_name }}{% if issue.substage %} &rsaquo; {{ issue.substage | replace('_', ' ') | title }}{% endif %}</span></span>
                     <span>Priority:
                         <select class="priority-select" onchange="updatePriority('{{ issue.number }}', this.value, this)">
                             <option value="low" {% if issue.priority == 'low' %}selected{% endif %}>Low</option>
@@ -38,11 +35,11 @@
                             <option value="critical" {% if issue.priority == 'critical' %}selected{% endif %}>Critical</option>
                         </select>
                     </span>
+                    {% if issue.port and issue.tmux_active %}
+                    <span><a href="http://localhost:{{ issue.port }}" target="_blank" title="http://localhost:{{ issue.port }}">server:{{ issue.port }}</a></span>
+                    {% endif %}
                     {% if issue.pr_url %}
                     <span><a href="{{ issue.pr_url }}" target="_blank">PR #{{ issue.pr_number }}</a> (<a href="{{ issue.pr_url }}/files" target="_blank">diff</a>)</span>
-                    {% endif %}
-                    {% if issue.port and issue.tmux_active %}
-                    <span><a href="http://localhost:{{ issue.port }}" target="_blank" title="http://localhost:{{ issue.port }}">Dev Server :{{ issue.port }}</a></span>
                     {% endif %}
                     {% if issue.dependencies %}
                     <span class="dependency-info">Blocked by:
@@ -111,13 +108,13 @@
         <div class="file-tabs-container">
             <div class="file-tabs" id="file-tabs-{{ issue.number }}">
                 {% for file in files %}
-                <button class="file-tab{% if file.name == active_file.name and not issue.has_worktree %} active{% endif %}"
+                <button class="file-tab{% if file.name == active_file.name %} active{% endif %}"
                         onclick="selectFileTab(event, '{{ issue.number }}', '{{ file.name }}')"
                         data-filename="{{ file.name }}"
-                        data-stage="{{ file.stage }}"
                         data-passed="{{ file.is_passed }}"
+                        {% if file.stage_color %}style="--stage-color: {{ file.stage_color }}"{% endif %}
                         title="{{ file.display_name }}">
-                    {{ file.short_name }}
+                    {{ file.display_name }}
                 </button>
                 {% else %}
                 <span class="no-files">No files found</span>
@@ -133,7 +130,7 @@
             <!-- Mobile file selector dropdown -->
             <select class="mobile-file-select" onchange="selectFileFromDropdown(this, '{{ issue.number }}')">
                 {% for file in files %}
-                <option value="{{ file.name }}"{% if file.name == active_file.name and not issue.has_worktree %} selected{% endif %}>{{ file.display_name }}</option>
+                <option value="{{ file.name }}"{% if file.name == active_file.name %} selected{% endif %}>{{ file.display_name }}</option>
                 {% endfor %}
                 {% if issue.has_worktree %}
                 <option value="changes"{% if files|length == 0 %} selected{% endif %}>Changes</option>

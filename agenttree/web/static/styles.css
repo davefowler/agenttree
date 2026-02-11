@@ -432,48 +432,19 @@ button[disabled] {
     flex-shrink: 0; /* Keep active tab fully visible */
 }
 
-/* Stage-based file tab colors */
-.file-tab[data-stage="define"] {
-    border-top-color: #78716c;
-}
-
-.file-tab[data-stage="research"] {
-    border-top-color: #14b8a6;
-}
-
-.file-tab[data-stage="plan"],
-.file-tab[data-stage="plan_assess"],
-.file-tab[data-stage="plan_revise"] {
-    border-top-color: #60a5fa;
-}
-
-.file-tab[data-stage="implement"] {
-    border-top-color: #8b5cf6;
-}
-
-.file-tab[data-stage="implementation_review"],
-.file-tab[data-stage="independent_code_review"] {
-    border-top-color: #f59e0b;
+/* Stage-based file tab colors (driven by --stage-color CSS variable from config) */
+/* Only apply to non-active tabs so active accent color takes priority */
+.file-tab:not(.active) {
+    border-top-color: var(--stage-color, transparent);
 }
 
 /* Passed-stage tabs are truncated and slightly faded */
-.file-tab[data-passed="true"] {
+.file-tab[data-passed="true"]:not(.active) {
     max-width: 60px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     opacity: 0.8;
-}
-
-/* Active tab overrides stage color with accent */
-.file-tab.active[data-stage] {
-    border-top-color: var(--text-accent);
-}
-
-/* Dark theme overrides for stage colors */
-[data-theme="dark"] .file-tab[data-stage="define"] {
-    border-top-color: #a8a29e;
-}
-
-[data-theme="dark"] .file-tab[data-stage="research"] {
-    border-top-color: #2dd4bf;
 }
 
 .no-files {
@@ -713,15 +684,6 @@ button[disabled] {
     font-size: inherit;
 }
 
-.substage-pill {
-    display: inline-block;
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    padding: 1px 8px;
-    font-size: 12px;
-    color: var(--text-accent);
-    background: var(--bg-tertiary);
-}
 
 .detail-meta .dependency-info,
 .detail-meta .dependent-info {
@@ -1463,53 +1425,9 @@ button[disabled] {
     border-style: dashed;
 }
 
-/* Stage-based left border colors */
-.kanban-column .issue-item[data-stage="backlog"] {
-    border-left-color: #9ca3af;
-}
-
-.kanban-column .issue-item[data-stage="plan"],
-.kanban-column .issue-item[data-stage="planning"] {
-    border-left-color: #60a5fa;
-}
-
-.kanban-column .issue-item[data-stage="plan_review"] {
-    border-left-color: #f59e0b;
-    background: #fffbeb;
-}
-
-.kanban-column .issue-item[data-stage="implement"],
-.kanban-column .issue-item[data-stage="implementing"] {
-    border-left-color: #8b5cf6;
-}
-
-.kanban-column .issue-item[data-stage="implementation_review"] {
-    border-left-color: #f59e0b;
-    background: #fffbeb;
-}
-
-.kanban-column .issue-item[data-stage="accepted"] {
-    border-left-color: #22c55e;
-    background: #f0fdf4;
-}
-
-.kanban-column .issue-item[data-stage="not_doing"] {
-    border-left-color: #ef4444;
-    background: #fef2f2;
-}
-
-/* Dark theme overrides for stage backgrounds */
-[data-theme="dark"] .kanban-column .issue-item[data-stage="plan_review"],
-[data-theme="dark"] .kanban-column .issue-item[data-stage="implementation_review"] {
-    background: #451a03;
-}
-
-[data-theme="dark"] .kanban-column .issue-item[data-stage="accepted"] {
-    background: #052e16;
-}
-
-[data-theme="dark"] .kanban-column .issue-item[data-stage="not_doing"] {
-    background: #450a0a;
+/* Stage-based left border colors (driven by --stage-color CSS variable from config) */
+.kanban-column .issue-item[style*="--stage-color"] {
+    border-left-color: var(--stage-color);
 }
 
 /* Old/completed issues (accepted, not_doing) shown grayed out in search results */
@@ -1764,34 +1682,9 @@ button[disabled] {
     border-left: 3px solid transparent;
 }
 
-.flow-sidebar .issue-item[data-stage="backlog"] {
-    border-left-color: #9ca3af;
-}
-
-.flow-sidebar .issue-item[data-stage="plan"],
-.flow-sidebar .issue-item[data-stage="planning"] {
-    border-left-color: #60a5fa;
-}
-
-.flow-sidebar .issue-item[data-stage="plan_review"] {
-    border-left-color: #f59e0b;
-}
-
-.flow-sidebar .issue-item[data-stage="implement"],
-.flow-sidebar .issue-item[data-stage="implementing"] {
-    border-left-color: #8b5cf6;
-}
-
-.flow-sidebar .issue-item[data-stage="implementation_review"] {
-    border-left-color: #f59e0b;
-}
-
-.flow-sidebar .issue-item[data-stage="accepted"] {
-    border-left-color: #22c55e;
-}
-
-.flow-sidebar .issue-item[data-stage="not_doing"] {
-    border-left-color: #ef4444;
+/* Flow sidebar stage colors (driven by --stage-color CSS variable from config) */
+.flow-sidebar .issue-item[style*="--stage-color"] {
+    border-left-color: var(--stage-color);
 }
 
 /* ==============================================
@@ -2410,26 +2303,9 @@ button[disabled] {
     border-left: 3px solid transparent;
 }
 
-.mobile-container .issue-item[data-stage="backlog"] {
-    border-left-color: #9ca3af;
-}
-
-.mobile-container .issue-item[data-stage="plan"],
-.mobile-container .issue-item[data-stage="planning"] {
-    border-left-color: #60a5fa;
-}
-
-.mobile-container .issue-item[data-stage="plan_review"] {
-    border-left-color: #f59e0b;
-}
-
-.mobile-container .issue-item[data-stage="implement"],
-.mobile-container .issue-item[data-stage="implementing"] {
-    border-left-color: #8b5cf6;
-}
-
-.mobile-container .issue-item[data-stage="implementation_review"] {
-    border-left-color: #f59e0b;
+/* Mobile stage colors (driven by --stage-color CSS variable from config) */
+.mobile-container .issue-item[style*="--stage-color"] {
+    border-left-color: var(--stage-color);
 }
 
 .mobile-container .issue-item .issue-title {
