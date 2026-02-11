@@ -18,6 +18,7 @@ commands:
   files_changed: "git diff --stat main...HEAD | grep -c '|' || echo 0"
   lines_added: "git diff --stat main...HEAD | tail -1 | awk '{print $4}' || echo 0"
   lines_removed: "git diff --stat main...HEAD | tail -1 | awk '{print $6}' || echo 0"
+  duplicates: "uv run pylint --enable=duplicate-code agenttree/ 2>&1 | head -50"
 
 tools:
   claude:
