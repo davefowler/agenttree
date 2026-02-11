@@ -119,6 +119,14 @@ Possible solutions:
                         <input type="text" id="issue-title" name="title"
                                placeholder="Leave blank to auto-generate from description">
                     </div>
+                    <div class="form-group">
+                        <label>Attachments <span class="label-hint">(paste, drag-drop, or click to add)</span></label>
+                        <input type="file" id="attachment-input" multiple accept="image/*,.txt,.log,.md,.json,.yaml,.yml" style="display: none;">
+                        <div id="attachment-dropzone" class="attachment-dropzone">
+                            <span class="dropzone-text">Drop files here or <a href="#" onclick="document.getElementById('attachment-input').click(); return false;">browse</a></span>
+                        </div>
+                        <div id="attachment-preview" class="attachment-preview"></div>
+                    </div>
                     <div class="form-actions">
                         <button type="button" class="btn" onclick="closeNewIssueModal()">Cancel</button>
                         <button type="submit" class="btn btn-primary" id="create-issue-btn">Create Issue</button>
@@ -325,6 +333,47 @@ Possible solutions:
             });
         }
 
+        // Attachment handling for new issues
+        let pendingAttachments = [];
+
+        function addAttachment(file) {
+            // Check file size (10MB limit)
+            if (file.size > 10 * 1024 * 1024) {
+                alert('File ' + file.name + ' exceeds 10MB limit');
+                return;
+            }
+            pendingAttachments.push(file);
+            updateAttachmentPreview();
+        }
+
+        function removeAttachment(index) {
+            pendingAttachments.splice(index, 1);
+            updateAttachmentPreview();
+        }
+
+        function updateAttachmentPreview() {
+            const preview = document.getElementById('attachment-preview');
+            if (pendingAttachments.length === 0) {
+                preview.innerHTML = '';
+                return;
+            }
+
+            preview.innerHTML = pendingAttachments.map((file, index) => {
+                const isImage = file.type.startsWith('image/');
+                const iconHtml = isImage
+                    ? '<span class="attachment-icon">🖼️</span>'
+                    : '<span class="attachment-icon">📄</span>';
+                return '<div class="attachment-item">' +
+                    iconHtml +
+                    '<span class="attachment-name">' + file.name + '</span>' +
+                    '<button type="button" class="attachment-remove" onclick="removeAttachment(' + index + ')">&times;</button>' +
+                    '</div>';
+            }).join('');
+        }
+
+        // Make removeAttachment available globally
+        window.removeAttachment = removeAttachment;
+
         // New issue modal functions
         window.openNewIssueModal = function() {
             document.getElementById('new-issue-modal').classList.add('active');
@@ -335,12 +384,20 @@ Possible solutions:
             document.getElementById('new-issue-modal').classList.remove('active');
             document.getElementById('new-issue-form').reset();
             document.getElementById('new-issue-error').textContent = '';
+            // Clear pending attachments
+            pendingAttachments = [];
+            updateAttachmentPreview();
         };
 
         window.submitNewIssue = function(event) {
             event.preventDefault();
             const form = document.getElementById('new-issue-form');
             const formData = new FormData(form);
+
+            // Add pending attachments to form data
+            pendingAttachments.forEach(file => {
+                formData.append('files', file);
+            });
 
             // Close modal immediately
             window.closeNewIssueModal();
@@ -354,6 +411,48 @@ Possible solutions:
             // Reload after short delay to show new issue
             setTimeout(() => location.reload(), 1000);
         };
+
+        // File input handler
+        document.getElementById('attachment-input').addEventListener('change', function(e) {
+            for (const file of e.target.files) {
+                addAttachment(file);
+            }
+            e.target.value = ''; // Reset input
+        });
+
+        // Paste handler for textarea
+        document.getElementById('issue-description').addEventListener('paste', function(e) {
+            const items = e.clipboardData.items;
+            for (const item of items) {
+                if (item.type.startsWith('image/')) {
+                    const file = item.getAsFile();
+                    if (file) {
+                        addAttachment(file);
+                    }
+                }
+            }
+        });
+
+        // Drag and drop handlers for dropzone
+        const dropzone = document.getElementById('attachment-dropzone');
+
+        dropzone.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            dropzone.classList.add('dragover');
+        });
+
+        dropzone.addEventListener('dragleave', function(e) {
+            e.preventDefault();
+            dropzone.classList.remove('dragover');
+        });
+
+        dropzone.addEventListener('drop', function(e) {
+            e.preventDefault();
+            dropzone.classList.remove('dragover');
+            for (const file of e.dataTransfer.files) {
+                addAttachment(file);
+            }
+        });
 
         // Stage toggle functionality — column data-stage values are top-level stage groups
         // Review stages: columns whose issues commonly need human review
