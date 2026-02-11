@@ -114,7 +114,7 @@ def auto_start_agents(agents_dir: Path, **kwargs: Any) -> None:
     """
     import subprocess
     from agenttree.config import load_config
-    from agenttree.issues import list_issues, BACKLOG, ACCEPTED, NOT_DOING
+    from agenttree.issues import list_issues
     from agenttree.tmux import session_exists
     
     config = load_config()
@@ -122,7 +122,7 @@ def auto_start_agents(agents_dir: Path, **kwargs: Any) -> None:
     # Get active issues (not parking lot stages)
     issues = [
         i for i in list_issues(sync=False)
-        if i.stage not in (BACKLOG, ACCEPTED, NOT_DOING)
+        if not config.is_parking_lot(i.stage)
     ]
     
     started = 0
@@ -280,16 +280,16 @@ def check_stalled_agents(
     import yaml
     from datetime import datetime, timezone
     from agenttree.config import load_config
-    from agenttree.issues import list_issues, BACKLOG, ACCEPTED, NOT_DOING
+    from agenttree.issues import list_issues
     from agenttree.tmux import session_exists, send_message, is_claude_running
     
     config = load_config()
     manager_session = config.get_manager_tmux_session()
     
-    # Get active issues (not backlog/accepted/not_doing)
+    # Get active issues (not parking lot stages)
     issues = [
         i for i in list_issues(sync=False)
-        if i.stage not in (BACKLOG, ACCEPTED, NOT_DOING)
+        if not config.is_parking_lot(i.stage)
     ]
     
     stalled: list[dict[str, Any]] = []

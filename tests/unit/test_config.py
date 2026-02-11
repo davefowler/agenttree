@@ -504,7 +504,7 @@ class TestModelPerStageConfig:
 
         config = Config(
             default_model="opus",
-            stages=[StageConfig(name="research")]
+            stages={"research": StageConfig(name="research")}
         )
         assert config.model_for("research") == "opus"
 
@@ -514,7 +514,7 @@ class TestModelPerStageConfig:
 
         config = Config(
             default_model="opus",
-            stages=[StageConfig(name="research", model="haiku")]
+            stages={"research": StageConfig(name="research", model="haiku")}
         )
         assert config.model_for("research") == "haiku"
 
@@ -524,17 +524,17 @@ class TestModelPerStageConfig:
 
         config = Config(
             default_model="opus",
-            stages=[
-                StageConfig(
+            stages={
+                "implement": StageConfig(
                     name="implement",
                     model="sonnet",
                     substages={
                         "code_review": SubstageConfig(name="code_review", model="opus")
                     }
                 )
-            ]
+            }
         )
-        assert config.model_for("implement", "code_review") == "opus"
+        assert config.model_for("implement.code_review") == "opus"
 
     def test_model_for_substage_inherits_from_stage(self) -> None:
         """When substage has no model but stage does, use stage model."""
@@ -542,21 +542,21 @@ class TestModelPerStageConfig:
 
         config = Config(
             default_model="opus",
-            stages=[
-                StageConfig(
+            stages={
+                "implement": StageConfig(
                     name="implement",
                     model="sonnet",
                     substages={
                         "code": SubstageConfig(name="code")
                     }
                 )
-            ]
+            }
         )
-        assert config.model_for("implement", "code") == "sonnet"
+        assert config.model_for("implement.code") == "sonnet"
 
     def test_model_for_unknown_stage(self) -> None:
         """model_for() should return default_model for unknown stage name."""
-        config = Config(default_model="opus", stages=[])
+        config = Config(default_model="opus", stages={})
         assert config.model_for("nonexistent") == "opus"
 
     def test_model_from_yaml(self, tmp_path: Path) -> None:
@@ -564,14 +564,16 @@ class TestModelPerStageConfig:
         config_file = tmp_path / ".agenttree.yaml"
         config_content = """
 default_model: sonnet
-stages:
-  - name: research
-    model: haiku
-  - name: implement
-    model: opus
-    substages:
-      code_review:
-        model: gpt-5.2
+flows:
+  default:
+    stages:
+      research:
+        model: haiku
+      implement:
+        model: opus
+        substages:
+          code_review:
+            model: gpt-5.2
 """
         config_file.write_text(config_content)
 
@@ -579,7 +581,7 @@ stages:
         assert config.default_model == "sonnet"
         assert config.model_for("research") == "haiku"
         assert config.model_for("implement") == "opus"
-        assert config.model_for("implement", "code_review") == "gpt-5.2"
+        assert config.model_for("implement.code_review") == "gpt-5.2"
 
 
 class TestRedirectOnlyStages:
@@ -590,35 +592,38 @@ class TestRedirectOnlyStages:
         from agenttree.config import Config, StageConfig
 
         config = Config(
-            stages=[
-                StageConfig(name="implement"),
-                StageConfig(name="independent_code_review"),
-                StageConfig(name="address_independent_review", redirect_only=True),  # Should be skipped
-                StageConfig(name="implementation_review"),
-                StageConfig(name="accepted", is_parking_lot=True),
-            ]
+            stages={
+                "implement": StageConfig(name="implement"),
+                "independent_code_review": StageConfig(name="independent_code_review"),
+                "address_independent_review": StageConfig(name="address_independent_review", redirect_only=True),  # Should be skipped
+                "implementation_review": StageConfig(name="implementation_review"),
+                "accepted": StageConfig(name="accepted", is_parking_lot=True),
+            }
         )
 
         # From independent_code_review, should go to implementation_review, skipping address_independent_review
-        next_stage, next_substage = config.get_next_stage("independent_code_review")
-        assert next_stage == "implementation_review"
-        assert next_substage is None
+        next_dot_path, is_human_review = config.get_next_stage("independent_code_review")
+        assert next_dot_path == "implementation_review"
+        assert is_human_review is False
 
     def test_redirect_only_stage_not_included_in_normal_order(self) -> None:
         """redirect_only stages should be accessible but skipped during normal progression."""
         from agenttree.config import Config, StageConfig
 
         config = Config(
-            stages=[
-                StageConfig(name="implement"),
-                StageConfig(name="review", redirect_only=True),
-                StageConfig(name="accepted", is_parking_lot=True),
-            ]
+            stages={
+                "implement": StageConfig(name="implement"),
+                "review": StageConfig(name="review", redirect_only=True),
+                "accepted": StageConfig(name="accepted", is_parking_lot=True),
+            }
         )
 
         # From implement, should go directly to accepted, skipping redirect_only review
-        next_stage, next_substage = config.get_next_stage("implement")
-        assert next_stage == "accepted"
+        # Note: get_next_stage returns (dot_path, is_human_review)
+        next_dot_path, human_review = config.get_next_stage("implement")
+        assert next_dot_path == "accepted"
+        # accepted is parking_lot but human_review is False
+        assert human_review is False
         # Verify accepted is indeed a parking lot
         assert config.is_parking_lot("accepted") is True
         # Check human_review via config lookup
@@ -629,16 +634,16 @@ class TestRedirectOnlyStages:
         from agenttree.config import Config, StageConfig
 
         config = Config(
-            stages=[
-                StageConfig(name="implement"),
-                StageConfig(
+            stages={
+                "implement": StageConfig(name="implement"),
+                "address_review": StageConfig(
                     name="address_review",
                     redirect_only=True,
                     role="developer",
                     output="response.md"
                 ),
-                StageConfig(name="accepted", is_parking_lot=True),
-            ]
+                "accepted": StageConfig(name="accepted", is_parking_lot=True),
+            }
         )
 
         # Stage should exist and be retrievable
@@ -653,18 +658,18 @@ class TestRedirectOnlyStages:
         from agenttree.config import Config, StageConfig
 
         config = Config(
-            stages=[
-                StageConfig(name="implement"),
-                StageConfig(name="address_review1", redirect_only=True),
-                StageConfig(name="address_review2", redirect_only=True),
-                StageConfig(name="final_review"),
-                StageConfig(name="accepted", is_parking_lot=True),
-            ]
+            stages={
+                "implement": StageConfig(name="implement"),
+                "address_review1": StageConfig(name="address_review1", redirect_only=True),
+                "address_review2": StageConfig(name="address_review2", redirect_only=True),
+                "final_review": StageConfig(name="final_review"),
+                "accepted": StageConfig(name="accepted", is_parking_lot=True),
+            }
         )
 
         # From implement, should skip both redirect_only stages
-        next_stage, next_substage = config.get_next_stage("implement")
-        assert next_stage == "final_review"
+        next_dot_path, is_human_review = config.get_next_stage("implement")
+        assert next_dot_path == "final_review"
 
     def test_redirect_only_defaults_to_false(self) -> None:
         """StageConfig redirect_only should default to False."""
@@ -726,103 +731,103 @@ class TestConditionalStages:
         from agenttree.config import Config, StageConfig
 
         config = Config(
-            stages=[
-                StageConfig(name="implement"),
-                StageConfig(name="ui_review", condition="{{ needs_ui_review }}"),
-                StageConfig(name="final_review"),
-                StageConfig(name="accepted", terminal=True),
-            ]
+            stages={
+                "implement": StageConfig(name="implement"),
+                "ui_review": StageConfig(name="ui_review", condition="{{ needs_ui_review }}"),
+                "final_review": StageConfig(name="final_review"),
+                "accepted": StageConfig(name="accepted", terminal=True),
+            }
         )
 
         # Context where needs_ui_review is False
         context = {"needs_ui_review": False}
 
         # From implement, should skip ui_review (condition is false) and go to final_review
-        next_stage, next_substage = config.get_next_stage(
+        next_dot_path, is_human_review = config.get_next_stage(
             "implement", issue_context=context
         )
-        assert next_stage == "final_review"
+        assert next_dot_path == "final_review"
 
     def test_get_next_stage_runs_true_condition(self) -> None:
         """Stage with condition evaluating to true should be entered."""
         from agenttree.config import Config, StageConfig
 
         config = Config(
-            stages=[
-                StageConfig(name="implement"),
-                StageConfig(name="ui_review", condition="{{ needs_ui_review }}"),
-                StageConfig(name="final_review"),
-                StageConfig(name="accepted", terminal=True),
-            ]
+            stages={
+                "implement": StageConfig(name="implement"),
+                "ui_review": StageConfig(name="ui_review", condition="{{ needs_ui_review }}"),
+                "final_review": StageConfig(name="final_review"),
+                "accepted": StageConfig(name="accepted", terminal=True),
+            }
         )
 
         # Context where needs_ui_review is True
         context = {"needs_ui_review": True}
 
         # From implement, should go to ui_review (condition is true)
-        next_stage, next_substage = config.get_next_stage(
+        next_dot_path, is_human_review = config.get_next_stage(
             "implement", issue_context=context
         )
-        assert next_stage == "ui_review"
+        assert next_dot_path == "ui_review"
 
     def test_get_next_stage_no_condition_runs(self) -> None:
         """Stage without condition field should always run (backward compatible)."""
         from agenttree.config import Config, StageConfig
 
         config = Config(
-            stages=[
-                StageConfig(name="implement"),
-                StageConfig(name="review"),  # No condition - should always run
-                StageConfig(name="accepted", terminal=True),
-            ]
+            stages={
+                "implement": StageConfig(name="implement"),
+                "review": StageConfig(name="review"),  # No condition - should always run
+                "accepted": StageConfig(name="accepted", terminal=True),
+            }
         )
 
         # Even with empty context, stage without condition should run
-        next_stage, next_substage = config.get_next_stage(
+        next_dot_path, is_human_review = config.get_next_stage(
             "implement", issue_context={}
         )
-        assert next_stage == "review"
+        assert next_dot_path == "review"
 
     def test_get_next_stage_no_context_skips_condition(self) -> None:
         """Stage with condition should be skipped when no context provided."""
         from agenttree.config import Config, StageConfig
 
         config = Config(
-            stages=[
-                StageConfig(name="implement"),
-                StageConfig(name="ui_review", condition="{{ needs_ui_review }}"),
-                StageConfig(name="final_review"),
-                StageConfig(name="accepted", terminal=True),
-            ]
+            stages={
+                "implement": StageConfig(name="implement"),
+                "ui_review": StageConfig(name="ui_review", condition="{{ needs_ui_review }}"),
+                "final_review": StageConfig(name="final_review"),
+                "accepted": StageConfig(name="accepted", terminal=True),
+            }
         )
 
         # No context provided - condition should evaluate to falsy, stage skipped
-        next_stage, next_substage = config.get_next_stage(
+        next_dot_path, is_human_review = config.get_next_stage(
             "implement"
         )
-        assert next_stage == "final_review"
+        assert next_dot_path == "final_review"
 
     def test_get_next_stage_missing_context_var_skips(self) -> None:
         """Condition referencing undefined variable should evaluate to falsy."""
         from agenttree.config import Config, StageConfig
 
         config = Config(
-            stages=[
-                StageConfig(name="implement"),
-                StageConfig(name="ui_review", condition="{{ some_undefined_var }}"),
-                StageConfig(name="final_review"),
-                StageConfig(name="accepted", terminal=True),
-            ]
+            stages={
+                "implement": StageConfig(name="implement"),
+                "ui_review": StageConfig(name="ui_review", condition="{{ some_undefined_var }}"),
+                "final_review": StageConfig(name="final_review"),
+                "accepted": StageConfig(name="accepted", terminal=True),
+            }
         )
 
         # Context without the variable referenced in condition
         context = {"other_var": True}
 
         # Missing variable should evaluate to falsy, stage skipped
-        next_stage, next_substage = config.get_next_stage(
+        next_dot_path, is_human_review = config.get_next_stage(
             "implement", issue_context=context
         )
-        assert next_stage == "final_review"
+        assert next_dot_path == "final_review"
 
     def test_get_next_stage_invalid_condition_raises(self) -> None:
         """Invalid Jinja in condition should raise - config errors crash loudly."""
@@ -831,12 +836,12 @@ class TestConditionalStages:
         from agenttree.config import Config, StageConfig
 
         config = Config(
-            stages=[
-                StageConfig(name="implement"),
-                StageConfig(name="ui_review", condition="{{ invalid {{ syntax }}"),
-                StageConfig(name="final_review"),
-                StageConfig(name="accepted", terminal=True),
-            ]
+            stages={
+                "implement": StageConfig(name="implement"),
+                "ui_review": StageConfig(name="ui_review", condition="{{ invalid {{ syntax }}"),
+                "final_review": StageConfig(name="final_review"),
+                "accepted": StageConfig(name="accepted", terminal=True),
+            }
         )
 
         with pytest.raises(TemplateSyntaxError):
@@ -847,30 +852,32 @@ class TestConditionalStages:
         from agenttree.config import Config, StageConfig
 
         config = Config(
-            stages=[
-                StageConfig(name="implement"),
-                StageConfig(name="address_review", redirect_only=True, condition="{{ True }}"),
-                StageConfig(name="final_review"),
-                StageConfig(name="accepted", terminal=True),
-            ]
+            stages={
+                "implement": StageConfig(name="implement"),
+                "address_review": StageConfig(name="address_review", redirect_only=True, condition="{{ True }}"),
+                "final_review": StageConfig(name="final_review"),
+                "accepted": StageConfig(name="accepted", terminal=True),
+            }
         )
 
         # redirect_only stages are always skipped in normal progression, regardless of condition
-        next_stage, next_substage = config.get_next_stage(
+        next_dot_path, is_human_review = config.get_next_stage(
             "implement", issue_context={"something": True}
         )
-        assert next_stage == "final_review"
+        assert next_dot_path == "final_review"
 
     def test_condition_from_yaml(self, tmp_path: Path) -> None:
         """condition config should load correctly from YAML file."""
         config_file = tmp_path / ".agenttree.yaml"
         config_content = """
-stages:
-  - name: implement
-  - name: ui_review
-    condition: "{{ needs_ui_review }}"
-  - name: accepted
-    terminal: true
+flows:
+  default:
+    stages:
+      implement: {}
+      ui_review:
+        condition: "{{ needs_ui_review }}"
+      accepted:
+        terminal: true
 """
         config_file.write_text(config_content)
 
@@ -909,7 +916,7 @@ model_tiers:
         config = Config(
             default_model="opus",
             model_tiers={"high": "opus", "medium": "sonnet", "low": "haiku"},
-            stages=[StageConfig(name="research", model_tier="low")]
+            stages={"research": StageConfig(name="research", model_tier="low")}
         )
         assert config.model_for("research") == "haiku"
 
@@ -918,7 +925,7 @@ model_tiers:
         config = Config(
             default_model="opus",
             model_tiers={"high": "opus", "medium": "sonnet", "low": "haiku"},
-            stages=[StageConfig(name="research", model="gpt-5", model_tier="low")]
+            stages={"research": StageConfig(name="research", model="gpt-5", model_tier="low")}
         )
         assert config.model_for("research") == "gpt-5"
 
@@ -927,7 +934,7 @@ model_tiers:
         config = Config(
             default_model="opus",
             model_tiers={"fast": "haiku"},
-            stages=[StageConfig(name="research", model_tier="fast")]
+            stages={"research": StageConfig(name="research", model_tier="fast")}
         )
         assert config.model_for("research") == "haiku"
 
@@ -936,7 +943,7 @@ model_tiers:
         config = Config(
             default_model="opus",
             model_tiers={"high": "opus"},
-            stages=[StageConfig(name="research", model_tier="ultra")]  # Not in model_tiers
+            stages={"research": StageConfig(name="research", model_tier="ultra")}  # Not in model_tiers
         )
         assert config.model_for("research") == "opus"
 
@@ -945,18 +952,18 @@ model_tiers:
         config = Config(
             default_model="opus",
             model_tiers={"high": "opus", "low": "haiku"},
-            stages=[
-                StageConfig(
+            stages={
+                "implement": StageConfig(
                     name="implement",
                     model_tier="high",
                     substages={
                         "code_review": SubstageConfig(name="code_review", model_tier="low")
                     }
                 )
-            ]
+            }
         )
         assert config.model_for("implement") == "opus"  # Stage tier
-        assert config.model_for("implement", "code_review") == "haiku"  # Substage tier
+        assert config.model_for("implement.code_review") == "haiku"  # Substage tier
 
     # Stage/Substage tier field tests
 
@@ -982,7 +989,7 @@ model_tiers:
         config = Config(
             default_model="opus",
             model_tiers={},  # No tier mappings
-            stages=[StageConfig(name="research", model_tier="high")]
+            stages={"research": StageConfig(name="research", model_tier="high")}
         )
         assert config.model_for("research") == "opus"  # Falls through to default
 
@@ -991,7 +998,7 @@ model_tiers:
         config = Config(
             default_model="opus",
             model_tiers={"high": "opus"},
-            stages=[StageConfig(name="research", model="sonnet", model_tier=None)]
+            stages={"research": StageConfig(name="research", model="sonnet", model_tier=None)}
         )
         assert config.model_for("research") == "sonnet"
 
@@ -1000,8 +1007,8 @@ model_tiers:
         config = Config(
             default_model="opus",
             model_tiers={"low": "haiku"},
-            stages=[
-                StageConfig(
+            stages={
+                "implement": StageConfig(
                     name="implement",
                     substages={
                         "code_review": SubstageConfig(
@@ -1011,6 +1018,6 @@ model_tiers:
                         )
                     }
                 )
-            ]
+            }
         )
-        assert config.model_for("implement", "code_review") == "sonnet"
+        assert config.model_for("implement.code_review") == "sonnet"

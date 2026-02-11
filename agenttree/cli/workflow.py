@@ -210,26 +210,18 @@ def stage_next(issue_id: str | None, reassess: bool) -> None:
         mark_session_oriented(issue_id, issue.stage)
         return
 
-    # Block agents from advancing past human_review stages — only `agenttree approve` can do that
-    current_stage_config = config.get_stage(issue.stage)
-    if current_stage_config and current_stage_config.human_review and is_running_in_container():
-        console.print(f"\n[yellow]⏳ Waiting for human review at {issue.stage}[/yellow]")
-        console.print(f"[dim]This stage requires human approval.[/dim]")
-        console.print(f"[dim]Use 'agenttree approve {issue_id}' from the host to advance.[/dim]")
-        return
-
     # Handle --reassess flag for plan revision cycling
     if reassess:
         if issue.stage != "plan.revise":
             console.print(f"[red]--reassess only works from plan.revise stage[/red]")
             sys.exit(1)
-        next_stage = "plan_assess"
-        next_substage = None
+        next_stage = "plan.assess"
+        is_human_review = False
     else:
         # Calculate next stage (pass issue context for condition evaluation)
         issue_ctx = get_issue_context(issue, include_docs=False)
-        next_stage, next_substage = get_next_stage(
-            issue.stage, issue.substage, issue.flow, issue_context=issue_ctx
+        next_stage, is_human_review = get_next_stage(
+            issue.stage, issue.flow, issue_context=issue_ctx
         )
 
     # Check if we're already at the next stage (no change)
@@ -242,11 +234,10 @@ def stage_next(issue_id: str | None, reassess: bool) -> None:
     try:
         execute_exit_hooks(issue, from_stage)
     except StageRedirect as redirect:
-        # Redirect to a different stage/substage instead of normal next
-        redirect_display = f"{redirect.target_stage}.{redirect.target_substage}" if redirect.target_substage else redirect.target_stage
-        console.print(f"[yellow]Redirecting to {redirect_display}: {redirect.reason}[/yellow]")
-        next_stage = redirect.target_stage
-        next_substage = redirect.target_substage
+        # Redirect to a different stage instead of normal next
+        console.print(f"[yellow]Redirecting to {redirect.target}: {redirect.reason}[/yellow]")
+        next_stage = redirect.target
+        is_human_review = False  # Redirect target is typically not human review
     except ValidationError as e:
         console.print(f"[red]Cannot proceed: {e}[/red]")
         sys.exit(1)
@@ -261,7 +252,7 @@ def stage_next(issue_id: str | None, reassess: bool) -> None:
                 console.print(f"[dim]Saved tmux history to {history_file.name}[/dim]")
 
     # Update issue stage in database
-    updated = update_issue_stage(issue_id, next_stage, next_substage)
+    updated = update_issue_stage(issue_id, next_stage)
     if not updated:
         console.print(f"[red]Failed to update issue[/red]")
         sys.exit(1)
@@ -274,23 +265,16 @@ def stage_next(issue_id: str | None, reassess: bool) -> None:
 
     console.print(f"[green]✓ Moved to {next_stage}[/green]")
 
-    # Check if next stage requires waiting (human review or different role)
-    # Look up human_review from config - no flag tracking needed
-    next_stage_config = config.get_stage(next_stage)
-    if next_stage_config and is_running_in_container():
-        if next_stage_config.human_review:
-            # Human review stage — agent must stop and wait for human approval
+    # Check if next stage requires a different role
+    next_role = config.role_for(next_stage)
+    if next_role != "developer" and is_running_in_container():
+        if next_role == "manager" or is_human_review:
             console.print(f"\n[yellow]⏳ Waiting for human review[/yellow]")
             console.print(f"[dim]Your work has been submitted for review.[/dim]")
             console.print(f"[dim]You will receive instructions when the review is complete.[/dim]")
-            return
-        elif next_stage_config.role != "developer":
-            if next_stage_config.role == "manager":
-                console.print(f"\n[yellow]⏳ Waiting for manager[/yellow]")
-                console.print(f"[dim]The manager will handle this stage.[/dim]")
-            else:
-                console.print(f"\n[yellow]⏳ Waiting for '{next_stage_config.role}' agent[/yellow]")
-                console.print(f"[dim]The '{next_stage_config.role}' agent will handle the next stage.[/dim]")
+        else:
+            console.print(f"\n[yellow]⏳ Waiting for '{next_role}' agent[/yellow]")
+            console.print(f"[dim]The '{next_role}' agent will handle the next stage.[/dim]")
             console.print(f"[dim]You will receive instructions when that stage is complete.[/dim]")
             return
 
@@ -349,8 +333,8 @@ def approve_issue(issue_id: str, skip_approval: bool) -> None:
 
     # Calculate next stage (pass issue context for condition evaluation)
     issue_ctx = get_issue_context(issue, include_docs=False)
-    next_stage, next_substage = get_next_stage(
-        issue.stage, issue.substage, issue.flow, issue_context=issue_ctx
+    next_stage, _ = get_next_stage(
+        issue.stage, issue.flow, issue_context=issue_ctx
     )
 
     # Use consolidated transition_issue() — handles exit hooks, stage update, enter hooks
@@ -363,8 +347,7 @@ def approve_issue(issue_id: str, skip_approval: bool) -> None:
             trigger="cli",
         )
     except StageRedirect as redirect:
-        redirect_display = f"{redirect.target_stage}.{redirect.target_substage}" if redirect.target_substage else redirect.target_stage
-        console.print(f"[yellow]Redirecting to {redirect_display}: {redirect.reason}[/yellow]")
+        console.print(f"[yellow]Redirecting to {redirect.target}: {redirect.reason}[/yellow]")
         return
     except ValidationError as e:
         console.print(f"[red]Cannot approve: {e}[/red]")
@@ -728,13 +711,6 @@ def rollback_issue(
         console.print(f"[red]Cannot rollback to redirect-only stage '{stage_name}'[/red]")
         sys.exit(1)
 
-    # First substage of target stage (for issue.yaml update)
-    target_substage: str | None = None
-    if target_stage_config:
-        substages = target_stage_config.substage_order()
-        if substages:
-            target_substage = substages[0]
-
     # Collect output files from stages after target that are being rolled back
     stages_to_archive = flow_stages[target_idx + 1 : current_idx + 1]
 
@@ -824,7 +800,6 @@ def rollback_issue(
             # Update stage and substage (first substage of target, or clear)
             now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
             data["stage"] = stage_name
-            data["substage"] = target_substage
             data["updated"] = now
 
             # Add rollback history entry

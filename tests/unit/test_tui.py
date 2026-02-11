@@ -30,7 +30,6 @@ def sample_issues() -> list[Issue]:
             created="2024-01-01T00:00:00Z",
             updated="2024-01-01T00:00:00Z",
             stage="backlog",
-            substage=None,
             priority=Priority.HIGH,
             assigned_agent=None,
         ),
@@ -40,8 +39,7 @@ def sample_issues() -> list[Issue]:
             title="Add dashboard feature",
             created="2024-01-02T00:00:00Z",
             updated="2024-01-02T00:00:00Z",
-            stage="implement",
-            substage="code",
+            stage="implement.code",
             priority=Priority.MEDIUM,
             assigned_agent="1",
         ),
@@ -51,8 +49,7 @@ def sample_issues() -> list[Issue]:
             title="Review PR changes",
             created="2024-01-03T00:00:00Z",
             updated="2024-01-03T00:00:00Z",
-            stage="plan_review",
-            substage=None,
+            stage="plan.review",
             priority=Priority.CRITICAL,
             assigned_agent=None,
         ),
@@ -257,7 +254,7 @@ class TestActions:
 
             mock_list.return_value = sample_issues
             mock_get_issue.return_value = sample_issues[0]  # Return issue 001
-            mock_next.return_value = ("define", "refine")
+            mock_next.return_value = ("explore.define", False)
             mock_update.return_value = sample_issues[0]  # Return updated issue
 
             app = TUIApp()
@@ -310,8 +307,8 @@ class TestActions:
 
                 # Exit hooks should be called for the current stage
                 mock_exit_hooks.assert_called()
-                # update_issue_stage should be called with "plan" (rejection mapping)
-                mock_update.assert_called_with("003", "plan")
+                # update_issue_stage should be called with "plan.draft" (rejection mapping)
+                mock_update.assert_called_with("003", "plan.draft")
                 # Enter hooks should be called for the target stage
                 mock_enter_hooks.assert_called()
 
@@ -379,13 +376,13 @@ class TestRejectionMappings:
 
     def test_rejection_mappings_exist(self) -> None:
         """Verify rejection mappings are defined for valid human review stages."""
-        # Only plan_review and implementation_review are valid human review stages
-        assert "plan_review" in REJECTION_MAPPINGS
-        assert "implementation_review" in REJECTION_MAPPINGS
+        # Only plan.review and implement.review are valid human review stages
+        assert "plan.review" in REJECTION_MAPPINGS
+        assert "implement.review" in REJECTION_MAPPINGS
         # problem_review is NOT a valid human review stage
         assert "problem_review" not in REJECTION_MAPPINGS
 
     def test_rejection_mappings_correct(self) -> None:
         """Verify rejection mappings map to correct stages."""
-        assert REJECTION_MAPPINGS["plan_review"] == "plan"
-        assert REJECTION_MAPPINGS["implementation_review"] == "implement"
+        assert REJECTION_MAPPINGS["plan.review"] == "plan.draft"
+        assert REJECTION_MAPPINGS["implement.review"] == "implement.code"

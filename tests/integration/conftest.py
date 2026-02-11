@@ -8,7 +8,7 @@ import os
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Any, Generator, Optional
+from typing import Any, Generator
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -50,7 +50,7 @@ def git_repo(tmp_path: Path) -> Generator[Path, None, None]:
 def agenttree_config() -> dict[str, Any]:
     """Minimal agenttree configuration for testing.
 
-    Contains all stages with essential hooks for workflow testing.
+    Uses the new flows-based format with dot-path stages.
     """
     return {
         "default_tool": "claude",
@@ -66,114 +66,120 @@ def agenttree_config() -> dict[str, Any]:
                 "startup_prompt": "Read TASK.md"
             }
         },
-        "stages": [
-            {"name": "backlog"},
-            {
-                "name": "define",
-                "output": "problem.md",
-                "pre_completion": [
-                    {"section_check": {"file": "problem.md", "section": "Context", "expect": "not_empty"}}
-                ],
-                "substages": {"refine": {}}
-            },
-            {
-                "name": "research",
-                "output": "research.md",
-                "post_start": [
-                    {"create_file": {"template": "research.md", "dest": "research.md"}}
-                ],
-                "pre_completion": [
-                    {"section_check": {"file": "research.md", "section": "Relevant Files", "expect": "not_empty"}}
-                ],
-                "substages": {"explore": {}, "document": {}}
-            },
-            {
-                "name": "plan",
-                "output": "spec.md",
-                "post_start": [
-                    {"create_file": {"template": "spec.md", "dest": "spec.md"}}
-                ],
-                "pre_completion": [
-                    {"section_check": {"file": "spec.md", "section": "Approach", "expect": "not_empty"}},
-                    {"has_list_items": {"file": "spec.md", "section": "Files to Modify"}},
-                    {"has_list_items": {"file": "spec.md", "section": "Implementation Steps"}},
-                    {"section_check": {"file": "spec.md", "section": "Test Plan", "expect": "not_empty"}}
-                ],
-                "substages": {"draft": {}, "refine": {}}
-            },
-            {
-                "name": "plan_assess",
-                "output": "spec_review.md",
-                "post_start": [
-                    {"create_file": {"template": "spec_review.md", "dest": "spec_review.md"}}
-                ],
-                "pre_completion": [
-                    {"section_check": {"file": "spec_review.md", "section": "Assessment Summary", "expect": "not_empty"}}
-                ]
-            },
-            {"name": "plan_revise", "output": "spec.md"},
-            {
-                "name": "plan_review",
-                "human_review": True,
-                "pre_completion": [
-                    {"file_exists": "spec.md"},
-                    {"section_check": {"file": "spec.md", "section": "Approach", "expect": "not_empty"}}
-                ]
-            },
-            {
-                "name": "implement",
-                "substages": {
-                    "setup": {},
-                    "code": {},
-                    "code_review": {
-                        "output": "review.md",
+        "flows": {
+            "default": {
+                "stages": {
+                    "backlog": {},
+                    "explore": {
+                        "substages": {
+                            "define": {
+                                "output": "problem.md",
+                                "pre_completion": [
+                                    {"section_check": {"file": "problem.md", "section": "Context", "expect": "not_empty"}}
+                                ],
+                            },
+                            "research": {
+                                "output": "research.md",
+                                "post_start": [
+                                    {"create_file": {"template": "research.md", "dest": "research.md"}}
+                                ],
+                                "pre_completion": [
+                                    {"section_check": {"file": "research.md", "section": "Relevant Files", "expect": "not_empty"}}
+                                ],
+                            },
+                        },
+                    },
+                    "plan": {
+                        "substages": {
+                            "draft": {
+                                "output": "spec.md",
+                                "post_start": [
+                                    {"create_file": {"template": "spec.md", "dest": "spec.md"}}
+                                ],
+                                "pre_completion": [
+                                    {"section_check": {"file": "spec.md", "section": "Approach", "expect": "not_empty"}},
+                                    {"has_list_items": {"file": "spec.md", "section": "Files to Modify"}},
+                                    {"has_list_items": {"file": "spec.md", "section": "Implementation Steps"}},
+                                    {"section_check": {"file": "spec.md", "section": "Test Plan", "expect": "not_empty"}}
+                                ],
+                            },
+                            "assess": {
+                                "output": "spec_review.md",
+                                "post_start": [
+                                    {"create_file": {"template": "spec_review.md", "dest": "spec_review.md"}}
+                                ],
+                                "pre_completion": [
+                                    {"section_check": {"file": "spec_review.md", "section": "Assessment Summary", "expect": "not_empty"}}
+                                ],
+                            },
+                            "revise": {
+                                "output": "spec.md",
+                            },
+                            "review": {
+                                "human_review": True,
+                                "pre_completion": [
+                                    {"file_exists": "spec.md"},
+                                    {"section_check": {"file": "spec.md", "section": "Approach", "expect": "not_empty"}}
+                                ],
+                            },
+                        },
+                    },
+                    "implement": {
+                        "substages": {
+                            "setup": {},
+                            "code": {},
+                            "code_review": {
+                                "output": "review.md",
+                                "post_start": [
+                                    {"create_file": {"template": "review.md", "dest": "review.md"}}
+                                ],
+                                "pre_completion": [
+                                    {"section_check": {"file": "review.md", "section": "Self-Review Checklist", "expect": "all_checked"}}
+                                ],
+                            },
+                            "address_review": {},
+                            "wrapup": {
+                                "pre_completion": [
+                                    {"file_exists": "review.md"},
+                                    {"field_check": {"file": "review.md", "path": "scores.average", "min": 7}}
+                                ],
+                            },
+                            "feedback": {
+                                "pre_completion": [
+                                    {"has_commits": {}},
+                                    {"file_exists": "review.md"},
+                                    {"section_check": {"file": "review.md", "section": "Critical Issues", "expect": "empty"}}
+                                ],
+                            },
+                            "review": {
+                                "human_review": True,
+                                "role": "manager",
+                                "post_start": [{"create_pr": {}}],
+                                "pre_completion": [{"pr_approved": {}}],
+                            },
+                        },
+                    },
+                    "knowledge_base": {
+                        "role": "developer",
+                        "skill": "knowledge_base.md",
+                    },
+                    "accepted": {
+                        "is_parking_lot": True,
+                        "role": "manager",
                         "post_start": [
-                            {"create_file": {"template": "review.md", "dest": "review.md"}}
+                            {"merge_pr": {}},
+                            {"cleanup_agent": {}},
+                            {"start_blocked_issues": {}}
                         ],
-                        "pre_completion": [
-                            {"section_check": {"file": "review.md", "section": "Self-Review Checklist", "expect": "all_checked"}}
-                        ]
                     },
-                    "address_review": {},
-                    "wrapup": {
-                        "pre_completion": [
-                            {"file_exists": "review.md"},
-                            {"field_check": {"file": "review.md", "path": "scores.average", "min": 7}}
-                        ]
+                    "not_doing": {
+                        "is_parking_lot": True,
+                        "redirect_only": True,
                     },
-                    "feedback": {
-                        "pre_completion": [
-                            {"has_commits": {}},
-                            {"file_exists": "review.md"},
-                            {"section_check": {"file": "review.md", "section": "Critical Issues", "expect": "empty"}}
-                        ]
-                    }
-                }
+                },
             },
-            {
-                "name": "implementation_review",
-                "human_review": True,
-                "role": "manager",
-                "post_start": [{"create_pr": {}}],
-                "pre_completion": [{"pr_approved": {}}]
-            },
-            {
-                "name": "knowledge_base",
-                "role": "developer",
-                "skill": "knowledge_base.md"
-            },
-            {
-                "name": "accepted",
-                "is_parking_lot": True,
-                "role": "manager",
-                "post_start": [
-                    {"merge_pr": {}},
-                    {"cleanup_agent": {}},
-                    {"start_blocked_issues": {}}
-                ]
-            },
-            {"name": "not_doing", "is_parking_lot": True, "redirect_only": True}
-        ]
+        },
+        "default_flow": "default",
     }
 
 
@@ -407,7 +413,7 @@ class WorkflowTestContext:
         self.config_path = repo_path / ".agenttree.yaml"
         self.mock_github = mock_github
         self.mock_container = mock_container
-        self.patches = []
+        self.patches: list = []
 
     def __enter__(self) -> "WorkflowTestContext":
         # Patch agenttree path lookups

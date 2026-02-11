@@ -100,18 +100,16 @@ def hooks_check(issue_id: str, event: str) -> None:
     if event in ("post_start", "both"):
         # For post_start, show what would run on NEXT stage
         issue_ctx = get_issue_context(issue, include_docs=False)
-        next_stage, next_substage = get_next_stage(
-            issue.stage, issue.substage, issue.flow, issue_context=issue_ctx
-        )
-        if next_stage:
-            next_stage_config = config.get_stage(next_stage)
+        next_dot_path, _ = get_next_stage(issue.stage, issue.flow, issue_context=issue_ctx)
+        if next_dot_path:
+            next_stage_name, next_substage_name = config.parse_stage(next_dot_path)
+            next_stage_config = config.get_stage(next_stage_name)
             if next_stage_config:
-                next_display = f"{next_stage}.{next_substage}" if next_substage else next_stage
-                if next_substage:
-                    next_sub_config = next_stage_config.get_substage(next_substage)
+                if next_substage_name:
+                    next_sub_config = next_stage_config.get_substage(next_substage_name)
                     if next_sub_config:
-                        show_hooks(next_sub_config.post_start, "post_start", f"{next_display} (next)")
+                        show_hooks(next_sub_config.post_start, "post_start", f"{next_dot_path} (next)")
                 else:
-                    show_hooks(next_stage_config.post_start, "post_start", f"{next_display} (next)")
+                    show_hooks(next_stage_config.post_start, "post_start", f"{next_dot_path} (next)")
 
     console.print()

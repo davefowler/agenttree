@@ -26,8 +26,7 @@ def mock_issue_with_worktree():
     mock = Mock()
     mock.id = "001"
     mock.title = "Test Issue"
-    mock.stage = "implementation_review"
-    mock.substage = None
+    mock.stage = "implement.review"
     mock.labels = []
     mock.assigned_agent = "1"
     mock.pr_url = "https://github.com/test/repo/pull/123"
@@ -48,7 +47,6 @@ def mock_issue_no_worktree():
     mock.id = "002"
     mock.title = "Test Issue No Worktree"
     mock.stage = "backlog"
-    mock.substage = None
     mock.labels = []
     mock.assigned_agent = None
     mock.pr_url = None

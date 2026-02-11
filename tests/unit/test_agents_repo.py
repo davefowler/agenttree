@@ -465,8 +465,7 @@ class TestCheckCiStatus:
         data = {
             "id": "42",
             "title": "Test issue",
-            "stage": "implementation_review",
-            "substage": "ci_wait",
+            "stage": "implement.review",
             "pr_number": 123,
             "agent": 42,
         }
@@ -495,7 +494,7 @@ class TestCheckCiStatus:
         data = {
             "id": "42",
             "title": "Test issue",
-            "stage": "implement",
+            "stage": "implement.code",
             "pr_number": 123,
         }
         with open(issue_yaml, "w") as f:
@@ -503,7 +502,7 @@ class TestCheckCiStatus:
 
         with patch("agenttree.github.get_pr_checks") as mock_get_checks:
             result = check_ci_status(agents_dir)
-            # Should not call get_pr_checks since issue is not at implementation_review
+            # Should not call get_pr_checks since issue is not at implement.review
             mock_get_checks.assert_not_called()
             assert result == 0
 
@@ -520,7 +519,7 @@ class TestCheckCiStatus:
         data = {
             "id": "42",
             "title": "Test issue",
-            "stage": "implementation_review",
+            "stage": "implement.review",
             # No pr_number
         }
         with open(issue_yaml, "w") as f:
@@ -609,11 +608,10 @@ class TestCheckCiStatus:
                 ]
                 check_ci_status(agents_dir)
 
-                # Verify stage was changed to implement with debug substage
+                # Verify stage was changed to implement.debug
                 with open(issue_dir / "issue.yaml") as f:
                     data = yaml.safe_load(f)
-                assert data["stage"] == "implement"
-                assert data["substage"] == "debug"
+                assert data["stage"] == "implement.debug"
 
     @patch("agenttree.hooks.is_running_in_container", return_value=False)
     def test_check_ci_status_on_ci_failure_sends_tmux_message(self, mock_container, agents_dir, issue_at_implementation_review):
@@ -658,7 +656,7 @@ class TestCheckCiStatus:
         data = {
             "id": "42",
             "title": "Test issue",
-            "stage": "implementation_review",
+            "stage": "implement.review",
             "pr_number": 123,
             "ci_notified": True,  # Already notified
         }
@@ -673,10 +671,10 @@ class TestCheckCiStatus:
 
             # Should skip because already notified
             assert result == 0
-            # Stage should remain implementation_review
+            # Stage should remain implement.review
             with open(issue_yaml) as f:
                 new_data = yaml.safe_load(f)
-            assert new_data["stage"] == "implementation_review"
+            assert new_data["stage"] == "implement.review"
 
     @patch("agenttree.hooks.is_running_in_container", return_value=False)
     def test_check_ci_status_sets_ci_notified_flag(self, mock_container, agents_dir, issue_at_implementation_review):
@@ -742,7 +740,7 @@ class TestCheckMergedPrs:
             "id": "042",
             "slug": "042-test-issue",
             "title": "Test Issue",
-            "stage": "implementation_review",
+            "stage": "implement.review",
             "pr_number": 123,
             "branch": "issue-042",
             "worktree_dir": "/tmp/worktree-042",
@@ -770,10 +768,10 @@ class TestCheckMergedPrs:
         from agenttree.agents_repo import check_merged_prs
         from agenttree.config import Config, StageConfig
 
-        mock_config.return_value = Config(stages=[
-            StageConfig(name="implement"),
-            StageConfig(name="accepted", is_parking_lot=True),
-        ])
+        mock_config.return_value = Config(stages={
+            "implement.code": StageConfig(name="implement.code"),
+            "accepted": StageConfig(name="accepted", is_parking_lot=True),
+        })
 
         issue_dir = agents_dir / "issues" / "001"
         issue_dir.mkdir(parents=True)
@@ -797,10 +795,10 @@ class TestCheckMergedPrs:
         from agenttree.agents_repo import check_merged_prs
         from agenttree.config import Config, StageConfig
 
-        mock_config.return_value = Config(stages=[
-            StageConfig(name="implement"),
-            StageConfig(name="accepted", is_parking_lot=True),
-        ])
+        mock_config.return_value = Config(stages={
+            "implement.code": StageConfig(name="implement.code"),
+            "accepted": StageConfig(name="accepted", is_parking_lot=True),
+        })
 
         issue_dir = agents_dir / "issues" / "001"
         issue_dir.mkdir(parents=True)
@@ -808,7 +806,7 @@ class TestCheckMergedPrs:
         with open(issue_dir / "issue.yaml", "w") as f:
             yaml.safe_dump({
                 "id": "001",
-                "stage": "implement",
+                "stage": "implement.code",
                 # No pr_number
             }, f)
 
@@ -828,10 +826,10 @@ class TestCheckMergedPrs:
         from agenttree.agents_repo import check_merged_prs
         from agenttree.config import Config, StageConfig
 
-        mock_config.return_value = Config(stages=[
-            StageConfig(name="implementation_review"),
-            StageConfig(name="accepted", is_parking_lot=True),
-        ])
+        mock_config.return_value = Config(stages={
+            "implement.review": StageConfig(name="implement.review"),
+            "accepted": StageConfig(name="accepted", is_parking_lot=True),
+        })
 
         issue_dir, _ = issue_at_implementation_review_with_pr
 
@@ -866,10 +864,10 @@ class TestCheckMergedPrs:
         from agenttree.agents_repo import check_merged_prs
         from agenttree.config import Config, StageConfig
 
-        mock_config.return_value = Config(stages=[
-            StageConfig(name="implementation_review"),
-            StageConfig(name="accepted", is_parking_lot=True),
-        ])
+        mock_config.return_value = Config(stages={
+            "implement.review": StageConfig(name="implement.review"),
+            "accepted": StageConfig(name="accepted", is_parking_lot=True),
+        })
 
         issue_dir, _ = issue_at_implementation_review_with_pr
 
@@ -903,10 +901,10 @@ class TestCheckMergedPrs:
         from agenttree.agents_repo import check_merged_prs
         from agenttree.config import Config, StageConfig
 
-        mock_config.return_value = Config(stages=[
-            StageConfig(name="implementation_review"),
-            StageConfig(name="accepted", is_parking_lot=True),
-        ])
+        mock_config.return_value = Config(stages={
+            "implement.review": StageConfig(name="implement.review"),
+            "accepted": StageConfig(name="accepted", is_parking_lot=True),
+        })
 
         issue_dir, _ = issue_at_implementation_review_with_pr
 
@@ -923,7 +921,7 @@ class TestCheckMergedPrs:
         # Verify issue was NOT updated
         with open(issue_dir / "issue.yaml") as f:
             data = yaml.safe_load(f)
-        assert data["stage"] == "implementation_review"
+        assert data["stage"] == "implement.review"
 
     @patch("subprocess.run")
     @patch("agenttree.config.load_config")
@@ -936,10 +934,10 @@ class TestCheckMergedPrs:
         from agenttree.agents_repo import check_merged_prs
         from agenttree.config import Config, StageConfig
 
-        mock_config.return_value = Config(stages=[
-            StageConfig(name="implementation_review"),
-            StageConfig(name="accepted", is_parking_lot=True),
-        ])
+        mock_config.return_value = Config(stages={
+            "implement.review": StageConfig(name="implement.review"),
+            "accepted": StageConfig(name="accepted", is_parking_lot=True),
+        })
 
         issue_dir, _ = issue_at_implementation_review_with_pr
 
@@ -953,7 +951,7 @@ class TestCheckMergedPrs:
         # Verify issue was NOT updated
         with open(issue_dir / "issue.yaml") as f:
             data = yaml.safe_load(f)
-        assert data["stage"] == "implementation_review"
+        assert data["stage"] == "implement.review"
 
     @patch("subprocess.run")
     @patch("agenttree.config.load_config")
@@ -966,10 +964,10 @@ class TestCheckMergedPrs:
         from agenttree.agents_repo import check_merged_prs
         from agenttree.config import Config, StageConfig
 
-        mock_config.return_value = Config(stages=[
-            StageConfig(name="implementation_review"),
-            StageConfig(name="accepted", is_parking_lot=True),
-        ])
+        mock_config.return_value = Config(stages={
+            "implement.review": StageConfig(name="implement.review"),
+            "accepted": StageConfig(name="accepted", is_parking_lot=True),
+        })
 
         issue_dir, _ = issue_at_implementation_review_with_pr
 
@@ -993,11 +991,11 @@ class TestCheckMergedPrs:
         from agenttree.agents_repo import check_merged_prs
         from agenttree.config import Config, StageConfig
 
-        mock_config.return_value = Config(stages=[
-            StageConfig(name="implement"),
-            StageConfig(name="implementation_review"),
-            StageConfig(name="accepted", is_parking_lot=True),
-        ])
+        mock_config.return_value = Config(stages={
+            "implement.code": StageConfig(name="implement.code"),
+            "implement.review": StageConfig(name="implement.review"),
+            "accepted": StageConfig(name="accepted", is_parking_lot=True),
+        })
 
         issue_dir = agents_dir / "issues" / "099"
         issue_dir.mkdir(parents=True)
@@ -1007,8 +1005,7 @@ class TestCheckMergedPrs:
                 "id": "099",
                 "slug": "099-test",
                 "title": "Test",
-                "stage": "implement",
-                "substage": "code",
+                "stage": "implement.code",
                 "pr_number": 555,
                 "branch": "issue-099",
                 "worktree_dir": "/tmp/worktree-099",

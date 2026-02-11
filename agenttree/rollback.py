@@ -28,7 +28,7 @@ def execute_rollback(
 
     Args:
         issue_id: Issue ID to rollback
-        target_stage: Stage to rollback to
+        target_stage: Dot path to rollback to (e.g., "explore.define", "implement.code")
         yes: Auto-confirm (default True for programmatic use)
         reset_worktree: Reset worktree to origin/main
         keep_changes: Keep code changes (default True)
@@ -53,16 +53,16 @@ def execute_rollback(
 
     # Load config and validate stage
     config = load_config()
-    stage_names = config.get_stage_names()
+    flow_stages = config.get_flow_stage_names(issue.flow)
 
-    if target_stage not in stage_names:
+    if target_stage not in flow_stages:
         console.print(f"[red]Invalid stage: '{target_stage}'[/red]")
         return False
 
     # Check if target stage is before or same as current stage
     try:
-        current_idx = stage_names.index(issue.stage)
-        target_idx = stage_names.index(target_stage)
+        current_idx = flow_stages.index(issue.stage)
+        target_idx = flow_stages.index(target_stage)
     except ValueError:
         console.print(f"[red]Issue is at unknown stage: {issue.stage}[/red]")
         return False
@@ -71,36 +71,26 @@ def execute_rollback(
         console.print(f"[red]Cannot rollback: target stage '{target_stage}' is not before current stage '{issue.stage}'[/red]")
         return False
 
-    # Cannot rollback to redirect_only stages (they're not in normal progression)
-    target_stage_config = config.get_stage(target_stage)
-    if target_stage_config and target_stage_config.redirect_only:
+    # Cannot rollback to redirect_only stages
+    stage_cfg, sub_cfg = config.resolve_stage(target_stage)
+    is_redirect = (sub_cfg.redirect_only if sub_cfg else False) or (stage_cfg.redirect_only if stage_cfg and not sub_cfg else False)
+    if is_redirect:
         console.print(f"[red]Cannot rollback to redirect-only stage '{target_stage}'[/red]")
         return False
 
-    # Determine first substage of target stage
-    target_substage = None
-    if target_stage_config:
-        substages = target_stage_config.substage_order()
-        if substages:
-            target_substage = substages[0]
-
-    # Collect stages after target that will have output files archived
-    stages_to_archive = stage_names[target_idx + 1 : current_idx + 1]
-
     # Collect output files from stages being rolled back
+    stages_to_archive = flow_stages[target_idx + 1: current_idx + 1]
     files_to_archive: list[str] = []
-    for stage in stages_to_archive:
-        stage_config = config.get_stage(stage)
-        if stage_config:
-            if stage_config.output:
-                files_to_archive.append(stage_config.output)
-            for substage_config in stage_config.substages.values():
-                if substage_config.output:
-                    files_to_archive.append(substage_config.output)
+    for dp in stages_to_archive:
+        output = config.output_for(dp)
+        if output:
+            files_to_archive.append(output)
 
     # Determine worktree reset behavior
-    implement_idx = stage_names.index("implement") if "implement" in stage_names else -1
-    auto_reset = target_idx < implement_idx if implement_idx >= 0 else False
+    # If rolling back before implement stages, consider resetting worktree
+    implement_paths = [dp for dp in flow_stages if dp.startswith("implement.")]
+    first_impl_idx = flow_stages.index(implement_paths[0]) if implement_paths else -1
+    auto_reset = target_idx < first_impl_idx if first_impl_idx >= 0 else False
     should_reset = reset_worktree or (auto_reset and not keep_changes)
 
     # Check for active agent
@@ -137,12 +127,10 @@ def execute_rollback(
 
             now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
             data["stage"] = target_stage
-            data["substage"] = target_substage
             data["updated"] = now
 
             history_entry = {
                 "stage": target_stage,
-                "substage": target_substage,
                 "timestamp": now,
                 "type": "rollback",
             }
@@ -155,6 +143,8 @@ def execute_rollback(
                 del data["pr_number"]
             if "pr_url" in data:
                 del data["pr_url"]
+            # Remove legacy substage field if present
+            data.pop("substage", None)
 
             with open(yaml_path, "w") as fh:
                 pyyaml.dump(data, fh, default_flow_style=False, sort_keys=False)

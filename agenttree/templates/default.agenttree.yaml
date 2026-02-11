@@ -5,13 +5,12 @@
 default_tool: claude
 default_model: opus
 port_range: 9001-9099
-project: "agenttree"
+project: "{{PROJECT_NAME}}"
 worktrees_dir: .worktrees
 
 commands:
   test: uv run pytest
-  lint: "uv run mypy agenttree || echo 'Lint warnings (optional)'"
-  # serve: "uv run uvicorn app:app --port $PORT"  # Dev server (port auto-assigned per issue)
+  lint: "uv run mypy {{PROJECT_NAME}} || echo 'Lint warnings (optional)'"
   git_branch: git branch --show-current
   files_changed: "git diff --stat main...HEAD | grep -c '|' || echo 0"
   lines_added: "git diff --stat main...HEAD | tail -1 | awk '{print $4}' || echo 0"
@@ -30,16 +29,11 @@ tools:
     startup_prompt: "Read TASK.md for your instructions."
 
 # Role configurations
-# Roles are execution environments that handle stages in the workflow.
-# Each role can specify container settings, AI tool, model, and skills.
 roles:
-  # Manager: Human-driven, runs on host machine (no container)
-  # Runs the sync server which spawns agents and runs hooks
   manager:
     description: "Human-driven manager"
-    process: "agenttree serve"  # Runs in tmux, handles syncs
+    process: "agenttree serve"
 
-  # Default AI agent: runs in container
   agent:
     description: "Default AI agent"
     container:
@@ -47,7 +41,6 @@ roles:
     tool: claude
     model: opus
 
-  # Custom review agent host
   review:
     description: "Independent code reviewer using Claude"
     container:
@@ -56,280 +49,251 @@ roles:
     model: sonnet
     skill: independent_review.md
 
-stages:
-  - name: backlog
-    is_parking_lot: true
-
-  - name: define
-    output: problem.md
-    pre_completion:
-      - title_set:  # Ensure issue has a real title, not "(untitled)"
-      - section_check:
-          file: problem.md
-          section: Context
-          expect: not_empty
-      - has_list_items:
-          file: problem.md
-          section: Possible Solutions
-    substages:
-      refine: {}
-
-  - name: research
-    output: research.md
-    post_start:
-      - create_file:
-          template: research.md
-          dest: research.md
-    pre_completion:
-      - section_check:
-          file: research.md
-          section: Relevant Files
-          expect: not_empty
-      - section_check:
-          file: research.md
-          section: Existing Patterns
-          expect: not_empty
-    substages:
-      explore: {}
-      document: {}
-
-  - name: plan
-    output: spec.md
-    post_start:
-      - create_file:
-          template: spec.md
-          dest: spec.md
-    pre_completion:
-      - section_check:
-          file: spec.md
-          section: Approach
-          expect: not_empty
-      - has_list_items:
-          file: spec.md
-          section: Files to Modify
-      - has_list_items:
-          file: spec.md
-          section: Implementation Steps
-      - section_check:
-          file: spec.md
-          section: Test Plan
-          expect: not_empty
-    substages:
-      draft: {}
-      refine: {}
-
-  - name: plan_assess
-    output: spec_review.md
-    post_start:
-      - create_file:
-          template: spec_review.md
-          dest: spec_review.md
-    pre_completion:
-      - section_check:
-          file: spec_review.md
-          section: Assessment Summary
-          expect: not_empty
-
-  - name: plan_revise
-    output: spec.md
-
-  - name: plan_review
-    human_review: true
-    review_doc: spec.md
-    pre_completion:
-      - file_exists: spec.md
-      - section_check:
-          file: spec.md
-          section: Approach
-          expect: not_empty
-      - rebase:
-
-  - name: implement
-    substages:
-      setup: {}
-      code: {}
-      debug:
-        skill: implement-debug.md
-      code_review:
-        output: review.md
-        post_start:
-          - create_file:
-              template: review.md
-              dest: review.md
-        pre_completion:
-          - run:
-              command: uv run pytest  # Run full test suite to catch issues before CI
-              must_pass: true
-              timeout: 1200  # 20 min - tests take ~14 min on this machine
-          - run:
-              command: uv run mypy agenttree || echo "mypy warnings (pre-existing)"
-              must_pass: true
-              timeout: 300  # 5 min - mypy can be slow in containers
-          - section_check:
-              file: review.md
-              section: Self-Review Checklist
-              expect: all_checked
-          # If Critical Issues section has content, redirect to address_review
-          # If empty, address_review is skipped (redirect_only) and we go straight to wrapup
-          - section_check:
-              file: review.md
-              section: Critical Issues
-              expect: empty
-              on_fail_substage: address_review
-      address_review:
-        redirect_only: true  # Only reached when code_review finds critical issues
-      wrapup:
-        pre_completion:
-          - wrapup_verified: review.md
-      feedback:
-        output: feedback.md
-        pre_completion:
-          - has_commits:
-          - file_exists: review.md
-          - section_check:
-              file: review.md
-              section: Critical Issues
-              expect: empty
-
-  # Independent code review by a specialized review agent (not the implementing agent)
-  - name: independent_code_review
-    role: review  # Custom agent role - spawned by manager
-    output: independent_review.md
-    skill: independent_review.md
-    pre_completion:
-      - file_exists: independent_review.md
-      - section_check:
-          file: independent_review.md
-          section: Review Findings
-          expect: not_empty
-      - checkbox_checked:
-          file: independent_review.md
-          checkbox: Approve
-          on_fail_stage: address_independent_review
-
-  # Stage where implementing agent addresses review feedback
-  # Only reachable via StageRedirect when reviewer doesn't approve
-  - name: address_independent_review
-    redirect_only: true  # Not in normal progression, only via redirect
-    role: developer  # Back to the implementing agent
-    output: independent_review_response.md
-    skill: address_independent_review.md
-    post_start:
-      - version_file:
-          file: independent_review.md
-      - version_file:
-          file: independent_review_response.md
-      - create_file:
-          template: independent_review_response.md
-          dest: independent_review_response.md
-    pre_completion:
-      - loop_check:
-          count_files: independent_review_v*.md
-          max: 5
-          error: "Review loop exceeded 5 iterations. Escalating to human review."
-      - section_check:
-          file: independent_review_response.md
-          section: Changes Made
-          expect: not_empty
-    post_completion:
-      - rollback:
-          to_stage: independent_code_review
-
-  # UI review stage - only runs when needs_ui_review is true
-  # condition: Jinja2 expression evaluated against issue fields.
-  #   Truthy result = run stage, falsy/undefined = skip stage.
-  #   Syntax errors in the expression will raise an error.
-  - name: ui_review
-    condition: "{{ needs_ui_review }}"
-    host: agent
-    output: ui_review.md
-    skill: ui_review.md
-    post_start:
-      - create_file:
-          template: ui_review.md
-          dest: ui_review.md
-    pre_completion:
-      - file_exists: ui_review.md
-      - section_check:
-          file: ui_review.md
-          section: Screenshots Reviewed
-          expect: not_empty
-
-  - name: implementation_review
-    human_review: true
-    review_doc: review.md
-    role: manager  # Manager handles PR creation (agents can't push)
-    post_start:
-      - create_pr:
-    substages:
-      ci_wait:
-        pre_completion:
-          - ci_check:
-              timeout: 600
-              poll_interval: 30
-            host_only: true
-      review: {}
-    pre_completion:
-      - pr_approved:
-
-  - name: knowledge_base
-    role: developer
-    skill: knowledge_base.md
-
-  - name: accepted
-    is_parking_lot: true
-    role: manager  # Manager handles merge/cleanup (agents can't push)
-    post_start:
-      - merge_pr:
-      - cleanup_agent:
-      - start_blocked_issues:
-
-  - name: not_doing
-    is_parking_lot: true
-    redirect_only: true  # Only reached via redirect, not normal progression
-
 # Workflow flows
-# Each flow defines an ordered subset of stages that issues can follow.
-# The "default" flow is used if no flow is specified when creating an issue.
-# Parking lot stages like not_doing are redirect targets, not part of normal progression.
+# The default flow defines stages inline (dict). Secondary flows reference
+# stages by dot path (list). A bare stage name like "implement" expands to
+# all its substages in definition order.
 flows:
   default:
     stages:
-      - backlog
-      - define
-      - research
-      - plan
-      - plan_assess
-      - plan_revise
-      - plan_review
-      - implement
-      - independent_code_review
-      - address_independent_review
-      - implementation_review
-      - knowledge_base
-      - accepted
+      backlog:
+        is_parking_lot: true
 
-  # Quick flow for small issues that skip research and planning stages
+      explore:
+        color: "#f97316"
+        substages:
+          define:
+            output: problem.md
+            pre_completion:
+              - title_set:
+              - section_check:
+                  file: problem.md
+                  section: Context
+                  expect: not_empty
+              - has_list_items:
+                  file: problem.md
+                  section: Possible Solutions
+
+          research:
+            output: research.md
+            post_start:
+              - create_file:
+                  template: research.md
+                  dest: research.md
+            pre_completion:
+              - section_check:
+                  file: research.md
+                  section: Relevant Files
+                  expect: not_empty
+              - section_check:
+                  file: research.md
+                  section: Existing Patterns
+                  expect: not_empty
+
+      plan:
+        color: "#eab308"
+        substages:
+          draft:
+            output: spec.md
+            post_start:
+              - create_file:
+                  template: spec.md
+                  dest: spec.md
+            pre_completion:
+              - section_check:
+                  file: spec.md
+                  section: Approach
+                  expect: not_empty
+              - has_list_items:
+                  file: spec.md
+                  section: Files to Modify
+              - has_list_items:
+                  file: spec.md
+                  section: Implementation Steps
+              - section_check:
+                  file: spec.md
+                  section: Test Plan
+                  expect: not_empty
+
+          assess:
+            output: spec_review.md
+            post_start:
+              - create_file:
+                  template: spec_review.md
+                  dest: spec_review.md
+            pre_completion:
+              - section_check:
+                  file: spec_review.md
+                  section: Assessment Summary
+                  expect: not_empty
+
+          revise:
+            output: spec.md
+
+          review:
+            human_review: true
+            review_doc: spec.md
+            pre_completion:
+              - file_exists: spec.md
+              - section_check:
+                  file: spec.md
+                  section: Approach
+                  expect: not_empty
+              - rebase:
+
+      implement:
+        color: "#22c55e"
+        substages:
+          setup: {}
+          code: {}
+          debug:
+            skill: implement/debug.md
+          code_review:
+            output: review.md
+            post_start:
+              - create_file:
+                  template: review.md
+                  dest: review.md
+            pre_completion:
+              - run:
+                  command: uv run pytest
+                  must_pass: true
+                  timeout: 1200
+              - run:
+                  command: uv run mypy {{PROJECT_NAME}} || echo "mypy warnings (pre-existing)"
+                  must_pass: true
+                  timeout: 300
+              - section_check:
+                  file: review.md
+                  section: Self-Review Checklist
+                  expect: all_checked
+              - section_check:
+                  file: review.md
+                  section: Critical Issues
+                  expect: empty
+                  on_fail: address_review
+          address_review:
+            redirect_only: true
+          wrapup:
+            pre_completion:
+              - wrapup_verified: review.md
+          feedback:
+            output: feedback.md
+            pre_completion:
+              - has_commits:
+              - file_exists: review.md
+              - section_check:
+                  file: review.md
+                  section: Critical Issues
+                  expect: empty
+
+          independent_review:
+            role: review
+            output: independent_review.md
+            skill: independent_review.md
+            pre_completion:
+              - file_exists: independent_review.md
+              - section_check:
+                  file: independent_review.md
+                  section: Review Findings
+                  expect: not_empty
+              - checkbox_checked:
+                  file: independent_review.md
+                  checkbox: Approve
+                  on_fail: address_independent
+
+          address_independent:
+            redirect_only: true
+            role: developer
+            output: independent_review_response.md
+            skill: address_independent.md
+            post_start:
+              - version_file:
+                  file: independent_review.md
+              - version_file:
+                  file: independent_review_response.md
+              - create_file:
+                  template: independent_review_response.md
+                  dest: independent_review_response.md
+            pre_completion:
+              - loop_check:
+                  count_files: independent_review_v*.md
+                  max: 5
+                  error: "Review loop exceeded 5 iterations. Escalating to human review."
+              - section_check:
+                  file: independent_review_response.md
+                  section: Changes Made
+                  expect: not_empty
+            post_completion:
+              - rollback:
+                  to: independent_review
+
+          ui_review:
+            condition: "{{ needs_ui_review }}"
+            role: developer
+            output: ui_review.md
+            skill: ui_review.md
+            post_start:
+              - create_file:
+                  template: ui_review.md
+                  dest: ui_review.md
+            pre_completion:
+              - file_exists: ui_review.md
+              - section_check:
+                  file: ui_review.md
+                  section: Screenshots Reviewed
+                  expect: not_empty
+
+          ci_wait:
+            role: manager
+            post_start:
+              - create_pr:
+            pre_completion:
+              - ci_check:
+                  timeout: 600
+                  poll_interval: 30
+                host_only: true
+
+          review:
+            human_review: true
+            role: manager
+            review_doc: review.md
+            pre_completion:
+              - pr_approved:
+
+      knowledge_base:
+        color: "#8b5cf6"
+        role: developer
+        skill: knowledge_base.md
+
+      accepted:
+        is_parking_lot: true
+        color: "#6b7280"
+        role: manager
+        post_start:
+          - merge_pr:
+          - cleanup_agent:
+          - start_blocked_issues:
+
+      not_doing:
+        is_parking_lot: true
+        redirect_only: true
+        color: "#6b7280"
+
   quick:
     stages:
       - backlog
-      - define
+      - explore.define
       - implement
-      - implementation_review
       - accepted
 
-  # Abandoned issues - only reachable via redirect
   not_doing:
     stages:
       - not_doing
 
 default_flow: default
 
-# Manager hooks for dogfooding - track cleanup frequency to identify workflow issues
-# This is project-specific logging to help us find broken workflow steps
 manager_hooks:
   post_sync:
-    # Run periodic cleanup and log what was cleaned
-    # High cleanup frequency indicates broken workflow steps that need fixing
     - cleanup_resources:
         log_file: _agenttree/logs/cleanup.log

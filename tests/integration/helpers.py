@@ -6,14 +6,13 @@ advance issues through stages, and set up test scenarios.
 
 import subprocess
 from pathlib import Path
-from typing import Optional
 from unittest.mock import patch
 
 import yaml
 
 
 def create_valid_problem_md(issue_dir: Path) -> None:
-    """Create a problem.md that passes all DEFINE hooks.
+    """Create a problem.md that passes all define hooks.
 
     Requires:
     - Context section not empty
@@ -49,7 +48,7 @@ This affects approximately 15% of login attempts.
 
 
 def create_valid_research_md(issue_dir: Path) -> None:
-    """Create a research.md that passes all RESEARCH hooks.
+    """Create a research.md that passes all research hooks.
 
     Requires:
     - Relevant Files section not empty
@@ -89,7 +88,7 @@ The codebase uses a middleware-based authentication pattern:
 
 
 def create_valid_spec_md(issue_dir: Path) -> None:
-    """Create a spec.md that passes all PLAN hooks.
+    """Create a spec.md that passes all plan hooks.
 
     Requires:
     - Approach section not empty
@@ -141,7 +140,7 @@ This approach minimizes changes while addressing all three issues.
 
 
 def create_valid_spec_review_md(issue_dir: Path) -> None:
-    """Create a spec_review.md that passes PLAN_ASSESS hooks.
+    """Create a spec_review.md that passes plan.assess hooks.
 
     Requires:
     - Assessment Summary section not empty
@@ -180,7 +179,7 @@ Ready for implementation.
 
 
 def create_valid_review_md(issue_dir: Path, average: float = 8.0) -> None:
-    """Create a review.md that passes all IMPLEMENT hooks.
+    """Create a review.md that passes all implement hooks.
 
     Requires:
     - Self-Review Checklist all checked (matches the items from implement-code_review.md)
@@ -402,12 +401,16 @@ def get_unpushed_commits(repo_path: Path, branch: str = "HEAD") -> list[str]:
 def setup_issue_at_stage(
     issue_dir: Path,
     stage: str,
-    substage: Optional[str] = None,
     create_content: bool = True
 ) -> None:
     """Set up an issue at a specific stage with valid content.
 
     Creates all necessary files for the issue to be at the given stage.
+
+    Args:
+        issue_dir: Path to issue directory
+        stage: Dot path (e.g., "explore.define", "implement.code")
+        create_content: Whether to create content files
     """
     # Update issue.yaml
     yaml_path = issue_dir / "issue.yaml"
@@ -415,7 +418,8 @@ def setup_issue_at_stage(
         data = yaml.safe_load(f)
 
     data["stage"] = stage
-    data["substage"] = substage
+    # Remove substage if present (old format)
+    data.pop("substage", None)
 
     with open(yaml_path, "w") as f:
         yaml.dump(data, f, default_flow_style=False)
@@ -424,15 +428,16 @@ def setup_issue_at_stage(
         return
 
     # Create content files based on stage
-    stages_needing_content = {
-        "define": [create_valid_problem_md],
-        "research": [create_valid_problem_md, create_valid_research_md],
-        "plan": [create_valid_problem_md, create_valid_research_md, create_valid_spec_md],
-        "plan_assess": [create_valid_problem_md, create_valid_research_md, create_valid_spec_md, create_valid_spec_review_md],
-        "plan_revise": [create_valid_problem_md, create_valid_research_md, create_valid_spec_md, create_valid_spec_review_md],
-        "plan_review": [create_valid_problem_md, create_valid_research_md, create_valid_spec_md, create_valid_spec_review_md],
-        "implement": [create_valid_problem_md, create_valid_research_md, create_valid_spec_md, create_valid_spec_review_md],
-        "implementation_review": [create_valid_problem_md, create_valid_research_md, create_valid_spec_md, create_valid_spec_review_md, create_valid_review_md],
+    # Map dot paths to content creators
+    stages_needing_content: dict[str, list] = {
+        "explore.define": [create_valid_problem_md],
+        "explore.research": [create_valid_problem_md, create_valid_research_md],
+        "plan.draft": [create_valid_problem_md, create_valid_research_md, create_valid_spec_md],
+        "plan.assess": [create_valid_problem_md, create_valid_research_md, create_valid_spec_md, create_valid_spec_review_md],
+        "plan.revise": [create_valid_problem_md, create_valid_research_md, create_valid_spec_md, create_valid_spec_review_md],
+        "plan.review": [create_valid_problem_md, create_valid_research_md, create_valid_spec_md, create_valid_spec_review_md],
+        "implement.code": [create_valid_problem_md, create_valid_research_md, create_valid_spec_md, create_valid_spec_review_md],
+        "implement.review": [create_valid_problem_md, create_valid_research_md, create_valid_spec_md, create_valid_spec_review_md, create_valid_review_md],
         "accepted": [create_valid_problem_md, create_valid_research_md, create_valid_spec_md, create_valid_spec_review_md, create_valid_review_md],
     }
 
@@ -444,32 +449,37 @@ def setup_issue_at_stage(
 def advance_to_stage(
     issue_id: str,
     target_stage: str,
-    target_substage: Optional[str] = None,
-    repo_path: Optional[Path] = None,
+    repo_path: Path | None = None,
     mock_hooks: bool = True
 ) -> None:
     """Advance an issue to a specific stage, creating valid content along the way.
 
     This is a helper for tests that need an issue at a specific stage
     without testing all the intermediate transitions.
+
+    Args:
+        issue_id: Issue ID
+        target_stage: Target dot path (e.g., "implement.code")
+        repo_path: Optional path to repo for commit creation
+        mock_hooks: Whether to mock hooks for speed
     """
-    from agenttree.issues import get_issue, update_issue_stage, get_issue_dir
+    from agenttree.issues import get_issue_dir, update_issue_stage
 
     issue_dir = get_issue_dir(issue_id)
     if not issue_dir:
         raise ValueError(f"Issue {issue_id} not found")
 
     # Create all necessary content
-    setup_issue_at_stage(issue_dir, target_stage, target_substage, create_content=True)
+    setup_issue_at_stage(issue_dir, target_stage, create_content=True)
 
     # If we need commits for feedback stage
-    if target_stage == "implement" and target_substage == "feedback":
+    if target_stage == "implement.feedback":
         if repo_path:
             make_commit(repo_path, f"Implementation for {issue_id}")
 
     # Update the stage directly (bypassing hooks for speed)
     if mock_hooks:
         with patch("agenttree.issues.sync_agents_repo", return_value=True):
-            update_issue_stage(issue_id, target_stage, target_substage)
+            update_issue_stage(issue_id, target_stage)
     else:
-        update_issue_stage(issue_id, target_stage, target_substage)
+        update_issue_stage(issue_id, target_stage)

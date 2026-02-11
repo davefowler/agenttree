@@ -33,7 +33,7 @@ class TestEndToEndWorkflow:
     """Test complete workflow from issue creation to acceptance."""
 
     def test_full_workflow_define_to_plan_review(self, workflow_repo: Path, mock_sync: MagicMock):
-        """Test workflow from define through plan_review (first human gate).
+        """Test workflow from explore.define through plan.review (first human gate).
 
         This tests the agent-driven portion of the workflow before human review.
         """
@@ -44,20 +44,19 @@ class TestEndToEndWorkflow:
 
         with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
-                # Step 1: Create issue (starts at define.refine)
+                # Step 1: Create issue (starts at explore.define)
                 issue = create_issue(title="E2E Test Issue")
                 issue_dir = agenttree_path / "issues" / f"{issue.id}-{issue.slug}"
 
-                assert issue.stage == "define"
-                assert issue.substage == "refine"
+                assert issue.stage == "explore.define"
 
                 # Track stages we've visited
-                visited_stages = [(issue.stage, issue.substage)]
+                visited_stages = [issue.stage]
 
                 # Step 2: Create valid problem.md
                 create_valid_problem_md(issue_dir)
 
-                # Step 3: Advance through stages until plan_review
+                # Step 3: Advance through stages until plan.review
                 max_iterations = 20  # Safety limit
                 iteration = 0
 
@@ -67,54 +66,51 @@ class TestEndToEndWorkflow:
                     # Refresh issue
                     issue = get_issue(issue.id)
                     current_stage = issue.stage
-                    current_substage = issue.substage
 
-                    # Stop at plan_review (human gate)
-                    if current_stage == "plan_review":
+                    # Stop at plan.review (human gate)
+                    if current_stage == "plan.review":
                         break
 
                     # Create content needed for current stage
-                    # Always overwrite with valid content (templates may have empty sections)
-                    if current_stage == "research":
+                    if current_stage.startswith("explore.research"):
                         create_valid_research_md(issue_dir)
-                    elif current_stage in ["plan", "plan_revise"]:
+                    elif current_stage in ["plan.draft", "plan.revise"]:
                         create_valid_spec_md(issue_dir)
-                    elif current_stage == "plan_assess":
+                    elif current_stage == "plan.assess":
                         create_valid_spec_review_md(issue_dir)
 
                     # Execute exit hooks (validates stage completion)
                     try:
-                        execute_exit_hooks(issue, current_stage, current_substage)
+                        execute_exit_hooks(issue, current_stage)
                     except ValidationError as e:
-                        pytest.fail(f"Exit hooks failed at {current_stage}.{current_substage}: {e}")
+                        pytest.fail(f"Exit hooks failed at {current_stage}: {e}")
 
                     # Get next stage
-                    next_stage, next_substage = get_next_stage(current_stage, current_substage)
+                    next_stage, is_human_review = get_next_stage(current_stage)
 
                     # Update to next stage
-                    update_issue_stage(issue.id, next_stage, next_substage)
+                    update_issue_stage(issue.id, next_stage)
 
                     # Execute enter hooks
                     issue = get_issue(issue.id)
-                    execute_enter_hooks(issue, next_stage, next_substage)
+                    execute_enter_hooks(issue, next_stage)
 
-                    visited_stages.append((next_stage, next_substage))
+                    visited_stages.append(next_stage)
 
-                # Verify we reached plan_review
+                # Verify we reached plan.review
                 final_issue = get_issue(issue.id)
-                assert final_issue.stage == "plan_review", f"Expected plan_review, got {final_issue.stage}"
+                assert final_issue.stage == "plan.review", f"Expected plan.review, got {final_issue.stage}"
 
                 # Verify we visited expected stages
-                stage_names = [s[0] for s in visited_stages]
-                assert "define" in stage_names
-                assert "research" in stage_names
-                assert "plan" in stage_names
-                assert "plan_assess" in stage_names
-                assert "plan_revise" in stage_names
-                assert "plan_review" in stage_names
+                assert "explore.define" in visited_stages
+                assert "explore.research" in visited_stages
+                assert "plan.draft" in visited_stages
+                assert "plan.assess" in visited_stages
+                assert "plan.revise" in visited_stages
+                assert "plan.review" in visited_stages
 
     def test_full_workflow_implement_to_implementation_review(self, workflow_repo: Path, mock_sync: MagicMock):
-        """Test workflow from implement through implementation_review (second human gate).
+        """Test workflow from implement.code through implement.review (second human gate).
 
         This tests the implementation portion after plan approval.
         """
@@ -135,14 +131,13 @@ class TestEndToEndWorkflow:
                 create_valid_spec_md(issue_dir)
                 create_valid_spec_review_md(issue_dir)
 
-                # Skip directly to implement stage
-                update_issue_stage(issue.id, "implement", "code")
+                # Skip directly to implement.code
+                update_issue_stage(issue.id, "implement.code")
                 issue = get_issue(issue.id)
 
-                assert issue.stage == "implement"
-                assert issue.substage == "code"
+                assert issue.stage == "implement.code"
 
-                visited_substages = ["code"]
+                visited_stages = ["implement.code"]
                 max_iterations = 10
                 iteration = 0
 
@@ -151,43 +146,41 @@ class TestEndToEndWorkflow:
 
                     issue = get_issue(issue.id)
                     current_stage = issue.stage
-                    current_substage = issue.substage
 
-                    # Stop at implementation_review
-                    if current_stage == "implementation_review":
+                    # Stop at implement.review
+                    if current_stage == "implement.review":
                         break
 
                     # Create/overwrite review.md with valid content when needed
-                    # (enter hooks may create template with unchecked items)
-                    if current_substage in ["code_review", "address_review", "wrapup", "feedback"]:
+                    if current_stage in ["implement.code_review", "implement.address_review",
+                                         "implement.wrapup", "implement.feedback"]:
                         create_valid_review_md(issue_dir)
 
                     # Mock has_commits_to_push for feedback stage
                     with patch("agenttree.hooks.has_commits_to_push", return_value=True):
                         try:
-                            execute_exit_hooks(issue, current_stage, current_substage)
+                            execute_exit_hooks(issue, current_stage)
                         except ValidationError as e:
-                            pytest.fail(f"Exit hooks failed at {current_stage}.{current_substage}: {e}")
+                            pytest.fail(f"Exit hooks failed at {current_stage}: {e}")
 
-                    next_stage, next_substage = get_next_stage(current_stage, current_substage)
-                    update_issue_stage(issue.id, next_stage, next_substage)
+                    next_stage, _ = get_next_stage(current_stage)
+                    update_issue_stage(issue.id, next_stage)
 
                     issue = get_issue(issue.id)
-                    execute_enter_hooks(issue, next_stage, next_substage)
+                    execute_enter_hooks(issue, next_stage)
 
-                    if next_substage:
-                        visited_substages.append(next_substage)
+                    visited_stages.append(next_stage)
 
-                # Verify we reached implementation_review
+                # Verify we reached implement.review
                 final_issue = get_issue(issue.id)
-                assert final_issue.stage == "implementation_review"
+                assert final_issue.stage == "implement.review"
 
                 # Verify we visited all implement substages
-                assert "code" in visited_substages
-                assert "code_review" in visited_substages
-                assert "address_review" in visited_substages
-                assert "wrapup" in visited_substages
-                assert "feedback" in visited_substages
+                assert "implement.code" in visited_stages
+                assert "implement.code_review" in visited_stages
+                assert "implement.address_review" in visited_stages
+                assert "implement.wrapup" in visited_stages
+                assert "implement.feedback" in visited_stages
 
     def test_full_workflow_to_accepted(self, workflow_repo: Path, mock_sync: MagicMock):
         """Test complete workflow from create to accepted.
@@ -195,7 +188,7 @@ class TestEndToEndWorkflow:
         This is the full end-to-end test, including human review gates
         (simulated by skipping the human_review check).
         """
-        from agenttree.issues import create_issue, get_issue, get_next_stage, update_issue_stage, ACCEPTED
+        from agenttree.issues import create_issue, get_issue, get_next_stage, update_issue_stage
         from agenttree.hooks import execute_exit_hooks, execute_enter_hooks, ValidationError
 
         agenttree_path = workflow_repo / "_agenttree"
@@ -215,24 +208,22 @@ class TestEndToEndWorkflow:
 
                     issue = get_issue(issue.id)
                     current_stage = issue.stage
-                    current_substage = issue.substage
 
-                    all_stages_visited.append((current_stage, current_substage))
+                    all_stages_visited.append(current_stage)
 
                     # Stop at accepted
-                    if current_stage == ACCEPTED:
+                    if current_stage == "accepted":
                         break
 
                     # Create/overwrite content based on stage
-                    # Always overwrite because enter hooks may create templates with empty sections
-                    if current_stage == "define":
+                    if current_stage.startswith("explore.define"):
                         create_valid_problem_md(issue_dir)
-                    elif current_stage == "research":
+                    elif current_stage.startswith("explore.research"):
                         create_valid_research_md(issue_dir)
-                    elif current_stage in ["plan", "plan_assess", "plan_revise", "plan_review"]:
+                    elif current_stage.startswith("plan."):
                         create_valid_spec_md(issue_dir)
                         create_valid_spec_review_md(issue_dir)
-                    elif current_stage in ["implement", "implementation_review"]:
+                    elif current_stage.startswith("implement."):
                         create_valid_review_md(issue_dir)
 
                     # Execute exit hooks with proper mocking for hooks that need external setup
@@ -240,28 +231,29 @@ class TestEndToEndWorkflow:
                         # Mock rebase hook (requires actual git remote)
                         with patch("agenttree.hooks.run_command_hook", return_value=[]):
                             # Skip PR approval check (no actual PR in tests)
-                            execute_exit_hooks(issue, current_stage, current_substage, skip_pr_approval=True)
+                            execute_exit_hooks(issue, current_stage, skip_pr_approval=True)
 
-                    next_stage, next_substage = get_next_stage(current_stage, current_substage)
+                    next_stage, _ = get_next_stage(current_stage)
 
                     if next_stage is None:
-                        pytest.fail(f"No next stage from {current_stage}.{current_substage}")
+                        pytest.fail(f"No next stage from {current_stage}")
 
-                    update_issue_stage(issue.id, next_stage, next_substage)
+                    update_issue_stage(issue.id, next_stage)
 
                     issue = get_issue(issue.id)
-                    execute_enter_hooks(issue, next_stage, next_substage)
+                    execute_enter_hooks(issue, next_stage)
 
                 # Verify we reached accepted
                 final_issue = get_issue(issue.id)
-                assert final_issue.stage == ACCEPTED, f"Expected accepted, got {final_issue.stage}"
+                assert final_issue.stage == "accepted", f"Expected accepted, got {final_issue.stage}"
 
                 # Verify we touched all major stages
-                stage_names = set(s[0] for s in all_stages_visited)
-                expected_stages = {"define", "research", "plan", "plan_assess", "plan_revise",
-                                   "plan_review", "implement", "implementation_review", "accepted"}
-                missing = expected_stages - stage_names
-                assert not missing, f"Missing stages: {missing}"
+                stage_prefixes = set()
+                for s in all_stages_visited:
+                    stage_prefixes.add(s.split(".")[0] if "." in s else s)
+                expected_prefixes = {"explore", "plan", "implement", "accepted"}
+                missing = expected_prefixes - stage_prefixes
+                assert not missing, f"Missing stage groups: {missing}"
 
     def test_validation_blocks_invalid_content(self, workflow_repo: Path, mock_sync: MagicMock):
         """Test that validation actually blocks progression with invalid content."""
@@ -285,7 +277,7 @@ Just a brief problem description without required sections.
 
                 # Should fail validation
                 with pytest.raises(ValidationError):
-                    execute_exit_hooks(issue, issue.stage, issue.substage)
+                    execute_exit_hooks(issue, issue.stage)
 
     def test_substage_progression(self, workflow_repo: Path, mock_sync: MagicMock):
         """Test that substages progress in correct order."""
@@ -295,38 +287,33 @@ Just a brief problem description without required sections.
         with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
             config = load_config()
 
-            # Test define substages
-            next_stage, next_substage = get_next_stage("define", "refine")
-            assert next_stage == "research"
-            assert next_substage == "explore"
+            # Test explore substages
+            next_stage, _ = get_next_stage("explore.define")
+            assert next_stage == "explore.research"
 
-            # Test research substages
-            next_stage, next_substage = get_next_stage("research", "explore")
-            assert next_stage == "research"
-            assert next_substage == "document"
+            # Test explore -> plan transition
+            next_stage, _ = get_next_stage("explore.research")
+            assert next_stage == "plan.draft"
 
-            next_stage, next_substage = get_next_stage("research", "document")
-            assert next_stage == "plan"
+            # Test plan substages
+            next_stage, _ = get_next_stage("plan.draft")
+            assert next_stage == "plan.assess"
 
-            # Test implement substages (code → code_review → address_review → wrapup → feedback)
-            next_stage, next_substage = get_next_stage("implement", "code")
-            assert next_stage == "implement"
-            assert next_substage == "code_review"
+            # Test implement substages (code -> code_review -> address_review -> wrapup -> feedback)
+            next_stage, _ = get_next_stage("implement.code")
+            assert next_stage == "implement.code_review"
 
-            next_stage, next_substage = get_next_stage("implement", "code_review")
-            assert next_stage == "implement"
-            assert next_substage == "address_review"
+            next_stage, _ = get_next_stage("implement.code_review")
+            assert next_stage == "implement.address_review"
 
-            next_stage, next_substage = get_next_stage("implement", "address_review")
-            assert next_stage == "implement"
-            assert next_substage == "wrapup"
+            next_stage, _ = get_next_stage("implement.address_review")
+            assert next_stage == "implement.wrapup"
 
-            next_stage, next_substage = get_next_stage("implement", "wrapup")
-            assert next_stage == "implement"
-            assert next_substage == "feedback"
+            next_stage, _ = get_next_stage("implement.wrapup")
+            assert next_stage == "implement.feedback"
 
-            next_stage, next_substage = get_next_stage("implement", "feedback")
-            assert next_stage == "implementation_review"
+            next_stage, _ = get_next_stage("implement.feedback")
+            assert next_stage == "implement.review"
 
     def test_history_tracks_transitions(self, workflow_repo: Path, mock_sync: MagicMock):
         """Test that issue history tracks all stage transitions."""
@@ -339,9 +326,9 @@ Just a brief problem description without required sections.
                 issue = create_issue(title="History Test")
 
                 # Make some transitions
-                update_issue_stage(issue.id, "research", "explore")
-                update_issue_stage(issue.id, "research", "document")
-                update_issue_stage(issue.id, "plan", "draft")
+                update_issue_stage(issue.id, "explore.research")
+                update_issue_stage(issue.id, "plan.draft")
+                update_issue_stage(issue.id, "plan.assess")
 
                 # Check history
                 issue = get_issue(issue.id)
@@ -363,7 +350,7 @@ class TestWorkflowEdgeCases:
         required content is missing or invalid.
 
         Note: Stage-level pre_completion hooks only run when exiting the LAST
-        substage of a stage (e.g., plan.refine, not plan.draft).
+        substage of a stage (e.g., plan.draft has its own hooks).
         """
         from agenttree.issues import create_issue, get_issue, update_issue_stage
         from agenttree.hooks import execute_exit_hooks, execute_enter_hooks, ValidationError
@@ -375,19 +362,19 @@ class TestWorkflowEdgeCases:
                 issue = create_issue(title="Skip Test")
                 issue_dir = agenttree_path / "issues" / f"{issue.id}-{issue.slug}"
 
-                # Create problem.md and skip to plan.refine (last substage of plan)
+                # Create problem.md and skip to plan.draft (has pre_completion hooks)
                 create_valid_problem_md(issue_dir)
-                update_issue_stage(issue.id, "plan", "refine")
+                update_issue_stage(issue.id, "plan.draft")
                 issue = get_issue(issue.id)
 
                 # Execute enter hooks - this creates spec.md from template with empty sections
-                execute_enter_hooks(issue, "plan", "refine")
+                execute_enter_hooks(issue, "plan.draft")
 
-                # Plan stage requires spec.md sections to be filled in - template has empty sections
-                # Stage-level hooks run when exiting last substage (refine)
+                # Plan.draft stage requires spec.md sections to be filled in -
+                # template has empty sections
                 # Validation should fail because Approach section is empty (only HTML comments)
                 with pytest.raises(ValidationError):
-                    execute_exit_hooks(issue, "plan", "refine")
+                    execute_exit_hooks(issue, "plan.draft")
 
     # Note: Tests for human_review stages and terminal stages are in test_full_workflow.py
     # (TestHumanReviewGates and TestTerminalStates classes)

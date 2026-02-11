@@ -34,8 +34,7 @@ class TestGetStalledAgents:
         issue_yaml.write_text(yaml.dump({
             "id": "042",
             "title": "Test Issue",
-            "stage": "implement",
-            "substage": "code",
+            "stage": "implement.code",
         }))
 
         # Create session file with last_advanced_at 25 min ago
@@ -46,8 +45,7 @@ class TestGetStalledAgents:
             "session_id": "abc123",
             "issue_id": "042",
             "started_at": old_time,
-            "last_stage": "implement",
-            "last_substage": "code",
+            "last_stage": "implement.code",
             "last_advanced_at": old_time,
             "oriented": True,
         }))
@@ -76,8 +74,7 @@ class TestGetStalledAgents:
         issue_yaml.write_text(yaml.dump({
             "id": "042",
             "title": "Test Issue",
-            "stage": "implement",
-            "substage": "code",
+            "stage": "implement.code",
         }))
 
         # Create session file with last_advanced_at 10 min ago (not stalled)
@@ -88,8 +85,7 @@ class TestGetStalledAgents:
             "session_id": "abc123",
             "issue_id": "042",
             "started_at": recent_time,
-            "last_stage": "implement",
-            "last_substage": "code",
+            "last_stage": "implement.code",
             "last_advanced_at": recent_time,
             "oriented": True,
         }))
@@ -116,7 +112,7 @@ class TestGetStalledAgents:
         issue_yaml.write_text(yaml.dump({
             "id": "042",
             "title": "Test Issue",
-            "stage": "plan_review",
+            "stage": "plan.review",
         }))
 
         # Create session file with last_advanced_at 2 hours ago
@@ -127,8 +123,7 @@ class TestGetStalledAgents:
             "session_id": "abc123",
             "issue_id": "042",
             "started_at": old_time,
-            "last_stage": "plan_review",
-            "last_substage": None,
+            "last_stage": "plan.review",
             "last_advanced_at": old_time,
             "oriented": True,
         }))
@@ -156,8 +151,7 @@ class TestGetStalledAgents:
         issue_yaml.write_text(yaml.dump({
             "id": "042",
             "title": "Test Issue",
-            "stage": "implement",
-            "substage": "code",
+            "stage": "implement.code",
         }))
 
         # Create session file with last_advanced_at 15 min ago
@@ -168,8 +162,7 @@ class TestGetStalledAgents:
             "session_id": "abc123",
             "issue_id": "042",
             "started_at": old_time,
-            "last_stage": "implement",
-            "last_substage": "code",
+            "last_stage": "implement.code",
             "last_advanced_at": old_time,
             "oriented": True,
         }))
