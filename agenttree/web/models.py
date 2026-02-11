@@ -58,6 +58,7 @@ class Issue(IssueBase):
     updated_at: datetime
     dependencies: List[int] = Field(default_factory=list)
     dependents: List[int] = Field(default_factory=list)
+    flow: str = "default"  # Workflow flow (default, quick, etc.)
     processing: Optional[str] = None  # "exit", "enter", or None (not processing)
     ci_escalated: bool = False  # CI failed too many times, escalated to human
 

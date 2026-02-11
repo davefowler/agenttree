@@ -151,6 +151,15 @@ When working on web UI (HTML, CSS, templates):
 - Check for layout issues, color contrast, responsive behavior
 - The web app uses a vintage green color palette — maintain consistency. A rogue blue button on a green page is the kind of thing that makes designers cry and reviewers reject.
 
+## Workflow Flows
+
+Issues follow a **flow** that determines which stages they pass through:
+
+- **default** (the vast majority of issues): Full workflow — define → research → plan → plan_review (human) → implement → code_review → implementation_review (human) → accepted. Use for anything that requires thought, investigation, or touches non-trivial code.
+- **quick** (very rare — truly trivial tasks only): Abbreviated — define → implement → implementation_review (human) → accepted. Skips research, planning, and plan review. **Only** for tasks where the solution is already fully obvious and requires zero decision-making: typo fixes, color changes, config constant updates. If you have to think about it at all, it's not quick.
+
+**When in doubt, use `default`.** The quick flow has no human review before coding starts. Misusing it wastes time when the implementation goes in the wrong direction.
+
 ## Workflow
 
 1. Read existing code before making changes — the codebase already has patterns for most things. If you don't read first, you'll reinvent something that exists and the reviewer will send you back.

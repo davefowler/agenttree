@@ -357,6 +357,7 @@ def convert_issue_to_web(issue: issue_crud.Issue, load_dependents: bool = False)
         updated_at=datetime.fromisoformat(issue.updated.replace("Z", "+00:00")),
         dependencies=dependencies,
         dependents=dependents,
+        flow=issue.flow or "default",
         processing=issue.processing,
         ci_escalated=issue.ci_escalated,
     )
@@ -535,31 +536,72 @@ STAGE_COLOR_PALETTE_DARK = [
 ]
 
 
+def _build_stage_groups() -> dict[str, str]:
+    """Map each stage to its parent group stage.
+
+    If a stage has an explicit `group` field in config, use that.
+    Otherwise, infer groups: "anchor" stages (those with substages that
+    aren't review gates) start a new group. All subsequent non-anchor
+    stages belong to the most recent anchor's group.
+
+    Parking-lot stages are their own group.
+
+    Example with defaults: plan_assess, plan_revise, plan_review -> "plan".
+    Example with explicit: `group: explore` on define and research -> "explore".
+    """
+    groups: dict[str, str] = {}
+    current_group: str | None = None
+
+    for stage_cfg in _config.stages:
+        if stage_cfg.group:
+            # Explicit group set in config — use it directly
+            groups[stage_cfg.name] = stage_cfg.group
+            current_group = stage_cfg.group
+        elif stage_cfg.is_parking_lot:
+            groups[stage_cfg.name] = stage_cfg.name
+        elif stage_cfg.substages and not stage_cfg.human_review:
+            # Anchor stage — starts a new group
+            current_group = stage_cfg.name
+            groups[stage_cfg.name] = stage_cfg.name
+        else:
+            # Non-anchor: belongs to current group (or itself if no group yet)
+            groups[stage_cfg.name] = current_group or stage_cfg.name
+
+    return groups
+
+
 def _build_stage_colors() -> dict[str, dict[str, str]]:
     """Build stage-to-color mapping from config.
 
     Returns dict mapping stage name -> {"light": color, "dark": color}.
-    Parking-lot stages get gray; active stages get colors distributed
-    evenly across the palette.
+    Stages in the same group share the same color. Parking-lot stages
+    get gray; group colors are distributed across the palette.
     """
-    stage_names = _config.get_stage_names()
+    gray = {"light": STAGE_COLOR_PALETTE[0], "dark": STAGE_COLOR_PALETTE_DARK[0]}
     colors: dict[str, dict[str, str]] = {}
 
-    # Separate parking-lot stages from active stages
-    active_stages: list[str] = []
-    for name in stage_names:
-        stage_cfg = _config.get_stage(name)
-        if stage_cfg and (stage_cfg.is_parking_lot or stage_cfg.redirect_only):
-            colors[name] = {"light": STAGE_COLOR_PALETTE[0], "dark": STAGE_COLOR_PALETTE_DARK[0]}
-        else:
-            active_stages.append(name)
+    # Find unique groups in order, skipping parking lots
+    seen_groups: list[str] = []
+    for stage_cfg in _config.stages:
+        group = _stage_groups.get(stage_cfg.name, stage_cfg.name)
+        if stage_cfg.is_parking_lot:
+            colors[stage_cfg.name] = gray
+        elif group not in seen_groups:
+            seen_groups.append(group)
 
-    # Distribute palette colors (skip index 0 = gray) across active stages
+    # Assign palette colors to groups
     palette = STAGE_COLOR_PALETTE[1:]
     palette_dark = STAGE_COLOR_PALETTE_DARK[1:]
-    for i, name in enumerate(active_stages):
+    group_colors: dict[str, dict[str, str]] = {}
+    for i, group in enumerate(seen_groups):
         idx = i % len(palette)
-        colors[name] = {"light": palette[idx], "dark": palette_dark[idx]}
+        group_colors[group] = {"light": palette[idx], "dark": palette_dark[idx]}
+
+    # Map every stage to its group's color
+    for stage_cfg in _config.stages:
+        if stage_cfg.name not in colors:  # Skip already-assigned parking lots
+            group = _stage_groups.get(stage_cfg.name, stage_cfg.name)
+            colors[stage_cfg.name] = group_colors.get(group, gray)
 
     return colors
 
@@ -600,6 +642,9 @@ def _build_file_order() -> list[str]:
 
 
 # Build all mappings from config at module load
+# Build all mappings from config at module load.
+# Order matters: _stage_groups must be built before _stage_colors.
+_stage_groups = _build_stage_groups()
 _stage_colors = _build_stage_colors()
 _file_to_stage = _build_file_to_stage()
 _file_order = _build_file_order()

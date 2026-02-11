@@ -5,7 +5,7 @@
         <div class="detail-header">
             <div class="detail-title-row">
                 <div class="detail-title">
-                    #{{ issue.number }}: {{ issue.title }}
+                    #{{ issue.number }}{% if issue.flow and issue.flow != 'default' %} <span class="flow-badge flow-{{ issue.flow }}" title="{{ issue.flow | title }} flow">⚡</span>{% endif %}: {{ issue.title }}
                 </div>
                 <div class="detail-title-actions">
                     <div class="agent-light-large {% if issue.processing %}processing{% elif issue.tmux_active %}on{% else %}off{% endif %}"

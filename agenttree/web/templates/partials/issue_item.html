@@ -21,6 +21,9 @@ Optional:
                  onclick="event.preventDefault(); event.stopPropagation(); toggleAgent('{{ issue.number }}', this)"
                  title="{% if issue.processing %}Processing hooks...{% elif issue.tmux_active %}Agent running{% else %}No agent{% endif %}"></div>
             <span class="issue-number">#{{ issue.number }}</span>
+            {% if issue.flow and issue.flow != 'default' %}
+            <span class="flow-badge flow-{{ issue.flow }}" title="{{ issue.flow | title }} flow">⚡</span>
+            {% endif %}
             {% if issue.priority != 'medium' %}
             <span class="priority-badge priority-{{ issue.priority }}" title="Priority: {{ issue.priority }}">{{ issue.priority[:1] | upper }}</span>
             {% endif %}

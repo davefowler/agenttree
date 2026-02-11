@@ -331,6 +331,16 @@ button[disabled] {
     margin-bottom: 8px;
 }
 
+/* Flow badges */
+.flow-badge {
+    font-size: 12px;
+    cursor: default;
+}
+
+.flow-badge.flow-quick {
+    color: #eab308;
+}
+
 /* Priority badges */
 .priority-badge {
     padding: 2px 6px;

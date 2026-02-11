@@ -138,6 +138,7 @@ class StageConfig(BaseModel):
     """Configuration for a workflow stage."""
 
     name: str
+    group: str | None = None      # Color group for UI (stages with same group share a color)
     output: Optional[str] = None  # Document created by this stage
     output_optional: bool = False  # If True, missing output file doesn't error
     skill: Optional[str] = None   # Override skill file path
