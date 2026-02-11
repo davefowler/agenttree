@@ -322,7 +322,6 @@ class TUIApp(App):  # type: ignore[type-arg]
                 return
 
             # Execute post-start hooks (may redirect on merge conflict etc.)
-            next_display = f"{next_stage}.{next_substage}" if next_substage else next_stage
             try:
                 execute_enter_hooks(updated, next_dot_path)
             except StageRedirect as redirect:

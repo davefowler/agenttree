@@ -30,7 +30,6 @@ def sample_issues() -> list[Issue]:
             updated="2024-01-01T00:00:00Z",
             stage="backlog",
             priority=Priority.HIGH,
-            assigned_agent=None,
         ),
         Issue(
             id="002",
@@ -40,7 +39,6 @@ def sample_issues() -> list[Issue]:
             updated="2024-01-02T00:00:00Z",
             stage="implement.code",
             priority=Priority.MEDIUM,
-            assigned_agent="1",
         ),
         Issue(
             id="003",
@@ -50,7 +48,6 @@ def sample_issues() -> list[Issue]:
             updated="2024-01-03T00:00:00Z",
             stage="plan.review",
             priority=Priority.CRITICAL,
-            assigned_agent=None,
         ),
     ]
 
@@ -282,12 +279,19 @@ class TestActions:
              patch("agenttree.tui.app.get_issue") as mock_get_issue, \
              patch("agenttree.tui.app.update_issue_stage") as mock_update, \
              patch("agenttree.tui.app.execute_exit_hooks") as mock_exit_hooks, \
-             patch("agenttree.tui.app.execute_enter_hooks") as mock_enter_hooks:
+             patch("agenttree.tui.app.execute_enter_hooks") as mock_enter_hooks, \
+             patch("agenttree.tui.app.load_config") as mock_config:
 
             mock_list.return_value = sample_issues
             # Return issue 003 (plan_review) when get_issue is called
             mock_get_issue.return_value = sample_issues[2]
             mock_update.return_value = sample_issues[2]  # Return updated issue
+
+            # Configure mock config for rejection
+            mock_config.return_value.is_human_review.return_value = True
+            mock_config.return_value.get_flow_stage_names.return_value = [
+                "plan.draft", "plan.review", "implement.code", "implement.review",
+            ]
 
             app = TUIApp()
             async with app.run_test() as pilot:
@@ -376,17 +380,17 @@ class TestRejectionBehavior:
     @patch("agenttree.tui.app.load_config")
     def test_reject_finds_previous_stage_in_flow(self, mock_config: MagicMock) -> None:
         """Verify rejection navigates to the previous stage in the flow."""
-        from agenttree.config import Config, StageConfig, FlowConfig
+        from agenttree.config import Config, StageConfig, SubstageConfig, FlowConfig
 
         config = Config(
             stages={
                 "plan": StageConfig(name="plan", substages={
-                    "draft": {},
-                    "review": {"human_review": True},
+                    "draft": SubstageConfig(name="draft"),
+                    "review": SubstageConfig(name="review", human_review=True),
                 }),
                 "implement": StageConfig(name="implement", substages={
-                    "code": {},
-                    "review": {"human_review": True},
+                    "code": SubstageConfig(name="code"),
+                    "review": SubstageConfig(name="review", human_review=True),
                 }),
             },
             flows={
