@@ -1023,7 +1023,7 @@ class TestFileToStageMapping:
         (issue_dir / "review.md").write_text("# Review")
 
         mock_crud.get_issue_dir.return_value = issue_dir
-        mock_config.get_stage_names.return_value = ["backlog", "define", "research", "plan", "plan_assess", "plan_revise", "plan_review", "implement"]
+        mock_config.get_flow_stage_names.return_value = ["backlog", "define", "research", "plan", "plan_assess", "plan_revise", "plan_review", "implement"]
         mock_config.show_issue_yaml = False
 
         # Current stage is implement

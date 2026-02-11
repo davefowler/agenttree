@@ -766,6 +766,33 @@ class Config(BaseModel):
         """
         return {stage.name for stage in self.stages if stage.is_parking_lot}
 
+    def stage_group_name(self, stage_or_path: str) -> str:
+        """Get the top-level stage name for grouping (e.g. Kanban columns).
+
+        For "implement.code" returns "implement"; for "plan_review" returns "plan_review".
+        """
+        if "." in stage_or_path:
+            return stage_or_path.split(".", 1)[0]
+        return stage_or_path
+
+    def stage_display_name(self, stage_or_path: str) -> str:
+        """Get human-readable display name for a stage."""
+        stage_name = self.stage_group_name(stage_or_path)
+        # Convert plan_review -> Plan Review, implement -> Implement
+        return stage_name.replace("_", " ").title()
+
+    def resolve_stage(self, dot_path: str) -> tuple[Optional["StageConfig"], Optional[SubstageConfig]]:
+        """Resolve a dot-path (e.g. implement.code) to (stage_config, substage_config)."""
+        if "." in dot_path:
+            stage_name, substage_name = dot_path.split(".", 1)
+        else:
+            stage_name, substage_name = dot_path, None
+        stage_config = self.get_stage(stage_name)
+        sub_config = None
+        if stage_config and substage_name:
+            sub_config = stage_config.get_substage(substage_name)
+        return stage_config, sub_config
+
     def get_flow(self, flow_name: str) -> Optional[FlowConfig]:
         """Get configuration for a flow.
 
