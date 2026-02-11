@@ -79,8 +79,11 @@ def get_stalled_agents(
             if not active_agent:
                 continue
 
-            # Get stage (now a dot path like "explore.define")
+            # Get stage (dot path when substage present: implement.code)
             stage = issue_data.get("stage", "")
+            substage = issue_data.get("substage") or ""
+            if substage:
+                stage = f"{stage}.{substage}"
 
             # Skip human review stages
             if stage in human_review_stages:

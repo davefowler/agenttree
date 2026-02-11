@@ -1162,6 +1162,7 @@ async def approve_issue(
                 transition_issue,
                 issue_id_normalized,
                 next_stage,
+                next_substage,
                 skip_pr_approval=config.allow_self_approval,
                 trigger="web",
             )
@@ -1171,6 +1172,7 @@ async def approve_issue(
                 transition_issue,
                 issue_id_normalized,
                 redirect.target_stage,
+                redirect.target_substage,
                 skip_pr_approval=config.allow_self_approval,
                 trigger="web",
             )

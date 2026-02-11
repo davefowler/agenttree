@@ -68,7 +68,7 @@ class TestIssueModel:
             updated="2026-01-11T12:00:00Z",
         )
         assert issue.id == "001"
-        assert issue.stage == "explore.define"  # New issues start at explore.define
+        assert issue.stage == "define"  # New issues start at define
         assert issue.priority == Priority.MEDIUM
 
     def test_issue_with_all_fields(self):
@@ -132,7 +132,7 @@ class TestProcessingHelpers:
             "title": "Test Issue",
             "created": "2026-01-11T12:00:00Z",
             "updated": "2026-01-11T12:00:00Z",
-            "stage": "explore.define",
+            "stage": "define",
             "labels": [],
             "priority": "medium",
             "dependencies": [],
@@ -215,7 +215,7 @@ class TestIssueCRUD:
         assert issue.id == "001"
         assert issue.title == "Test Issue"
         assert issue.priority == Priority.HIGH
-        assert issue.stage == "explore.define"  # New issues start at explore.define
+        assert issue.stage == "define"  # New issues start at define
 
         # Check files created
         issue_dir = temp_agenttrees / "issues" / "001-test-issue"
@@ -269,23 +269,23 @@ class TestIssueCRUD:
 
     def test_create_issue_with_custom_stage(self, temp_agenttrees):
         """Test creating an issue with a custom starting stage."""
-        issue = create_issue("Test Issue", stage="explore.define")
+        issue = create_issue("Test Issue", stage="define")
 
         assert issue.id == "001"
         assert issue.title == "Test Issue"
-        assert issue.stage == "explore.define"
+        assert issue.stage == "define"
 
         # Check history entry
         assert len(issue.history) == 1
-        assert issue.history[0].stage == "explore.define"
+        assert issue.history[0].stage == "define"
 
     def test_create_issue_with_research_stage(self, temp_agenttrees):
         """Test creating an issue starting at research stage."""
-        issue = create_issue("Research Task", stage="explore.research", priority=Priority.HIGH)
+        issue = create_issue("Research Task", stage="research", priority=Priority.HIGH)
 
-        assert issue.stage == "explore.research"
+        assert issue.stage == "research"
         assert issue.priority == Priority.HIGH
-        assert issue.history[0].stage == "explore.research"
+        assert issue.history[0].stage == "research"
 
     def test_create_issue_with_implement_stage(self, temp_agenttrees):
         """Test creating an issue starting at implement stage."""
@@ -295,11 +295,11 @@ class TestIssueCRUD:
         assert issue.history[0].stage == "implement.code"
 
     def test_create_issue_defaults_to_define(self, temp_agenttrees):
-        """Test that not providing a stage defaults to explore.define."""
+        """Test that not providing a stage defaults to define."""
         issue = create_issue("Default Stage Issue")
 
-        assert issue.stage == "explore.define"
-        assert issue.history[0].stage == "explore.define"
+        assert issue.stage == "define"
+        assert issue.history[0].stage == "define"
 
 
 class TestStageTransitions:
@@ -694,7 +694,7 @@ class TestUpdateIssueStage:
     def test_update_issue_stage(self, temp_agenttrees):
         """Update issue stage."""
         issue = create_issue("Test Issue")
-        assert issue.stage == "explore.define"  # New issues start at explore.define
+        assert issue.stage == "define"  # New issues start at define
 
         updated = update_issue_stage("001", "explore.research")
         assert updated is not None
@@ -705,14 +705,14 @@ class TestUpdateIssueStage:
         issue = create_issue("Test Issue")
         assert len(issue.history) == 1
 
-        updated = update_issue_stage("001", "explore.research", agent=1)
+        updated = update_issue_stage("001", "research", agent=1)
         assert len(updated.history) == 2
-        assert updated.history[-1].stage == "explore.research"
+        assert updated.history[-1].stage == "research"
         assert updated.history[-1].agent == 1
 
     def test_update_issue_stage_not_found(self, temp_agenttrees):
         """Return None for non-existent issue."""
-        result = update_issue_stage("999", "explore.define")
+        result = update_issue_stage("999", "define")
         assert result is None
 
 
@@ -1079,10 +1079,10 @@ class TestSessionManagement:
         issue = create_issue("Test Issue")
         create_session(issue.id)
 
-        update_session_stage(issue.id, "explore.research")
+        update_session_stage(issue.id, "research")
 
         session = get_session(issue.id)
-        assert session.last_stage == "explore.research"
+        assert session.last_stage == "research"
         assert session.oriented is True
 
     def test_delete_session(self, temp_agenttrees):
@@ -1169,11 +1169,11 @@ class TestLoadPersona:
             is_takeover=True,
         )
         assert persona is not None
-        # Should include dot-path stages before implement.code
-        assert "explore.define" in persona
-        assert "explore.research" in persona
-        assert "plan.draft" in persona
-        assert "plan.review" in persona
+        # Should include stages before implement.code
+        assert "define" in persona
+        assert "research" in persona
+        assert "plan" in persona
+        assert "plan_review" in persona
 
     def test_load_persona_takeover_true_mid_workflow(self, temp_agenttrees_with_persona):
         """is_takeover should be True when starting mid-workflow."""
@@ -1191,7 +1191,7 @@ class TestLoadPersona:
         from agenttree.issues import load_persona
 
         persona = load_persona(
-            current_stage="explore.define",
+            current_stage="define",
             is_takeover=False,
         )
         assert persona is not None
@@ -1294,7 +1294,7 @@ class TestGetIssueContext:
         assert context["id"] == "001"
         assert context["slug"] == "test-issue"
         assert context["title"] == "Test Issue"
-        assert context["stage"] == "explore.define"
+        assert context["stage"] == "define"
         assert context["priority"] == "high"
         assert "created" in context
         assert "updated" in context
@@ -1312,9 +1312,9 @@ class TestGetIssueContext:
         assert context["issue_title"] == "Test Issue"  # alias
         assert "issue_dir" in context
         assert context["issue_dir_rel"] == "_agenttree/issues/001-test-issue"
-        # Dot path is parsed into stage_group and substage
-        assert context["stage_group"] == "explore"
-        assert context["substage"] == "define"
+        # Stage parsed into stage_group and substage (define defaults to refine)
+        assert context["stage_group"] == "define"
+        assert context["substage"] == "refine"
 
     def test_get_issue_context_stage_without_substage(self, temp_agenttrees):
         """stage_group and substage should handle single-level stages."""
@@ -1384,7 +1384,7 @@ class TestGetIssueContext:
         from agenttree.issues import update_issue_stage
 
         issue = create_issue("Test Issue")
-        update_issue_stage(issue.id, "explore.research", agent=1)
+        update_issue_stage(issue.id, "research", agent=1)
 
         # Reload issue
         issue = get_issue(issue.id)
@@ -1392,8 +1392,8 @@ class TestGetIssueContext:
 
         assert "history" in context
         assert len(context["history"]) == 2
-        assert context["history"][0]["stage"] == "explore.define"
-        assert context["history"][1]["stage"] == "explore.research"
+        assert context["history"][0]["stage"] == "define"
+        assert context["history"][1]["stage"] == "research"
         assert context["history"][1]["agent"] == 1
 
 

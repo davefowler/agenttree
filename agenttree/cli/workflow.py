@@ -728,6 +728,13 @@ def rollback_issue(
         console.print(f"[red]Cannot rollback to redirect-only stage '{stage_name}'[/red]")
         sys.exit(1)
 
+    # First substage of target stage (for issue.yaml update)
+    target_substage: str | None = None
+    if target_stage_config:
+        substages = target_stage_config.substage_order()
+        if substages:
+            target_substage = substages[0]
+
     # Collect output files from stages after target that are being rolled back
     stages_to_archive = flow_stages[target_idx + 1 : current_idx + 1]
 
@@ -814,9 +821,10 @@ def rollback_issue(
             with open(yaml_path) as fh:
                 data = pyyaml.safe_load(fh)
 
-            # Update stage
+            # Update stage and substage (first substage of target, or clear)
             now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
             data["stage"] = stage_name
+            data["substage"] = target_substage
             data["updated"] = now
 
             # Add rollback history entry

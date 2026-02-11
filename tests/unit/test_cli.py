@@ -879,8 +879,9 @@ class TestRollbackCommand:
         mock_issue = MagicMock()
         mock_issue.id = "42"
         mock_issue.stage = "implement"
+        mock_issue.flow = "default"
 
-        mock_config.get_stage_names.return_value = [
+        mock_config.get_flow_stage_names.return_value = [
             "backlog", "define", "research", "plan", "implement", "accepted"
         ]
 
@@ -899,8 +900,9 @@ class TestRollbackCommand:
         mock_issue = MagicMock()
         mock_issue.id = "42"
         mock_issue.stage = "research"
+        mock_issue.flow = "default"
 
-        mock_config.get_stage_names.return_value = [
+        mock_config.get_flow_stage_names.return_value = [
             "backlog", "define", "research", "plan", "implement", "accepted"
         ]
 
@@ -919,12 +921,14 @@ class TestRollbackCommand:
         mock_issue = MagicMock()
         mock_issue.id = "42"
         mock_issue.stage = "implement"
+        mock_issue.flow = "default"
 
         # not_doing is positioned before implement so we can test the redirect_only check
         # (position check must pass before redirect_only check is reached)
-        mock_config.get_stage_names.return_value = [
+        mock_config.get_flow_stage_names.return_value = [
             "backlog", "not_doing", "define", "research", "plan", "implement", "accepted"
         ]
+        mock_config.parse_stage = lambda s: (s.split(".")[0] if "." in s else s, s.split(".")[1] if "." in s else None)
         mock_stage_config = MagicMock()
         mock_stage_config.redirect_only = True
         mock_config.get_stage.return_value = mock_stage_config
@@ -958,10 +962,12 @@ class TestRollbackCommand:
         mock_issue.title = "Test Issue"
         mock_issue.stage = "implement"
         mock_issue.substage = None
+        mock_issue.flow = "default"
 
-        mock_config.get_stage_names.return_value = [
+        mock_config.get_flow_stage_names.return_value = [
             "backlog", "define", "research", "plan", "implement", "accepted"
         ]
+        mock_config.parse_stage = lambda s: (s.split(".")[0] if "." in s else s, s.split(".")[1] if "." in s else None)
         mock_stage_config = MagicMock()
         mock_stage_config.redirect_only = False
         mock_stage_config.substage_order.return_value = []
@@ -991,10 +997,13 @@ class TestRollbackCommand:
         mock_issue.title = "Test Issue"
         mock_issue.stage = "implement"
         mock_issue.substage = "code"
+        mock_issue.flow = "default"
 
-        mock_config.get_stage_names.return_value = [
+        mock_config.get_flow_stage_names.return_value = [
             "backlog", "define", "research", "plan", "implement", "accepted"
         ]
+        mock_config.parse_stage = lambda s: (s.split(".")[0] if "." in s else s, s.split(".")[1] if "." in s else None)
+        mock_config.output_for = lambda stage, sub=None: None
         mock_stage_config = MagicMock()
         mock_stage_config.redirect_only = False
         mock_stage_config.substage_order.return_value = ["explore", "document"]
@@ -1053,10 +1062,13 @@ class TestRollbackCommand:
         mock_issue.title = "Test Issue"
         mock_issue.stage = "implement"
         mock_issue.substage = "code"
+        mock_issue.flow = "default"
 
-        mock_config.get_stage_names.return_value = [
+        mock_config.get_flow_stage_names.return_value = [
             "backlog", "define", "research", "plan", "implement", "accepted"
         ]
+        mock_config.parse_stage = lambda s: (s.split(".")[0] if "." in s else s, s.split(".")[1] if "." in s else None)
+        mock_config.output_for = lambda s, sub=None: "spec.md" if s == "plan" else ("review.md" if s == "implement" else None)
 
         # Set up stage configs with output files
         def get_stage_side_effect(name):
@@ -1132,15 +1144,18 @@ class TestRollbackCommand:
         mock_issue.title = "Test Issue"
         mock_issue.stage = "implement"
         mock_issue.substage = "code"
+        mock_issue.flow = "default"
 
         mock_agent = MagicMock()
         mock_agent.issue_id = "42"
         mock_agent.worktree = tmp_path / "worktree"
         mock_agent.worktree.mkdir(parents=True)
 
-        mock_config.get_stage_names.return_value = [
+        mock_config.get_flow_stage_names.return_value = [
             "backlog", "define", "research", "plan", "implement", "accepted"
         ]
+        mock_config.parse_stage = lambda s: (s.split(".")[0] if "." in s else s, s.split(".")[1] if "." in s else None)
+        mock_config.output_for = lambda s, sub=None: None
         mock_stage_config = MagicMock()
         mock_stage_config.redirect_only = False
         mock_stage_config.substage_order.return_value = []
