@@ -110,7 +110,7 @@ def hooks_check(issue_id: str, event: str) -> None:
     if event in ("post_start", "both"):
         # For post_start, show what would run on NEXT stage
         issue_ctx = get_issue_context(issue, include_docs=False)
-        next_stage, next_substage, _ = get_next_stage(
+        next_stage, next_substage = get_next_stage(
             issue.stage, issue.substage, issue.flow, issue_context=issue_ctx
         )
         if next_stage:

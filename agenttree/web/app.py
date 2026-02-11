@@ -1153,7 +1153,7 @@ async def approve_issue(
     # Load config from repo path (Path.cwd() can be wrong in uvicorn workers)
     config_path = Path(os.environ["AGENTTREE_REPO_PATH"]) if os.environ.get("AGENTTREE_REPO_PATH") else None
     config = load_config(config_path)
-    next_stage, next_substage, _ = config.get_next_stage(issue.stage, issue.substage, issue.flow)
+    next_stage, next_substage = config.get_next_stage(issue.stage, issue.substage, issue.flow)
 
     try:
         # Set processing state

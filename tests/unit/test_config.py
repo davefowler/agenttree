@@ -588,10 +588,9 @@ class TestRedirectOnlyStages:
         )
 
         # From independent_code_review, should go to implementation_review, skipping address_independent_review
-        next_stage, next_substage, is_human_review = config.get_next_stage("independent_code_review")
+        next_stage, next_substage = config.get_next_stage("independent_code_review")
         assert next_stage == "implementation_review"
         assert next_substage is None
-        assert is_human_review is False
 
     def test_redirect_only_stage_not_included_in_normal_order(self) -> None:
         """redirect_only stages should be accessible but skipped during normal progression."""
@@ -606,13 +605,12 @@ class TestRedirectOnlyStages:
         )
 
         # From implement, should go directly to accepted, skipping redirect_only review
-        # Note: get_next_stage returns (stage, substage, human_review), not is_parking_lot
-        next_stage, next_substage, human_review = config.get_next_stage("implement")
+        next_stage, next_substage = config.get_next_stage("implement")
         assert next_stage == "accepted"
-        # accepted is parking_lot but human_review is False
-        assert human_review is False
         # Verify accepted is indeed a parking lot
         assert config.is_parking_lot("accepted") is True
+        # Check human_review via config lookup
+        assert config.get_stage("accepted").human_review is False
 
     def test_redirect_only_stage_can_still_be_entered_directly(self) -> None:
         """redirect_only stages should still be retrievable and configurable."""
@@ -653,7 +651,7 @@ class TestRedirectOnlyStages:
         )
 
         # From implement, should skip both redirect_only stages
-        next_stage, next_substage, is_human_review = config.get_next_stage("implement")
+        next_stage, next_substage = config.get_next_stage("implement")
         assert next_stage == "final_review"
 
     def test_redirect_only_defaults_to_false(self) -> None:
@@ -728,7 +726,7 @@ class TestConditionalStages:
         context = {"needs_ui_review": False}
 
         # From implement, should skip ui_review (condition is false) and go to final_review
-        next_stage, next_substage, is_human_review = config.get_next_stage(
+        next_stage, next_substage = config.get_next_stage(
             "implement", issue_context=context
         )
         assert next_stage == "final_review"
@@ -750,7 +748,7 @@ class TestConditionalStages:
         context = {"needs_ui_review": True}
 
         # From implement, should go to ui_review (condition is true)
-        next_stage, next_substage, is_human_review = config.get_next_stage(
+        next_stage, next_substage = config.get_next_stage(
             "implement", issue_context=context
         )
         assert next_stage == "ui_review"
@@ -768,7 +766,7 @@ class TestConditionalStages:
         )
 
         # Even with empty context, stage without condition should run
-        next_stage, next_substage, is_human_review = config.get_next_stage(
+        next_stage, next_substage = config.get_next_stage(
             "implement", issue_context={}
         )
         assert next_stage == "review"
@@ -787,7 +785,7 @@ class TestConditionalStages:
         )
 
         # No context provided - condition should evaluate to falsy, stage skipped
-        next_stage, next_substage, is_human_review = config.get_next_stage(
+        next_stage, next_substage = config.get_next_stage(
             "implement"
         )
         assert next_stage == "final_review"
@@ -809,7 +807,7 @@ class TestConditionalStages:
         context = {"other_var": True}
 
         # Missing variable should evaluate to falsy, stage skipped
-        next_stage, next_substage, is_human_review = config.get_next_stage(
+        next_stage, next_substage = config.get_next_stage(
             "implement", issue_context=context
         )
         assert next_stage == "final_review"
@@ -846,7 +844,7 @@ class TestConditionalStages:
         )
 
         # redirect_only stages are always skipped in normal progression, regardless of condition
-        next_stage, next_substage, is_human_review = config.get_next_stage(
+        next_stage, next_substage = config.get_next_stage(
             "implement", issue_context={"something": True}
         )
         assert next_stage == "final_review"

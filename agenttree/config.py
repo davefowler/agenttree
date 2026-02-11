@@ -776,7 +776,7 @@ class Config(BaseModel):
         current_substage: Optional[str] = None,
         flow: str = "default",
         issue_context: dict | None = None,
-    ) -> tuple[str, Optional[str], bool]:
+    ) -> tuple[str, Optional[str]]:
         """Calculate the next stage/substage.
 
         Args:
@@ -786,11 +786,15 @@ class Config(BaseModel):
             issue_context: Optional dict of issue context for condition evaluation
 
         Returns:
-            Tuple of (next_stage, next_substage, is_human_review)
+            Tuple of (next_stage, next_substage)
+
+        Note:
+            To check if the next stage requires human review, use:
+            config.get_stage(next_stage).human_review
         """
         stage_config = self.get_stage(current_stage)
         if stage_config is None:
-            return current_stage, current_substage, False
+            return current_stage, current_substage
 
         substages = stage_config.substage_order()
 
@@ -804,7 +808,7 @@ class Config(BaseModel):
                     next_sub = stage_config.get_substage(next_sub_name)
                     if next_sub and next_sub.redirect_only:
                         continue  # Skip redirect_only substages in normal progression
-                    return current_stage, next_sub_name, False
+                    return current_stage, next_sub_name
                 # All remaining substages are redirect_only, move to next stage
             except ValueError:
                 pass  # substage not found, move to next stage
@@ -829,12 +833,12 @@ class Config(BaseModel):
                             continue
                     next_substages = next_stage.substage_order()
                     next_substage = next_substages[0] if next_substages else None
-                    return next_stage_name, next_substage, next_stage.human_review
+                    return next_stage_name, next_substage
         except ValueError:
             pass
 
         # Already at end
-        return current_stage, current_substage, False
+        return current_stage, current_substage
 
     def format_stage(self, stage: str, substage: Optional[str] = None) -> str:
         """Format stage/substage as a display string.

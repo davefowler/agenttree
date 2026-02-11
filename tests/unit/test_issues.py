@@ -322,116 +322,100 @@ class TestStageTransitions:
 
     def test_get_next_stage_from_backlog(self):
         """Backlog -> define.refine"""
-        next_stage, next_substage, is_review = get_next_stage(BACKLOG, None)
+        next_stage, next_substage = get_next_stage(BACKLOG, None)
         assert next_stage == DEFINE
         assert next_substage == "refine"
-        assert is_review is False
 
     def test_get_next_stage_define_to_research(self):
         """define.refine -> research.explore (no problem_review gate)"""
-        next_stage, next_substage, is_review = get_next_stage(DEFINE, "refine")
+        next_stage, next_substage = get_next_stage(DEFINE, "refine")
         assert next_stage == RESEARCH
         assert next_substage == "explore"
-        assert is_review is False
 
     def test_get_next_stage_within_research_substages(self):
         """research.explore -> research.document"""
-        next_stage, next_substage, is_review = get_next_stage(RESEARCH, "explore")
+        next_stage, next_substage = get_next_stage(RESEARCH, "explore")
         assert next_stage == RESEARCH
         assert next_substage == "document"
-        assert is_review is False
 
     def test_get_next_stage_research_to_plan(self):
         """research.document -> plan.draft (not directly to plan_review)"""
-        next_stage, next_substage, is_review = get_next_stage(RESEARCH, "document")
+        next_stage, next_substage = get_next_stage(RESEARCH, "document")
         assert next_stage == PLAN
         assert next_substage == "draft"
-        assert is_review is False
 
     def test_get_next_stage_plan_to_plan_assess(self):
         """plan.refine -> plan_assess"""
-        next_stage, next_substage, is_review = get_next_stage(PLAN, "refine")
+        next_stage, next_substage = get_next_stage(PLAN, "refine")
         assert next_stage == PLAN_ASSESS
         assert next_substage is None
-        assert is_review is False
 
     def test_get_next_stage_plan_assess_to_plan_revise(self):
         """plan_assess -> plan_revise"""
-        next_stage, next_substage, is_review = get_next_stage(PLAN_ASSESS, None)
+        next_stage, next_substage = get_next_stage(PLAN_ASSESS, None)
         assert next_stage == PLAN_REVISE
         assert next_substage is None
-        assert is_review is False
 
     def test_get_next_stage_plan_revise_to_plan_review(self):
         """plan_revise -> plan_review (human review)"""
-        next_stage, next_substage, is_review = get_next_stage(PLAN_REVISE, None)
+        next_stage, next_substage = get_next_stage(PLAN_REVISE, None)
         assert next_stage == PLAN_REVIEW
         assert next_substage is None
-        assert is_review is True
 
     def test_get_next_stage_within_implement_substages(self):
         """implement.setup -> implement.code"""
-        next_stage, next_substage, is_review = get_next_stage(IMPLEMENT, "setup")
+        next_stage, next_substage = get_next_stage(IMPLEMENT, "setup")
         assert next_stage == IMPLEMENT
         assert next_substage == "code"
-        assert is_review is False
 
     def test_get_next_stage_implement_code_review_skips_address_review(self):
         """implement.code_review -> implement.wrapup (address_review is redirect_only)"""
-        next_stage, next_substage, is_review = get_next_stage(IMPLEMENT, "code_review")
+        next_stage, next_substage = get_next_stage(IMPLEMENT, "code_review")
         assert next_stage == IMPLEMENT
         assert next_substage == "wrapup"
-        assert is_review is False
 
     def test_get_next_stage_implement_to_wrapup(self):
         """implement.address_review -> implement.wrapup"""
-        next_stage, next_substage, is_review = get_next_stage(IMPLEMENT, "address_review")
+        next_stage, next_substage = get_next_stage(IMPLEMENT, "address_review")
         assert next_stage == IMPLEMENT
         assert next_substage == "wrapup"
-        assert is_review is False
 
     def test_get_next_stage_wrapup_to_feedback(self):
         """implement.wrapup -> implement.feedback"""
-        next_stage, next_substage, is_review = get_next_stage(IMPLEMENT, "wrapup")
+        next_stage, next_substage = get_next_stage(IMPLEMENT, "wrapup")
         assert next_stage == IMPLEMENT
         assert next_substage == "feedback"
-        assert is_review is False
 
     def test_get_next_stage_feedback_to_independent_review(self):
         """implement.feedback -> independent_code_review (review agent stage)"""
-        next_stage, next_substage, is_review = get_next_stage(IMPLEMENT, "feedback")
+        next_stage, next_substage = get_next_stage(IMPLEMENT, "feedback")
         assert next_stage == INDEPENDENT_CODE_REVIEW
         assert next_substage is None
         # Not human review - it's a custom agent stage
-        assert is_review is False
 
     def test_get_next_stage_independent_review_to_implementation_review(self):
         """independent_code_review -> implementation_review.ci_wait (human review)"""
-        next_stage, next_substage, is_review = get_next_stage(INDEPENDENT_CODE_REVIEW, None)
+        next_stage, next_substage = get_next_stage(INDEPENDENT_CODE_REVIEW, None)
         assert next_stage == IMPLEMENTATION_REVIEW
         assert next_substage == "ci_wait"  # First substage of implementation_review
-        assert is_review is True
 
     def test_get_next_stage_to_knowledge_base(self):
         """implementation_review -> knowledge_base"""
-        next_stage, next_substage, is_review = get_next_stage(IMPLEMENTATION_REVIEW, None)
+        next_stage, next_substage = get_next_stage(IMPLEMENTATION_REVIEW, None)
         assert next_stage == KNOWLEDGE_BASE
         assert next_substage is None
-        assert is_review is False
 
     def test_get_next_stage_at_knowledge_base(self):
         """knowledge_base -> accepted"""
-        next_stage, next_substage, is_review = get_next_stage(KNOWLEDGE_BASE, None)
+        next_stage, next_substage = get_next_stage(KNOWLEDGE_BASE, None)
         assert next_stage == ACCEPTED
         assert next_substage is None
-        assert is_review is False
 
     def test_get_next_stage_at_accepted(self):
         """accepted -> stays at accepted (terminal)"""
-        next_stage, next_substage, is_review = get_next_stage(ACCEPTED, None)
+        next_stage, next_substage = get_next_stage(ACCEPTED, None)
         assert next_stage == ACCEPTED
         assert next_substage is None
-        assert is_review is False
 
     def test_human_review_stages(self):
         """Verify HUMAN_REVIEW_STAGES contains expected stages."""
@@ -441,10 +425,9 @@ class TestStageTransitions:
 
     def test_get_next_stage_not_doing_stays_not_doing(self):
         """NOT_DOING is a terminal state - stays at NOT_DOING."""
-        next_stage, next_substage, is_review = get_next_stage(NOT_DOING, None)
+        next_stage, next_substage = get_next_stage(NOT_DOING, None)
         assert next_stage == NOT_DOING
         assert next_substage is None
-        assert is_review is False
 
 
 class TestDependencies:

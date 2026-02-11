@@ -658,7 +658,7 @@ def get_next_stage(
     current_substage: Optional[str] = None,
     flow: str = "default",
     issue_context: dict | None = None,
-) -> tuple[str, Optional[str], bool]:
+) -> tuple[str, Optional[str]]:
     """Calculate the next stage/substage.
 
     Delegates to Config.get_next_stage() for config-driven workflow.
@@ -670,8 +670,11 @@ def get_next_stage(
         issue_context: Optional dict of issue context for condition evaluation
 
     Returns:
-        Tuple of (next_stage, next_substage, is_human_review)
-        is_human_review is True if the next stage requires human approval
+        Tuple of (next_stage, next_substage)
+
+    Note:
+        To check if the next stage requires human review, use:
+        config.get_stage(next_stage).human_review
     """
     from agenttree.config import load_config
 

@@ -242,11 +242,10 @@ def stage_next(issue_id: str | None, reassess: bool) -> None:
             sys.exit(1)
         next_stage = PLAN_ASSESS
         next_substage = None
-        is_human_review = False
     else:
         # Calculate next stage (pass issue context for condition evaluation)
         issue_ctx = get_issue_context(issue, include_docs=False)
-        next_stage, next_substage, is_human_review = get_next_stage(
+        next_stage, next_substage = get_next_stage(
             issue.stage, issue.substage, issue.flow, issue_context=issue_ctx
         )
 
@@ -265,9 +264,6 @@ def stage_next(issue_id: str | None, reassess: bool) -> None:
         console.print(f"[yellow]Redirecting to {redirect.target_stage}{('.' + redirect.target_substage) if redirect.target_substage else ''}: {redirect.reason}[/yellow]")
         next_stage = redirect.target_stage
         next_substage = redirect.target_substage
-        # Check if redirect target requires human review
-        redirect_target_config = config.get_stage(next_stage)
-        is_human_review = redirect_target_config.human_review if redirect_target_config else False
     except ValidationError as e:
         console.print(f"[red]Cannot proceed: {e}[/red]")
         sys.exit(1)
@@ -304,7 +300,7 @@ def stage_next(issue_id: str | None, reassess: bool) -> None:
     # Check if next stage requires waiting (human review or different role)
     next_stage_config = config.get_stage(next_stage)
     if next_stage_config and is_running_in_container():
-        if is_human_review or next_stage_config.human_review:
+        if next_stage_config.human_review:
             # Human review stage — agent must stop and wait for human approval
             console.print(f"\n[yellow]⏳ Waiting for human review[/yellow]")
             console.print(f"[dim]Your work has been submitted for review.[/dim]")
@@ -377,7 +373,7 @@ def approve_issue(issue_id: str, skip_approval: bool) -> None:
 
     # Calculate next stage (pass issue context for condition evaluation)
     issue_ctx = get_issue_context(issue, include_docs=False)
-    next_stage, next_substage, _ = get_next_stage(
+    next_stage, next_substage = get_next_stage(
         issue.stage, issue.substage, issue.flow, issue_context=issue_ctx
     )
 
