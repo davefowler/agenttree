@@ -130,11 +130,16 @@
                     </div>
                     <div class="mobile-form-field">
                         <label for="issue-problem">Problem Description</label>
-                        <textarea id="issue-problem" name="problem" required minlength="50" rows="6"
+                        <textarea id="issue-problem" name="problem" required minlength="50" rows="5"
                                   placeholder="Detailed description of the problem to solve" oninput="updateCharCount('problem')"></textarea>
                         <div class="mobile-char-counter">
                             <span id="problem-count">0</span>/50 min
                         </div>
+                    </div>
+                    <div class="mobile-form-field">
+                        <label for="issue-solutions">Possible Solutions <span style="color: #7a8c7a; font-weight: normal;">(optional)</span></label>
+                        <textarea id="issue-solutions" name="solutions" rows="3"
+                                  placeholder="Ideas for solving this (optional)"></textarea>
                     </div>
                     <div class="mobile-form-actions">
                         <button type="button" class="btn" onclick="hideNewIssueForm()">Cancel</button>
@@ -229,9 +234,11 @@
             errorDiv.style.display = 'none';
 
             try {
+                const solutions = document.getElementById('issue-solutions').value.trim();
                 const formData = new FormData();
                 formData.append('title', title);
                 formData.append('problem', problem);
+                formData.append('solutions', solutions);
 
                 const response = await fetch('/api/issues', {
                     method: 'POST',
