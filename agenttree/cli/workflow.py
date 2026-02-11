@@ -261,7 +261,7 @@ def stage_next(issue_id: str | None, reassess: bool) -> None:
                 console.print(f"[dim]Saved tmux history to {history_file.name}[/dim]")
 
     # Update issue stage in database
-    updated = update_issue_stage(issue_id, next_stage)
+    updated = update_issue_stage(issue_id, next_stage, next_substage)
     if not updated:
         console.print(f"[red]Failed to update issue[/red]")
         sys.exit(1)

@@ -371,17 +371,21 @@ class TUIApp(App):  # type: ignore[type-arg]
             return
 
         try:
-            # Find the previous stage in the flow to reject back to
-            flow_stages = config.get_flow_stage_names(issue.flow)
-            try:
-                idx = flow_stages.index(issue.stage)
-            except ValueError:
-                status.show_message(f"Cannot reject: {issue.stage} not found in flow")
-                return
-            if idx == 0:
-                status.show_message(f"Cannot reject: {issue.stage} is the first stage")
-                return
-            reject_to = flow_stages[idx - 1]
+            # Use REJECTION_MAPPINGS for human_review stages (reject to parent/earlier stage)
+            if issue.stage in REJECTION_MAPPINGS:
+                reject_to = REJECTION_MAPPINGS[issue.stage]
+            else:
+                # Fallback: previous stage in flow
+                flow_stages = config.get_flow_stage_names(issue.flow)
+                try:
+                    idx = flow_stages.index(issue.stage)
+                except ValueError:
+                    status.show_message(f"Cannot reject: {issue.stage} not found in flow")
+                    return
+                if idx == 0:
+                    status.show_message(f"Cannot reject: {issue.stage} is the first stage")
+                    return
+                reject_to = flow_stages[idx - 1]
 
             # Execute exit hooks for the current stage (consistent with web UI)
             execute_exit_hooks(issue, issue.stage)
