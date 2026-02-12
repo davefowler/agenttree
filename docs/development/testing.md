@@ -348,11 +348,11 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
-      - run: pip install -e ".[dev]"
-      - run: pytest tests/unit -v --cov=agenttree
-      - run: pytest tests/integration -v  # If added
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+      - run: uv sync --all-extras
+      - run: uv run pytest tests/unit -v --cov=agenttree
+      - run: uv run pytest tests/integration -v  # If added
 ```
 
 ## Running Tests

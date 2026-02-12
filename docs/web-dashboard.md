@@ -18,13 +18,7 @@ The AgentTree web dashboard provides a real-time view of all agents, their tmux 
 The web dashboard requires FastAPI and its dependencies:
 
 ```bash
-pip install fastapi uvicorn websockets jinja2
-```
-
-Or install from the project root:
-
-```bash
-pip install -e ".[web]"
+uv sync --extra web
 ```
 
 ### 2. Run the Server

@@ -77,7 +77,7 @@ RUN mkdir -p /home/agent/.claude && \
 
 # Install agenttree
 COPY . /opt/agenttree
-RUN pip install -e /opt/agenttree
+RUN uv pip install --system -e /opt/agenttree
 
 WORKDIR /workspace
 ```
@@ -130,7 +130,7 @@ cmd.extend(["-v", f"{main_git_dir}:{main_git_dir}"])
 
 **Solution**: Install dev extras in entrypoint:
 ```bash
-pip install -e "/workspace[dev]"
+uv pip install --system -e "/workspace[dev]"
 ```
 
 ### 5. PATH Not Available to Claude
