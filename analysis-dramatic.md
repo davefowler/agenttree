@@ -6,7 +6,7 @@
 
 **NARRATOR VOICE:** *[Deep, gravelly, over sweeping orchestral strings]*
 
-They survived the startup trenches. They survived the board meetings. They survived **her**.
+They survived the startup. They survived *ending* the startup. They survived being roommates after. They survived **her**.
 
 But can they survive... *each other's pull requests?*
 
@@ -14,9 +14,21 @@ But can they survive... *each other's pull requests?*
 
 ## ACT I: ORIGIN
 
-They met the way all great rivalries begin -- as roommates. One, a **Jewish titan of tech investing**, a man who could read a term sheet the way Mozart read music, who could value a Series B in his sleep but had never once, not even accidentally, closed a `<div>` tag. The other, a **battle-scarred entrepreneur and champion of code**, a man who'd shipped more products than most people have downloaded, who'd learned to program before he learned that most people don't argue with compilers for fun.
+It started the way Silicon Valley always starts: with money.
 
-They were inseparable. They co-founded together. They laughed together. They played **Risk** together -- and if you've never watched two alpha males spend nine hours fighting over Kamchatka while drinking bourbon and questioning each other's intelligence, moral character, and life choices, then you have never truly lived.
+David was the **investor**. A **Jewish titan of tech investing**, a man who could read a term sheet the way Mozart read music, who could value a Series B in his sleep but had never once, not even accidentally, closed a `<div>` tag. He saw something in the pitch. More importantly, he saw something in the pitcher.
+
+Dave was the **founder**. A **battle-scarred entrepreneur and champion of code**, a man who'd shipped more products than most people have downloaded, who'd learned to program before he learned that most people don't argue with compilers for fun. He needed capital. He got a co-founder.
+
+David didn't just write a check. He **moved across the country**. Left his life, his network, his favorite deli -- all of it -- to start **Chartio** together. That's not an investor. That's a believer.
+
+*[Montage: two men in a cramped office, whiteboards covered in architecture diagrams, empty coffee cups multiplying like tribbles]*
+
+For a year and a half, they built. They fought. They built more. They fought more. They discovered what every co-founder pair eventually discovers: that the things that make someone a great friend -- the stubbornness, the vision, the refusal to back down -- are the exact same things that make them *impossible* to share a cap table with.
+
+After 18 months, the co-founder relationship ended. The company continued. The friendship -- improbably, illogically, against every statistical model in the Valley -- **survived**.
+
+Years passed. Dave needed a place to stay between apartments. David had a spare room. They became **roommates** for a few months, because apparently surviving a startup together wasn't enough of a stress test.
 
 They dated. The. Same. Woman.
 
@@ -24,7 +36,9 @@ They dated. The. Same. Woman.
 
 They're still friends.
 
-**TITLE CARD:** *How?*
+Recently, the **Risk games** started. And if you've never watched two men who once shared a cap table, an apartment, and a woman spend nine hours fighting over Kamchatka while drinking bourbon and questioning each other's intelligence, moral character, and life choices -- then you have never truly understood the male capacity for competitive self-destruction dressed up as a board game.
+
+**TITLE CARD:** *How are they still friends?*
 
 ---
 
@@ -52,7 +66,7 @@ The differences are where it gets **personal**.
 
 Dave, the coder, the builder, the man who *thinks in systems* -- he made AgentTree **tool-agnostic**. Claude Code, Aider, Codex, whatever comes next. Plug it in. The tool is replaceable. The workflow is forever. He added **containers** because he doesn't trust anything that runs on his machine without a security boundary. He built a **web dashboard** because he wants to *see* what's happening, across a room, on a phone, on a beach.
 
-David, the investor, the newcomer to code, the man who learned to program *by orchestrating AI agents that program* -- he went **all in on Claude Code**. Deep hook integration. PreToolUse validators. PostToolUse logging. You can't even run `--no-verify` without his system slapping your hand. He built **80 specialized reviewer agents** because one reviewer is a single point of failure and David has never, in his life, accepted a single point of failure. He built a **rules kernel with a DSL** because when David says "done," he means *provably done, structurally verified, with receipts.*
+David, the investor turned builder, the man who once couldn't close a `<div>` tag and now orchestrates **80 AI reviewer agents** -- he went **all in on Claude Code**. Deep hook integration. PreToolUse validators. PostToolUse logging. You can't even run `--no-verify` without his system slapping your hand. He built 80 specialized reviewer agents because one reviewer is a single point of failure and David has never, in his life, accepted a single point of failure. He built a **rules kernel with a DSL** because when David says "done," he means *provably done, structurally verified, with receipts.* The man who learned to code by building a system that judges code. Only an investor would have that audacity.
 
 *[Split screen: Dave's Kanban board glowing on a browser vs. David's TUI dashboard flickering in a terminal]*
 
@@ -92,7 +106,7 @@ One without the other is a soldier without a strategist. A courthouse without co
 
 *[Music swells. Camera pulls back to reveal both men sitting across a table, laptops open, a half-empty bottle of bourbon between them, a Risk board -- mid-game, naturally -- shoved to one side]*
 
-They've survived roommate passive-aggression. They've survived cap table negotiations. They've survived **the same woman.** They've survived a thousand games of Risk where alliances were formed and broken before the ice melted in the glass.
+They've survived the investor-to-cofounder leap. They've survived 18 months of building Chartio together and the harder conversation when they stopped. They've survived being roommates *after* being cofounders, which is like defusing a bomb and then inviting the bomb to share your Netflix password. They've survived **the same woman.** They've survived recent games of Risk where alliances were formed and broken before the ice melted in the glass.
 
 But now they face the ultimate test. The one no friendship guide prepares you for. The one that has destroyed partnerships since the first caveman drew a flowchart on a cave wall:
 
