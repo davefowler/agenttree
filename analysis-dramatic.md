@@ -6,39 +6,31 @@
 
 **NARRATOR VOICE:** *[Deep, gravelly, over sweeping orchestral strings]*
 
-They survived the startup. They survived *ending* the startup. They survived being roommates after. They survived **her**.
+They had nothing. Now they have everything.
 
-But can they survive... *each other's pull requests?*
+Except agreement on a database format.
 
 ---
 
 ## ACT I: ORIGIN
 
-It started the way Silicon Valley always starts: with money.
+When they met, one was living in his parents' basement. The other couldn't make next month's rent.
 
-David was the **investor**. A **Jewish titan of tech investing**, a man who could read a term sheet the way Mozart read music, who could value a Series B in his sleep but had never once, not even accidentally, closed a `<div>` tag. He saw something in the pitch. More importantly, he saw something in the pitcher.
+No empires. No titles. No leverage. Just two broke guys who saw the same future and were stupid enough to bet on it.
 
-Dave was the **founder**. A **battle-scarred entrepreneur and champion of code**, a man who'd shipped more products than most people have downloaded, who'd learned to program before he learned that most people don't argue with compilers for fun. He needed capital. He got a co-founder.
+David -- who would become a **titan of tech investing** -- put his money where his mouth was. He didn't just invest. He **moved across the country** to co-found **Chartio** together with Dave -- a **born engineer and serial entrepreneur** who'd been building things since before it was fashionable.
 
-David didn't just write a check. He **moved across the country**. Left his life, his network, his favorite deli -- all of it -- to start **Chartio** together. That's not an investor. That's a believer.
+For 18 months, they built. They fought. They built more. They fought more. They discovered what every co-founder pair eventually discovers: that the things that make someone a great friend are the exact same things that make them *impossible* to share a cap table with.
 
-*[Montage: two men in a cramped office, whiteboards covered in architecture diagrams, empty coffee cups multiplying like tribbles]*
+The co-founder relationship ended. The friendship -- improbably, illogically, against every statistical model in the Valley -- **survived**.
 
-For a year and a half, they built. They fought. They built more. They fought more. They discovered what every co-founder pair eventually discovers: that the things that make someone a great friend -- the stubbornness, the vision, the refusal to back down -- are the exact same things that make them *impossible* to share a cap table with.
-
-After 18 months, the co-founder relationship ended. The company continued. The friendship -- improbably, illogically, against every statistical model in the Valley -- **survived**.
-
-Years passed. Dave needed a place to stay between apartments. David had a spare room. They became **roommates** for a few months, because apparently surviving a startup together wasn't enough of a stress test.
-
-They dated. The. Same. Woman.
+Co-founders. Roommates. Dated the same woman. Countless bloody games of Risk. Gallows humor so dark it would make a mortician uncomfortable.
 
 *[Record scratch]*
 
 They're still friends.
 
-Recently, the **Risk games** started. And if you've never watched two men who once shared a cap table, an apartment, and a woman spend nine hours fighting over Kamchatka while drinking bourbon and questioning each other's intelligence, moral character, and life choices -- then you have never truly understood the male capacity for competitive self-destruction dressed up as a board game.
-
-**TITLE CARD:** *How are they still friends?*
+**TITLE CARD:** *...but for how long?*
 
 ---
 
@@ -48,9 +40,9 @@ It was February 2026. The AI agent revolution was upon us. Claude Code could wri
 
 Both men saw the same future: **multiple AI agents, working in parallel, orchestrated by a system that wouldn't let them produce garbage.** Both men, independently, in different rooms, probably on the same night, probably while the other was asleep -- *built the same thing.*
 
-**Dave** built **AgentTree**. Containers. Web dashboards. Multi-tool support. The Swiss Army knife. The pragmatist's dream. *"Give me a workflow engine and get out of my way."*
+**Dave** built **AgentTree**. Containers. Web dashboards. Multi-tool support. The Swiss Army knife. *"Give me a workflow engine and get out of my way."*
 
-**David** built **FormalTask**. Rules kernels. 80 specialized reviewer agents. A completion DSL. The quality zealot's manifesto. *"Nothing ships until my 22-rule gating system says it ships."*
+**David** built **FormalTask**. Rules kernels. 80 specialized reviewer agents. A completion DSL. *"Nothing ships until my 22-rule gating system says it ships."*
 
 They both chose git worktrees. They both chose tmux. They both cited **antirez**. They both wrote "anti-slop rules" into their project conventions.
 
@@ -66,7 +58,7 @@ The differences are where it gets **personal**.
 
 Dave, the coder, the builder, the man who *thinks in systems* -- he made AgentTree **tool-agnostic**. Claude Code, Aider, Codex, whatever comes next. Plug it in. The tool is replaceable. The workflow is forever. He added **containers** because he doesn't trust anything that runs on his machine without a security boundary. He built a **web dashboard** because he wants to *see* what's happening, across a room, on a phone, on a beach.
 
-David, the investor turned builder, the man who once couldn't close a `<div>` tag and now orchestrates **80 AI reviewer agents** -- he went **all in on Claude Code**. Deep hook integration. PreToolUse validators. PostToolUse logging. You can't even run `--no-verify` without his system slapping your hand. He built 80 specialized reviewer agents because one reviewer is a single point of failure and David has never, in his life, accepted a single point of failure. He built a **rules kernel with a DSL** because when David says "done," he means *provably done, structurally verified, with receipts.* The man who learned to code by building a system that judges code. Only an investor would have that audacity.
+David, the investor turned builder, the man who once couldn't close a `<div>` tag and now orchestrates **80 AI reviewer agents** -- he went **all in on Claude Code**. Deep hook integration. PreToolUse validators. PostToolUse logging. You can't even run `--no-verify` without his system slapping your hand. He built a **rules kernel with a DSL** because when David says "done," he means *provably done, structurally verified, with receipts.* The man who learned to code by building a system that judges code. Only an investor would have that audacity.
 
 *[Split screen: Dave's Kanban board glowing on a browser vs. David's TUI dashboard flickering in a terminal]*
 
@@ -98,7 +90,7 @@ Dave built the **body** -- the infrastructure, the containers, the networking, t
 
 David built the **brain** -- the rules engine, the quality gates, the specialized reviewers, the context preservation, the completion verification.
 
-One without the other is a soldier without a strategist. A courthouse without cops. A Risk board without anyone willing to fight over Kamchatka for nine hours.
+One without the other is a soldier without a strategist. A courthouse without cops. A Risk board without anyone willing to fight over Kamchatka.
 
 ---
 
@@ -106,7 +98,9 @@ One without the other is a soldier without a strategist. A courthouse without co
 
 *[Music swells. Camera pulls back to reveal both men sitting across a table, laptops open, a half-empty bottle of bourbon between them, a Risk board -- mid-game, naturally -- shoved to one side]*
 
-They've survived the investor-to-cofounder leap. They've survived 18 months of building Chartio together and the harder conversation when they stopped. They've survived being roommates *after* being cofounders, which is like defusing a bomb and then inviting the bomb to share your Netflix password. They've survived **the same woman.** They've survived recent games of Risk where alliances were formed and broken before the ice melted in the glass.
+They started with nothing. Built careers. Built companies. Built reputations. Survived a co-founding, a breakup, a shared apartment, a shared *woman*, and enough games of Risk to qualify as psychological warfare.
+
+None of it broke them.
 
 But now they face the ultimate test. The one no friendship guide prepares you for. The one that has destroyed partnerships since the first caveman drew a flowchart on a cave wall:
 
@@ -123,6 +117,8 @@ But now they face the ultimate test. The one no friendship guide prepares you fo
 # AGENTTREE x FORMALTASK
 
 *One built the infrastructure. One built the intelligence.*
+
+*Friends to founders. Founders to friends. Friends to... foes?*
 
 *Coming to a git repository near you.*
 
