@@ -436,7 +436,7 @@ def check_custom_agent_stages(agents_dir: Path) -> int:
             # Check if in a custom agent stage
             if stage in custom_agent_stages:
                 # Re-entry guard: skip if we're already spawning/spawned for this stage
-                spawned_stage = data.get("custom_agent_spawned")
+                spawned_stage = data.get("agent_ensured")
                 if spawned_stage == stage or spawned_stage == f"{stage}:starting":
                     continue
 
@@ -461,7 +461,7 @@ def check_custom_agent_stages(agents_dir: Path) -> int:
                             console.print(f"[dim]Pinged {role_name} agent for issue #{issue_id}[/dim]")
                         # Mark as spawned (in case it wasn't already)
                         if spawned_stage != stage:
-                            data["custom_agent_spawned"] = stage
+                            data["agent_ensured"] = stage
                             with open(issue_yaml, "w") as f:
                                 yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
                         continue
@@ -478,7 +478,7 @@ def check_custom_agent_stages(agents_dir: Path) -> int:
                         needs_force = False
 
                 # Set guard BEFORE the slow start_agent call to prevent re-entry
-                data["custom_agent_spawned"] = f"{stage}:starting"
+                data["agent_ensured"] = f"{stage}:starting"
                 with open(issue_yaml, "w") as f:
                     yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
 
@@ -489,12 +489,12 @@ def check_custom_agent_stages(agents_dir: Path) -> int:
                     from agenttree.api import start_agent
 
                     start_agent(issue.id, host=role_name, skip_preflight=True, quiet=True, force=needs_force)
-                    data["custom_agent_spawned"] = stage
+                    data["agent_ensured"] = stage
                     console.print(f"[green]✓ Started {role_name} agent for issue #{issue.id}[/green]")
                     spawned += 1
                 except Exception as e:
                     # Clear guard so next heartbeat can retry
-                    data["custom_agent_spawned"] = None
+                    data["agent_ensured"] = None
                     console.print(f"[red]Failed to start {role_name} agent for issue #{issue.id}[/red]")
                     console.print(f"[dim]{str(e)[:200]}[/dim]")
 

@@ -34,7 +34,7 @@ class TestLoadSaveEventState:
         state = {"sync": {"last_run_at": "2024-01-01T00:00:00Z", "run_count": 5}}
         save_event_state(tmp_path, state)
         
-        state_file = tmp_path / ".hook_state.yaml"
+        state_file = tmp_path / ".heartbeat_state.yaml"
         assert state_file.exists()
         
         loaded = yaml.safe_load(state_file.read_text())

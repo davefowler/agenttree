@@ -283,7 +283,7 @@ Options:
 
 Both can be combined - both conditions must pass for hook to run.
 
-State is stored in _agenttree/.hook_state.yaml
+State is stored in _agenttree/.heartbeat_state.yaml
 
 =============================================================================
 USAGE
@@ -500,7 +500,7 @@ def update_hook_state(
 
 
 def load_hook_state(agents_dir: Path) -> Dict[str, Any]:
-    """Load hook state from _agenttree/.hook_state.yaml
+    """Load hook state from _agenttree/.heartbeat_state.yaml
 
     Args:
         agents_dir: Path to _agenttree directory
@@ -510,7 +510,7 @@ def load_hook_state(agents_dir: Path) -> Dict[str, Any]:
     """
     import yaml
 
-    state_file = agents_dir / ".hook_state.yaml"
+    state_file = agents_dir / ".heartbeat_state.yaml"
     if state_file.exists():
         try:
             with open(state_file) as f:
@@ -522,7 +522,7 @@ def load_hook_state(agents_dir: Path) -> Dict[str, Any]:
 
 
 def save_hook_state(agents_dir: Path, state: Dict[str, Any]) -> None:
-    """Save hook state to _agenttree/.hook_state.yaml
+    """Save hook state to _agenttree/.heartbeat_state.yaml
 
     Args:
         agents_dir: Path to _agenttree directory
@@ -530,7 +530,7 @@ def save_hook_state(agents_dir: Path, state: Dict[str, Any]) -> None:
     """
     import yaml
 
-    state_file = agents_dir / ".hook_state.yaml"
+    state_file = agents_dir / ".heartbeat_state.yaml"
     try:
         with open(state_file, "w") as f:
             yaml.dump(state, f, default_flow_style=False, sort_keys=False)

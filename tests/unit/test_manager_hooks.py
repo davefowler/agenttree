@@ -207,7 +207,7 @@ class TestLoadSaveHookState:
         state = {"test_hook": {"run_count": 3}, "_sync_count": 10}
         save_hook_state(tmp_path, state)
 
-        state_file = tmp_path / ".hook_state.yaml"
+        state_file = tmp_path / ".heartbeat_state.yaml"
         assert state_file.exists()
 
         loaded = load_hook_state(tmp_path)
