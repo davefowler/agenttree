@@ -155,8 +155,8 @@ When working on web UI (HTML, CSS, templates):
 
 Issues follow a **flow** that determines which stages they pass through:
 
-- **default** (the vast majority of issues): Full workflow — define → research → plan → plan_review (human) → implement → code_review → implementation_review (human) → accepted. Use for anything that requires thought, investigation, or touches non-trivial code.
-- **quick** (very rare — truly trivial tasks only): Abbreviated — define → implement → implementation_review (human) → accepted. Skips research, planning, and plan review. **Only** for tasks where the solution is already fully obvious and requires zero decision-making: typo fixes, color changes, config constant updates. If you have to think about it at all, it's not quick.
+- **default** (the vast majority of issues): Full workflow — explore.define → explore.research → plan.draft → plan.assess → plan.revise → plan.review (human) → implement.setup → implement.code → implement.code_review → implement.independent_review → implement.ci_wait → implement.review (human) → accepted. Use for anything that requires thought, investigation, or touches non-trivial code.
+- **quick** (very rare — truly trivial tasks only): Abbreviated — explore.define → implement → accepted. Skips research, planning, and human review. **Only** for tasks where the solution is already fully obvious and requires zero decision-making: typo fixes, color changes, config constant updates. If you have to think about it at all, it's not quick.
 
 **When in doubt, use `default`.** The quick flow has no human review before coding starts. Misusing it wastes time when the implementation goes in the wrong direction.
 
@@ -217,6 +217,10 @@ The automated reviewer will flag undocumented changes as "out of scope" and requ
 - False "dead code" reports (code used by undocumented features)
 - Requests to split into multiple PRs
 - Rejection of legitimate work
+
+## Slash Commands
+
+- **`/pr`** — Create a PR from current changes and iterate until CI passes. Handles branching, pushing, PR creation, CI monitoring, and review feedback. See `.claude/commands/pr.md`. In Cursor, just say "run the pr command" and it will follow the same instructions.
 
 ## Use CLI Commands, Not Manual Operations
 

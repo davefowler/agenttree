@@ -1,0 +1,11 @@
+---
+description: When the user asks to create a PR, push changes, or run the PR workflow
+globs:
+alwaysApply: false
+---
+
+# PR Command
+
+When asked to create a PR or push changes, follow the instructions in `.claude/commands/pr.md`.
+
+Read that file and follow it step by step.

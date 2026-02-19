@@ -82,4 +82,3 @@ Every operation has ONE authoritative function. Don't reinvent, don't call lower
 - `_action_merge_pr()` raises `RuntimeError` if no PR number, not silent return
 - `check_manager_stages()` logs warnings on exceptions, not bare `continue`
 - Manager heartbeat notifies agents on StageRedirect (via `_notify_agent()`)
-

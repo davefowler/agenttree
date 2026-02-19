@@ -381,6 +381,12 @@ def get_kanban_board(search: Optional[str] = None) -> KanbanBoard:
         group = _config.stage_group_name(web_issue.stage)
         if group in stages:
             stages[group].append(web_issue)
+        else:
+            # Unrecognized stage — show in backlog so issues aren't silently hidden
+            logger.warning("Issue #%s has unrecognized stage '%s' (group '%s'), showing in backlog",
+                        web_issue.number, web_issue.stage, group)
+            if "backlog" in stages:
+                stages["backlog"].append(web_issue)
 
     return KanbanBoard(stages=stages, total_issues=len(web_issues))
 

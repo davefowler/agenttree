@@ -288,7 +288,7 @@ agenttree notes archive 1        # Archive completed task
 uv tool install agenttree
 
 # From source
-git clone https://github.com/agenttree/agenttree
+git clone https://github.com/davefowler/agenttree
 cd agenttree
 uv sync
 ```
@@ -457,37 +457,27 @@ Comprehensive documentation is available in the [`docs/`](docs/) directory:
 
 ```bash
 # Clone repo
-git clone https://github.com/agenttree/agenttree
+git clone https://github.com/davefowler/agenttree
 cd agenttree
 
-# Install all dependencies (including dev)
+# Install dependencies
 uv sync
 
 # Run tests
-uv run pytest
-
-# Run tests with coverage
-uv run pytest --cov=agenttree
-
-# Format code
-uv run black agenttree tests
+uv run pytest                     # All tests
+uv run pytest tests/unit          # Unit tests only
+uv run pytest tests/integration   # Integration tests only
 
 # Type check
 uv run mypy agenttree
 
-# Lint
-uv run ruff agenttree
+# Run preflight checks
+uv run agenttree preflight
+
+# Start the web dashboard
+uv run agenttree serve
 ```
 
-**For beta testing AgentTree with your projects:**
-```bash
-# Install as a tool (available globally)
-uv tool install -e /path/to/agenttree
-
-# Now any changes to AgentTree code immediately affect this project
-```
-
-See [Testing Strategy](docs/development/testing.md) for more details.
 
 ## Examples
 
