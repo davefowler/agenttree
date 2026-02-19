@@ -439,7 +439,7 @@ async def kanban(
                 return None, [], None, 0, 0
             web_issue = convert_issue_to_web(issue_obj, load_dependents=True)
             issue_files = get_issue_files(issue, include_content=True, current_stage=issue_obj.stage)
-            doc = get_default_doc(issue_obj.stage)
+            doc = get_default_doc(issue_obj.stage, ci_escalated=issue_obj.ci_escalated)
             ca, cb = 0, 0
             if web_issue.tmux_active and issue_obj.worktree_dir:
                 from agenttree.hooks import get_commits_ahead_behind_main
@@ -614,12 +614,19 @@ def get_issue_files(
     return files
 
 
-def get_default_doc(dot_path: str) -> str | None:
+def get_default_doc(dot_path: str, ci_escalated: bool = False) -> str | None:
     """Get the default document to show for a dot-path stage.
 
     Checks review_doc first (for human review stages), then output (the doc
     being produced), so the most relevant file is auto-selected.
+
+    When ci_escalated=True and stage is implement.review, returns ci_feedback.md
+    since that contains the escalation report that's most relevant for human review.
     """
+    # When escalated, show the CI feedback report as the primary document
+    if ci_escalated and dot_path == "implement.review":
+        return "ci_feedback.md"
+
     stage_config, sub_config = _config.resolve_stage(dot_path)
     if sub_config and sub_config.review_doc:
         return sub_config.review_doc
@@ -845,7 +852,7 @@ async def flow(
             # Load all file contents upfront for CSS toggle tabs
             files = get_issue_files(selected_issue_id, include_content=True, current_stage=issue_obj.stage)
             # Get default doc to show for this stage
-            default_doc = get_default_doc(issue_obj.stage)
+            default_doc = get_default_doc(issue_obj.stage, ci_escalated=issue_obj.ci_escalated)
             # Get commits ahead/behind for rebase button
             if selected_issue.tmux_active and issue_obj.worktree_dir:
                 from agenttree.hooks import get_commits_ahead_behind_main
@@ -910,7 +917,7 @@ async def mobile(
         issue_obj = issue_crud.get_issue(selected_issue_id, sync=False)
         if issue_obj:
             files = get_issue_files(selected_issue_id, include_content=True, current_stage=issue_obj.stage)
-            default_doc = get_default_doc(issue_obj.stage)
+            default_doc = get_default_doc(issue_obj.stage, ci_escalated=issue_obj.ci_escalated)
             if selected_issue.tmux_active and issue_obj.worktree_dir:
                 from agenttree.hooks import get_commits_ahead_behind_main
                 commits_ahead, commits_behind = await asyncio.to_thread(

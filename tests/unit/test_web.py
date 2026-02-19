@@ -1280,3 +1280,59 @@ class TestFileToStageMapping:
 
         problem_file = files[0]
         assert problem_file["is_passed"] == "false"
+
+
+class TestGetDefaultDoc:
+    """Tests for get_default_doc function."""
+
+    @patch("agenttree.web.app._config")
+    def test_get_default_doc_returns_ci_feedback_when_escalated(self, mock_config):
+        """Verify get_default_doc returns ci_feedback.md when ci_escalated is True."""
+        from agenttree.web.app import get_default_doc
+        from agenttree.config import StageConfig, SubstageConfig
+
+        # Setup mock config for implement.review stage
+        mock_stage = MagicMock()
+        mock_stage.review_doc = "review.md"
+        mock_substage = MagicMock()
+        mock_substage.review_doc = "review.md"
+        mock_config.resolve_stage.return_value = (mock_stage, mock_substage)
+
+        # When ci_escalated=True, should return ci_feedback.md
+        result = get_default_doc("implement.review", ci_escalated=True)
+        assert result == "ci_feedback.md"
+
+    @patch("agenttree.web.app._config")
+    def test_get_default_doc_returns_review_md_when_not_escalated(self, mock_config):
+        """Verify normal behavior is preserved when ci_escalated=False."""
+        from agenttree.web.app import get_default_doc
+        from agenttree.config import StageConfig, SubstageConfig
+
+        # Setup mock config for implement.review stage
+        mock_stage = MagicMock()
+        mock_stage.review_doc = "review.md"
+        mock_substage = MagicMock()
+        mock_substage.review_doc = "review.md"
+        mock_config.resolve_stage.return_value = (mock_stage, mock_substage)
+
+        # When ci_escalated=False (default), should return review.md
+        result = get_default_doc("implement.review", ci_escalated=False)
+        assert result == "review.md"
+
+    @patch("agenttree.web.app._config")
+    def test_get_default_doc_backward_compatible(self, mock_config):
+        """Verify get_default_doc works without ci_escalated parameter."""
+        from agenttree.web.app import get_default_doc
+        from agenttree.config import StageConfig, SubstageConfig
+
+        # Setup mock config
+        mock_stage = MagicMock()
+        mock_stage.review_doc = "spec.md"
+        mock_substage = MagicMock()
+        mock_substage.review_doc = None
+        mock_substage.output = None
+        mock_config.resolve_stage.return_value = (mock_stage, mock_substage)
+
+        # Should work without ci_escalated parameter
+        result = get_default_doc("plan.review")
+        assert result == "spec.md"
