@@ -1738,18 +1738,15 @@ class TestCorruptedYAMLHandling:
         with open(valid_issue_dir / "issue.yaml", "w") as f:
             yaml.dump(valid_issue_data, f, default_flow_style=False, sort_keys=False)
 
-        # Create a corrupted issue (invalid YAML syntax)
+        # Create a corrupted issue (truly invalid YAML syntax - unbalanced quotes)
         corrupted_issue_dir = issues_path / "002-corrupted-issue"
         corrupted_issue_dir.mkdir()
         (corrupted_issue_dir / "issue.yaml").write_text("""
 id: '002'
 slug: corrupted-issue
-title: Corrupted Issue
-<<<<<<< HEAD
+title: "Corrupted Issue - unbalanced quote
 stage: define
-=======
-stage: research
->>>>>>> other-branch
+  invalid: indentation
 """)
 
         # Monkeypatch get_agenttree_path to return our temp dir
