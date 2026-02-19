@@ -19,7 +19,121 @@ from agenttree.issues import (
     update_issue_priority,
     load_skill,
     set_processing,
+    resolve_conflict_markers,
+    safe_yaml_load,
 )
+
+
+class TestResolveConflictMarkers:
+    """Tests for resolve_conflict_markers function."""
+
+    def test_no_conflict_markers(self):
+        """Content without conflict markers should be unchanged."""
+        content = "stage: implement\nsubstage: code\n"
+        resolved, had_conflicts = resolve_conflict_markers(content)
+        assert resolved == content
+        assert had_conflicts is False
+
+    def test_simple_conflict_resolution(self):
+        """Should resolve conflict by keeping local (ours) content."""
+        content = """id: '001'
+<<<<<<< Updated upstream
+stage: research
+=======
+stage: implement
+>>>>>>> Stashed changes
+substage: code
+"""
+        resolved, had_conflicts = resolve_conflict_markers(content)
+        assert had_conflicts is True
+        assert "stage: implement" in resolved
+        assert "stage: research" not in resolved
+        assert "<<<<<<<" not in resolved
+        assert "=======" not in resolved
+        assert ">>>>>>>" not in resolved
+
+    def test_multiple_conflicts(self):
+        """Should resolve multiple conflict blocks."""
+        content = """id: '001'
+<<<<<<< HEAD
+stage: research
+=======
+stage: implement
+>>>>>>> local
+pr_number: null
+<<<<<<< HEAD
+substage: explore
+=======
+substage: code
+>>>>>>> local
+"""
+        resolved, had_conflicts = resolve_conflict_markers(content)
+        assert had_conflicts is True
+        assert "stage: implement" in resolved
+        assert "substage: code" in resolved
+        assert "stage: research" not in resolved
+        assert "substage: explore" not in resolved
+
+    def test_conflict_with_multiline_content(self):
+        """Should handle conflicts with multiple lines on each side."""
+        content = """id: '001'
+<<<<<<< Updated upstream
+stage: research
+substage: explore
+pr_number: 42
+=======
+stage: implement
+substage: code
+pr_number: null
+>>>>>>> Stashed changes
+"""
+        resolved, had_conflicts = resolve_conflict_markers(content)
+        assert had_conflicts is True
+        assert "stage: implement" in resolved
+        assert "substage: code" in resolved
+        assert "pr_number: null" in resolved
+        assert "pr_number: 42" not in resolved
+
+
+class TestSafeYamlLoad:
+    """Tests for safe_yaml_load function."""
+
+    def test_load_clean_yaml(self, tmp_path):
+        """Should load YAML file without conflicts."""
+        yaml_file = tmp_path / "test.yaml"
+        yaml_file.write_text("id: '001'\nstage: implement\n")
+
+        data = safe_yaml_load(yaml_file)
+        assert data["id"] == "001"
+        assert data["stage"] == "implement"
+
+    def test_load_and_fix_conflicted_yaml(self, tmp_path):
+        """Should auto-fix conflict markers and load YAML."""
+        yaml_file = tmp_path / "test.yaml"
+        yaml_file.write_text("""id: '001'
+<<<<<<< Updated upstream
+stage: research
+=======
+stage: implement
+>>>>>>> Stashed changes
+substage: code
+""")
+
+        data = safe_yaml_load(yaml_file)
+        assert data["id"] == "001"
+        assert data["stage"] == "implement"
+        assert data["substage"] == "code"
+
+        # File should be fixed on disk
+        fixed_content = yaml_file.read_text()
+        assert "<<<<<<<" not in fixed_content
+        assert "stage: implement" in fixed_content
+
+    def test_file_not_found(self, tmp_path):
+        """Should raise FileNotFoundError for missing files."""
+        yaml_file = tmp_path / "nonexistent.yaml"
+        with pytest.raises(FileNotFoundError):
+            safe_yaml_load(yaml_file)
 
 
 class TestSlugify:
@@ -675,6 +789,13 @@ class TestUpdateIssueStage:
         """Return None for non-existent issue."""
         result = update_issue_stage("999", "explore.define")
         assert result is None
+
+    def test_update_issue_stage_unrecognized_stage_still_succeeds(self, temp_agenttrees):
+        """Stage transition succeeds even with an unrecognized stage name (logs warning)."""
+        issue = create_issue("Test Issue")
+        updated = update_issue_stage("001", "nonexistent_stage")
+        assert updated is not None
+        assert updated.stage == "nonexistent_stage"
 
 
 class TestLoadSkill:

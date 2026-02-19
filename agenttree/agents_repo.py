@@ -212,6 +212,7 @@ def check_manager_stages(agents_dir: Path) -> int:
         return 0
 
     import yaml
+    from agenttree.issues import safe_yaml_load
 
     processed = 0
 
@@ -224,8 +225,7 @@ def check_manager_stages(agents_dir: Path) -> int:
             continue
 
         try:
-            with open(issue_yaml) as f:
-                data = yaml.safe_load(f)
+            data = safe_yaml_load(issue_yaml)
 
             stage = data.get("stage", "")
 
@@ -295,6 +295,7 @@ def ensure_review_branches(agents_dir: Path) -> int:
     import yaml
     from rich.console import Console
     from agenttree.hooks import is_running_in_container, ensure_pr_for_issue
+    from agenttree.issues import safe_yaml_load
 
     if is_running_in_container():
         return 0
@@ -315,8 +316,7 @@ def ensure_review_branches(agents_dir: Path) -> int:
             continue
 
         try:
-            with open(issue_yaml) as f:
-                data = yaml.safe_load(f)
+            data = safe_yaml_load(issue_yaml)
 
             stage = data.get("stage", "")
             if stage != "implement.review":
@@ -329,8 +329,7 @@ def ensure_review_branches(agents_dir: Path) -> int:
             if not pr_number:
                 if ensure_pr_for_issue(issue_id):
                     # Re-read to get updated pr_number
-                    with open(issue_yaml) as f:
-                        data = yaml.safe_load(f)
+                    data = safe_yaml_load(issue_yaml)
                     pr_number = data.get("pr_number")
                     if pr_number:
                         console.print(f"[green]✓ Created PR #{pr_number} for issue #{issue_id}[/green]")
@@ -390,7 +389,7 @@ def check_custom_agent_stages(agents_dir: Path) -> int:
     """
     from agenttree.hooks import is_running_in_container
     from agenttree.config import load_config
-    from agenttree.issues import Issue
+    from agenttree.issues import Issue, safe_yaml_load
 
     # Bail early if running in a container - host operations only
     if is_running_in_container():
@@ -409,6 +408,7 @@ def check_custom_agent_stages(agents_dir: Path) -> int:
     import yaml
     from rich.console import Console
     from agenttree.tmux import session_exists
+    from agenttree.issues import safe_yaml_load
     console = Console()
 
     spawned = 0
@@ -422,8 +422,7 @@ def check_custom_agent_stages(agents_dir: Path) -> int:
             continue
 
         try:
-            with open(issue_yaml) as f:
-                data = yaml.safe_load(f)
+            data = safe_yaml_load(issue_yaml)
 
             stage = data.get("stage", "")
 
@@ -498,6 +497,17 @@ def _update_issue_stage_direct(yaml_path: Path, data: dict, new_stage: str) -> N
     from datetime import datetime, timezone
     import yaml as yaml_module
 
+    # Validate stage exists in config
+    from agenttree.config import load_config
+    try:
+        config = load_config()
+        group = config.stage_group_name(new_stage)
+        if group not in config.get_stage_names():
+            log.warning("Stage '%s' (group '%s') does not exist in config — "
+                        "issue may become invisible on kanban board", new_stage, group)
+    except (FileNotFoundError, ValueError, yaml_module.YAMLError) as e:
+        log.debug("Stage validation skipped (config unavailable): %s", e)
+
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     old_stage = data.get("stage")
     data["stage"] = new_stage
@@ -553,6 +563,7 @@ def check_merged_prs(agents_dir: Path) -> int:
     import yaml
     from rich.console import Console
     from agenttree.config import load_config
+    from agenttree.issues import safe_yaml_load
 
     console = Console()
     config = load_config()
@@ -571,8 +582,7 @@ def check_merged_prs(agents_dir: Path) -> int:
             continue
 
         try:
-            with open(issue_yaml) as f:
-                data = yaml.safe_load(f)
+            data = safe_yaml_load(issue_yaml)
 
             # Skip issues already in terminal/parking-lot stages
             stage = data.get("stage", "")
@@ -658,6 +668,7 @@ def check_ci_status(agents_dir: Path) -> int:
     from agenttree.state import get_active_agent
     from agenttree.config import load_config
     from agenttree.tmux import TmuxManager
+    from agenttree.issues import safe_yaml_load
 
     console = Console()
     issues_notified = 0
@@ -671,8 +682,7 @@ def check_ci_status(agents_dir: Path) -> int:
             continue
 
         try:
-            with open(issue_yaml) as f:
-                data = yaml.safe_load(f)
+            data = safe_yaml_load(issue_yaml)
 
             # Only check issues at implement.review WITH a PR
             if data.get("stage") != "implement.review":
@@ -847,6 +857,7 @@ def push_pending_branches(agents_dir: Path) -> int:
 
     import yaml
     from rich.console import Console
+    from agenttree.issues import safe_yaml_load
     console = Console()
 
     branches_pushed = 0
@@ -860,8 +871,7 @@ def push_pending_branches(agents_dir: Path) -> int:
             continue
 
         try:
-            with open(issue_yaml) as f:
-                data = yaml.safe_load(f)
+            data = safe_yaml_load(issue_yaml)
 
             issue_id = data.get("id", "")
             branch = data.get("branch")

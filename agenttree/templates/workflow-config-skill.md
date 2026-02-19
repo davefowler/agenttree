@@ -99,11 +99,14 @@ stages:
 flows:
   default:
     stages:
-      - implement
-      - security_review        # ← Add it where it belongs
-      - independent_code_review
-      - implementation_review
-      - accepted
+      implement:
+        substages:
+          # ... existing substages ...
+          security_review:       # ← Add it where it belongs
+            role: review
+            output: security_review.md
+          # ... remaining substages (independent_review, ci_wait, review) ...
+      accepted:
 ```
 
 Forget this step and your stage exists but is unreachable — like a beautifully furnished room with no door.
@@ -291,13 +294,13 @@ Flows define which stages an issue goes through. The `default` flow is for norma
 ```yaml
 flows:
   default:
-    stages: [backlog, define, research, plan, plan_review, implement, code_review, accepted]
+    stages: [backlog, explore, plan, implement, accepted]
 
   quick:
-    stages: [backlog, define, implement, implementation_review, accepted]
+    stages: [backlog, explore.define, implement, accepted]
 
   docs_only:
-    stages: [backlog, define, implement, accepted]
+    stages: [backlog, explore.define, implement, accepted]
 ```
 
 ### Flow Design Rules
@@ -306,7 +309,7 @@ flows:
 
 2. **`backlog` should be first.** It's the parking lot where issues wait before work starts. Skipping it means issues start immediately on creation, which sounds efficient until you have 15 agents spinning up simultaneously.
 
-3. **`implementation_review` should include a human gate** for any flow that produces code. Autonomous agents writing and merging code with no human oversight is... well, it's either the future or the plot of a cautionary tale. Currently both.
+3. **`implement.review` should include a human gate** for any flow that produces code. Autonomous agents writing and merging code with no human oversight is... well, it's either the future or the plot of a cautionary tale. Currently both.
 
 4. **The quick flow should skip research and planning** — that's its entire purpose. If you add gates to the quick flow, you've just built a slower version of the default flow. Congratulations.
 
@@ -453,7 +456,7 @@ Don't add `condition:` to the stage. Create a `quick` flow that omits it:
 ```yaml
 flows:
   quick:
-    stages: [backlog, define, implement, implementation_review, accepted]
+    stages: [backlog, explore.define, implement, accepted]
 ```
 
 Then assign issues to the quick flow: `agenttree issue create "Fix typo" --flow quick`

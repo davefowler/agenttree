@@ -1,4 +1,4 @@
-"""Server commands (web, serve, run, stop-all, stalls)."""
+"""Server commands (run, stop-all, stalls)."""
 
 import subprocess
 import sys
@@ -62,52 +62,56 @@ def _start_manager(
     console.print(f"  agenttree kill 0")
 
 
-@click.command()
-@click.option("--host", default="127.0.0.1", help="Host to bind to")
-@click.option("--port", default=None, type=int, help="Port to bind to (default: from port_range config)")
-@click.option("--config", "config_path", type=click.Path(exists=True), help="Path to config file")
-def web(host: str, port: int | None, config_path: str | None) -> None:
-    """Start the web dashboard for monitoring agents.
+def _start_agents_background(config: "Config", repo_path: Path) -> None:
+    """Start all agents in parallel (runs in a background thread)."""
+    from agenttree.issues import list_issues
+    from agenttree.state import get_active_agent
+    from agenttree.tmux import session_exists
 
-    The dashboard provides:
-    - Real-time agent status monitoring
-    - Live tmux output streaming
-    - Task start via web UI
-    - Command execution for agents
-    """
-    from agenttree.web.app import run_server
+    parking_lot_stages = config.get_parking_lot_stages()
+    issues = list_issues(sync=True)
 
-    if port is None:
-        port = load_config().server_port
-    console.print(f"[cyan]Starting AgentTree dashboard at http://{host}:{port}[/cyan]")
-    console.print("[dim]Press Ctrl+C to stop[/dim]\n")
+    # Launch all agent starts in parallel
+    pending: list[tuple[str, subprocess.Popen[str]]] = []
+    skipped_count = 0
 
-    config_path_obj = Path(config_path) if config_path else None
-    run_server(host=host, port=port, config_path=config_path_obj)
+    for issue in issues:
+        if issue.stage in parking_lot_stages:
+            skipped_count += 1
+            continue
+        if get_active_agent(issue.id):
+            console.print(f"[dim]Issue #{issue.id} already has an agent running[/dim]")
+            continue
 
+        console.print(f"[cyan]Starting agent for issue #{issue.id} ({issue.stage})...[/cyan]")
+        proc = subprocess.Popen(
+            ["agenttree", "start", issue.id, "--skip-preflight"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        pending.append((issue.id, proc))
 
-@click.command()
-@click.option("--host", default="127.0.0.1", help="Host to bind to")
-@click.option("--port", default=None, type=int, help="Port to bind to (default: from port_range config)")
-def serve(host: str, port: int | None) -> None:
-    """Start the AgentTree server (runs syncs, spawns agents).
+    # Wait for all to finish
+    started_count = 0
+    for issue_id, proc in pending:
+        returncode = proc.wait()
+        if returncode == 0:
+            started_count += 1
+            console.print(f"[green]✓ Started agent for #{issue_id}[/green]")
+        else:
+            stderr = proc.stderr.read() if proc.stderr else ""
+            console.print(f"[yellow]Could not start agent for #{issue_id}: {stderr.strip()}[/yellow]")
 
-    This is the main manager process that:
-    - Syncs the _agenttree repo periodically
-    - Spawns agents for issues in agent stages
-    - Runs hooks for manager stages
-    - Provides the web dashboard
+    console.print(f"\n[bold]Agents: {started_count} started, {skipped_count} in parking lot[/bold]")
 
-    Use 'agenttree start' to run this in a tmux session.
-    """
-    from agenttree.web.app import run_server
-
-    if port is None:
-        port = load_config().server_port
-    console.print(f"[cyan]Starting AgentTree server at http://{host}:{port}[/cyan]")
-    console.print("[dim]Press Ctrl+C to stop[/dim]\n")
-
-    run_server(host=host, port=port)
+    # Start manager agent (agent 0) if not already running
+    manager_session = get_manager_session_name(config)
+    if not session_exists(manager_session):
+        console.print(f"\n[cyan]Starting manager agent...[/cyan]")
+        _start_manager(tool=None, force=False, config=config, repo_path=repo_path)
+    else:
+        console.print(f"[dim]Manager agent already running[/dim]")
 
 
 @click.command()
@@ -118,9 +122,9 @@ def run(host: str, port: int | None, skip_agents: bool) -> None:
     """Start AgentTree: server + agents for all active issues.
 
     This is the main entry point that:
-    1. Starts agents for all issues NOT in parking lot stages (backlog, accepted, not_doing)
-    2. Starts the manager agent (agent 0)
-    3. Starts the web server with sync/heartbeat
+    1. Starts the web server with sync/heartbeat
+    2. Starts agents for all issues (in parallel) in a background thread
+    3. Starts the manager agent (agent 0)
 
     Use 'agenttree shutdown' to stop everything.
 
@@ -129,10 +133,9 @@ def run(host: str, port: int | None, skip_agents: bool) -> None:
         agenttree run --skip-agents    # Just start the server
         agenttree run --port 9000      # Use custom port
     """
+    import threading
+
     from agenttree.web.app import run_server
-    from agenttree.issues import list_issues
-    from agenttree.state import get_active_agent
-    from agenttree.tmux import session_exists
 
     repo_path = Path.cwd()
     config = load_config(repo_path)
@@ -141,49 +144,14 @@ def run(host: str, port: int | None, skip_agents: bool) -> None:
         port = config.server_port
 
     if not skip_agents:
-        # Get parking lot stages to filter out
-        parking_lot_stages = config.get_parking_lot_stages()
+        thread = threading.Thread(
+            target=_start_agents_background,
+            args=(config, repo_path),
+            daemon=True,
+        )
+        thread.start()
 
-        # Start agents for all issues not in parking lot stages
-        issues = list_issues(sync=True)
-        started_count = 0
-        skipped_count = 0
-
-        for issue in issues:
-            if issue.stage in parking_lot_stages:
-                skipped_count += 1
-                continue
-
-            # Check if agent already running
-            if get_active_agent(issue.id):
-                console.print(f"[dim]Issue #{issue.id} already has an agent running[/dim]")
-                continue
-
-            # Start agent for this issue
-            console.print(f"[cyan]Starting agent for issue #{issue.id} ({issue.stage})...[/cyan]")
-            result = subprocess.run(
-                ["agenttree", "start", issue.id, "--skip-preflight"],
-                capture_output=True,
-                text=True,
-            )
-            if result.returncode == 0:
-                started_count += 1
-                console.print(f"[green]✓ Started agent for #{issue.id}[/green]")
-            else:
-                console.print(f"[yellow]Could not start agent for #{issue.id}: {result.stderr.strip()}[/yellow]")
-
-        console.print(f"\n[bold]Agents: {started_count} started, {skipped_count} in parking lot[/bold]")
-
-        # Start manager agent (agent 0) if not already running
-        manager_session = get_manager_session_name(config)
-        if not session_exists(manager_session):
-            console.print(f"\n[cyan]Starting manager agent...[/cyan]")
-            _start_manager(tool=None, force=False, config=config, repo_path=repo_path)
-        else:
-            console.print(f"[dim]Manager agent already running[/dim]")
-
-    # Start the web server
-    console.print(f"\n[cyan]Starting AgentTree server at http://{host}:{port}[/cyan]")
+    console.print(f"[cyan]Starting AgentTree server at http://{host}:{port}[/cyan]")
     console.print("[dim]Press Ctrl+C to stop[/dim]\n")
 
     run_server(host=host, port=port)

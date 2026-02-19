@@ -883,6 +883,32 @@ class TestFilterIssues:
         assert len(result) == 3
 
 
+class TestKanbanUnrecognizedStage:
+    """Test that issues with unrecognized stages appear in backlog."""
+
+    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.app.agent_manager")
+    def test_unrecognized_stage_falls_back_to_backlog(self, mock_agent_mgr, mock_crud):
+        """Issues with stage names not in config should appear in backlog."""
+        from agenttree.web.app import get_kanban_board
+        from agenttree.issues import Issue
+
+        issue = Issue(
+            id="162",
+            slug="test-issue",
+            title="Test Issue",
+            stage="implementation_review",
+            created="2026-01-01T00:00:00Z",
+            updated="2026-01-01T00:00:00Z",
+        )
+        mock_crud.list_issues.return_value = [issue]
+        mock_agent_mgr._check_issue_tmux_session = Mock(return_value=False)
+
+        board = get_kanban_board()
+        backlog_numbers = [i.number for i in board.stages.get("backlog", [])]
+        assert 162 in backlog_numbers
+
+
 class TestKanbanSearchEndpoint:
     """Tests for kanban board search functionality."""
 

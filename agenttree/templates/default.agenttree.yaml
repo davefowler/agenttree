@@ -32,7 +32,7 @@ tools:
 roles:
   manager:
     description: "Human-driven manager"
-    process: "agenttree serve"
+    process: "agenttree run"
 
   agent:
     description: "Default AI agent"
