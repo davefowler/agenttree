@@ -226,114 +226,119 @@ class TestCheckStalledAgentsReNotification:
         return t.strftime("%Y-%m-%dT%H:%M:%SZ")
 
     @patch("agenttree.tmux.send_message", return_value="sent")
-    @patch("agenttree.tmux.is_claude_running", return_value=True)
     @patch("agenttree.tmux.session_exists", return_value=True)
+    @patch("agenttree.events.save_event_state")
+    @patch("agenttree.events.load_event_state", return_value={})
     @patch("agenttree.issues.list_issues")
     @patch("agenttree.config.load_config")
     def test_first_stall_notifies(
         self, mock_config: MagicMock, mock_list: MagicMock,
-        mock_exists: MagicMock, mock_claude: MagicMock,
+        mock_load_state: MagicMock, mock_save_state: MagicMock,
+        mock_exists: MagicMock,
         mock_send: MagicMock,
         tmp_path: Path,
     ) -> None:
-        """First time an agent is detected stalled, agent is nudged and manager notified."""
-        issue = MagicMock(id="042", title="Test", stage="implement.code",
-                          updated=self._issue_updated_ago(20))
+        """First time an agent is detected stalled, manager is notified."""
+        # Create issue with history entry
+        # Agent running + elapsed >= threshold*2 triggers notification
+        history_entry = MagicMock()
+        history_entry.timestamp = self._issue_updated_ago(35)  # >= 15*2=30
+        issue = MagicMock(
+            id="042", title="Test", stage="implement.code",
+            history=[history_entry],
+        )
         mock_list.return_value = [issue]
         mock_config.return_value.get_manager_tmux_session.return_value = "mgr"
         mock_config.return_value.get_issue_tmux_session.return_value = "at-042"
         mock_config.return_value.is_parking_lot.return_value = False
+        mock_config.return_value.is_human_review.return_value = False
+        mock_config.return_value.role_for.return_value = "developer"
 
         check_stalled_agents(tmp_path, threshold_min=15)
 
-        # Should have nudged agent and notified manager (2 calls)
-        assert mock_send.call_count == 2
-
-        # First call: nudge to agent
-        agent_call = mock_send.call_args_list[0]
-        assert agent_call[0][0] == "at-042"
-        assert "agenttree next" in agent_call[0][1]
-
-        # Second call: report to manager
-        manager_call = mock_send.call_args_list[1]
-        assert manager_call[0][0] == "mgr"
-        assert "042" in manager_call[0][1]
-
-        # stalled.yaml should have notified_at_minutes
-        data = yaml.safe_load((tmp_path / "stalled.yaml").read_text())
-        assert data["stalled_agents"][0]["notified_at_minutes"] >= 19  # ~20 min
+        # Should have notified manager (1 call)
+        mock_send.assert_called_once()
+        assert mock_send.call_args[0][0] == "mgr"
+        assert "042" in mock_send.call_args[0][1]
 
     @patch("agenttree.tmux.send_message", return_value="sent")
-    @patch("agenttree.tmux.is_claude_running", return_value=True)
     @patch("agenttree.tmux.session_exists", return_value=True)
+    @patch("agenttree.events.save_event_state")
+    @patch("agenttree.events.load_event_state")
     @patch("agenttree.issues.list_issues")
     @patch("agenttree.config.load_config")
     def test_same_stall_not_renotified_too_soon(
         self, mock_config: MagicMock, mock_list: MagicMock,
-        mock_exists: MagicMock, mock_claude: MagicMock,
+        mock_load_state: MagicMock, mock_save_state: MagicMock,
+        mock_exists: MagicMock,
         mock_send: MagicMock,
         tmp_path: Path,
     ) -> None:
-        """If stall hasn't grown by threshold_min since last notification, don't re-notify manager."""
-        # Agent stalled at 25 min, previously notified at 20 min (only 5 min growth, threshold 15)
-        self._make_stalled_yaml(tmp_path, [
-            {"id": "042", "title": "Test", "stage": "implement.code",
-             "stalled_minutes": 20, "notified_at_minutes": 20},
-        ])
+        """If stall hasn't grown enough since last notification, don't re-notify."""
+        # Previously notified once (count=1), next notify at threshold*2=20min
+        mock_load_state.return_value = {
+            "stall_notifications": {
+                "042": {"stage": "implement.code", "count": 1}
+            }
+        }
 
-        issue = MagicMock(id="042", title="Test", stage="implement.code",
-                          updated=self._issue_updated_ago(25))
+        # Agent at 18min (< 20min threshold*2 for second notification)
+        history_entry = MagicMock()
+        history_entry.timestamp = self._issue_updated_ago(18)
+        issue = MagicMock(
+            id="042", title="Test", stage="implement.code",
+            history=[history_entry],
+        )
         mock_list.return_value = [issue]
         mock_config.return_value.get_manager_tmux_session.return_value = "mgr"
         mock_config.return_value.get_issue_tmux_session.return_value = "at-042"
         mock_config.return_value.is_parking_lot.return_value = False
+        mock_config.return_value.is_human_review.return_value = False
+        mock_config.return_value.role_for.return_value = "developer"
 
-        check_stalled_agents(tmp_path, threshold_min=15)
+        check_stalled_agents(tmp_path, threshold_min=10)
 
-        # Neither agent nor manager notified when stall hasn't grown by threshold_min
-        # (25 - 20 = 5 < 15, so no notification)
+        # No notification since elapsed (18) < threshold*2 (20)
         mock_send.assert_not_called()
 
     @patch("agenttree.tmux.send_message", return_value="sent")
-    @patch("agenttree.tmux.is_claude_running", return_value=True)
     @patch("agenttree.tmux.session_exists", return_value=True)
+    @patch("agenttree.events.save_event_state")
+    @patch("agenttree.events.load_event_state")
     @patch("agenttree.issues.list_issues")
     @patch("agenttree.config.load_config")
     def test_stall_renotifies_after_threshold_growth(
         self, mock_config: MagicMock, mock_list: MagicMock,
-        mock_exists: MagicMock, mock_claude: MagicMock,
+        mock_load_state: MagicMock, mock_save_state: MagicMock,
+        mock_exists: MagicMock,
         mock_send: MagicMock,
         tmp_path: Path,
     ) -> None:
-        """If stall grows by another threshold_min, re-notify manager with STILL STALLED."""
-        # Previously notified at 20 min
-        self._make_stalled_yaml(tmp_path, [
-            {"id": "042", "title": "Test", "stage": "implement.code",
-             "stalled_minutes": 20, "notified_at_minutes": 20},
-        ])
+        """If stall grows past next threshold, re-notify manager."""
+        # Previously notified once (count=1), next notify at threshold*2=20min
+        mock_load_state.return_value = {
+            "stall_notifications": {
+                "042": {"stage": "implement.code", "count": 1}
+            }
+        }
 
-        # Agent now stalled at 36 min (16 more than 20, threshold is 15 → re-notify)
-        issue = MagicMock(id="042", title="Test", stage="implement.code",
-                          updated=self._issue_updated_ago(36))
+        # Agent now at 25min (>= threshold*2=20 for second notification)
+        history_entry = MagicMock()
+        history_entry.timestamp = self._issue_updated_ago(25)
+        issue = MagicMock(
+            id="042", title="Test", stage="implement.code",
+            history=[history_entry],
+        )
         mock_list.return_value = [issue]
         mock_config.return_value.get_manager_tmux_session.return_value = "mgr"
         mock_config.return_value.get_issue_tmux_session.return_value = "at-042"
         mock_config.return_value.is_parking_lot.return_value = False
+        mock_config.return_value.is_human_review.return_value = False
+        mock_config.return_value.role_for.return_value = "developer"
 
-        check_stalled_agents(tmp_path, threshold_min=15)
+        check_stalled_agents(tmp_path, threshold_min=10)
 
-        # Should have nudged agent and re-notified manager (2 calls)
-        assert mock_send.call_count == 2
-
-        # First call: nudge to agent
-        nudge_msg = mock_send.call_args_list[0][0][1]
-        assert "agenttree next" in nudge_msg
-
-        # Second call: notify manager with STILL STALLED
-        manager_call = mock_send.call_args_list[1]
-        assert manager_call[0][0] == "mgr"
-        assert "STILL STALLED" in manager_call[0][1]
-
-        # notified_at_minutes should be updated to ~36
-        data = yaml.safe_load((tmp_path / "stalled.yaml").read_text())
-        assert data["stalled_agents"][0]["notified_at_minutes"] >= 35
+        # Should have notified manager (1 call)
+        mock_send.assert_called_once()
+        assert mock_send.call_args[0][0] == "mgr"
+        assert "042" in mock_send.call_args[0][1]
