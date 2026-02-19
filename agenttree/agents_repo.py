@@ -256,6 +256,8 @@ def check_manager_stages(agents_dir: Path) -> int:
                         f"Issue redirected to {redirect.target}: {redirect.reason}. Run `agenttree next` for instructions.",
                         interrupt=True,
                     )
+                    # Re-read yaml (hooks may have modified it) before writing flag
+                    data = safe_yaml_load(issue_yaml)
                     data["manager_hooks_executed"] = None
                     with open(issue_yaml, "w") as f:
                         yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
@@ -267,7 +269,9 @@ def check_manager_stages(agents_dir: Path) -> int:
                     log.warning("Manager hooks failed for issue %s at %s: %s",
                                 data.get("id", "?"), stage, e)
 
-                # Mark as fully executed (success or non-retryable failure)
+                # Re-read yaml — hooks like create_pr update metadata (pr_number etc.)
+                # and writing back stale `data` would clobber those changes.
+                data = safe_yaml_load(issue_yaml)
                 data["manager_hooks_executed"] = stage
                 with open(issue_yaml, "w") as f:
                     yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)

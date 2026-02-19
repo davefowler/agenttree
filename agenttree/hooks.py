@@ -377,9 +377,7 @@ HOOK_TYPES = {
     # Actions (perform side effects)
     "create_file", "create_pr", "merge_pr", "run", "rebase",
     "cleanup_agent", "start_blocked_issues", "cleanup_resources",
-    "version_file",  # Review loop: rename file to versioned name
-    "loop_check",  # Review loop: count iterations and fail if max exceeded
-    "rollback",  # Review loop: programmatic rollback to earlier stage
+    "rollback",  # Review loop: programmatic rollback to earlier stage (with optional max_rollbacks limit)
     # Manager hooks (run on post-sync)
     "push_pending_branches", "check_manager_stages", "ensure_review_branches",
     "check_merged_prs", "check_ci_status", "check_custom_agent_stages",
@@ -1234,47 +1232,12 @@ def run_builtin_validator(
             else:
                 errors.append(f"Checkbox '{checkbox_text}' not found in {params['file']}")
 
-    elif hook_type == "version_file":
-        # Rename file.md to file_v{N}.md where N is next available version
-        # Used in post_start to preserve history before creating new version
-        filename = params.get("file", "")
-        if not filename:
-            errors.append("version_file hook requires 'file' parameter")
-        else:
-            file_path = issue_dir / filename
-            if file_path.exists():
-                # Find next version number
-                base_name = file_path.stem
-                ext = file_path.suffix
-                version = 1
-                while (issue_dir / f"{base_name}_v{version}{ext}").exists():
-                    version += 1
-
-                # Rename to versioned name
-                versioned_path = issue_dir / f"{base_name}_v{version}{ext}"
-                file_path.rename(versioned_path)
-                console.print(f"[dim]Versioned {filename} → {versioned_path.name}[/dim]")
-            # If file doesn't exist, silently skip (it might not exist on first iteration)
-
-    elif hook_type == "loop_check":
-        # Count versioned files and fail if max exceeded
-        # Used to prevent infinite review loops
-        pattern = params.get("count_files", "")
-        max_iterations = params.get("max", 3)
-        error_msg = params.get("error", f"Review loop exceeded {max_iterations} iterations")
-
-        if pattern:
-            # Count matching files (using pathlib's glob, not the glob module)
-            matches = list(issue_dir.glob(pattern))
-            if len(matches) >= max_iterations:
-                errors.append(f"{error_msg} (found {len(matches)} iterations)")
-                console.print(f"[yellow]Loop limit reached: {len(matches)} >= {max_iterations}[/yellow]")
-
     elif hook_type == "rollback":
         # Programmatic rollback to an earlier stage
         # Used in post_completion to loop back for re-review
         to_stage = params.get("to") or params.get("to_stage", "")
         auto_yes = params.get("yes", True)  # Default to auto-confirm for programmatic rollback
+        max_rollbacks = params.get("max_rollbacks")  # Optional iteration limit
 
         # Resolve relative substage name to full dot path
         if to_stage and "." not in to_stage:
@@ -1297,6 +1260,7 @@ def run_builtin_validator(
                         yes=auto_yes,
                         reset_worktree=False,
                         keep_changes=True,
+                        max_rollbacks=max_rollbacks,
                     )
                     if success:
                         console.print(f"[green]✓ Rolled back to {to_stage}[/green]")
