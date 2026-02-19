@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "agenttree"
@@ -72,9 +72,8 @@ Documentation = "https://github.com/agenttree/agenttree#readme"
 Repository = "https://github.com/agenttree/agenttree"
 Issues = "https://github.com/agenttree/agenttree/issues"
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["agenttree*"]
+[tool.hatch.build.targets.wheel]
+packages = ["agenttree"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

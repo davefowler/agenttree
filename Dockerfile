@@ -8,7 +8,6 @@ RUN apt-get update && apt-get install -y \
     git \
     curl \
     python3 \
-    python3-pip \
     python3-venv \
     sudo \
     gh \
@@ -16,16 +15,6 @@ RUN apt-get update && apt-get install -y \
 
 # Install Claude CLI
 RUN npm install -g @anthropic-ai/claude-code
-
-# Install agenttree runtime dependencies (for dogfooding - symlink approach)
-RUN pip install --break-system-packages \
-    click>=8.1.0 \
-    pyyaml>=6.0 \
-    pydantic>=2.0.0 \
-    rich>=13.0.0 \
-    filelock>=3.0.0 \
-    jinja2>=3.1.0 \
-    transitions>=0.9.0
 
 # Create non-root user (Claude CLI refuses --dangerously-skip-permissions as root)
 RUN useradd -m -s /bin/bash agent && \
@@ -36,9 +25,19 @@ USER agent
 RUN git config --global user.email "agent@agenttree.dev" && \
     git config --global user.name "AgentTree Agent"
 
-# Install uv for agent user (fast Python package manager)
+# Install uv for agent user
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 ENV PATH="/home/agent/.local/bin:$PATH"
+
+# Install agenttree runtime dependencies via uv
+RUN uv pip install --system \
+    click>=8.1.0 \
+    pyyaml>=6.0 \
+    pydantic>=2.0.0 \
+    rich>=13.0.0 \
+    filelock>=3.0.0 \
+    jinja2>=3.1.0 \
+    transitions>=0.9.0
 
 # Create workspace directory
 WORKDIR /workspace
@@ -49,11 +48,11 @@ RUN mkdir -p /home/agent/.claude/projects/-workspace && \
     echo '{"hasCompletedOnboarding":true}' > /home/agent/.claude.json && \
     echo '{"theme":"dark"}' > /home/agent/.claude/settings.json
 
-# Create agenttree wrapper script (avoids slow pip install for dogfooding)
+# Create agenttree wrapper script (avoids slow install for dogfooding)
 COPY --chown=agent:agent <<'EOF' /home/agent/agenttree-wrapper.sh
 #!/bin/bash
 # Wrapper for agenttree CLI when working on agenttree itself
-# Uses PYTHONPATH instead of pip install -e for instant startup
+# Uses PYTHONPATH instead of editable install for instant startup
 PYTHONPATH=/workspace exec python3 -c "import sys; sys.argv[0]='agenttree'; from agenttree.cli import main; main()" "$@"
 EOF
 RUN chmod +x /home/agent/agenttree-wrapper.sh
@@ -76,7 +75,7 @@ fi
 # Set up agenttree - use symlink approach for instant startup when dogfooding
 AGENTTREE_PATH=""
 if [ -f /workspace/pyproject.toml ] && grep -q 'name = "agenttree"' /workspace/pyproject.toml; then
-    # Working on agenttree itself - symlink wrapper to PATH instead of pip install
+    # Working on agenttree itself - symlink wrapper to PATH instead of full install
     mkdir -p /home/agent/bin
     ln -sf /home/agent/agenttree-wrapper.sh /home/agent/bin/agenttree
     AGENTTREE_PATH="/home/agent/bin:"

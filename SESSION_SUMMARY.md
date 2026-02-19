@@ -248,7 +248,7 @@ document.addEventListener('drop', async (e) => {
 ```bash
 agenttree web
 # or
-python -m agenttree.web.app
+uv run python -m agenttree.web.app
 ```
 
 ### **Visit:**

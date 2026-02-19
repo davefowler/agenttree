@@ -21,8 +21,6 @@ import subprocess
 import sys
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from pathlib import Path
-from typing import List, Optional, Tuple
 
 
 @dataclass
@@ -39,7 +37,7 @@ class PreflightResult:
     name: str
     passed: bool
     message: str
-    fix_hint: Optional[str] = None
+    fix_hint: str | None = None
 
 
 class PreflightCheck(ABC):
@@ -66,7 +64,7 @@ class PreflightRegistry:
 
     def __init__(self) -> None:
         """Initialize empty registry."""
-        self.checks: List[PreflightCheck] = []
+        self.checks: list[PreflightCheck] = []
 
     def register(self, check: PreflightCheck) -> None:
         """Register a preflight check.
@@ -76,7 +74,7 @@ class PreflightRegistry:
         """
         self.checks.append(check)
 
-    def run_all(self) -> List[PreflightResult]:
+    def run_all(self) -> list[PreflightResult]:
         """Run all registered checks and return results.
 
         Continues running checks even if some fail or raise exceptions.
@@ -84,7 +82,7 @@ class PreflightRegistry:
         Returns:
             List of PreflightResult for all checks
         """
-        results: List[PreflightResult] = []
+        results: list[PreflightResult] = []
         for check in self.checks:
             try:
                 result = check.check()
@@ -111,7 +109,7 @@ class PythonVersionCheck(PreflightCheck):
     name = "python_version"
     description = "Verify Python version >= 3.10"
 
-    def __init__(self, min_version: Tuple[int, int] = (3, 10)) -> None:
+    def __init__(self, min_version: tuple[int, int] = (3, 10)) -> None:
         """Initialize with minimum version.
 
         Args:
@@ -141,24 +139,12 @@ class PythonVersionCheck(PreflightCheck):
 
 
 class DependenciesCheck(PreflightCheck):
-    """Check that project dependencies are installed."""
+    """Check that project dependencies are installed via uv."""
 
     name = "dependencies"
     description = "Verify project dependencies are installed"
 
     def check(self) -> PreflightResult:
-        """Check dependencies using detected package manager."""
-        # Check for uv first (preferred for this project)
-        pyproject = Path("pyproject.toml")
-        if pyproject.exists():
-            content = pyproject.read_text()
-            if "[tool.uv]" in content or "uv" in content:
-                return self._check_uv()
-
-        # Fallback to pip check
-        return self._check_pip()
-
-    def _check_uv(self) -> PreflightResult:
         """Check dependencies using uv."""
         try:
             result = subprocess.run(
@@ -181,44 +167,18 @@ class DependenciesCheck(PreflightCheck):
                     fix_hint="Run 'uv sync' to install dependencies",
                 )
         except FileNotFoundError:
-            # uv not available, try pip
-            return self._check_pip()
+            return PreflightResult(
+                name=self.name,
+                passed=False,
+                message="uv not found",
+                fix_hint="Install uv: curl -LsSf https://astral.sh/uv/install.sh | sh",
+            )
         except subprocess.TimeoutExpired:
             return PreflightResult(
                 name=self.name,
                 passed=False,
                 message="Dependency check timed out",
                 fix_hint="Check network connectivity or run 'uv sync' manually",
-            )
-
-    def _check_pip(self) -> PreflightResult:
-        """Check dependencies using pip."""
-        try:
-            result = subprocess.run(
-                [sys.executable, "-m", "pip", "check"],
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
-            if result.returncode == 0:
-                return PreflightResult(
-                    name=self.name,
-                    passed=True,
-                    message="Dependencies OK (pip check passed)",
-                )
-            else:
-                return PreflightResult(
-                    name=self.name,
-                    passed=False,
-                    message=f"Dependency issues: {result.stdout}",
-                    fix_hint="Run 'pip install -e .' or 'uv sync'",
-                )
-        except (FileNotFoundError, subprocess.TimeoutExpired) as e:
-            return PreflightResult(
-                name=self.name,
-                passed=False,
-                message=f"Could not check dependencies: {e}",
-                fix_hint="Ensure Python and pip are installed",
             )
 
 
@@ -298,7 +258,7 @@ class AgenttreeCliCheck(PreflightCheck):
                 name=self.name,
                 passed=False,
                 message="agenttree CLI not found",
-                fix_hint="Add agenttree to PATH or install with 'pip install agenttree'",
+                fix_hint="Add agenttree to PATH or install with 'uv tool install agenttree'",
             )
         except subprocess.TimeoutExpired:
             return PreflightResult(
@@ -335,14 +295,14 @@ class TestRunnerCheck(PreflightCheck):
                     name=self.name,
                     passed=False,
                     message=f"pytest error: {result.stderr}",
-                    fix_hint="Install pytest with 'pip install pytest' or 'uv sync'",
+                    fix_hint="Install pytest with 'uv sync'",
                 )
         except FileNotFoundError:
             return PreflightResult(
                 name=self.name,
                 passed=False,
                 message="pytest not found",
-                fix_hint="Install pytest with 'pip install pytest' or 'uv sync'",
+                fix_hint="Install pytest with 'uv sync'",
             )
         except subprocess.TimeoutExpired:
             return PreflightResult(
@@ -367,7 +327,7 @@ def get_default_registry() -> PreflightRegistry:
     return registry
 
 
-def run_preflight() -> List[PreflightResult]:
+def run_preflight() -> list[PreflightResult]:
     """Run all default preflight checks.
 
     Returns:
