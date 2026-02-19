@@ -271,7 +271,7 @@ class Config(BaseModel):
         expanded_dir = Path(self.worktrees_dir).expanduser()
         return expanded_dir / f"{self.project}-agent-{agent_num}"
 
-    def get_issue_worktree_path(self, issue_id: str, slug: str = "") -> Path:
+    def get_issue_worktree_path(self, issue_id: str) -> Path:
         """Get worktree path for an issue-bound agent."""
         expanded_dir = Path(self.worktrees_dir).expanduser()
         return expanded_dir / f"issue-{issue_id}"

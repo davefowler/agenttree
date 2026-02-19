@@ -264,12 +264,11 @@ def unregister_all_agents_for_issue(issue_id: str) -> list[ActiveAgent]:
 
 
 
-def get_issue_names(issue_id: str, slug: str = "", project: str = "agenttree", role: str = "developer") -> dict:
+def get_issue_names(issue_id: str, project: str = "agenttree", role: str = "developer") -> dict:
     """Get standardized names for issue-bound resources.
 
     Args:
         issue_id: Issue ID (e.g., "023")
-        slug: Unused, kept for call-site compatibility
         project: Project name
         role: Agent role (default: "developer")
 
@@ -288,7 +287,6 @@ def get_issue_names(issue_id: str, slug: str = "", project: str = "agenttree", r
 
 def create_agent_for_issue(
     issue_id: str,
-    slug: str,
     worktree_path: Path,
     port: int,
     project: str = "agenttree",
@@ -301,7 +299,6 @@ def create_agent_for_issue(
 
     Args:
         issue_id: Issue ID
-        slug: Issue slug
         worktree_path: Path to worktree
         port: Allocated port
         project: Project name
@@ -310,7 +307,7 @@ def create_agent_for_issue(
     Returns:
         ActiveAgent object (not yet running until tmux session created)
     """
-    names = get_issue_names(issue_id, slug, project, role)
+    names = get_issue_names(issue_id, project, role)
 
     return ActiveAgent(
         issue_id=issue_id,
