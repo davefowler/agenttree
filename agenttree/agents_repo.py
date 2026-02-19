@@ -458,12 +458,14 @@ def check_custom_agent_stages(agents_dir: Path) -> int:
                         console.print(f"[yellow]{role_name} agent for issue #{issue_id} exited, restarting...[/yellow]")
                         needs_force = True
                 else:
-                    # No tmux session — check for orphaned container
+                    # No tmux session — force if orphaned container exists
                     from agenttree.container import is_container_running
                     container_name = config.get_issue_container_name(issue_id)
                     if is_container_running(container_name):
                         console.print(f"[yellow]Orphaned container for issue #{issue_id}, cleaning up...[/yellow]")
-                    needs_force = False
+                        needs_force = True
+                    else:
+                        needs_force = False
 
                 issue = Issue(**data)
                 console.print(f"[cyan]Starting {role_name} agent for issue #{issue.id} at stage {stage}...[/cyan]")
