@@ -309,7 +309,7 @@
             }
 
             if (view === 'review') {
-                // Show only human review stages (plus parking lot for drag targets)
+                // Show only human review stages; parking lot appears as mini dropzones
                 columns.forEach(col => {
                     const stage = col.dataset.stage;
                     if (humanReviewStages.includes(stage)) {
