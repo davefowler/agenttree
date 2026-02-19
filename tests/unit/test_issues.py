@@ -17,6 +17,8 @@ from agenttree.issues import (
     get_next_stage,
     update_issue_stage,
     update_issue_priority,
+    update_issue_metadata,
+    remove_dependency,
     load_skill,
     set_processing,
     resolve_conflict_markers,
@@ -1763,7 +1765,7 @@ stage: define
 
         return agenttrees_path
 
-    def test_list_issues_skips_corrupted_files(self, temp_agenttrees_with_issues, capsys):
+    def test_list_issues_skips_corrupted_files(self, temp_agenttrees_with_issues, caplog):
         """list_issues should skip corrupted YAML files and continue with valid ones."""
         issues = list_issues(sync=False)
 
@@ -1772,12 +1774,11 @@ stage: define
         assert issues[0].id == "001"
         assert issues[0].title == "Valid Issue"
 
-        # Should print a warning
-        captured = capsys.readouterr()
-        assert "Warning" in captured.out
-        assert "002-corrupted-issue" in captured.out
+        # Should log a warning
+        assert "Skipping corrupted issue file" in caplog.text
+        assert "002-corrupted-issue" in caplog.text
 
-    def test_get_issue_returns_none_for_corrupted_file(self, temp_agenttrees_with_issues, capsys):
+    def test_get_issue_returns_none_for_corrupted_file(self, temp_agenttrees_with_issues, caplog):
         """get_issue should return None for corrupted YAML files."""
         # Valid issue should work
         valid_issue = get_issue("001", sync=False)
@@ -1788,28 +1789,24 @@ stage: define
         corrupted_issue = get_issue("002", sync=False)
         assert corrupted_issue is None
 
-        # Should print a warning
-        captured = capsys.readouterr()
-        assert "Warning" in captured.out
-        assert "Corrupted" in captured.out
+        # Should log a warning
+        assert "Corrupted issue file" in caplog.text
 
-    def test_update_issue_stage_returns_none_for_corrupted_file(self, temp_agenttrees_with_issues, capsys):
+    def test_update_issue_stage_returns_none_for_corrupted_file(self, temp_agenttrees_with_issues, caplog):
         """update_issue_stage should return None for corrupted YAML files."""
         result = update_issue_stage("002", "explore.research")
         assert result is None
 
-        # Should print a warning
-        captured = capsys.readouterr()
-        assert "Warning" in captured.out
+        # Should log a warning
+        assert "Corrupted issue file" in caplog.text
 
-    def test_set_processing_returns_false_for_corrupted_file(self, temp_agenttrees_with_issues, capsys):
+    def test_set_processing_returns_false_for_corrupted_file(self, temp_agenttrees_with_issues, caplog):
         """set_processing should return False for corrupted YAML files."""
         result = set_processing("002", "exit")
         assert result is False
 
-        # Should print a warning
-        captured = capsys.readouterr()
-        assert "Warning" in captured.out
+        # Should log a warning
+        assert "Corrupted issue file" in caplog.text
 
     def test_malformed_but_valid_yaml_skipped(self, temp_agenttrees_with_issues, monkeypatch):
         """Issues with valid YAML but missing required fields should be skipped."""
@@ -1831,3 +1828,19 @@ stage: define
         # Should only return the valid issue (001)
         assert len(issues) == 1
         assert issues[0].id == "001"
+
+    def test_remove_dependency_returns_none_for_corrupted_file(self, temp_agenttrees_with_issues, caplog):
+        """remove_dependency should return None for corrupted YAML files."""
+        result = remove_dependency("002", "001")
+        assert result is None
+
+        # Should log a warning
+        assert "Corrupted issue file" in caplog.text
+
+    def test_update_issue_metadata_returns_none_for_corrupted_file(self, temp_agenttrees_with_issues, caplog):
+        """update_issue_metadata should return None for corrupted YAML files."""
+        result = update_issue_metadata("002", branch="test-branch")
+        assert result is None
+
+        # Should log a warning
+        assert "Corrupted issue file" in caplog.text
