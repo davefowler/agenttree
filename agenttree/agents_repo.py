@@ -758,16 +758,12 @@ def check_ci_status(agents_dir: Path) -> int:
                     console.print(f"[green]CI passed for issue #{issue_id}, advancing to review[/green]")
                     _update_issue_stage_direct(issue_yaml, data, "implement.review")
 
-                    # Notify agent that CI passed
-                    config = load_config()
-                    tmux_manager = TmuxManager(config)
-                    agent = get_active_agent(issue_id)
-                    if agent and tmux_manager.is_issue_running(agent.tmux_session):
-                        try:
-                            message = f"CI passed for PR #{pr_number}. Stage advanced to implement.review. Run 'agenttree next' to continue."
-                            tmux_manager.send_message_to_issue(agent.tmux_session, message, interrupt=False)
-                        except Exception:
-                            pass  # Best-effort notification
+                    # Notify agent that CI passed (best-effort)
+                    from agenttree.api import _notify_agent
+                    _notify_agent(
+                        issue_id,
+                        f"CI passed for PR #{pr_number}. Stage advanced to implement.review. Run 'agenttree next' to continue.",
+                    )
 
                     issues_notified += 1
                 # For implement.review with passing CI, nothing to do
