@@ -544,6 +544,10 @@ def _update_issue_stage_direct(yaml_path: Path, data: dict, new_stage: str) -> N
     if old_stage == "implement.review" and new_stage != "implement.review":
         data["ci_escalated"] = False
 
+    # Clear ci_notified when entering ci_wait so new CI runs get detected
+    if new_stage == "implement.ci_wait":
+        data.pop("ci_notified", None)
+
     # Add history entry
     if "history" not in data:
         data["history"] = []
@@ -721,7 +725,7 @@ def check_ci_status(agents_dir: Path) -> int:
             if not pr_number:
                 continue
 
-            # Skip if already notified for this CI failure
+            # Skip if already notified for this CI run
             if data.get("ci_notified"):
                 continue
 
@@ -750,9 +754,17 @@ def check_ci_status(agents_dir: Path) -> int:
             if not failed_checks:
                 # All checks passed
                 if stage == "implement.ci_wait":
-                    # Advance ci_wait → review
+                    # Advance ci_wait → review and notify agent
                     console.print(f"[green]CI passed for issue #{issue_id}, advancing to review[/green]")
                     _update_issue_stage_direct(issue_yaml, data, "implement.review")
+
+                    # Notify agent that CI passed (best-effort)
+                    from agenttree.api import _notify_agent
+                    _notify_agent(
+                        issue_id,
+                        f"CI passed for PR #{pr_number}. Stage advanced to implement.review. Run 'agenttree next' to continue.",
+                    )
+
                     issues_notified += 1
                 # For implement.review with passing CI, nothing to do
                 continue

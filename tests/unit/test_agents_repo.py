@@ -551,6 +551,44 @@ class TestCheckCiStatus:
             assert result == 0
 
     @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    def test_check_ci_status_ci_wait_advances_on_success(self, mock_container, agents_dir):
+        """CI passing at ci_wait should advance to implement.review and notify agent."""
+        import yaml
+        from agenttree.agents_repo import check_ci_status
+        from agenttree.github import CheckStatus
+
+        issue_dir = agents_dir / "issues" / "042-test-issue"
+        issue_dir.mkdir()
+        issue_yaml = issue_dir / "issue.yaml"
+        data = {
+            "id": "42",
+            "title": "Test issue",
+            "stage": "implement.ci_wait",
+            "pr_number": 123,
+        }
+        with open(issue_yaml, "w") as f:
+            yaml.dump(data, f)
+
+        with patch("agenttree.github.get_pr_checks") as mock_get_checks, \
+             patch("agenttree.api._notify_agent") as mock_notify:
+            mock_get_checks.return_value = [
+                CheckStatus(name="build", state="SUCCESS"),
+                CheckStatus(name="test", state="SUCCESS"),
+            ]
+            result = check_ci_status(agents_dir)
+
+            # Should advance stage to implement.review
+            with open(issue_yaml) as f:
+                updated = yaml.safe_load(f)
+            assert updated["stage"] == "implement.review"
+
+            # Should notify agent
+            mock_notify.assert_called_once()
+            assert "CI passed" in mock_notify.call_args[0][1]
+
+            assert result == 1
+
+    @patch("agenttree.hooks.is_running_in_container", return_value=False)
     def test_check_ci_status_on_ci_pending_does_nothing(self, mock_container, agents_dir, issue_at_implementation_review):
         """Verify hook waits for CI to complete (no action on pending)."""
         from agenttree.agents_repo import check_ci_status
