@@ -113,7 +113,8 @@
                         data-filename="{{ file.name }}"
                         data-stage="{{ file.stage }}"
                         data-passed="{{ file.is_passed }}"
-                        title="{{ file.display_name }}">
+                        title="{{ file.display_name }}"
+                        {% if file.stage_color %}style="border-top-color: {{ file.stage_color }}"{% endif %}>
                     {{ file.short_name }}
                 </button>
                 {% else %}

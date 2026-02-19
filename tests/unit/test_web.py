@@ -998,9 +998,11 @@ class TestFileToStageMapping:
         assert "problem.md" in FILE_TO_STAGE
         assert FILE_TO_STAGE["problem.md"] == "explore.define"
         assert FILE_TO_STAGE["research.md"] == "explore.research"
-        assert FILE_TO_STAGE["spec.md"] == "explore.plan"
-        assert FILE_TO_STAGE["spec_review.md"] == "explore.plan_review"
-        assert FILE_TO_STAGE["review.md"] == "implement.code"
+        assert FILE_TO_STAGE["spec.md"] == "plan.draft"
+        assert FILE_TO_STAGE["spec_review.md"] == "plan.assess"
+        assert FILE_TO_STAGE["review.md"] == "implement.code_review"
+        assert FILE_TO_STAGE["independent_review.md"] == "implement.independent_review"
+        assert FILE_TO_STAGE["feedback.md"] == "implement.feedback"
 
     def test_file_to_stage_unknown_file(self):
         """Test that unknown files are not in FILE_TO_STAGE."""
@@ -1021,16 +1023,19 @@ class TestFileToStageMapping:
 
         mock_crud.get_issue_dir.return_value = issue_dir
         mock_config.show_issue_yaml = False
+        mock_config.stage_color.side_effect = lambda dp: {"explore.define": "#f97316", "plan.draft": "#eab308"}.get(dp, "")
 
         files = get_issue_files("001")
 
         assert len(files) == 2
-        # Check problem.md has stage=explore.define
+        # Check problem.md has stage=explore.define with color from config
         problem_file = next(f for f in files if f["name"] == "problem.md")
         assert problem_file["stage"] == "explore.define"
-        # Check spec.md has stage=explore.plan
+        assert problem_file["stage_color"] == "#f97316"
+        # Check spec.md has stage=plan.draft with color from config
         spec_file = next(f for f in files if f["name"] == "spec.md")
-        assert spec_file["stage"] == "explore.plan"
+        assert spec_file["stage"] == "plan.draft"
+        assert spec_file["stage_color"] == "#eab308"
 
     @patch("agenttree.web.app.issue_crud")
     @patch("agenttree.web.app._config")
@@ -1047,23 +1052,25 @@ class TestFileToStageMapping:
 
         mock_crud.get_issue_dir.return_value = issue_dir
         mock_config.show_issue_yaml = False
+        mock_config.stage_color.return_value = "#aaa"
         mock_config.get_flow_stage_names.return_value = [
-            "backlog", "explore.define", "explore.research", "explore.plan",
-            "explore.plan_review", "plan.draft", "plan.review", "implement.code",
+            "backlog", "explore.define", "explore.research",
+            "plan.draft", "plan.assess", "plan.revise", "plan.review",
+            "implement.setup", "implement.code", "implement.code_review",
         ]
 
-        # Current stage is implement.code
-        files = get_issue_files("001", current_stage="implement.code")
+        # Current stage is implement.code_review
+        files = get_issue_files("001", current_stage="implement.code_review")
 
         problem_file = next(f for f in files if f["name"] == "problem.md")
         spec_file = next(f for f in files if f["name"] == "spec.md")
         review_file = next(f for f in files if f["name"] == "review.md")
 
-        # problem.md (explore.define) should be passed when at implement.code
+        # problem.md (explore.define) should be passed when at implement.code_review
         assert problem_file["is_passed"] == "true"
-        # spec.md (explore.plan) should be passed when at implement.code
+        # spec.md (plan.draft) should be passed when at implement.code_review
         assert spec_file["is_passed"] == "true"
-        # review.md (implement.code) should NOT be passed when at implement.code
+        # review.md (implement.code_review) should NOT be passed when at implement.code_review
         assert review_file["is_passed"] == "false"
 
     @patch("agenttree.web.app.issue_crud")
@@ -1080,13 +1087,15 @@ class TestFileToStageMapping:
 
         mock_crud.get_issue_dir.return_value = issue_dir
         mock_config.show_issue_yaml = False
+        mock_config.stage_color.return_value = "#aaa"
         mock_config.get_flow_stage_names.return_value = [
-            "backlog", "explore.define", "explore.research", "explore.plan",
-            "explore.plan_review", "plan.draft", "plan.review", "implement.code",
+            "backlog", "explore.define", "explore.research",
+            "plan.draft", "plan.assess", "plan.revise", "plan.review",
+            "implement.setup", "implement.code", "implement.code_review",
         ]
 
-        # Current stage is implement.code
-        files = get_issue_files("001", current_stage="implement.code")
+        # Current stage is implement.code_review
+        files = get_issue_files("001", current_stage="implement.code_review")
 
         problem_file = next(f for f in files if f["name"] == "problem.md")
         review_file = next(f for f in files if f["name"] == "review.md")
@@ -1130,6 +1139,7 @@ class TestFileToStageMapping:
 
         mock_crud.get_issue_dir.return_value = issue_dir
         mock_config.show_issue_yaml = False
+        mock_config.stage_color.return_value = "#aaa"
         mock_config.get_stage_names.return_value = []
 
         # No current_stage provided

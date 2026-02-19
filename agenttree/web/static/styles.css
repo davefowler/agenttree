@@ -440,29 +440,7 @@ button[disabled] {
     flex-shrink: 0; /* Keep active tab fully visible */
 }
 
-/* Stage-based file tab colors */
-.file-tab[data-stage="define"] {
-    border-top-color: #78716c;
-}
-
-.file-tab[data-stage="research"] {
-    border-top-color: #14b8a6;
-}
-
-.file-tab[data-stage="plan"],
-.file-tab[data-stage="plan.assess"],
-.file-tab[data-stage="plan.revise"] {
-    border-top-color: #60a5fa;
-}
-
-.file-tab[data-stage="implement"] {
-    border-top-color: #8b5cf6;
-}
-
-.file-tab[data-stage="implement.review"],
-.file-tab[data-stage="implement.independent_review"] {
-    border-top-color: #f59e0b;
-}
+/* Stage-based file tab colors are set via inline style from config. */
 
 /* Passed-stage tabs are truncated and slightly faded */
 .file-tab[data-passed="true"]:not(.active) {

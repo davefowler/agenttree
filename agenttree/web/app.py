@@ -476,9 +476,12 @@ async def kanban(
 # File ordering by workflow stage (problem first, then spec, etc.)
 STAGE_FILE_ORDER = [
     "problem.md",
+    "research.md",
     "spec.md",
+    "spec_review.md",
     "review.md",
-    "implementation.md",
+    "independent_review.md",
+    "feedback.md",
 ]
 
 # Mapping of filenames to their associated workflow dot path.
@@ -486,15 +489,12 @@ STAGE_FILE_ORDER = [
 FILE_TO_STAGE: dict[str, str] = {
     "problem.md": "explore.define",
     "research.md": "explore.research",
-    "spec.md": "explore.plan",
-    "spec_review.md": "explore.plan_review",
-    "review.md": "implement.code",
-    "independent_review.md": "implement.code_review",
-    "feedback.md": "implement.code",
+    "spec.md": "plan.draft",
+    "spec_review.md": "plan.assess",
+    "review.md": "implement.code_review",
+    "independent_review.md": "implement.independent_review",
+    "feedback.md": "implement.feedback",
 }
-
-# Alias for tests that import _file_to_stage
-_file_to_stage = FILE_TO_STAGE
 
 
 def get_issue_files(
@@ -551,7 +551,7 @@ def get_issue_files(
         if is_passed:
             short_name = display_name[:3] + "..."
 
-        stage_color = f"stage-{file_stage}" if file_stage else ""
+        stage_color = (_config.stage_color(file_stage) or "") if file_stage else ""
         file_info: dict[str, str] = {
             "name": f.name,
             "display_name": display_name,
@@ -596,13 +596,18 @@ def get_issue_files(
 def get_default_doc(dot_path: str) -> str | None:
     """Get the default document to show for a dot-path stage.
 
-    Returns the review_doc for the substage/stage if configured, otherwise None.
+    Checks review_doc first (for human review stages), then output (the doc
+    being produced), so the most relevant file is auto-selected.
     """
     stage_config, sub_config = _config.resolve_stage(dot_path)
     if sub_config and sub_config.review_doc:
         return sub_config.review_doc
     if stage_config and stage_config.review_doc:
         return stage_config.review_doc
+    if sub_config and sub_config.output:
+        return sub_config.output
+    if stage_config and stage_config.output:
+        return stage_config.output
     return None
 
 
@@ -1692,10 +1697,10 @@ def run_server(
         print("  Run 'agenttree init' to create a config file")
 
     import uvicorn
-    # Use multiple workers for better concurrency
-    # Workers > 1 requires passing app as import string
-    # loop="asyncio" avoids uvloop fork crashes on macOS
-    uvicorn.run("agenttree.web.app:app", host=host, port=port, workers=4, loop="asyncio")
+    # Single worker — the heartbeat (sync, manager hooks, stall detection) must run
+    # in exactly one process. Multiple workers cause 4x duplicate operations and race
+    # conditions on YAML files. One async worker handles the dashboard just fine.
+    uvicorn.run("agenttree.web.app:app", host=host, port=port, workers=1, loop="asyncio")
 
 
 if __name__ == "__main__":
