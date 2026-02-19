@@ -1699,3 +1699,138 @@ class TestConfigValidation:
                         check_hooks(substage.pre_completion, f"{stage_name}.{substage_name}.pre_completion")
 
         assert not missing_templates, f"Missing template files: {missing_templates}"
+
+
+class TestCorruptedYAMLHandling:
+    """Tests for graceful handling of corrupted issue YAML files."""
+
+    @pytest.fixture
+    def temp_agenttrees_with_issues(self, monkeypatch, tmp_path):
+        """Create a temporary _agenttree directory with valid and corrupted issues."""
+        import yaml
+
+        agenttrees_path = tmp_path / "_agenttree"
+        agenttrees_path.mkdir()
+        issues_path = agenttrees_path / "issues"
+        issues_path.mkdir()
+        (agenttrees_path / "templates").mkdir()
+
+        # Create problem template
+        template = agenttrees_path / "templates" / "problem.md"
+        template.write_text("# Problem Statement\n\n")
+
+        # Create a valid issue
+        valid_issue_dir = issues_path / "001-valid-issue"
+        valid_issue_dir.mkdir()
+        valid_issue_data = {
+            "id": "001",
+            "slug": "valid-issue",
+            "title": "Valid Issue",
+            "created": "2026-01-11T12:00:00Z",
+            "updated": "2026-01-11T12:00:00Z",
+            "stage": "explore.define",
+            "flow": "default",
+            "labels": [],
+            "priority": "medium",
+            "dependencies": [],
+            "history": [],
+        }
+        with open(valid_issue_dir / "issue.yaml", "w") as f:
+            yaml.dump(valid_issue_data, f, default_flow_style=False, sort_keys=False)
+
+        # Create a corrupted issue (invalid YAML syntax)
+        corrupted_issue_dir = issues_path / "002-corrupted-issue"
+        corrupted_issue_dir.mkdir()
+        (corrupted_issue_dir / "issue.yaml").write_text("""
+id: '002'
+slug: corrupted-issue
+title: Corrupted Issue
+<<<<<<< HEAD
+stage: define
+=======
+stage: research
+>>>>>>> other-branch
+""")
+
+        # Monkeypatch get_agenttree_path to return our temp dir
+        monkeypatch.setattr(
+            "agenttree.issues.get_agenttree_path",
+            lambda: agenttrees_path
+        )
+
+        # Disable sync to avoid git operations
+        monkeypatch.setattr(
+            "agenttree.issues.sync_agents_repo",
+            lambda *args, **kwargs: True
+        )
+
+        return agenttrees_path
+
+    def test_list_issues_skips_corrupted_files(self, temp_agenttrees_with_issues, capsys):
+        """list_issues should skip corrupted YAML files and continue with valid ones."""
+        issues = list_issues(sync=False)
+
+        # Should only return the valid issue
+        assert len(issues) == 1
+        assert issues[0].id == "001"
+        assert issues[0].title == "Valid Issue"
+
+        # Should print a warning
+        captured = capsys.readouterr()
+        assert "Warning" in captured.out
+        assert "002-corrupted-issue" in captured.out
+
+    def test_get_issue_returns_none_for_corrupted_file(self, temp_agenttrees_with_issues, capsys):
+        """get_issue should return None for corrupted YAML files."""
+        # Valid issue should work
+        valid_issue = get_issue("001", sync=False)
+        assert valid_issue is not None
+        assert valid_issue.id == "001"
+
+        # Corrupted issue should return None
+        corrupted_issue = get_issue("002", sync=False)
+        assert corrupted_issue is None
+
+        # Should print a warning
+        captured = capsys.readouterr()
+        assert "Warning" in captured.out
+        assert "Corrupted" in captured.out
+
+    def test_update_issue_stage_returns_none_for_corrupted_file(self, temp_agenttrees_with_issues, capsys):
+        """update_issue_stage should return None for corrupted YAML files."""
+        result = update_issue_stage("002", "explore.research")
+        assert result is None
+
+        # Should print a warning
+        captured = capsys.readouterr()
+        assert "Warning" in captured.out
+
+    def test_set_processing_returns_false_for_corrupted_file(self, temp_agenttrees_with_issues, capsys):
+        """set_processing should return False for corrupted YAML files."""
+        result = set_processing("002", "exit")
+        assert result is False
+
+        # Should print a warning
+        captured = capsys.readouterr()
+        assert "Warning" in captured.out
+
+    def test_malformed_but_valid_yaml_skipped(self, temp_agenttrees_with_issues, monkeypatch):
+        """Issues with valid YAML but missing required fields should be skipped."""
+        import yaml
+
+        # Create a malformed issue (valid YAML but missing required fields)
+        issues_path = temp_agenttrees_with_issues / "issues"
+        malformed_dir = issues_path / "003-malformed-issue"
+        malformed_dir.mkdir()
+        malformed_data = {
+            "id": "003",
+            # Missing required fields like slug, title, created, updated
+        }
+        with open(malformed_dir / "issue.yaml", "w") as f:
+            yaml.dump(malformed_data, f, default_flow_style=False, sort_keys=False)
+
+        issues = list_issues(sync=False)
+
+        # Should only return the valid issue (001)
+        assert len(issues) == 1
+        assert issues[0].id == "001"
