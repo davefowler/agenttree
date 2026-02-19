@@ -305,8 +305,7 @@ def check_stalled_agents(
         role = config.role_for(issue.stage)
         if role == "manager":
             continue
-        stage_cfg = config.get_stage(issue.stage)
-        if stage_cfg and getattr(stage_cfg, "human_review", False):
+        if config.is_human_review(issue.stage):
             continue
 
         # Compute time-in-stage from history
@@ -340,6 +339,11 @@ def check_stalled_agents(
         # Reset if stage changed
         if prev_stage != issue.stage:
             prev_count = 0
+
+        # For running agents crossing threshold*2 for the first time,
+        # treat as if one notification already sent so the next fires at 3x
+        if agent_running and prev_count == 0:
+            prev_count = 1
 
         if prev_count >= max_notifications:
             continue  # Already notified max times for this stage
