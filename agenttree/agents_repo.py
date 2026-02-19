@@ -590,8 +590,8 @@ def check_merged_prs(agents_dir: Path) -> int:
                 console.print(f"[green]PR #{pr_number} was merged externally (issue was at {stage}), advancing issue #{issue_id} to accepted[/green]")
                 from agenttree.issues import update_issue_stage
                 updated = update_issue_stage(issue_id, "accepted", skip_sync=True, _issue_dir=issue_dir)
-                issues_advanced += 1
                 if updated:
+                    issues_advanced += 1
                     from agenttree.hooks import cleanup_issue_agent, check_and_start_blocked_issues
                     cleanup_issue_agent(updated)
                     check_and_start_blocked_issues(updated)
@@ -600,8 +600,8 @@ def check_merged_prs(agents_dir: Path) -> int:
                 console.print(f"[yellow]PR #{pr_number} was closed without merge (issue was at {stage}), advancing issue #{issue_id} to not_doing[/yellow]")
                 from agenttree.issues import update_issue_stage
                 updated = update_issue_stage(issue_id, "not_doing", skip_sync=True, _issue_dir=issue_dir)
-                issues_advanced += 1
                 if updated:
+                    issues_advanced += 1
                     from agenttree.hooks import cleanup_issue_agent
                     cleanup_issue_agent(updated)
 
