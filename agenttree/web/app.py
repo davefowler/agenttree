@@ -496,9 +496,6 @@ FILE_TO_STAGE: dict[str, str] = {
     "feedback.md": "implement.feedback",
 }
 
-# Alias for tests that import _file_to_stage
-_file_to_stage = FILE_TO_STAGE
-
 
 def get_issue_files(
     issue_id: str,
@@ -554,7 +551,7 @@ def get_issue_files(
         if is_passed:
             short_name = display_name[:3] + "..."
 
-        stage_color = _config.stage_color(file_stage) if file_stage else ""
+        stage_color = (_config.stage_color(file_stage) or "") if file_stage else ""
         file_info: dict[str, str] = {
             "name": f.name,
             "display_name": display_name,
