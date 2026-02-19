@@ -37,6 +37,13 @@
 // Pending attachments array
 var pendingAttachments = [];
 
+// HTML escape helper to prevent XSS
+function escapeHtml(str) {
+    var div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
 window.openNewIssueModal = function() {
     document.getElementById('new-issue-modal').classList.add('active');
     document.getElementById('issue-description').focus();
@@ -80,7 +87,7 @@ function updateAttachmentPreview() {
         var icon = file.type.startsWith('image/') ? '🖼️' : '📄';
         html += '<div class="attachment-item">' +
             '<span class="attachment-icon">' + icon + '</span>' +
-            '<span class="attachment-name">' + file.name + '</span>' +
+            '<span class="attachment-name">' + escapeHtml(file.name) + '</span>' +
             '<button type="button" class="attachment-remove" onclick="removeAttachment(' + i + ')">&times;</button>' +
             '</div>';
     }

@@ -5,6 +5,7 @@ This module handles CRUD operations for issues stored in _agenttree/issues/.
 
 import logging
 import re
+import time
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
@@ -225,8 +226,6 @@ def sanitize_filename(filename: str) -> str:
     Returns:
         Safe filename with timestamp prefix
     """
-    import time
-
     # Remove path components (handles both / and \)
     filename = filename.replace("\\", "/")
     filename = filename.split("/")[-1]
@@ -262,7 +261,7 @@ def create_issue(
     solutions: Optional[str] = None,
     dependencies: Optional[list[str]] = None,
     needs_ui_review: bool = False,
-    attachments: Optional[list[tuple[str, bytes]]] = None,
+    attachments: list[tuple[str, bytes]] | None = None,
 ) -> Issue:
     """Create a new issue.
 

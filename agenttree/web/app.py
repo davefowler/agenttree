@@ -1334,7 +1334,7 @@ async def create_issue_api(
             title=title,
             priority=Priority.MEDIUM,
             problem=description,
-            attachments=attachments if attachments else None,
+            attachments=attachments or None,
         )
 
         # Auto-start agent for the new issue
@@ -1377,7 +1377,7 @@ async def get_attachment(
     try:
         resolved_path = file_path.resolve()
         resolved_attachments = attachments_dir.resolve()
-        if not str(resolved_path).startswith(str(resolved_attachments)):
+        if not resolved_path.is_relative_to(resolved_attachments):
             raise HTTPException(status_code=400, detail="Invalid filename")
     except (ValueError, OSError):
         raise HTTPException(status_code=400, detail="Invalid filename")
