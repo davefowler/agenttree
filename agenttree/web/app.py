@@ -934,18 +934,12 @@ def _capture_tmux_output(session_names: list[str]) -> tuple[str | None, str | No
     Returns:
         Tuple of (output, session_name) or (None, None) if no session found.
     """
+    from agenttree.tmux import capture_pane
+
     for name in session_names:
-        try:
-            result = subprocess.run(
-                ["tmux", "capture-pane", "-t", name, "-p", "-S", "-100"],
-                capture_output=True,
-                text=True,
-                timeout=2
-            )
-            if result.returncode == 0:
-                return result.stdout, name
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            continue
+        output = capture_pane(name, lines=100)
+        if output:  # capture_pane returns "" on error
+            return output, name
     return None, None
 
 
@@ -962,7 +956,7 @@ async def agent_tmux(
     Returns ETag header for conditional requests. If client sends If-None-Match
     with matching ETag, returns 304 Not Modified to save bandwidth.
     """
-    from agenttree.tmux import is_claude_running, capture_pane
+    from agenttree.tmux import is_claude_running
 
     config = load_config()
     # Pad issue number to 3 digits to match tmux session naming
@@ -970,27 +964,10 @@ async def agent_tmux(
     # Use config for consistent session naming
     session_names = config.get_issue_session_patterns(padded_num)
 
-<<<<<<< HEAD
-    # Capture tmux output - try all session name patterns
-    claude_status = "unknown"
-    session_name = None
-    raw_output = None
-
-    for name in session_names:
-        try:
-            raw_output = capture_pane(name, lines=100)
-            session_name = name
-            break
-        except subprocess.CalledProcessError:
-            continue
-
-    if raw_output is not None and session_name:
-=======
     # Capture tmux output in thread pool to avoid blocking event loop
     raw_output, session_name = await asyncio.to_thread(_capture_tmux_output, session_names)
 
     if raw_output and session_name:
->>>>>>> origin/main
         # Strip Claude Code's input prompt separator from the output
         output = _strip_claude_input_prompt(raw_output)
         # Check if Claude is actually running (not just tmux session)

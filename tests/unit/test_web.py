@@ -656,10 +656,10 @@ class TestAgentTmuxEndpoint:
     @patch("agenttree.web.app.load_config")
     def test_agent_tmux_session_not_active(self, mock_config, mock_capture, client):
         """Test getting tmux output when session not active."""
-        from subprocess import CalledProcessError
         mock_config.return_value.project = "test"
         mock_config.return_value.get_issue_session_patterns.return_value = ["test-developer-001"]
-        mock_capture.side_effect = CalledProcessError(1, "tmux")
+        # capture_pane returns empty string when session doesn't exist
+        mock_capture.return_value = ""
 
         response = client.get("/agent/001/tmux")
 
@@ -751,7 +751,7 @@ class TestAgentTmuxEndpoint:
         mock_capture.assert_called_once()
         call_args = mock_capture.call_args
         assert call_args[0][0] == "test-developer-001"  # session name
-        assert call_args[1].get("lines", 100) == 100  # lines parameter
+        assert call_args[1]["lines"] == 100  # lines parameter
 
     def test_websocket_endpoint_removed(self, client):
         """Test that WebSocket endpoint /ws/agent/{num}/tmux no longer exists."""
