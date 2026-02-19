@@ -372,6 +372,7 @@ HOOK_TYPES = {
     # Validators (return errors if validation fails)
     "file_exists", "has_commits", "field_check", "section_check", "pr_approved",
     "min_words", "has_list_items", "contains", "ci_check", "wrapup_verified",
+    "title_set", "server_running",
     "checkbox_checked",  # Review loop: check if checkbox is marked
     # Actions (perform side effects)
     "create_file", "create_pr", "merge_pr", "run", "rebase",
@@ -687,6 +688,11 @@ def _action_merge_pr(pr_number: Optional[int], **kwargs: Any) -> None:
         merge_pr(pr_number, method=config.merge_strategy)
     except RuntimeError as e:
         error_msg = str(e).lower()
+
+        if "already merged" in error_msg:
+            console.print(f"[dim]PR #{pr_number} already merged[/dim]")
+            return  # Desired state achieved
+
         is_conflict = any(word in error_msg for word in ("conflict", "not mergeable", "merge blocked"))
 
         if not is_conflict:
