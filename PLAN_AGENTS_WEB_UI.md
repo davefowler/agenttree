@@ -1330,7 +1330,7 @@ FastAPI app
 
 **Install:**
 ```bash
-pip install markdown pygments pyyaml
+uv add markdown pygments pyyaml
 ```
 
 ---

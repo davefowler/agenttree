@@ -359,16 +359,16 @@ jobs:
 
 ```bash
 # All unit tests
-pytest tests/unit -v
+uv run pytest tests/unit -v
 
 # With coverage
-pytest tests/unit --cov=agenttree --cov-report=term-missing
+uv run pytest tests/unit --cov=agenttree --cov-report=term-missing
 
 # Specific module
-pytest tests/unit/test_config.py -v
+uv run pytest tests/unit/test_config.py -v
 
 # With coverage threshold (future)
-pytest --cov=agenttree --cov-fail-under=60
+uv run pytest --cov=agenttree --cov-fail-under=60
 ```
 
 ## Next Steps

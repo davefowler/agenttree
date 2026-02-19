@@ -314,15 +314,15 @@ tests/
 
 ```bash
 # All unit tests
-pytest tests/unit -v
+uv run pytest tests/unit -v
 
 # With coverage report (excludes tmux/cli)
-pytest tests/unit --cov=agenttree \
+uv run pytest tests/unit --cov=agenttree \
     --cov-report=term-missing \
     --cov-report=html
 
 # Verify 100% of in-scope code
-pytest tests/unit \
+uv run pytest tests/unit \
     --cov=agenttree.config \
     --cov=agenttree.worktree \
     --cov=agenttree.agents_repo \
