@@ -31,12 +31,12 @@
                         <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
                     </svg>
                     <p>No issues found</p>
-                    <button class="btn btn-primary" onclick="showNewIssueForm()">Create First Issue</button>
+                    <button class="btn btn-primary" onclick="openNewIssueModal()">Create First Issue</button>
                 </div>
             {% endif %}
 
             <!-- Floating Action Button -->
-            <button class="mobile-fab" onclick="showNewIssueForm()" title="New Issue">
+            <button class="mobile-fab" onclick="openNewIssueModal()" title="New Issue">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <line x1="12" y1="5" x2="12" y2="19"></line>
                     <line x1="5" y1="12" x2="19" y2="12"></line>
@@ -107,43 +107,7 @@
             </button>
         </nav>
 
-        <!-- New Issue Form Overlay -->
-        <div class="mobile-overlay" id="new-issue-overlay" style="display: none;">
-            <div class="mobile-form-container">
-                <div class="mobile-form-header">
-                    <h2>New Issue</h2>
-                    <button class="mobile-form-close" onclick="hideNewIssueForm()">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <line x1="18" y1="6" x2="6" y2="18"></line>
-                            <line x1="6" y1="6" x2="18" y2="18"></line>
-                        </svg>
-                    </button>
-                </div>
-                <form id="new-issue-form" onsubmit="submitNewIssue(event)">
-                    <div class="mobile-form-field">
-                        <label for="issue-title">Title</label>
-                        <input type="text" id="issue-title" name="title" required minlength="10"
-                               placeholder="Brief description of the issue" oninput="updateCharCount('title')">
-                        <div class="mobile-char-counter">
-                            <span id="title-count">0</span>/10 min
-                        </div>
-                    </div>
-                    <div class="mobile-form-field">
-                        <label for="issue-problem">Problem Description</label>
-                        <textarea id="issue-problem" name="problem" required minlength="50" rows="6"
-                                  placeholder="Detailed description of the problem to solve" oninput="updateCharCount('problem')"></textarea>
-                        <div class="mobile-char-counter">
-                            <span id="problem-count">0</span>/50 min
-                        </div>
-                    </div>
-                    <div class="mobile-form-actions">
-                        <button type="button" class="btn" onclick="hideNewIssueForm()">Cancel</button>
-                        <button type="submit" class="btn btn-primary" id="create-issue-btn">Create Issue</button>
-                    </div>
-                    <div id="form-error" class="mobile-form-error" style="display: none;"></div>
-                </form>
-            </div>
-        </div>
+        {% include 'partials/new_issue_modal.html' %}
     </div>
 
     <script>
@@ -172,91 +136,7 @@
             document.querySelector('.mobile-container').dataset.activeTab = tabName;
         }
 
-        // New Issue Form
-        function showNewIssueForm() {
-            document.getElementById('new-issue-overlay').style.display = 'flex';
-            document.getElementById('issue-title').focus();
-        }
-
-        function hideNewIssueForm() {
-            document.getElementById('new-issue-overlay').style.display = 'none';
-            document.getElementById('new-issue-form').reset();
-            document.getElementById('title-count').textContent = '0';
-            document.getElementById('problem-count').textContent = '0';
-            document.getElementById('form-error').style.display = 'none';
-        }
-
-        function updateCharCount(field) {
-            const input = document.getElementById('issue-' + field);
-            const counter = document.getElementById(field + '-count');
-            counter.textContent = input.value.length;
-
-            // Visual feedback
-            const minLength = field === 'title' ? 10 : 50;
-            if (input.value.length >= minLength) {
-                counter.parentElement.classList.add('valid');
-                counter.parentElement.classList.remove('invalid');
-            } else if (input.value.length > 0) {
-                counter.parentElement.classList.add('invalid');
-                counter.parentElement.classList.remove('valid');
-            } else {
-                counter.parentElement.classList.remove('valid', 'invalid');
-            }
-        }
-
-        async function submitNewIssue(event) {
-            event.preventDefault();
-
-            const title = document.getElementById('issue-title').value.trim();
-            const problem = document.getElementById('issue-problem').value.trim();
-            const errorDiv = document.getElementById('form-error');
-            const submitBtn = document.getElementById('create-issue-btn');
-
-            // Client-side validation
-            if (title.length < 10) {
-                errorDiv.textContent = 'Title must be at least 10 characters';
-                errorDiv.style.display = 'block';
-                return;
-            }
-            if (problem.length < 50) {
-                errorDiv.textContent = 'Problem description must be at least 50 characters';
-                errorDiv.style.display = 'block';
-                return;
-            }
-
-            submitBtn.disabled = true;
-            submitBtn.textContent = 'Creating...';
-            errorDiv.style.display = 'none';
-
-            try {
-                const formData = new FormData();
-                formData.append('title', title);
-                formData.append('problem', problem);
-
-                const response = await fetch('/api/issues', {
-                    method: 'POST',
-                    body: formData
-                });
-
-                const data = await response.json();
-
-                if (response.ok && data.ok) {
-                    // Redirect to the new issue
-                    window.location.href = '/mobile?issue=' + data.issue_id + '&tab=detail';
-                } else {
-                    errorDiv.textContent = data.detail || 'Failed to create issue';
-                    errorDiv.style.display = 'block';
-                    submitBtn.disabled = false;
-                    submitBtn.textContent = 'Create Issue';
-                }
-            } catch (error) {
-                console.error('Error creating issue:', error);
-                errorDiv.textContent = 'Network error. Please try again.';
-                errorDiv.style.display = 'block';
-                submitBtn.disabled = false;
-                submitBtn.textContent = 'Create Issue';
-            }
-        }
+        // New issue modal functions are provided by partials/new_issue_modal.html
 
         // Handle file tab clicks - CSS toggle approach (same as flow.html)
         function selectFileTab(evt, issueId, filename) {

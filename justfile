@@ -9,18 +9,9 @@ default:
 # Development
 # ============================================================================
 
-# Stop the web server
-serve-stop:
-    @pkill -f "uvicorn agenttree.web.app" 2>/dev/null || true
-    @echo "Web server stopped"
-
-# Run the web server with hot reload (kills existing first)
-# --loop asyncio prevents uvloop fork crashes on macOS
-serve: serve-stop
-    uv run uvicorn agenttree.web.app:app --host 0.0.0.0 --port 8080 --reload --loop asyncio
-
-# Run the web server (alias)
-web: serve
+# Run AgentTree (starts agents + web dashboard)
+serve:
+    uv run agenttree run
 
 # Start the controller in tmux
 controller:

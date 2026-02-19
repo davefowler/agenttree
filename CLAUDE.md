@@ -146,8 +146,8 @@ from agenttree.hooks import ValidationError
 
 When working on web UI (HTML, CSS, templates):
 - **Use Playwright MCP to review your work** — CSS bugs are invisible until someone looks at the page. The reviewer will look. You should look first.
-- Run the web server: `uv run python -m agenttree.web.app`
-- Use Playwright to screenshot pages: "use playwright to screenshot http://localhost:8080/kanban"
+- Run the web server: `uv run agenttree run`
+- Use Playwright to screenshot pages: "use playwright to screenshot http://localhost:9000/kanban"
 - Check for layout issues, color contrast, responsive behavior
 - The web app uses a minimal, neutral gray color palette inspired by Linear/Cursor — maintain consistency. Keep the design clean and uncluttered with subtle accent colors.
 

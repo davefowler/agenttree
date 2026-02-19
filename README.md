@@ -52,7 +52,7 @@ We don't do that. A 10-second programmatic loop runs **actual code**: check CI s
 
 ```bash
 # Install
-pip install agenttree
+uv tool install agenttree
 
 # Initialize in your repo
 cd your-project
@@ -67,7 +67,7 @@ agenttree start 2 --task "Fix login bug"  # Ad-hoc task to agent-2
 
 # Monitor agents
 agenttree status                   # View all agents (CLI)
-agenttree web                      # Launch web dashboard at http://127.0.0.1:8080
+agenttree run                      # Launch server + agents + web dashboard
 agenttree attach 1                 # Attach to agent-1 (Ctrl+B, D to detach)
 agenttree send 1 "focus on tests" # Send message to agent-1
 
@@ -86,8 +86,7 @@ agenttree remote start my-pc 1    # Start task on remote agent
 Launch a real-time web interface to monitor all agents. Because staring at `agenttree status` in a terminal is fine for one or two agents. For a board of issues? You want a Kanban.
 
 ```bash
-agenttree web
-# Open http://127.0.0.1:8080
+agenttree run
 ```
 
 **Kanban View** — Drag-and-drop issues across workflow stages. Review, monitor, and approve from one place:
@@ -286,12 +285,12 @@ agenttree notes archive 1        # Archive completed task
 
 ```bash
 # From PyPI
-pip install agenttree
+uv tool install agenttree
 
 # From source
 git clone https://github.com/agenttree/agenttree
 cd agenttree
-pip install -e ".[dev]"
+uv sync
 ```
 
 ### Dependencies
@@ -461,32 +460,29 @@ Comprehensive documentation is available in the [`docs/`](docs/) directory:
 git clone https://github.com/agenttree/agenttree
 cd agenttree
 
-# Install dev dependencies
-pip install -e ".[dev]"
+# Install all dependencies (including dev)
+uv sync
 
 # Run tests
-pytest
+uv run pytest
 
 # Run tests with coverage
-pytest --cov=agenttree
+uv run pytest --cov=agenttree
 
 # Format code
-black agenttree tests
+uv run black agenttree tests
 
 # Type check
-mypy agenttree
+uv run mypy agenttree
 
 # Lint
-ruff agenttree
+uv run ruff agenttree
 ```
 
 **For beta testing AgentTree with your projects:**
 ```bash
-# Install in development mode (live updates)
-cd ~/my-project
-python -m venv venv
-source venv/bin/activate
-pip install -e /path/to/agenttree
+# Install as a tool (available globally)
+uv tool install -e /path/to/agenttree
 
 # Now any changes to AgentTree code immediately affect this project
 ```

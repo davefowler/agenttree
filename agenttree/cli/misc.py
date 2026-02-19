@@ -606,7 +606,7 @@ def tui_command() -> None:
         from agenttree.tui import TUIApp
     except ImportError:
         console.print("[red]Error: TUI dependencies not installed[/red]")
-        console.print("Install with: pip install agenttree[tui]")
+        console.print("Install with: uv sync --extra tui")
         sys.exit(1)
 
     app = TUIApp()

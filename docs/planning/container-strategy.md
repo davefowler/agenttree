@@ -306,7 +306,7 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     && apt-get install -y gh
 
 # Install AI tools
-RUN pip install --no-cache-dir \
+RUN uv pip install --system --no-cache \
     anthropic \
     aider-chat
 
