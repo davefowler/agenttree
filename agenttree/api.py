@@ -180,10 +180,23 @@ def start_agent(
         update_issue_stage(issue.id, "explore.define")
         issue.stage = "explore.define"
 
-    # Check if agent already running
+    # Check if agent already running (tmux session check)
     existing_agent = get_active_agent(issue.id, host)
     if existing_agent and not force:
         raise AgentAlreadyRunningError(issue.id, host)
+
+    # Check if container already running (catches orphaned containers without tmux sessions)
+    from agenttree.container import is_container_running
+    container_name = config.get_issue_container_name(issue.id)
+    if is_container_running(container_name) and not force:
+        raise AgentAlreadyRunningError(issue.id, host)
+
+    # If force, clean up existing container before proceeding
+    if force:
+        runtime = get_container_runtime()
+        if runtime.runtime:
+            from agenttree.container import cleanup_container
+            cleanup_container(runtime.runtime, container_name)
 
     # Initialize managers
     tmux_manager = TmuxManager(config)

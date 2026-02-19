@@ -160,6 +160,41 @@ def cleanup_containers_by_prefix(runtime: str, prefix: str) -> int:
         return 0
 
 
+def is_container_running(container_name: str) -> bool:
+    """Check if a container with the given name is currently running.
+
+    Args:
+        container_name: Container name to check
+
+    Returns:
+        True if a running container with that name exists
+    """
+    import json
+
+    runtime = get_container_runtime()
+    if not runtime.runtime:
+        return False
+
+    try:
+        if runtime.runtime == "container":
+            result = subprocess.run(
+                ["container", "inspect", container_name],
+                capture_output=True, text=True, timeout=10,
+            )
+            if result.returncode != 0:
+                return False
+            data = json.loads(result.stdout) if result.stdout.strip() else []
+            return any(c.get("status") == "running" for c in data)
+        else:
+            result = subprocess.run(
+                [runtime.runtime, "inspect", "-f", "{{.State.Running}}", container_name],
+                capture_output=True, text=True, timeout=10,
+            )
+            return result.returncode == 0 and "true" in result.stdout.lower()
+    except (subprocess.TimeoutExpired, subprocess.SubprocessError, json.JSONDecodeError):
+        return False
+
+
 def get_git_worktree_info(worktree_path: Path) -> Tuple[Optional[Path], Optional[Path]]:
     """Get git directory info for a worktree.
 

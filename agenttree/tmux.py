@@ -543,16 +543,14 @@ class TmuxManager:
             except (ValueError, TypeError):
                 pass  # Skip port exposure if issue_id is not a valid number
 
-        # Deterministic container name — one issue, one container, enforced by name.
-        # cleanup_container waits for the old one to fully die before we proceed.
+        # Deterministic container name — one issue, one container.
+        # Caller (start_agent) is responsible for checking/cleaning up existing containers.
+        # We only clean up legacy suffixed containers from before the naming fix.
         container_name = self.config.get_issue_container_name(issue_id)
 
         if container_runtime.runtime:
-            from agenttree.container import cleanup_container, cleanup_containers_by_prefix
-            # Kill any legacy suffixed containers from before this fix
-            cleanup_containers_by_prefix(container_runtime.runtime, container_name)
-            # Kill the exact-name container (the normal path going forward)
-            cleanup_container(container_runtime.runtime, container_name)
+            from agenttree.container import cleanup_containers_by_prefix
+            cleanup_containers_by_prefix(container_runtime.runtime, f"{container_name}-")
 
         container_cmd = container_runtime.build_run_command(
             worktree_path=worktree_path,

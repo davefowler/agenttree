@@ -438,16 +438,14 @@ def check_custom_agent_stages(agents_dir: Path) -> int:
                     console.print(f"[yellow]Custom role '{role_name}' not found in config[/yellow]")
                     continue
 
-                # Check if custom agent is already running (runtime check, not cached marker)
+                # Check if custom agent is already running
                 issue_id = data.get("id", "")
                 custom_agent_session = f"{config.project}-{role_name}-{issue_id}"
 
                 from agenttree.tmux import is_claude_running, send_message
 
                 if session_exists(custom_agent_session):
-                    # Session exists - check if Claude is still running
                     if is_claude_running(custom_agent_session):
-                        # Ping the agent to let it know about the stage
                         result = send_message(
                             custom_agent_session,
                             f"Stage is now {stage}. Run `agenttree next` for your instructions."
@@ -456,18 +454,24 @@ def check_custom_agent_stages(agents_dir: Path) -> int:
                             console.print(f"[dim]Pinged {role_name} agent for issue #{issue_id}[/dim]")
                         continue
                     else:
-                        # Session exists but Claude exited - need to restart
-                        console.print(f"[yellow]{role_name} agent session exists but Claude exited, restarting...[/yellow]")
-                        # Fall through to spawn logic below
+                        # Claude exited — force restart (kills old container + session)
+                        console.print(f"[yellow]{role_name} agent for issue #{issue_id} exited, restarting...[/yellow]")
+                        needs_force = True
+                else:
+                    # No tmux session — check for orphaned container
+                    from agenttree.container import is_container_running
+                    container_name = config.get_issue_container_name(issue_id)
+                    if is_container_running(container_name):
+                        console.print(f"[yellow]Orphaned container for issue #{issue_id}, cleaning up...[/yellow]")
+                    needs_force = False
 
                 issue = Issue(**data)
                 console.print(f"[cyan]Starting {role_name} agent for issue #{issue.id} at stage {stage}...[/cyan]")
 
-                # Use api to spawn the agent
                 try:
                     from agenttree.api import start_agent
 
-                    start_agent(issue.id, host=role_name, skip_preflight=True, quiet=True)
+                    start_agent(issue.id, host=role_name, skip_preflight=True, quiet=True, force=needs_force)
                     console.print(f"[green]✓ Started {role_name} agent for issue #{issue.id}[/green]")
                     spawned += 1
                 except Exception as e:
