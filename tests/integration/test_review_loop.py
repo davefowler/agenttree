@@ -211,11 +211,7 @@ class TestCheckboxApprovalFlow:
                 with pytest.raises(StageRedirect) as exc_info:
                     execute_hooks(issue_dir, "independent_code_review", stage_config, "pre_completion")
 
-<<<<<<< HEAD
-                # Hook resolution prefixes relative targets with current stage
-=======
                 # The target gets resolved to full dot path
->>>>>>> origin/main
                 assert exc_info.value.target == "independent_code_review.address_independent_review"
                 assert "Approve" in exc_info.value.reason
 
@@ -257,11 +253,7 @@ class TestFullReviewLoop:
                 stage_config = config.get_stage("independent_code_review")
                 with pytest.raises(StageRedirect) as exc_info:
                     execute_hooks(issue_dir, "independent_code_review", stage_config, "pre_completion")
-<<<<<<< HEAD
-                # Hook resolution prefixes relative targets with current stage
-=======
                 # The target gets resolved to full dot path
->>>>>>> origin/main
                 assert exc_info.value.target == "independent_code_review.address_independent_review"
 
                 # Step 3: Implementer addresses feedback
