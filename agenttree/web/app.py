@@ -1197,7 +1197,6 @@ async def approve_issue(
 @app.post("/api/issues")
 async def create_issue_api(
     request: Request,
-    description: str = Form(""),
     problem: str = Form(""),
     solutions: str = Form(""),
     title: str = Form(""),
@@ -1206,17 +1205,15 @@ async def create_issue_api(
     """Create a new issue via the web UI.
 
     Creates a new issue with the default starting stage.
-    If no title is provided, one is auto-generated from the description.
-    Accepts either 'problem' (preferred) or 'description' (legacy) for backwards compatibility.
+    If no title is provided, one is auto-generated from the problem description.
     """
     from agenttree.issues import Priority
 
-    # Use problem if provided, else fall back to description for backwards compatibility
-    problem_text = problem.strip() or description.strip()
+    problem_text = problem.strip()
     solutions_text = solutions.strip()
     title = title.strip()
 
-    # Require at least a problem description
+    # Require a problem description
     if not problem_text:
         raise HTTPException(status_code=400, detail="Please provide a problem description")
 
