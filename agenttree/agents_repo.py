@@ -436,7 +436,7 @@ def check_custom_agent_stages(agents_dir: Path) -> int:
             # Check if in a custom agent stage
             if stage in custom_agent_stages:
                 # Re-entry guard: skip if we're already spawning/spawned for this stage
-                spawned_stage = data.get("custom_agent_spawned")
+                spawned_stage = data.get("agent_ensured")
                 if spawned_stage == stage or spawned_stage == f"{stage}:starting":
                     continue
 
@@ -461,7 +461,7 @@ def check_custom_agent_stages(agents_dir: Path) -> int:
                             console.print(f"[dim]Pinged {role_name} agent for issue #{issue_id}[/dim]")
                         # Mark as spawned (in case it wasn't already)
                         if spawned_stage != stage:
-                            data["custom_agent_spawned"] = stage
+                            data["agent_ensured"] = stage
                             with open(issue_yaml, "w") as f:
                                 yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
                         continue
@@ -478,7 +478,7 @@ def check_custom_agent_stages(agents_dir: Path) -> int:
                         needs_force = False
 
                 # Set guard BEFORE the slow start_agent call to prevent re-entry
-                data["custom_agent_spawned"] = f"{stage}:starting"
+                data["agent_ensured"] = f"{stage}:starting"
                 with open(issue_yaml, "w") as f:
                     yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
 
@@ -489,12 +489,12 @@ def check_custom_agent_stages(agents_dir: Path) -> int:
                     from agenttree.api import start_agent
 
                     start_agent(issue.id, host=role_name, skip_preflight=True, quiet=True, force=needs_force)
-                    data["custom_agent_spawned"] = stage
+                    data["agent_ensured"] = stage
                     console.print(f"[green]✓ Started {role_name} agent for issue #{issue.id}[/green]")
                     spawned += 1
                 except Exception as e:
                     # Clear guard so next heartbeat can retry
-                    data["custom_agent_spawned"] = None
+                    data["agent_ensured"] = None
                     console.print(f"[red]Failed to start {role_name} agent for issue #{issue.id}[/red]")
                     console.print(f"[dim]{str(e)[:200]}[/dim]")
 
@@ -543,6 +543,10 @@ def _update_issue_stage_direct(yaml_path: Path, data: dict, new_stage: str) -> N
     # Clear ci_escalated flag when moving out of implement.review
     if old_stage == "implement.review" and new_stage != "implement.review":
         data["ci_escalated"] = False
+
+    # Clear ci_notified when entering ci_wait so new CI runs get detected
+    if new_stage == "implement.ci_wait":
+        data.pop("ci_notified", None)
 
     # Add history entry
     if "history" not in data:
@@ -641,12 +645,16 @@ def check_merged_prs(agents_dir: Path) -> int:
 
             if pr_state == "MERGED" or merged_at:
                 # PR was merged externally - advance to accepted
+                # Note: This skips knowledge_base stage (can't run it — PR is
+                # already merged and the agent may not be running).
                 console.print(f"[green]PR #{pr_number} was merged externally (issue was at {stage}), advancing issue #{issue_id} to accepted[/green]")
                 _update_issue_stage_direct(issue_yaml, data, "accepted")
                 issues_advanced += 1
-                from agenttree.hooks import cleanup_issue_agent
+                from agenttree.hooks import cleanup_issue_agent, check_and_start_blocked_issues
                 from agenttree.issues import Issue
-                cleanup_issue_agent(Issue(**data))
+                issue = Issue(**data)
+                cleanup_issue_agent(issue)
+                check_and_start_blocked_issues(issue)
             elif pr_state == "CLOSED":
                 # PR was closed without merging - advance to not_doing
                 console.print(f"[yellow]PR #{pr_number} was closed without merge (issue was at {stage}), advancing issue #{issue_id} to not_doing[/yellow]")
@@ -721,7 +729,7 @@ def check_ci_status(agents_dir: Path) -> int:
             if not pr_number:
                 continue
 
-            # Skip if already notified for this CI failure
+            # Skip if already notified for this CI run
             if data.get("ci_notified"):
                 continue
 
@@ -750,9 +758,17 @@ def check_ci_status(agents_dir: Path) -> int:
             if not failed_checks:
                 # All checks passed
                 if stage == "implement.ci_wait":
-                    # Advance ci_wait → review
+                    # Advance ci_wait → review and notify agent
                     console.print(f"[green]CI passed for issue #{issue_id}, advancing to review[/green]")
                     _update_issue_stage_direct(issue_yaml, data, "implement.review")
+
+                    # Notify agent that CI passed (best-effort)
+                    from agenttree.api import _notify_agent
+                    _notify_agent(
+                        issue_id,
+                        f"CI passed for PR #{pr_number}. Stage advanced to implement.review. Run 'agenttree next' to continue.",
+                    )
+
                     issues_notified += 1
                 # For implement.review with passing CI, nothing to do
                 continue

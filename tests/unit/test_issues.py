@@ -13,6 +13,7 @@ from agenttree.issues import (
     list_issues,
     get_issue,
     get_issue_context,
+    get_issue_dir,
     get_agenttree_path,
     get_next_stage,
     update_issue_stage,
@@ -796,6 +797,27 @@ class TestUpdateIssueStage:
         updated = update_issue_stage("001", "nonexistent_stage")
         assert updated is not None
         assert updated.stage == "nonexistent_stage"
+
+    def test_update_issue_stage_preserves_non_model_fields(self, temp_agenttrees):
+        """Non-model fields like manager_hooks_executed must survive stage updates."""
+        issue = create_issue("Test Issue")
+
+        # Simulate what check_manager_stages does: write a non-model field to the YAML
+        issue_dir = get_issue_dir("001")
+        yaml_path = issue_dir / "issue.yaml"
+        data = safe_yaml_load(yaml_path)
+        data["manager_hooks_executed"] = "implement.review"
+        import yaml
+        with open(yaml_path, "w") as f:
+            yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
+
+        # Now update the stage (this used to clobber manager_hooks_executed)
+        updated = update_issue_stage("001", "implement.review")
+        assert updated is not None
+
+        # Verify the non-model field survived
+        data_after = safe_yaml_load(yaml_path)
+        assert data_after.get("manager_hooks_executed") == "implement.review"
 
 
 class TestLoadSkill:

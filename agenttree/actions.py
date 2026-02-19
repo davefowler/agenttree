@@ -263,178 +263,129 @@ def sync(agents_dir: Path, pull_only: bool = True, **kwargs: Any) -> None:
 @register_action("check_stalled_agents")
 def check_stalled_agents(
     agents_dir: Path,
-    threshold_min: int = 15,
+    threshold_min: int = 10,
+    max_notifications: int = 3,
     **kwargs: Any
 ) -> None:
-    """Check for stalled agents and write to stalled.yaml, then notify manager.
-    
-    Writes stall data to _agenttree/stalled.yaml so manager can read it anytime,
-    then sends a brief notification to the manager.
-    
-    Uses fast session_exists() checks instead of slow get_active_agent().
-    
+    """Check for issues where agents should be working but aren't progressing.
+
+    Role-aware: uses config.role_for(stage) instead of hardcoding "developer".
+    Skips parking lots, human review stages, and manager stages.
+    Notifies manager up to max_notifications times per issue+stage, then stops.
+    Tracks notification state in .heartbeat_state.yaml (stall_notifications key).
+
     Args:
         agents_dir: Path to _agenttree directory
-        threshold_min: Minutes before considering agent stalled
+        threshold_min: Minutes in same stage before first notification
+        max_notifications: Max notifications per issue+stage (default 3)
     """
-    import yaml
     from datetime import datetime, timezone
     from agenttree.config import load_config
+    from agenttree.events import load_event_state, save_event_state
     from agenttree.issues import list_issues
-    from agenttree.tmux import session_exists, send_message, is_claude_running
-    
+    from agenttree.tmux import session_exists, send_message
+
     config = load_config()
     manager_session = config.get_manager_tmux_session()
-    
-    # Get active issues (not parking lot stages)
-    issues = [
-        i for i in list_issues(sync=False)
-        if not config.is_parking_lot(i.stage)
-    ]
-    
-    stalled: list[dict[str, Any]] = []
-    dead: list[dict[str, Any]] = []
-    
+
+    issues = list_issues(sync=False)
+    needs_attention: list[str] = []
+
+    # Load heartbeat state for stall notification tracking
+    state = load_event_state(agents_dir)
+    stall_state: dict[str, Any] = state.get("stall_notifications", {})
+    now = datetime.now(timezone.utc)
+
     for issue in issues:
-        # Build session name directly (fast) instead of get_active_agent (slow)
-        session_name = config.get_issue_tmux_session(issue.id, "developer")
-        
-        # Check if session exists
-        if not session_exists(session_name):
-            # No session = dead agent (if not in a human review stage)
-            stage_config = config.get_stage(issue.stage)
-            if stage_config and stage_config.role == "manager":
-                continue  # Waiting on human, not dead
-            dead.append({
-                "id": issue.id,
-                "title": issue.title[:60],
-                "stage": issue.stage,
-                "reason": "no_session",
-            })
+        # Skip parking lots (backlog, accepted, not_doing)
+        if config.is_parking_lot(issue.stage):
             continue
-        
-        # Session exists - check if Claude is running
-        claude_running = is_claude_running(session_name)
-        
-        # Check last activity
+
+        # Skip human review and manager stages
+        role = config.role_for(issue.stage)
+        if role == "manager":
+            continue
+        if config.is_human_review(issue.stage):
+            continue
+
+        # Compute time-in-stage from history
+        if not issue.history:
+            continue
+        last_entry = issue.history[-1]
         try:
-            last_updated = datetime.fromisoformat(issue.updated.replace("Z", "+00:00"))
-            elapsed_min = int((datetime.now(timezone.utc) - last_updated).total_seconds() / 60)
-            
-            if not claude_running:
-                dead.append({
-                    "id": issue.id,
-                    "title": issue.title[:60],
-                    "stage": issue.stage,
-                    "reason": "claude_exited",
-                })
-            elif elapsed_min > threshold_min:
-                # Nudge the agent directly before reporting as stalled
-                send_message(
-                    session_name,
-                    f"You appear stalled at {issue.stage} ({elapsed_min}min). "
-                    f"Run `agenttree next` to check your instructions and continue.",
-                    check_claude=True,
-                    interrupt=False,
-                )
-                stalled.append({
-                    "id": issue.id,
-                    "title": issue.title[:60],
-                    "stage": issue.stage,
-                    "stalled_minutes": elapsed_min,
-                })
+            stage_start = datetime.fromisoformat(
+                last_entry.timestamp.replace("Z", "+00:00")
+            )
+            elapsed_min = int((now - stage_start).total_seconds() / 60)
         except (ValueError, TypeError):
             continue
-    
-    # Read previous stall data to detect changes and track re-notification
-    stall_file = agents_dir / "stalled.yaml"
-    prev_dead_ids: set[str] = set()
-    # Track when each agent was last notified (by stalled_minutes at that time)
-    prev_notified_at: dict[str, int] = {}
-    
-    if stall_file.exists():
-        try:
-            prev_data = yaml.safe_load(stall_file.read_text())
-            prev_dead_ids = {a["id"] for a in prev_data.get("dead_agents", [])}
-            for a in prev_data.get("stalled_agents", []):
-                prev_notified_at[a["id"]] = a.get("notified_at_minutes", 0)
-        except Exception:
-            pass
-    
-    # Determine which agents need (re-)notification
-    needs_notify_dead: list[dict[str, Any]] = []
-    needs_notify_stalled: list[dict[str, Any]] = []
-    
-    for agent in dead:
-        if agent["id"] not in prev_dead_ids:
-            needs_notify_dead.append(agent)
-    
-    for agent in stalled:
-        aid = agent["id"]
-        mins = agent["stalled_minutes"]
-        prev_mins = prev_notified_at.get(aid)
-        if prev_mins is None:
-            # New stall — notify and record
-            agent["notified_at_minutes"] = mins
-            needs_notify_stalled.append(agent)
-        elif mins >= prev_mins + threshold_min:
-            # Still stalled and grown by another threshold — re-notify
-            agent["notified_at_minutes"] = mins
-            needs_notify_stalled.append(agent)
-        else:
-            # Still stalled but not long enough to re-ping — carry forward prev
-            agent["notified_at_minutes"] = prev_mins
-    
-    # Write to stalled.yaml (always, even if empty - so manager knows state is fresh)
-    stall_data = {
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-        "threshold_min": threshold_min,
-        "dead_agents": dead,
-        "stalled_agents": stalled,
-    }
-    stall_file.write_text(yaml.dump(stall_data, default_flow_style=False))
-    
-    # If nothing to report, we're done
-    if not stalled and not dead:
+
+        if elapsed_min < threshold_min:
+            continue
+
+        # Check if the correct role's agent is running
+        session_name = config.get_issue_tmux_session(issue.id, role)
+        agent_running = session_exists(session_name)
+
+        if agent_running and elapsed_min < threshold_min * 2:
+            # Agent is running, not stalled long enough for extra concern
+            continue
+
+        # Check notification state for this issue+stage
+        issue_stall = stall_state.get(issue.id, {})
+        prev_stage = issue_stall.get("stage")
+        prev_count = issue_stall.get("count", 0)
+
+        # Reset if stage changed
+        if prev_stage != issue.stage:
+            prev_count = 0
+
+        # For running agents crossing threshold*2 for the first time,
+        # treat as if one notification already sent so the next fires at 3x
+        if agent_running and prev_count == 0:
+            prev_count = 1
+
+        if prev_count >= max_notifications:
+            continue  # Already notified max times for this stage
+
+        # Determine notification interval: notify at threshold_min, 2x, 3x
+        next_notify_at = threshold_min * (prev_count + 1)
+        if elapsed_min < next_notify_at:
+            continue
+
+        # Record this notification
+        stall_state[issue.id] = {
+            "stage": issue.stage,
+            "count": prev_count + 1,
+            "last_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        }
+
+        status = "dead" if not agent_running else "stalled"
+        needs_attention.append(
+            f"  #{issue.id}: {issue.title[:40]} — {status} at {issue.stage} ({elapsed_min}min)"
+        )
+
+    # Save updated stall state
+    state["stall_notifications"] = stall_state
+    save_event_state(agents_dir, state)
+
+    if not needs_attention:
         return
-    
-    # Check if any agents need notification
-    if not needs_notify_dead and not needs_notify_stalled:
-        console.print(f"[dim]Stall state unchanged ({len(dead)} dead, {len(stalled)} stalled) - not re-alerting manager[/dim]")
-        return
-    
-    # Ensure manager is running before sending notification
+
+    # Send a single informational message to manager
     if not session_exists(manager_session):
         console.print("[yellow]Manager not running, restarting...[/yellow]")
         start_manager(agents_dir)
-        # Give it a moment to spin up - notification will reach it on next cycle
         return
-    
-    # Send brief notification pointing to file
-    lines = ["STALL REPORT - Check _agenttree/stalled.yaml for details:"]
-    
-    if needs_notify_dead:
-        lines.append(f"  {len(needs_notify_dead)} dead agent(s) need restart")
-        for agent in needs_notify_dead[:3]:
-            lines.append(f"    #{agent['id']}: {agent['title'][:30]}")
-        if len(needs_notify_dead) > 3:
-            lines.append(f"    ... and {len(needs_notify_dead) - 3} more")
-    
-    if needs_notify_stalled:
-        for agent in needs_notify_stalled[:3]:
-            prev = prev_notified_at.get(agent["id"])
-            label = "STILL STALLED" if prev is not None else "stalled"
-            lines.append(f"  #{agent['id']}: {agent['title'][:30]} — {label} ({agent['stalled_minutes']}min)")
-        if len(needs_notify_stalled) > 3:
-            lines.append(f"    ... and {len(needs_notify_stalled) - 3} more")
-    
-    lines.append("\nUse: agenttree start <id> --force --skip-preflight (restart) or agenttree output <id> (diagnose)")
-    
-    message = "\n".join(lines)
-    result = send_message(manager_session, message)
-    
+
+    lines = [
+        "Issues may need attention. Run `agenttree status --active-only` to review.",
+        "",
+    ] + needs_attention
+
+    result = send_message(manager_session, "\n".join(lines))
     if result == "sent":
-        console.print(f"[dim]Wrote stalled.yaml, notified manager ({len(needs_notify_dead)} dead, {len(needs_notify_stalled)} stalled)[/dim]")
+        console.print(f"[dim]Notified manager about {len(needs_attention)} issue(s) needing attention[/dim]")
 
 
 @register_action("check_ci_status")

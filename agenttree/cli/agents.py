@@ -540,7 +540,7 @@ def send(issue_id: str, message: str, role: str, interrupt: bool) -> None:
     Use --interrupt to stop the agent's current task (sends Ctrl+C) before sending.
     """
     from agenttree.state import get_active_agent
-    from agenttree.tmux import session_exists, send_keys
+    from agenttree.tmux import session_exists, send_message
 
     config = load_config()
     tmux_manager = TmuxManager(config)
@@ -555,7 +555,10 @@ def send(issue_id: str, message: str, role: str, interrupt: bool) -> None:
             console.print("[red]Error: Manager not running[/red]")
             console.print("[yellow]Start it with: agenttree start 0[/yellow]")
             sys.exit(1)
-        send_keys(session_name, message, interrupt=interrupt)
+        result = send_message(session_name, message, interrupt=interrupt)
+        if result != "sent":
+            console.print(f"[red]Error: Failed to send to manager ({result})[/red]")
+            sys.exit(1)
         console.print("[green]✓ Sent message to manager[/green]")
         return
 

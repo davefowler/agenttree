@@ -557,7 +557,7 @@ def _cleanup_ai_review(edge_cases: list[dict], config: Config) -> None:
         edge_cases: List of edge case dictionaries
         config: AgentTree configuration
     """
-    from agenttree.tmux import session_exists, send_keys
+    from agenttree.tmux import session_exists, send_message
 
     manager_session = f"{config.project}-manager"
 
@@ -584,7 +584,10 @@ For each edge case, please tell me:
 Be concise - just a few lines per case."""
 
     console.print("[dim]Sending to manager for review...[/dim]")
-    send_keys(manager_session, prompt + "\n")
+    result = send_message(manager_session, prompt)
+    if result != "sent":
+        console.print(f"[red]Error: Failed to send to manager ({result})[/red]")
+        return
     console.print(f"[cyan]Sent edge cases to manager. Check tmux session '{manager_session}' for response.[/cyan]")
 
 

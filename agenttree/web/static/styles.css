@@ -1565,6 +1565,38 @@ button[disabled] {
     opacity: 0.7;
 }
 
+/* Toggle button for parking stage visibility */
+.mini-dropzone {
+    position: relative;
+}
+
+.toggle-parking-btn {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 2px;
+    line-height: 0;
+}
+
+.toggle-parking-btn:hover {
+    color: var(--text-accent);
+}
+
+.toggle-parking-btn svg {
+    display: block;
+}
+
+/* Toggle button in column header (for expanded parking stages) */
+.column-header .toggle-parking-btn.header-toggle {
+    position: static;
+    margin-left: auto;
+    display: none;
+}
+
 /* Kanban-specific file tabs margin adjustment */
 .kanban-board .file-tabs-container {
     margin: 15px -30px;

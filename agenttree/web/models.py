@@ -44,10 +44,9 @@ class Issue(IssueBase):
 
     @property
     def is_review(self) -> bool:
-        """Check if issue is in a human review stage."""
+        """Check if issue is in a human review stage (looked up from config)."""
         from agenttree.config import load_config
-        config = load_config()
-        return config.is_human_review(self.stage)
+        return load_config().is_human_review(self.stage)
 
 
 class IssueUpdate(BaseModel):

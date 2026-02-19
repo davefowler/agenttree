@@ -18,6 +18,15 @@ def simulate_container_environment(monkeypatch):
     monkeypatch.setenv("AGENTTREE_CONTAINER", "1")
 
 
+@pytest.fixture(autouse=True)
+def _clear_module_caches():
+    """Clear module-level caches between tests to prevent cross-test pollution."""
+    from agenttree.issues import invalidate_issues_cache
+    invalidate_issues_cache()
+    yield
+    invalidate_issues_cache()
+
+
 @pytest.fixture
 def host_environment(monkeypatch):
     """Fixture to simulate running on host (not in container).

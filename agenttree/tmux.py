@@ -443,16 +443,6 @@ class TmuxManager:
         session_name = self.get_session_name(agent_num)
         kill_session(session_name)
 
-    def send_message(self, agent_num: int, message: str) -> None:
-        """Send a message to an agent.
-
-        Args:
-            agent_num: Agent number
-            message: Message to send
-        """
-        session_name = self.get_session_name(agent_num)
-        send_keys(session_name, message)
-
     def attach(self, agent_num: int) -> None:
         """Attach to an agent's tmux session.
 
