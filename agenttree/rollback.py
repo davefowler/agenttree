@@ -23,6 +23,7 @@ def execute_rollback(
     reset_worktree: bool = False,
     keep_changes: bool = True,
     skip_sync: bool = False,
+    max_rollbacks: int | None = None,
 ) -> bool:
     """Execute a rollback programmatically. Used by both CLI and hooks.
 
@@ -33,6 +34,8 @@ def execute_rollback(
         reset_worktree: Reset worktree to origin/main
         keep_changes: Keep code changes (default True)
         skip_sync: Skip syncing changes (for hook use where caller handles sync)
+        max_rollbacks: Maximum allowed rollbacks to target_stage. If history
+            already has this many rollbacks to the same stage, fail with error.
 
     Returns:
         True if rollback succeeded, False otherwise
@@ -50,6 +53,22 @@ def execute_rollback(
     if not issue:
         console.print(f"[red]Issue {issue_id} not found[/red]")
         return False
+
+    # Check max rollbacks limit
+    if max_rollbacks is not None:
+        rollbacks_to_target = 0
+        for h in issue.history or []:
+            # Handle both dict (from YAML) and HistoryEntry object (from get_issue)
+            h_type = h.get("type") if isinstance(h, dict) else getattr(h, "type", None)
+            h_stage = h.get("stage") if isinstance(h, dict) else getattr(h, "stage", None)
+            if h_type == "rollback" and h_stage == target_stage:
+                rollbacks_to_target += 1
+        if rollbacks_to_target >= max_rollbacks:
+            console.print(
+                f"[red]Review loop exceeded {max_rollbacks} iterations. "
+                f"Escalating to human review.[/red]"
+            )
+            return False
 
     # Load config and validate stage
     config = load_config()

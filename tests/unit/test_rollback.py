@@ -593,3 +593,187 @@ class TestRollbackCLIIntegration:
 
         assert result.exit_code == 0
         assert "research" in result.output.lower() or "rolled back" in result.output.lower()
+
+
+class TestRollbackMaxIterations:
+    """Tests for max_rollbacks parameter in execute_rollback."""
+
+    def test_rollback_succeeds_under_limit(self, mock_config, temp_issue_dir):
+        """Rollback succeeds when history has fewer rollbacks to target stage than max."""
+        from agenttree.rollback import execute_rollback
+        from agenttree.issues import Issue
+
+        # Create issue with 2 rollbacks to code_review in history
+        yaml_path = temp_issue_dir / "issue.yaml"
+        with open(yaml_path) as f:
+            data = yaml.safe_load(f)
+        data["stage"] = "implement.address_review"
+        data["history"] = [
+            {"stage": "implement.code_review", "timestamp": "2026-01-01T00:00:00Z", "type": "rollback"},
+            {"stage": "implement.code_review", "timestamp": "2026-01-01T01:00:00Z", "type": "rollback"},
+        ]
+        with open(yaml_path, "w") as f:
+            yaml.dump(data, f)
+
+        mock_issue = Issue(
+            id="42",
+            slug="test-issue",
+            title="Test",
+            stage="implement.address_review",
+            created="2026-01-01T00:00:00Z",
+            updated="2026-01-01T00:00:00Z",
+            history=data["history"],
+        )
+
+        with patch("agenttree.config.load_config", return_value=mock_config):
+            with patch("agenttree.issues.get_issue", return_value=mock_issue):
+                with patch("agenttree.issues.get_issue_dir", return_value=temp_issue_dir):
+                    with patch("agenttree.issues.delete_session"):
+                        with patch("agenttree.state.get_active_agent", return_value=None):
+                            with patch("agenttree.state.unregister_agent"):
+                                # max_rollbacks=5, history has 2 rollbacks - should succeed
+                                result = execute_rollback(
+                                    "42",
+                                    "implement.code_review",
+                                    yes=True,
+                                    skip_sync=True,
+                                    max_rollbacks=5,
+                                )
+
+        assert result is True
+
+    def test_rollback_fails_at_limit(self, mock_config, temp_issue_dir):
+        """Rollback fails when history has max rollbacks to target stage."""
+        from agenttree.rollback import execute_rollback
+        from agenttree.issues import Issue
+
+        # Create issue with 5 rollbacks to code_review in history
+        yaml_path = temp_issue_dir / "issue.yaml"
+        with open(yaml_path) as f:
+            data = yaml.safe_load(f)
+        data["stage"] = "implement.address_review"
+        data["history"] = [
+            {"stage": "implement.code_review", "timestamp": "2026-01-01T00:00:00Z", "type": "rollback"},
+            {"stage": "implement.code_review", "timestamp": "2026-01-01T01:00:00Z", "type": "rollback"},
+            {"stage": "implement.code_review", "timestamp": "2026-01-01T02:00:00Z", "type": "rollback"},
+            {"stage": "implement.code_review", "timestamp": "2026-01-01T03:00:00Z", "type": "rollback"},
+            {"stage": "implement.code_review", "timestamp": "2026-01-01T04:00:00Z", "type": "rollback"},
+        ]
+        with open(yaml_path, "w") as f:
+            yaml.dump(data, f)
+
+        mock_issue = Issue(
+            id="42",
+            slug="test-issue",
+            title="Test",
+            stage="implement.address_review",
+            created="2026-01-01T00:00:00Z",
+            updated="2026-01-01T00:00:00Z",
+            history=data["history"],
+        )
+
+        with patch("agenttree.config.load_config", return_value=mock_config):
+            with patch("agenttree.issues.get_issue", return_value=mock_issue):
+                with patch("agenttree.issues.get_issue_dir", return_value=temp_issue_dir):
+                    with patch("agenttree.issues.delete_session"):
+                        with patch("agenttree.state.get_active_agent", return_value=None):
+                            with patch("agenttree.state.unregister_agent"):
+                                # max_rollbacks=5, history has 5 rollbacks - should fail
+                                result = execute_rollback(
+                                    "42",
+                                    "implement.code_review",
+                                    yes=True,
+                                    skip_sync=True,
+                                    max_rollbacks=5,
+                                )
+
+        assert result is False
+
+    def test_rollback_counts_only_matching_target_stage(self, mock_config, temp_issue_dir):
+        """Rollbacks to different stages don't count toward limit."""
+        from agenttree.rollback import execute_rollback
+        from agenttree.issues import Issue
+
+        # Create issue with rollbacks to different stages
+        yaml_path = temp_issue_dir / "issue.yaml"
+        with open(yaml_path) as f:
+            data = yaml.safe_load(f)
+        data["stage"] = "implement.address_review"
+        data["history"] = [
+            {"stage": "implement.code_review", "timestamp": "2026-01-01T00:00:00Z", "type": "rollback"},
+            {"stage": "explore.define", "timestamp": "2026-01-01T01:00:00Z", "type": "rollback"},
+            {"stage": "plan.draft", "timestamp": "2026-01-01T02:00:00Z", "type": "rollback"},
+            {"stage": "implement.code", "timestamp": "2026-01-01T03:00:00Z", "type": "rollback"},
+        ]
+        with open(yaml_path, "w") as f:
+            yaml.dump(data, f)
+
+        mock_issue = Issue(
+            id="42",
+            slug="test-issue",
+            title="Test",
+            stage="implement.address_review",
+            created="2026-01-01T00:00:00Z",
+            updated="2026-01-01T00:00:00Z",
+            history=data["history"],
+        )
+
+        with patch("agenttree.config.load_config", return_value=mock_config):
+            with patch("agenttree.issues.get_issue", return_value=mock_issue):
+                with patch("agenttree.issues.get_issue_dir", return_value=temp_issue_dir):
+                    with patch("agenttree.issues.delete_session"):
+                        with patch("agenttree.state.get_active_agent", return_value=None):
+                            with patch("agenttree.state.unregister_agent"):
+                                # max_rollbacks=2, but only 1 rollback to code_review - should succeed
+                                result = execute_rollback(
+                                    "42",
+                                    "implement.code_review",
+                                    yes=True,
+                                    skip_sync=True,
+                                    max_rollbacks=2,
+                                )
+
+        assert result is True
+
+    def test_rollback_no_limit_when_max_not_specified(self, mock_config, temp_issue_dir):
+        """Rollback has no limit when max_rollbacks is None."""
+        from agenttree.rollback import execute_rollback
+        from agenttree.issues import Issue
+
+        # Create issue with many rollbacks to code_review
+        yaml_path = temp_issue_dir / "issue.yaml"
+        with open(yaml_path) as f:
+            data = yaml.safe_load(f)
+        data["stage"] = "implement.address_review"
+        data["history"] = [
+            {"stage": "implement.code_review", "timestamp": f"2026-01-01T{i:02d}:00:00Z", "type": "rollback"}
+            for i in range(10)
+        ]
+        with open(yaml_path, "w") as f:
+            yaml.dump(data, f)
+
+        mock_issue = Issue(
+            id="42",
+            slug="test-issue",
+            title="Test",
+            stage="implement.address_review",
+            created="2026-01-01T00:00:00Z",
+            updated="2026-01-01T00:00:00Z",
+            history=data["history"],
+        )
+
+        with patch("agenttree.config.load_config", return_value=mock_config):
+            with patch("agenttree.issues.get_issue", return_value=mock_issue):
+                with patch("agenttree.issues.get_issue_dir", return_value=temp_issue_dir):
+                    with patch("agenttree.issues.delete_session"):
+                        with patch("agenttree.state.get_active_agent", return_value=None):
+                            with patch("agenttree.state.unregister_agent"):
+                                # No max_rollbacks specified - should succeed regardless of history
+                                result = execute_rollback(
+                                    "42",
+                                    "implement.code_review",
+                                    yes=True,
+                                    skip_sync=True,
+                                )
+
+        assert result is True

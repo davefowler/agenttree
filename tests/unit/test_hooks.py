@@ -2953,133 +2953,6 @@ class TestCheckboxCheckedHook:
         assert "not found" in errors[0]
 
 
-class TestVersionFileHook:
-    """Tests for version_file hook action."""
-
-    def test_version_file_first_version(self, tmp_path):
-        """Should rename file to v1 when no versions exist."""
-        from agenttree.hooks import run_builtin_validator
-
-        (tmp_path / "review.md").write_text("# Review content")
-        hook = {"version_file": {"file": "review.md"}}
-
-        errors = run_builtin_validator(tmp_path, hook)
-        assert errors == []
-        assert not (tmp_path / "review.md").exists()
-        assert (tmp_path / "review_v1.md").exists()
-        assert (tmp_path / "review_v1.md").read_text() == "# Review content"
-
-    def test_version_file_increments_version(self, tmp_path):
-        """Should increment version number when previous versions exist."""
-        from agenttree.hooks import run_builtin_validator
-
-        # Create existing versioned files
-        (tmp_path / "review_v1.md").write_text("v1 content")
-        (tmp_path / "review_v2.md").write_text("v2 content")
-        (tmp_path / "review.md").write_text("# Latest content")
-
-        hook = {"version_file": {"file": "review.md"}}
-
-        errors = run_builtin_validator(tmp_path, hook)
-        assert errors == []
-        assert not (tmp_path / "review.md").exists()
-        assert (tmp_path / "review_v3.md").exists()
-        assert (tmp_path / "review_v3.md").read_text() == "# Latest content"
-
-    def test_version_file_missing_file_silent(self, tmp_path):
-        """Should silently skip when file doesn't exist."""
-        from agenttree.hooks import run_builtin_validator
-
-        hook = {"version_file": {"file": "missing.md"}}
-
-        errors = run_builtin_validator(tmp_path, hook)
-        # No error - file not existing is OK (first iteration case)
-        assert errors == []
-
-    def test_version_file_missing_parameter(self, tmp_path):
-        """Should return error when file parameter missing."""
-        from agenttree.hooks import run_builtin_validator
-
-        hook = {"version_file": {}}
-
-        errors = run_builtin_validator(tmp_path, hook)
-        assert len(errors) == 1
-        assert "file" in errors[0].lower()
-
-
-class TestLoopCheckHook:
-    """Tests for loop_check hook validator."""
-
-    def test_loop_check_under_limit(self, tmp_path):
-        """Should pass when version count is under limit."""
-        from agenttree.hooks import run_builtin_validator
-
-        # Create 2 versioned files
-        (tmp_path / "review_v1.md").write_text("v1")
-        (tmp_path / "review_v2.md").write_text("v2")
-
-        hook = {"loop_check": {"count_files": "review_v*.md", "max": 5}}
-
-        errors = run_builtin_validator(tmp_path, hook)
-        assert errors == []
-
-    def test_loop_check_at_limit(self, tmp_path):
-        """Should fail when version count equals limit."""
-        from agenttree.hooks import run_builtin_validator
-
-        # Create 5 versioned files
-        for i in range(1, 6):
-            (tmp_path / f"review_v{i}.md").write_text(f"v{i}")
-
-        hook = {"loop_check": {"count_files": "review_v*.md", "max": 5}}
-
-        errors = run_builtin_validator(tmp_path, hook)
-        assert len(errors) == 1
-        assert "5" in errors[0]
-
-    def test_loop_check_over_limit(self, tmp_path):
-        """Should fail when version count exceeds limit."""
-        from agenttree.hooks import run_builtin_validator
-
-        # Create 6 versioned files
-        for i in range(1, 7):
-            (tmp_path / f"review_v{i}.md").write_text(f"v{i}")
-
-        hook = {"loop_check": {"count_files": "review_v*.md", "max": 5}}
-
-        errors = run_builtin_validator(tmp_path, hook)
-        assert len(errors) == 1
-        assert "6" in errors[0]
-
-    def test_loop_check_custom_error_message(self, tmp_path):
-        """Should use custom error message when provided."""
-        from agenttree.hooks import run_builtin_validator
-
-        for i in range(1, 4):
-            (tmp_path / f"review_v{i}.md").write_text(f"v{i}")
-
-        hook = {
-            "loop_check": {
-                "count_files": "review_v*.md",
-                "max": 3,
-                "error": "Too many review iterations"
-            }
-        }
-
-        errors = run_builtin_validator(tmp_path, hook)
-        assert len(errors) == 1
-        assert "Too many review iterations" in errors[0]
-
-    def test_loop_check_no_files(self, tmp_path):
-        """Should pass when no matching files exist."""
-        from agenttree.hooks import run_builtin_validator
-
-        hook = {"loop_check": {"count_files": "review_v*.md", "max": 5}}
-
-        errors = run_builtin_validator(tmp_path, hook)
-        assert errors == []
-
-
 class TestRollbackHook:
     """Tests for rollback hook action."""
 
@@ -3139,6 +3012,7 @@ class TestRollbackHook:
             yes=True,  # Default auto-confirm
             reset_worktree=False,
             keep_changes=True,
+            max_rollbacks=None,  # Default when not specified
         )
         assert errors == []
 
@@ -3163,6 +3037,38 @@ class TestRollbackHook:
         errors = run_builtin_validator(tmp_path, hook, issue=mock_issue)
         assert len(errors) == 1
         assert "failed" in errors[0].lower()
+
+    @patch("agenttree.rollback.execute_rollback")
+    def test_rollback_hook_passes_max_rollbacks(self, mock_rollback, tmp_path):
+        """Should pass max_rollbacks parameter to execute_rollback."""
+        from agenttree.hooks import run_builtin_validator
+        from agenttree.issues import Issue
+
+        mock_rollback.return_value = True
+        mock_issue = Issue(
+            id="42",
+            slug="test",
+            title="Test",
+            stage="implement.code",
+            created="2026-01-01T00:00:00Z",
+            updated="2026-01-01T00:00:00Z",
+        )
+
+        hook = {"rollback": {"to": "explore.research", "max_rollbacks": 5}}
+
+        errors = run_builtin_validator(tmp_path, hook, issue=mock_issue)
+
+        mock_rollback.assert_called_once_with(
+            issue_id="42",
+            target_stage="explore.research",
+            yes=True,
+            reset_worktree=False,
+            keep_changes=True,
+            max_rollbacks=5,
+        )
+        assert errors == []
+
+
 class TestGetCodeDirectory:
     """Tests for get_code_directory() helper function."""
 

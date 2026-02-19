@@ -250,7 +250,7 @@ Hooks are the immune system. They reject bad work before it infects the next sta
 | `title_set` | Verifies issue has a real title | Define stage |
 | `rebase` | Rebases branch onto main | Before human review |
 | `ci_check` | Polls CI status | After PR creation |
-| `loop_check` | Counts iterations to prevent infinite loops | Review ↔ address cycles |
+| `rollback` | Rolls back to earlier stage with optional iteration limit | Review ↔ address cycles |
 | `wrapup_verified` | Checks all review items addressed | Implementation wrapup |
 
 ### Hook Design Principles
@@ -277,7 +277,14 @@ pre_completion:
       checkbox: Approve
       on_fail_stage: address_review  # Bounce back if not approved
 ```
-Pair this with a `loop_check` on the address stage to prevent infinite bouncing. Five iterations is usually enough — if the agent hasn't fixed it by then, escalate to a human. They're slower, but they have context that agents lack. Allegedly.
+Pair this with a `rollback` on the address stage's `post_completion` to loop back for re-review. Use `max_rollbacks` to prevent infinite bouncing:
+```yaml
+post_completion:
+  - rollback:
+      to: code_review
+      max_rollbacks: 5  # Escalate to human after 5 iterations
+```
+Five iterations is usually enough — if the agent hasn't fixed it by then, escalate to a human. They're slower, but they have context that agents lack. Allegedly.
 
 ---
 
@@ -439,14 +446,10 @@ Three components: a review stage, an address stage, and a loop check.
 - name: address_security_review
   redirect_only: true
   role: developer
-  pre_completion:
-    - loop_check:
-        count_files: security_review_v*.md
-        max: 3
-        error: "Security review loop exceeded 3 iterations."
   post_completion:
     - rollback:
-        to_stage: security_review
+        to: security_review
+        max_rollbacks: 3  # Escalate to human after 3 iterations
 ```
 
 ### Skip a stage for quick issues
