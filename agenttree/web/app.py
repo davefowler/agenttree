@@ -742,7 +742,7 @@ def _filter_flow_issues(issues: list[WebIssue], filter_by: Optional[str] = None)
 
     Args:
         issues: List of WebIssue objects to filter
-        filter_by: Filter method - 'all' (default), 'review', 'running', 'open'
+        filter_by: Filter method - 'all' (default), 'review', 'running', 'open', 'active'
 
     Returns:
         Filtered list of issues
@@ -757,6 +757,15 @@ def _filter_flow_issues(issues: list[WebIssue], filter_by: Optional[str] = None)
         # Hide parking-lot stages (accepted, not_doing, etc.)
         parking_lots = _config.get_parking_lot_stages()
         return [i for i in issues if _config.stage_group_name(i.stage) not in parking_lots]
+    elif filter_by == "active":
+        # Only issues where an agent should be actively working
+        # Filters out parking lots, human review stages, manager stages
+        return [
+            i for i in issues
+            if not _config.is_parking_lot(i.stage)
+            and not _config.is_human_review(i.stage)
+            and _config.role_for(i.stage) != "manager"
+        ]
     else:
         # Default: show all
         return issues

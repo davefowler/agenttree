@@ -18,6 +18,7 @@ from agenttree.hooks import (
     get_current_role,
 )
 from agenttree.issues import (
+    Issue,
     list_issues as list_issues_func,
     get_next_stage,
     get_issue_context,
@@ -34,25 +35,66 @@ from agenttree.issues import (
 )
 
 
+def _format_duration(minutes: int) -> str:
+    """Format minutes as a human-readable duration (e.g., '5m', '2h', '1d')."""
+    if minutes < 60:
+        return f"{minutes}m"
+    hours = minutes // 60
+    if hours < 24:
+        return f"{hours}h"
+    days = hours // 24
+    return f"{days}d"
+
+
+def _time_in_stage(issue: Issue) -> str:
+    """Compute time in current stage from last history entry."""
+    from datetime import datetime, timezone
+
+    if not issue.history:
+        return "?"
+    try:
+        ts = issue.history[-1].timestamp
+        stage_start = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        elapsed_min = int((datetime.now(timezone.utc) - stage_start).total_seconds() / 60)
+        return _format_duration(elapsed_min)
+    except (ValueError, TypeError):
+        return "?"
+
+
 @click.command("status")
 @click.option("--issue", "-i", "issue_id", help="Issue ID (if not in agent context)")
-def stage_status(issue_id: str | None) -> None:
+@click.option("--active-only", is_flag=True, help="Show only issues where an agent should be actively working")
+def stage_status(issue_id: str | None, active_only: bool) -> None:
     """Show current issue and stage status.
 
     Examples:
         agenttree status
+        agenttree status --active-only
         agenttree status --issue 001
     """
     # Try to get issue from argument or agent context
     if not issue_id:
-        # TODO: Read from .agenttree-agent file when in agent worktree
-        console.print("[dim]Showing all active issues (use --issue ID for details):[/dim]\n")
+        config = load_config()
+
+        if active_only:
+            console.print("[dim]Showing issues where agents should be actively working:[/dim]\n")
+        else:
+            console.print("[dim]Showing all active issues (use --issue ID for details):[/dim]\n")
 
         # Show all non-backlog, non-accepted issues
         active_issues = [
             i for i in list_issues_func()
             if i.stage not in ("backlog", "accepted", "not_doing")
         ]
+
+        if active_only:
+            # Filter out parking lots, human review stages, manager stages
+            active_issues = [
+                i for i in active_issues
+                if not config.is_parking_lot(i.stage)
+                and not config.is_human_review(i.stage)
+                and config.role_for(i.stage) != "manager"
+            ]
 
         if not active_issues:
             console.print("[dim]No active issues[/dim]")
@@ -62,9 +104,15 @@ def stage_status(issue_id: str | None) -> None:
         table.add_column("ID", style="cyan")
         table.add_column("Title", style="white")
         table.add_column("Stage", style="magenta")
+        table.add_column("Time", style="yellow", justify="right")
 
         for active_issue in active_issues:
-            table.add_row(active_issue.id, active_issue.title[:40], active_issue.stage)
+            table.add_row(
+                active_issue.id,
+                active_issue.title[:40],
+                active_issue.stage,
+                _time_in_stage(active_issue),
+            )
 
         console.print(table)
         return

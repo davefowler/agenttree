@@ -27,7 +27,7 @@ Example config:
         - sync
         - stop_all_agents
 
-State is persisted in _agenttree/.hook_state.yaml for rate limiting across restarts.
+State is persisted in _agenttree/.heartbeat_state.yaml for rate limiting across restarts.
 """
 
 from datetime import datetime, timezone
@@ -46,15 +46,15 @@ HEARTBEAT = "heartbeat"
 
 
 def load_event_state(agents_dir: Path) -> dict[str, Any]:
-    """Load event/hook state from _agenttree/.hook_state.yaml.
-    
+    """Load event/hook state from _agenttree/.heartbeat_state.yaml.
+
     Args:
         agents_dir: Path to _agenttree directory
-        
+
     Returns:
         State dict, empty if file doesn't exist
     """
-    state_file = agents_dir / ".hook_state.yaml"
+    state_file = agents_dir / ".heartbeat_state.yaml"
     if state_file.exists():
         try:
             with open(state_file) as f:
@@ -66,13 +66,13 @@ def load_event_state(agents_dir: Path) -> dict[str, Any]:
 
 
 def save_event_state(agents_dir: Path, state: dict[str, Any]) -> None:
-    """Save event/hook state to _agenttree/.hook_state.yaml.
-    
+    """Save event/hook state to _agenttree/.heartbeat_state.yaml.
+
     Args:
         agents_dir: Path to _agenttree directory
         state: State dict to save
     """
-    state_file = agents_dir / ".hook_state.yaml"
+    state_file = agents_dir / ".heartbeat_state.yaml"
     try:
         with open(state_file, "w") as f:
             yaml.dump(state, f, default_flow_style=False, sort_keys=False)
