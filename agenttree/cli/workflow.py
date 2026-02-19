@@ -433,19 +433,18 @@ def approve_issue(issue_id: str, skip_approval: bool) -> None:
 def reject_issue(issue_id: str, message: str | None) -> None:
     """Reject an issue at a human review stage and move it back.
 
-    Only works at human review stages (plan_review, implementation_review).
+    Only works at human review stages (plan.review, implement.review).
     Cannot be run from inside a container - humans only.
 
     Moves the issue back to its corresponding work stage:
-    - plan_review → plan_revise
-    - implementation_review → implement
+    - plan.review → plan.revise
+    - implement.review → implement.code
 
     Example:
         agenttree reject 042
         agenttree reject 042 --message "Please fix the test failures"
     """
-    from datetime import datetime, timezone
-    import yaml as pyyaml
+    from agenttree.api import reject_issue as api_reject_issue
 
     # Block if in container
     if is_running_in_container():
@@ -455,86 +454,16 @@ def reject_issue(issue_id: str, message: str | None) -> None:
 
     # Normalize issue ID
     issue_id_normalized = normalize_issue_id(issue_id)
-    issue = get_issue_func(issue_id_normalized)
-    if not issue:
-        console.print(f"[red]Issue {issue_id} not found[/red]")
+
+    try:
+        updated = api_reject_issue(issue_id_normalized, message)
+        console.print(f"[green]✓ Rejected! Issue #{updated.id} moved to {updated.stage}[/green]")
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
         sys.exit(1)
-
-    # Check if at a human review stage (using config for validation)
-    config = load_config()
-    if not config.is_human_review(issue.stage):
-        human_review_stages = config.get_human_review_stages()
-        console.print(f"[red]Issue is at '{issue.stage}', not a human review stage[/red]")
-        console.print(f"[dim]Human review stages: {', '.join(human_review_stages)}[/dim]")
+    except RuntimeError as e:
+        console.print(f"[red]{e}[/red]")
         sys.exit(1)
-
-    # Map review stage to target stage (hierarchical dot-path format)
-    REJECT_TARGET_STAGES = {
-        "plan.review": "plan.revise",
-        "implement.review": "implement.code",
-        "implement.independent_review": "implement.code",
-    }
-    target_stage = REJECT_TARGET_STAGES.get(issue.stage)
-    if not target_stage:
-        console.print(f"[red]No target stage defined for rejecting from '{issue.stage}'[/red]")
-        sys.exit(1)
-
-    # Update issue.yaml directly (like rollback, skip hooks)
-    # Note: target_stage is already a complete dot-path like "implement.code"
-    issue_dir = get_issue_dir(issue_id_normalized)
-    if not issue_dir:
-        console.print(f"[red]Issue directory not found[/red]")
-        sys.exit(1)
-
-    yaml_path = issue_dir / "issue.yaml"
-    if not yaml_path.exists():
-        console.print(f"[red]Issue yaml not found at {yaml_path}[/red]")
-        sys.exit(1)
-
-    with open(yaml_path) as fh:
-        data = pyyaml.safe_load(fh)
-
-    # Update stage (hierarchical dot-path format, no separate substage field)
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    data["stage"] = target_stage
-    data["updated"] = now
-
-    # Add reject history entry
-    history_entry = {
-        "stage": target_stage,
-        "timestamp": now,
-        "type": "reject",
-    }
-    if "history" not in data:
-        data["history"] = []
-    data["history"].append(history_entry)
-
-    # NOTE: Unlike rollback, we preserve PR metadata since the PR just needs updates
-
-    with open(yaml_path, "w") as fh:
-        pyyaml.dump(data, fh, default_flow_style=False, sort_keys=False)
-
-    console.print(f"[green]✓ Rejected! Issue #{issue.id} moved to {target_stage}[/green]")
-
-    # Sync to agents repo
-    from agenttree.agents_repo import sync_agents_repo
-    from agenttree.issues import get_agenttree_path
-    agents_path = get_agenttree_path()
-    sync_agents_repo(agents_path, pull_only=False, commit_message=f"Reject issue {issue_id} to {target_stage}")
-
-    # Notify agent with message
-    from agenttree.state import get_active_agent
-
-    agent = get_active_agent(issue_id_normalized)
-    if agent:
-        tmux_manager = TmuxManager(config)
-        if tmux_manager.is_issue_running(agent.tmux_session):
-            if message:
-                notify_message = f"Review feedback: {message}. Run `agenttree next` to continue."
-            else:
-                notify_message = "Your work was rejected. Run `agenttree next` for instructions."
-            tmux_manager.send_message_to_issue(agent.tmux_session, notify_message, interrupt=False)
-            console.print("[green]✓ Notified agent with feedback[/green]")
 
 
 @click.command("defer")

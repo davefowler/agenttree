@@ -5,7 +5,8 @@
 import asyncio
 asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
 
-from fastapi import FastAPI, Request, Form, Depends, HTTPException, status
+from fastapi import FastAPI, Request, Form, Body, WebSocket, WebSocketDisconnect, Depends, HTTPException, status
+from pydantic import BaseModel
 from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse, Response
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
@@ -1267,10 +1268,15 @@ async def approve_issue(
         issue_crud.set_processing(issue_id_normalized, None)
 
 
+class RejectRequest(BaseModel):
+    """Request body for reject endpoint."""
+    message: str = ""
+
+
 @app.post("/api/issues/{issue_id}/reject")
-async def reject_issue(
+async def reject_issue_endpoint(
     issue_id: str,
-    request: Request,
+    body: RejectRequest = Body(default=RejectRequest()),
     user: Optional[str] = Depends(get_current_user)
 ) -> dict:
     """Reject an issue at a human review stage and move it back.
@@ -1280,114 +1286,27 @@ async def reject_issue(
     - implement.review → implement.code
     """
     import asyncio
-    from datetime import datetime, timezone
-    import yaml as pyyaml
+    from agenttree.api import reject_issue as api_reject_issue
 
-    from agenttree.config import load_config
-
-    # Map review stage to target stage (hierarchical dot-path format)
-    REJECT_TARGET_STAGES = {
-        "plan.review": "plan.revise",
-        "implement.review": "implement.code",
-        "implement.independent_review": "implement.code",
-    }
-
-    # Get issue
     issue_id_normalized = issue_id.lstrip("0") or "0"
+
+    # Check issue exists first (for 404)
     issue = issue_crud.get_issue(issue_id_normalized, sync=False)
     if not issue:
         raise HTTPException(status_code=404, detail="Issue not found")
 
-    # Load config
-    config_path = Path(os.environ["AGENTTREE_REPO_PATH"]) if os.environ.get("AGENTTREE_REPO_PATH") else None
-    config = load_config(config_path)
-
-    # Check if at human review stage
-    if not config.is_human_review(issue.stage):
-        raise HTTPException(status_code=400, detail="Not at review stage")
-
-    # Get message from request body (optional)
     try:
-        body = await request.json()
-        message = body.get("message", "")
-    except Exception:
-        message = ""
-
-    # Get target stage from mapping
-    target_stage = REJECT_TARGET_STAGES.get(issue.stage)
-    if not target_stage:
-        raise HTTPException(status_code=400, detail=f"No target stage defined for rejecting from '{issue.stage}'")
-
-    try:
-        # Set processing state
         issue_crud.set_processing(issue_id_normalized, "reject")
 
-        # Update issue.yaml directly (like rollback, skip hooks)
-        from agenttree.issues import get_issue_dir
-
-        issue_dir = get_issue_dir(issue_id_normalized)
-        if not issue_dir:
-            raise HTTPException(status_code=500, detail="Issue directory not found")
-
-        yaml_path = issue_dir / "issue.yaml"
-        if not yaml_path.exists():
-            raise HTTPException(status_code=500, detail="Issue yaml not found")
-
-        def update_issue_file() -> None:
-            with open(yaml_path) as fh:
-                data = pyyaml.safe_load(fh)
-
-            # Update stage (hierarchical dot-path format, no separate substage field)
-            now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-            data["stage"] = target_stage
-            data["updated"] = now
-
-            # Add reject history entry
-            history_entry = {
-                "stage": target_stage,
-                "timestamp": now,
-                "type": "reject",
-            }
-            if "history" not in data:
-                data["history"] = []
-            data["history"].append(history_entry)
-
-            # NOTE: Unlike rollback, we preserve PR metadata
-
-            with open(yaml_path, "w") as fh:
-                pyyaml.dump(data, fh, default_flow_style=False, sort_keys=False)
-
-        await asyncio.to_thread(update_issue_file)
-
-        # Sync to agents repo
-        from agenttree.agents_repo import sync_agents_repo
-        from agenttree.issues import get_agenttree_path
-
-        agents_path = get_agenttree_path()
-        await asyncio.to_thread(
-            sync_agents_repo,
-            agents_path,
-            pull_only=False,
-            commit_message=f"Reject issue {issue_id} to {target_stage}"
-        )
-
-        # Notify agent with feedback (if active)
-        try:
-            from agenttree.state import get_active_agent
-            from agenttree.tmux import send_message, session_exists
-
-            agent = get_active_agent(issue_id_normalized)
-            if agent and agent.tmux_session:
-                if session_exists(agent.tmux_session):
-                    if message:
-                        notify_message = f"Review feedback: {message}. Run `agenttree next` to continue."
-                    else:
-                        notify_message = "Your work was rejected. Run `agenttree next` for instructions."
-                    await asyncio.to_thread(send_message, agent.tmux_session, notify_message)
-        except Exception as e:
-            logger.warning("Agent notification failed for issue %s: %s", issue_id_normalized, e)
+        # Call the shared API function
+        message = body.message if body.message else None
+        await asyncio.to_thread(api_reject_issue, issue_id_normalized, message)
 
         return {"ok": True}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
     except HTTPException:
         raise
     except Exception as e:

@@ -593,99 +593,78 @@ class TestApproveIssueEndpoint:
 class TestRejectIssueEndpoint:
     """Tests for reject issue endpoint."""
 
-    @patch("agenttree.state.get_active_agent")
-    @patch("agenttree.agents_repo.sync_agents_repo")
-    @patch("agenttree.issues.get_issue_dir")
-    @patch("agenttree.config.load_config")
+    @patch("agenttree.api.reject_issue")
     @patch("agenttree.web.app.issue_crud")
     def test_reject_issue_success(
-        self, mock_crud, mock_config, mock_get_dir, mock_sync, mock_get_agent,
-        client, mock_review_issue, tmp_path
+        self, mock_crud, mock_api_reject,
+        client, mock_review_issue
     ):
         """Test rejecting issue at implement.review stage."""
-        import yaml
+        from agenttree.issues import Issue
 
         mock_crud.get_issue.return_value = mock_review_issue
-        mock_get_agent.return_value = None
 
-        # Create a temp issue directory with issue.yaml
-        issue_dir = tmp_path / "042-test"
-        issue_dir.mkdir(parents=True)
-        yaml_path = issue_dir / "issue.yaml"
-        yaml_path.write_text(yaml.dump({
-            "id": "2",
-            "stage": "implement.review",
-            "history": [],
-            "pr_number": 123,
-            "pr_url": "https://github.com/test/repo/pull/123",
-        }))
-        mock_get_dir.return_value = issue_dir
-
-        # Mock config.is_human_review to return True for implement.review
-        mock_config.return_value.is_human_review.return_value = True
+        # Mock the API function to return an updated issue
+        updated_issue = Issue(
+            id="2",
+            slug="test",
+            title="Test",
+            stage="implement.code",
+            created="2026-01-01T00:00:00Z",
+            updated="2026-01-01T00:00:00Z",
+        )
+        mock_api_reject.return_value = updated_issue
 
         response = client.post("/api/issues/002/reject", json={})
 
         assert response.status_code == 200
         data = response.json()
         assert data["ok"] is True
+        mock_api_reject.assert_called_once_with("2", None)
 
-        # Verify issue was updated
-        with open(yaml_path) as f:
-            updated = yaml.safe_load(f)
-        assert updated["stage"] == "implement.code"
-        assert len(updated["history"]) == 1
-        assert updated["history"][0]["type"] == "reject"
-        # PR metadata should be preserved
-        assert updated["pr_number"] == 123
-        assert updated["pr_url"] == "https://github.com/test/repo/pull/123"
-
-    @patch("agenttree.config.load_config")
+    @patch("agenttree.api.reject_issue")
     @patch("agenttree.web.app.issue_crud")
-    def test_reject_issue_not_at_review_stage(self, mock_crud, mock_config, client, mock_issue):
+    def test_reject_issue_not_at_review_stage(self, mock_crud, mock_api_reject, client, mock_issue):
         """Test rejecting issue that's not at review stage."""
         mock_issue.stage = "implement.code"  # Not a review stage
         mock_crud.get_issue.return_value = mock_issue
-        # Mock config.is_human_review to return False
-        mock_config.return_value.is_human_review.return_value = False
+
+        # Mock API to raise ValueError for non-review stage
+        mock_api_reject.side_effect = ValueError(
+            "Issue is at 'implement.code', not a human review stage. Valid stages: plan.review, implement.review"
+        )
 
         response = client.post("/api/issues/001/reject", json={})
 
         assert response.status_code == 400
-        assert "Not at review stage" in response.json()["detail"]
+        assert "not a human review stage" in response.json()["detail"]
 
-    @patch("agenttree.state.get_active_agent")
-    @patch("agenttree.agents_repo.sync_agents_repo")
-    @patch("agenttree.issues.get_issue_dir")
-    @patch("agenttree.config.load_config")
+    @patch("agenttree.api.reject_issue")
     @patch("agenttree.web.app.issue_crud")
     def test_reject_issue_with_message(
-        self, mock_crud, mock_config, mock_get_dir, mock_sync, mock_get_agent,
-        client, mock_review_issue, tmp_path
+        self, mock_crud, mock_api_reject,
+        client, mock_review_issue
     ):
         """Test rejecting issue with feedback message."""
-        import yaml
+        from agenttree.issues import Issue
 
         mock_crud.get_issue.return_value = mock_review_issue
-        mock_get_agent.return_value = None
 
-        issue_dir = tmp_path / "042-test"
-        issue_dir.mkdir(parents=True)
-        yaml_path = issue_dir / "issue.yaml"
-        yaml_path.write_text(yaml.dump({
-            "id": "2",
-            "stage": "implement.review",
-            "history": [],
-        }))
-        mock_get_dir.return_value = issue_dir
-
-        # Mock config.is_human_review to return True for implement.review
-        mock_config.return_value.is_human_review.return_value = True
+        updated_issue = Issue(
+            id="2",
+            slug="test",
+            title="Test",
+            stage="implement.code",
+            created="2026-01-01T00:00:00Z",
+            updated="2026-01-01T00:00:00Z",
+        )
+        mock_api_reject.return_value = updated_issue
 
         response = client.post("/api/issues/002/reject", json={"message": "Please fix the tests"})
 
         assert response.status_code == 200
         assert response.json()["ok"] is True
+        mock_api_reject.assert_called_once_with("2", "Please fix the tests")
 
 
 class TestRebaseIssueEndpoint:
