@@ -211,7 +211,7 @@ def stage_next(issue_id: str | None, reassess: bool) -> None:
         return
 
     # Block agents from advancing past human_review stages — only `agenttree approve` can do that
-    current_stage_config = load_config().get_stage(issue.stage)
+    current_stage_config = config.get_stage(issue.stage)
     if current_stage_config and current_stage_config.human_review and is_running_in_container():
         console.print(f"\n[yellow]⏳ Waiting for human review at {issue.stage}[/yellow]")
         console.print(f"[dim]This stage requires human approval.[/dim]")
