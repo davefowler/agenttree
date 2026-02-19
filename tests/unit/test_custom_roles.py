@@ -389,11 +389,11 @@ class TestCheckCustomAgentStages:
 
         with patch("agenttree.hooks.is_running_in_container", return_value=False):
             with patch("agenttree.config.load_config", return_value=mock_config):
-                # Mock session_exists to return True (agent already running)
                 with patch("agenttree.tmux.session_exists", return_value=True):
-                    result = check_custom_agent_stages(tmp_path)
-                    # Should skip since agent is already running
-                    assert result == 0
+                    with patch("agenttree.tmux.is_claude_running", return_value=True):
+                        with patch("agenttree.tmux.send_message", return_value="sent"):
+                            result = check_custom_agent_stages(tmp_path)
+                            assert result == 0
 
     def test_spawns_agent_for_substage_dot_path(self, tmp_path):
         """Test that dot paths like implement.independent_review resolve correctly."""
