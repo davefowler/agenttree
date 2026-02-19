@@ -649,11 +649,14 @@ def check_merged_prs(agents_dir: Path) -> int:
 
 
 def check_ci_status(agents_dir: Path) -> int:
-    """Check CI status for issues at implement.review and notify agents on failure.
+    """Check CI status for issues at ci_wait or review and handle results.
+
+    For issues at implement.ci_wait with a PR:
+    - If CI passed: advance to implement.review
+    - If CI failed: bounce back to implement.debug
 
     For issues at implement.review with a PR:
-    - Checks CI status via get_pr_checks()
-    - If CI failed: writes ci_feedback.md, sends tmux message, transitions to implement
+    - If CI failed: writes ci_feedback.md, sends tmux message, transitions to debug
 
     Called from host during sync.
 
@@ -661,7 +664,7 @@ def check_ci_status(agents_dir: Path) -> int:
         agents_dir: Path to _agenttree directory
 
     Returns:
-        Number of issues with CI failures processed
+        Number of issues processed
     """
     from agenttree.hooks import is_running_in_container
     if is_running_in_container():
@@ -693,8 +696,9 @@ def check_ci_status(agents_dir: Path) -> int:
         try:
             data = safe_yaml_load(issue_yaml)
 
-            # Only check issues at implement.review WITH a PR
-            if data.get("stage") != "implement.review":
+            stage = data.get("stage", "")
+            # Handle both ci_wait and review stages
+            if stage not in ("implement.ci_wait", "implement.review"):
                 continue
             pr_number = data.get("pr_number")
             if not pr_number:
@@ -727,7 +731,13 @@ def check_ci_status(agents_dir: Path) -> int:
             ]
 
             if not failed_checks:
-                # All checks passed, nothing to do
+                # All checks passed
+                if stage == "implement.ci_wait":
+                    # Advance ci_wait → review
+                    console.print(f"[green]CI passed for issue #{issue_id}, advancing to review[/green]")
+                    _update_issue_stage_direct(issue_yaml, data, "implement.review")
+                    issues_notified += 1
+                # For implement.review with passing CI, nothing to do
                 continue
 
             # CI failed - create feedback file with logs and review comments
@@ -774,10 +784,11 @@ def check_ci_status(agents_dir: Path) -> int:
 
             # Count how many times CI has already bounced this issue back
             history = data.get("history", [])
+            ci_stages = ("implement.review", "implement.ci_wait")
             ci_bounce_count = sum(
                 1 for i, entry in enumerate(history)
                 if entry.get("stage") == "implement.debug"
-                and i > 0 and history[i - 1].get("stage") == "implement.review"
+                and i > 0 and history[i - 1].get("stage") in ci_stages
             )
 
             max_ci_bounces = 3
