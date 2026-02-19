@@ -329,6 +329,14 @@ def check_stalled_agents(
                     "reason": "claude_exited",
                 })
             elif elapsed_min > threshold_min:
+                # Nudge the agent directly before reporting as stalled
+                send_message(
+                    session_name,
+                    f"You appear stalled at {issue.stage} ({elapsed_min}min). "
+                    f"Run `agenttree next` to check your instructions and continue.",
+                    check_claude=True,
+                    interrupt=False,
+                )
                 stalled.append({
                     "id": issue.id,
                     "title": issue.title[:60],
