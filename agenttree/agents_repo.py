@@ -431,14 +431,17 @@ def check_custom_agent_stages(agents_dir: Path) -> int:
 
             # Check if in a custom agent stage
             if stage in custom_agent_stages:
-                # Get the effective role for this dot path
+                # Re-entry guard: skip if we're already spawning/spawned for this stage
+                spawned_stage = data.get("custom_agent_spawned")
+                if spawned_stage == stage or spawned_stage == f"{stage}:starting":
+                    continue
+
                 role_name = config.role_for(stage)
                 agent_config = config.get_custom_role(role_name)
                 if not agent_config:
                     console.print(f"[yellow]Custom role '{role_name}' not found in config[/yellow]")
                     continue
 
-                # Check if custom agent is already running
                 issue_id = data.get("id", "")
                 custom_agent_session = f"{config.project}-{role_name}-{issue_id}"
 
@@ -452,13 +455,16 @@ def check_custom_agent_stages(agents_dir: Path) -> int:
                         )
                         if result == "sent":
                             console.print(f"[dim]Pinged {role_name} agent for issue #{issue_id}[/dim]")
+                        # Mark as spawned (in case it wasn't already)
+                        if spawned_stage != stage:
+                            data["custom_agent_spawned"] = stage
+                            with open(issue_yaml, "w") as f:
+                                yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
                         continue
                     else:
-                        # Claude exited — force restart (kills old container + session)
                         console.print(f"[yellow]{role_name} agent for issue #{issue_id} exited, restarting...[/yellow]")
                         needs_force = True
                 else:
-                    # No tmux session — force if orphaned container exists
                     from agenttree.container import is_container_running
                     container_name = config.get_issue_container_name(issue_id)
                     if is_container_running(container_name):
@@ -467,6 +473,11 @@ def check_custom_agent_stages(agents_dir: Path) -> int:
                     else:
                         needs_force = False
 
+                # Set guard BEFORE the slow start_agent call to prevent re-entry
+                data["custom_agent_spawned"] = f"{stage}:starting"
+                with open(issue_yaml, "w") as f:
+                    yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
+
                 issue = Issue(**data)
                 console.print(f"[cyan]Starting {role_name} agent for issue #{issue.id} at stage {stage}...[/cyan]")
 
@@ -474,11 +485,17 @@ def check_custom_agent_stages(agents_dir: Path) -> int:
                     from agenttree.api import start_agent
 
                     start_agent(issue.id, host=role_name, skip_preflight=True, quiet=True, force=needs_force)
+                    data["custom_agent_spawned"] = stage
                     console.print(f"[green]✓ Started {role_name} agent for issue #{issue.id}[/green]")
                     spawned += 1
                 except Exception as e:
+                    # Clear guard so next heartbeat can retry
+                    data["custom_agent_spawned"] = None
                     console.print(f"[red]Failed to start {role_name} agent for issue #{issue.id}[/red]")
                     console.print(f"[dim]{str(e)[:200]}[/dim]")
+
+                with open(issue_yaml, "w") as f:
+                    yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
 
         except Exception as e:
             from rich.console import Console
