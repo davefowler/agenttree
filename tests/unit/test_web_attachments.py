@@ -31,7 +31,7 @@ class TestCreateIssueApiWithAttachments:
     def test_accepts_files(self, client, mock_issue):
         """Verify endpoint accepts multipart form with files."""
         with patch("agenttree.web.app.issue_crud.create_issue", return_value=mock_issue), \
-             patch("agenttree.web.app.start_agent"):
+             patch("agenttree.api.start_agent"):
 
             response = client.post(
                 "/api/issues",
@@ -48,7 +48,7 @@ class TestCreateIssueApiWithAttachments:
         large_content = b"x" * (11 * 1024 * 1024)  # 11MB
 
         with patch("agenttree.web.app.issue_crud.create_issue", return_value=mock_issue), \
-             patch("agenttree.web.app.start_agent"):
+             patch("agenttree.api.start_agent"):
 
             response = client.post(
                 "/api/issues",
@@ -62,7 +62,7 @@ class TestCreateIssueApiWithAttachments:
     def test_rejects_invalid_file_type(self, client, mock_issue):
         """Verify 400 error for executable files."""
         with patch("agenttree.web.app.issue_crud.create_issue", return_value=mock_issue), \
-             patch("agenttree.web.app.start_agent"):
+             patch("agenttree.api.start_agent"):
 
             response = client.post(
                 "/api/issues",
@@ -99,7 +99,7 @@ class TestGetAttachment:
 
     def test_returns_file(self, client, mock_issue_with_attachment):
         """Verify attachment serving endpoint returns file content."""
-        with patch("agenttree.web.app.get_issue_dir", return_value=mock_issue_with_attachment):
+        with patch("agenttree.issues.get_issue_dir", return_value=mock_issue_with_attachment):
             response = client.get("/api/issues/999/attachments/1234567890_screenshot.png")
 
             assert response.status_code == 200
@@ -107,21 +107,21 @@ class TestGetAttachment:
 
     def test_404_for_missing_file(self, client, mock_issue_with_attachment):
         """Verify 404 for non-existent attachments."""
-        with patch("agenttree.web.app.get_issue_dir", return_value=mock_issue_with_attachment):
+        with patch("agenttree.issues.get_issue_dir", return_value=mock_issue_with_attachment):
             response = client.get("/api/issues/999/attachments/nonexistent.png")
 
             assert response.status_code == 404
 
     def test_404_for_invalid_issue(self, client):
         """Verify 404 for invalid issue ID."""
-        with patch("agenttree.web.app.get_issue_dir", return_value=None):
+        with patch("agenttree.issues.get_issue_dir", return_value=None):
             response = client.get("/api/issues/999/attachments/test.png")
 
             assert response.status_code == 404
 
     def test_prevents_path_traversal(self, client, mock_issue_with_attachment):
         """Verify path traversal attempts are blocked."""
-        with patch("agenttree.web.app.get_issue_dir", return_value=mock_issue_with_attachment):
+        with patch("agenttree.issues.get_issue_dir", return_value=mock_issue_with_attachment):
             response = client.get("/api/issues/999/attachments/../../../etc/passwd")
 
             # Should return 404 or 400, not the file content
