@@ -388,7 +388,14 @@ class Config(BaseModel):
         return result
 
     def is_human_review(self, dot_path: str) -> bool:
-        """Check if a dot path is a human review stage."""
+        """Check if a dot path is a human review stage.
+
+        Args:
+            dot_path: Stage path, e.g., "implement.review" or "plan.review"
+
+        Returns:
+            True if the stage/substage has human_review: true in config
+        """
         stage, sub = self.resolve_stage(dot_path)
         if sub:
             return sub.human_review
@@ -472,21 +479,28 @@ class Config(BaseModel):
                 result.append(name)
         return result
 
-    def role_is_containerized(self, role_name: str) -> bool:
-        """Check if a role runs in a container."""
-        role = self.get_role(role_name)
-        if role:
-            return role.is_containerized()
-        return role_name != "manager"
-
     def role_for(self, dot_path: str) -> str:
-        """Get the effective role for a dot path."""
+        """Get the effective role for a dot path.
+
+        Args:
+            dot_path: Stage path, e.g., "implement.code" or "plan.review"
+
+        Returns:
+            Role name (e.g., 'developer', 'manager') that executes this stage
+        """
         stage, sub = self.resolve_stage(dot_path)
         if sub and sub.role:
             return sub.role
         if stage:
             return stage.role
         return "developer"
+
+    def role_is_containerized(self, role_name: str) -> bool:
+        """Check if a role runs in a container."""
+        role = self.get_role(role_name)
+        if role:
+            return role.is_containerized()
+        return role_name != "manager"
 
     def substages_for(self, stage_name: str) -> list[str]:
         """Get ordered list of substage names for a stage."""
