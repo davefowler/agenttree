@@ -383,11 +383,9 @@ class TestCheckCustomAgentStages:
         mock_config = MagicMock()
         mock_config.project = "testproj"
         mock_config.get_custom_role_stages.return_value = ["implement.independent_review"]
-        mock_stage_config = MagicMock()
-        mock_stage_config.role = "review"
-        mock_config.get_stage.return_value = mock_stage_config
+        mock_config.role_for.return_value = "review"
         mock_agent_config = MagicMock()
-        mock_config.get_role.return_value = mock_agent_config
+        mock_config.get_custom_role.return_value = mock_agent_config
 
         with patch("agenttree.hooks.is_running_in_container", return_value=False):
             with patch("agenttree.config.load_config", return_value=mock_config):
@@ -396,6 +394,42 @@ class TestCheckCustomAgentStages:
                     result = check_custom_agent_stages(tmp_path)
                     # Should skip since agent is already running
                     assert result == 0
+
+    def test_spawns_agent_for_substage_dot_path(self, tmp_path):
+        """Test that dot paths like implement.independent_review resolve correctly."""
+        from agenttree.agents_repo import check_custom_agent_stages
+
+        issues_dir = tmp_path / "issues"
+        issues_dir.mkdir()
+        issue_dir = issues_dir / "170-test"
+        issue_dir.mkdir()
+
+        issue_data = {
+            "id": "170",
+            "slug": "test",
+            "title": "Test Issue",
+            "created": "2024-01-01",
+            "updated": "2024-01-01",
+            "stage": "implement.independent_review",
+        }
+        (issue_dir / "issue.yaml").write_text(yaml.safe_dump(issue_data))
+
+        mock_config = MagicMock()
+        mock_config.project = "testproj"
+        mock_config.get_custom_role_stages.return_value = ["implement.independent_review"]
+        mock_config.role_for.return_value = "review"
+        mock_agent_config = MagicMock()
+        mock_config.get_custom_role.return_value = mock_agent_config
+
+        with patch("agenttree.hooks.is_running_in_container", return_value=False):
+            with patch("agenttree.config.load_config", return_value=mock_config):
+                with patch("agenttree.tmux.session_exists", return_value=False):
+                    with patch("agenttree.api.start_agent") as mock_start:
+                        result = check_custom_agent_stages(tmp_path)
+                        assert result == 1
+                        mock_start.assert_called_once_with(
+                            "170", host="review", skip_preflight=True, quiet=True
+                        )
 
 
 class TestContainerAgentHost:

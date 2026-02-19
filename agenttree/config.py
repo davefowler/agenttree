@@ -396,21 +396,6 @@ class Config(BaseModel):
             return stage.human_review
         return False
 
-    def is_human_review(self, stage_name: str) -> bool:
-        """Check if a stage requires human review.
-
-        This is a convenience method for checking a single stage.
-        Looks up the human_review property from the stage config.
-
-        Args:
-            stage_name: Stage name to check
-
-        Returns:
-            True if the stage has human_review: true in config
-        """
-        stage_config = self.get_stage(stage_name)
-        return stage_config.human_review if stage_config else False
-
     def get_manager_stages(self) -> list[str]:
         """Get list of dot paths executed by the manager."""
         result: list[str] = []
@@ -486,18 +471,6 @@ class Config(BaseModel):
             elif stage.role != "developer":
                 result.append(name)
         return result
-
-    def role_for(self, stage_name: str) -> str:
-        """Get the role that handles a given stage.
-
-        Args:
-            stage_name: Name of the stage
-
-        Returns:
-            Role name (e.g., 'developer', 'manager') that executes this stage
-        """
-        stage_config = self.get_stage(stage_name)
-        return stage_config.role if stage_config else "developer"
 
     def role_is_containerized(self, role_name: str) -> bool:
         """Check if a role runs in a container."""
