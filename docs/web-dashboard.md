@@ -18,23 +18,17 @@ The AgentTree web dashboard provides a real-time view of all agents, their tmux 
 The web dashboard requires FastAPI and its dependencies:
 
 ```bash
-pip install fastapi uvicorn websockets jinja2
-```
-
-Or install from the project root:
-
-```bash
-pip install -e ".[web]"
+uv sync --extra web
 ```
 
 ### 2. Run the Server
 
 ```bash
 # From Python
-python -m agenttree.web.app
+uv run python -m agenttree.web.app
 
 # Or using the run_server function
-python -c "from agenttree.web.app import run_server; run_server()"
+uv run python -c "from agenttree.web.app import run_server; run_server()"
 ```
 
 By default, the server runs on `http://127.0.0.1:8080`.
@@ -52,7 +46,7 @@ http://127.0.0.1:8080
 
 ```bash
 # Custom host and port
-python -c "from agenttree.web.app import run_server; run_server(host='0.0.0.0', port=3000)"
+uv run python -c "from agenttree.web.app import run_server; run_server(host='0.0.0.0', port=3000)"
 ```
 
 ### Tailscale Access (Recommended)
@@ -63,7 +57,7 @@ By default, the dashboard has **no authentication** because it's designed to run
 1. Install Tailscale on your machine: https://tailscale.com/download
 2. Start the web dashboard bound to your Tailscale IP:
    ```bash
-   python -c "from agenttree.web.app import run_server; run_server(host='100.x.x.x', port=8080)"
+   uv run python -c "from agenttree.web.app import run_server; run_server(host='100.x.x.x', port=8080)"
    ```
 3. Access from any device on your Tailscale network: `http://100.x.x.x:8080`
 
@@ -86,7 +80,7 @@ export AGENTTREE_WEB_AUTH=true
 export AGENTTREE_WEB_USERNAME=your_username
 export AGENTTREE_WEB_PASSWORD=your_secure_password
 
-python -m agenttree.web.app
+uv run python -m agenttree.web.app
 ```
 
 ### Docker Example
@@ -115,7 +109,7 @@ Then load it:
 set -a
 source .env
 set +a
-python -m agenttree.web.app
+uv run python -m agenttree.web.app
 ```
 
 ### Security Notes
