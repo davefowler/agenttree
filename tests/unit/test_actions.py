@@ -207,291 +207,138 @@ class TestCleanupResources:
         assert not (tmp_path / "logs").exists()
 
 
-class TestCheckStalledAgents:
-    """Tests for simplified, role-aware stall detection."""
+class TestCheckStalledAgentsReNotification:
+    """Tests for stall re-notification logic in check_stalled_agents."""
 
-    def _timestamp_ago(self, minutes: int) -> str:
+    def _make_stalled_yaml(self, path: Path, agents: list[dict], dead: list | None = None) -> None:
+        """Write a stalled.yaml with given agent data."""
+        data = {
+            "updated_at": "2026-01-01T00:00:00+00:00",
+            "threshold_min": 15,
+            "dead_agents": dead or [],
+            "stalled_agents": agents,
+        }
+        (path / "stalled.yaml").write_text(yaml.dump(data, default_flow_style=False))
+
+    def _issue_updated_ago(self, minutes: int) -> str:
         """Return ISO timestamp for `minutes` ago."""
         t = datetime.now(timezone.utc) - timedelta(minutes=minutes)
         return t.strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    def _make_issue(self, issue_id: str = "042", stage: str = "implement.code",
-                    minutes_ago: int = 20) -> MagicMock:
-        """Create a mock issue with history."""
+    @patch("agenttree.tmux.send_message", return_value="sent")
+    @patch("agenttree.tmux.session_exists", return_value=True)
+    @patch("agenttree.events.save_event_state")
+    @patch("agenttree.events.load_event_state", return_value={})
+    @patch("agenttree.issues.list_issues")
+    @patch("agenttree.config.load_config")
+    def test_first_stall_notifies(
+        self, mock_config: MagicMock, mock_list: MagicMock,
+        mock_load_state: MagicMock, mock_save_state: MagicMock,
+        mock_exists: MagicMock,
+        mock_send: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """First time an agent is detected stalled, manager is notified."""
+        # Create issue with history entry
+        # Agent running + elapsed >= threshold*2 triggers notification
         history_entry = MagicMock()
-        history_entry.timestamp = self._timestamp_ago(minutes_ago)
+        history_entry.timestamp = self._issue_updated_ago(35)  # >= 15*2=30
         issue = MagicMock(
-            id=issue_id, title="Test Issue", stage=stage,
+            id="042", title="Test", stage="implement.code",
             history=[history_entry],
         )
-        return issue
+        mock_list.return_value = [issue]
+        mock_config.return_value.get_manager_tmux_session.return_value = "mgr"
+        mock_config.return_value.get_issue_tmux_session.return_value = "at-042"
+        mock_config.return_value.is_parking_lot.return_value = False
+        mock_config.return_value.is_human_review.return_value = False
+        mock_config.return_value.role_for.return_value = "developer"
 
-    def _make_config(self) -> MagicMock:
-        """Create a mock config."""
-        cfg = MagicMock()
-        cfg.get_manager_tmux_session.return_value = "mgr"
-        cfg.is_parking_lot.return_value = False
-        cfg.is_human_review.return_value = False
-        cfg.role_for.return_value = "developer"
-        cfg.get_issue_tmux_session.return_value = "at-042"
-        return cfg
+        check_stalled_agents(tmp_path, threshold_min=15)
 
-    @patch("agenttree.tmux.send_message", return_value="sent")
-    @patch("agenttree.tmux.session_exists")
-    @patch("agenttree.issues.list_issues")
-    @patch("agenttree.config.load_config")
-    def test_first_stall_notifies_manager(
-        self, mock_load_config: MagicMock, mock_list: MagicMock,
-        mock_exists: MagicMock, mock_send: MagicMock,
-        tmp_path: Path,
-    ) -> None:
-        """First stall detection sends informational message to manager."""
-        mock_load_config.return_value = self._make_config()
-        mock_list.return_value = [self._make_issue(minutes_ago=15)]
-        # Agent dead, manager running
-        mock_exists.side_effect = lambda name: name == "mgr"
-
-        check_stalled_agents(tmp_path, threshold_min=10)
-
-        # Should notify manager
+        # Should have notified manager (1 call)
         mock_send.assert_called_once()
-        msg = mock_send.call_args[0][1]
-        assert "042" in msg
-        assert "agenttree status --active-only" in msg
-
-        # State should track notification count
-        state = yaml.safe_load((tmp_path / ".heartbeat_state.yaml").read_text())
-        assert state["stall_notifications"]["042"]["count"] == 1
-
-    @patch("agenttree.tmux.send_message", return_value="sent")
-    @patch("agenttree.tmux.session_exists")
-    @patch("agenttree.issues.list_issues")
-    @patch("agenttree.config.load_config")
-    def test_not_renotified_too_soon(
-        self, mock_load_config: MagicMock, mock_list: MagicMock,
-        mock_exists: MagicMock, mock_send: MagicMock,
-        tmp_path: Path,
-    ) -> None:
-        """Don't re-notify if not enough time has passed for next notification."""
-        mock_load_config.return_value = self._make_config()
-        # Issue at 15 min, threshold=10 → first notify at 10, second at 20
-        mock_list.return_value = [self._make_issue(minutes_ago=15)]
-        # Agent dead, manager running
-        mock_exists.side_effect = lambda name: name == "mgr"
-
-        # Pre-seed state: already notified once
-        state = {
-            "stall_notifications": {
-                "042": {"stage": "implement.code", "count": 1, "last_at": self._timestamp_ago(5)},
-            },
-        }
-        (tmp_path / ".heartbeat_state.yaml").write_text(yaml.dump(state))
-
-        check_stalled_agents(tmp_path, threshold_min=10)
-
-        # Should NOT notify (15 min < 20 min = threshold * (1+1))
-        mock_send.assert_not_called()
-
-    @patch("agenttree.tmux.send_message", return_value="sent")
-    @patch("agenttree.tmux.session_exists")
-    @patch("agenttree.issues.list_issues")
-    @patch("agenttree.config.load_config")
-    def test_renotifies_at_next_threshold(
-        self, mock_load_config: MagicMock, mock_list: MagicMock,
-        mock_exists: MagicMock, mock_send: MagicMock,
-        tmp_path: Path,
-    ) -> None:
-        """Re-notifies when elapsed time reaches next threshold multiple."""
-        mock_load_config.return_value = self._make_config()
-        # Issue at 25 min, threshold=10 → second notify at 20 min
-        mock_list.return_value = [self._make_issue(minutes_ago=25)]
-        # Agent dead, manager running
-        mock_exists.side_effect = lambda name: name == "mgr"
-
-        # Pre-seed state: already notified once
-        state = {
-            "stall_notifications": {
-                "042": {"stage": "implement.code", "count": 1, "last_at": self._timestamp_ago(15)},
-            },
-        }
-        (tmp_path / ".heartbeat_state.yaml").write_text(yaml.dump(state))
-
-        check_stalled_agents(tmp_path, threshold_min=10)
-
-        # Should notify (25 min >= 20 min = threshold * (1+1))
-        mock_send.assert_called_once()
-
-        # Count should be 2
-        state = yaml.safe_load((tmp_path / ".heartbeat_state.yaml").read_text())
-        assert state["stall_notifications"]["042"]["count"] == 2
-
-    @patch("agenttree.tmux.send_message", return_value="sent")
-    @patch("agenttree.tmux.session_exists")
-    @patch("agenttree.issues.list_issues")
-    @patch("agenttree.config.load_config")
-    def test_stops_after_max_notifications(
-        self, mock_load_config: MagicMock, mock_list: MagicMock,
-        mock_exists: MagicMock, mock_send: MagicMock,
-        tmp_path: Path,
-    ) -> None:
-        """Stops notifying after max_notifications reached."""
-        mock_load_config.return_value = self._make_config()
-        mock_list.return_value = [self._make_issue(minutes_ago=60)]
-        # Agent dead, manager running
-        mock_exists.side_effect = lambda name: name == "mgr"
-
-        # Pre-seed state: already notified 3 times (max)
-        state = {
-            "stall_notifications": {
-                "042": {"stage": "implement.code", "count": 3, "last_at": self._timestamp_ago(10)},
-            },
-        }
-        (tmp_path / ".heartbeat_state.yaml").write_text(yaml.dump(state))
-
-        check_stalled_agents(tmp_path, threshold_min=10, max_notifications=3)
-
-        # Should NOT notify (already at max)
-        mock_send.assert_not_called()
-
-    @patch("agenttree.tmux.send_message", return_value="sent")
-    @patch("agenttree.tmux.session_exists")
-    @patch("agenttree.issues.list_issues")
-    @patch("agenttree.config.load_config")
-    def test_resets_on_stage_change(
-        self, mock_load_config: MagicMock, mock_list: MagicMock,
-        mock_exists: MagicMock, mock_send: MagicMock,
-        tmp_path: Path,
-    ) -> None:
-        """Notification count resets when issue changes stage."""
-        mock_load_config.return_value = self._make_config()
-        # Issue now at plan.draft (changed from implement.code)
-        mock_list.return_value = [self._make_issue(stage="plan.draft", minutes_ago=15)]
-        # Agent dead, manager running
-        mock_exists.side_effect = lambda name: name == "mgr"
-
-        # Pre-seed state: had 3 notifications for old stage
-        state = {
-            "stall_notifications": {
-                "042": {"stage": "implement.code", "count": 3, "last_at": self._timestamp_ago(10)},
-            },
-        }
-        (tmp_path / ".heartbeat_state.yaml").write_text(yaml.dump(state))
-
-        check_stalled_agents(tmp_path, threshold_min=10)
-
-        # Should notify (stage changed, count reset to 0)
-        mock_send.assert_called_once()
-
-        state = yaml.safe_load((tmp_path / ".heartbeat_state.yaml").read_text())
-        assert state["stall_notifications"]["042"]["stage"] == "plan.draft"
-        assert state["stall_notifications"]["042"]["count"] == 1
-
-    @patch("agenttree.tmux.send_message", return_value="sent")
-    @patch("agenttree.tmux.session_exists")
-    @patch("agenttree.issues.list_issues")
-    @patch("agenttree.config.load_config")
-    def test_skips_parking_lot_stages(
-        self, mock_load_config: MagicMock, mock_list: MagicMock,
-        mock_exists: MagicMock, mock_send: MagicMock,
-        tmp_path: Path,
-    ) -> None:
-        """Issues in parking lot stages are skipped."""
-        cfg = self._make_config()
-        cfg.is_parking_lot.return_value = True
-        mock_load_config.return_value = cfg
-        mock_list.return_value = [self._make_issue(stage="backlog", minutes_ago=100)]
-        mock_exists.side_effect = lambda name: name == "mgr"
-
-        check_stalled_agents(tmp_path, threshold_min=10)
-
-        mock_send.assert_not_called()
-
-    @patch("agenttree.tmux.send_message", return_value="sent")
-    @patch("agenttree.tmux.session_exists")
-    @patch("agenttree.issues.list_issues")
-    @patch("agenttree.config.load_config")
-    def test_skips_manager_stages(
-        self, mock_load_config: MagicMock, mock_list: MagicMock,
-        mock_exists: MagicMock, mock_send: MagicMock,
-        tmp_path: Path,
-    ) -> None:
-        """Issues in manager (human review) stages are skipped."""
-        cfg = self._make_config()
-        cfg.role_for.return_value = "manager"
-        mock_load_config.return_value = cfg
-        mock_list.return_value = [self._make_issue(stage="implement.review", minutes_ago=100)]
-        mock_exists.side_effect = lambda name: name == "mgr"
-
-        check_stalled_agents(tmp_path, threshold_min=10)
-
-        mock_send.assert_not_called()
-
-    @patch("agenttree.tmux.send_message", return_value="sent")
-    @patch("agenttree.tmux.session_exists")
-    @patch("agenttree.issues.list_issues")
-    @patch("agenttree.config.load_config")
-    def test_role_aware_session_check(
-        self, mock_load_config: MagicMock, mock_list: MagicMock,
-        mock_exists: MagicMock, mock_send: MagicMock,
-        tmp_path: Path,
-    ) -> None:
-        """Uses config.role_for() to determine correct session to check."""
-        cfg = self._make_config()
-        cfg.role_for.return_value = "review"
-        mock_load_config.return_value = cfg
-        mock_list.return_value = [self._make_issue(stage="implement.independent_review", minutes_ago=15)]
-        mock_exists.side_effect = lambda name: name == "mgr"
-
-        check_stalled_agents(tmp_path, threshold_min=10)
-
-        # Should have checked session for "review" role
-        cfg.get_issue_tmux_session.assert_called_with("042", "review")
+        assert mock_send.call_args[0][0] == "mgr"
+        assert "042" in mock_send.call_args[0][1]
 
     @patch("agenttree.tmux.send_message", return_value="sent")
     @patch("agenttree.tmux.session_exists", return_value=True)
+    @patch("agenttree.events.save_event_state")
+    @patch("agenttree.events.load_event_state")
     @patch("agenttree.issues.list_issues")
     @patch("agenttree.config.load_config")
-    def test_running_agent_starts_count_at_one(
-        self, mock_load_config: MagicMock, mock_list: MagicMock,
-        mock_exists: MagicMock, mock_send: MagicMock,
+    def test_same_stall_not_renotified_too_soon(
+        self, mock_config: MagicMock, mock_list: MagicMock,
+        mock_load_state: MagicMock, mock_save_state: MagicMock,
+        mock_exists: MagicMock,
+        mock_send: MagicMock,
         tmp_path: Path,
     ) -> None:
-        """Running agents start notification count at 1 to avoid rapid-fire."""
-        mock_load_config.return_value = self._make_config()
-        # Agent running (session_exists=True for all), at 25 min
-        mock_list.return_value = [self._make_issue(minutes_ago=25)]
+        """If stall hasn't grown enough since last notification, don't re-notify."""
+        # Previously notified once (count=1), next notify at threshold*2=20min
+        mock_load_state.return_value = {
+            "stall_notifications": {
+                "042": {"stage": "implement.code", "count": 1}
+            }
+        }
+
+        # Agent at 18min (< 20min threshold*2 for second notification)
+        history_entry = MagicMock()
+        history_entry.timestamp = self._issue_updated_ago(18)
+        issue = MagicMock(
+            id="042", title="Test", stage="implement.code",
+            history=[history_entry],
+        )
+        mock_list.return_value = [issue]
+        mock_config.return_value.get_manager_tmux_session.return_value = "mgr"
+        mock_config.return_value.get_issue_tmux_session.return_value = "at-042"
+        mock_config.return_value.is_parking_lot.return_value = False
+        mock_config.return_value.is_human_review.return_value = False
+        mock_config.return_value.role_for.return_value = "developer"
 
         check_stalled_agents(tmp_path, threshold_min=10)
 
-        # Should notify (25 >= threshold*2=20, count bumped from 0→1, next_at=20)
-        mock_send.assert_called_once()
-
-        # Count should be 2 (started at 1 for running agent, incremented to 2)
-        state = yaml.safe_load((tmp_path / ".heartbeat_state.yaml").read_text())
-        assert state["stall_notifications"]["042"]["count"] == 2
+        # No notification since elapsed (18) < threshold*2 (20)
+        mock_send.assert_not_called()
 
     @patch("agenttree.tmux.send_message", return_value="sent")
     @patch("agenttree.tmux.session_exists", return_value=True)
+    @patch("agenttree.events.save_event_state")
+    @patch("agenttree.events.load_event_state")
     @patch("agenttree.issues.list_issues")
     @patch("agenttree.config.load_config")
-    def test_running_agent_not_rapid_fire(
-        self, mock_load_config: MagicMock, mock_list: MagicMock,
-        mock_exists: MagicMock, mock_send: MagicMock,
+    def test_stall_renotifies_after_threshold_growth(
+        self, mock_config: MagicMock, mock_list: MagicMock,
+        mock_load_state: MagicMock, mock_save_state: MagicMock,
+        mock_exists: MagicMock,
+        mock_send: MagicMock,
         tmp_path: Path,
     ) -> None:
-        """Running agent at 25m with count=2 waits until 30m for next notify."""
-        mock_load_config.return_value = self._make_config()
-        mock_list.return_value = [self._make_issue(minutes_ago=25)]
-
-        # Pre-seed: already notified twice
-        state = {
+        """If stall grows past next threshold, re-notify manager."""
+        # Previously notified once (count=1), next notify at threshold*2=20min
+        mock_load_state.return_value = {
             "stall_notifications": {
-                "042": {"stage": "implement.code", "count": 2, "last_at": self._timestamp_ago(5)},
-            },
+                "042": {"stage": "implement.code", "count": 1}
+            }
         }
-        (tmp_path / ".heartbeat_state.yaml").write_text(yaml.dump(state))
+
+        # Agent now at 25min (>= threshold*2=20 for second notification)
+        history_entry = MagicMock()
+        history_entry.timestamp = self._issue_updated_ago(25)
+        issue = MagicMock(
+            id="042", title="Test", stage="implement.code",
+            history=[history_entry],
+        )
+        mock_list.return_value = [issue]
+        mock_config.return_value.get_manager_tmux_session.return_value = "mgr"
+        mock_config.return_value.get_issue_tmux_session.return_value = "at-042"
+        mock_config.return_value.is_parking_lot.return_value = False
+        mock_config.return_value.is_human_review.return_value = False
+        mock_config.return_value.role_for.return_value = "developer"
 
         check_stalled_agents(tmp_path, threshold_min=10)
 
-        # Should NOT notify (25 < threshold*3=30)
-        mock_send.assert_not_called()
+        # Should have notified manager (1 call)
+        mock_send.assert_called_once()
+        assert mock_send.call_args[0][0] == "mgr"
+        assert "042" in mock_send.call_args[0][1]

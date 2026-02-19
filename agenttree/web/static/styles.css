@@ -284,6 +284,111 @@ header h1 {
     background: var(--btn-bg-hover);
 }
 
+.btn-reject {
+    padding: 4px 12px;
+    font-size: 13px;
+    background: var(--btn-bg);
+    border: 1px solid var(--border-color);
+    color: var(--text-muted);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.btn-reject:hover {
+    background: var(--btn-bg-hover);
+    color: var(--text-primary);
+}
+
+/* Reject Modal */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.modal-content {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 24px;
+    max-width: 500px;
+    width: 90%;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.modal-content h3 {
+    margin: 0 0 12px 0;
+    font-size: 18px;
+    color: var(--text-primary);
+}
+
+.modal-content p {
+    margin: 0 0 12px 0;
+    color: var(--text-muted);
+    font-size: 14px;
+}
+
+.modal-content textarea {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 14px;
+    resize: vertical;
+    box-sizing: border-box;
+}
+
+.modal-content textarea:focus {
+    outline: none;
+    border-color: var(--accent-color);
+}
+
+.modal-buttons {
+    display: flex;
+    gap: 12px;
+    justify-content: flex-end;
+    margin-top: 16px;
+}
+
+.btn-secondary {
+    padding: 8px 16px;
+    font-size: 14px;
+    background: var(--btn-bg);
+    border: 1px solid var(--border-color);
+    color: var(--text-muted);
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.btn-secondary:hover {
+    background: var(--btn-bg-hover);
+}
+
+.btn-reject-submit {
+    padding: 8px 16px;
+    font-size: 14px;
+    background: var(--accent-color);
+    border: 1px solid var(--accent-color);
+    color: white;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.btn-reject-submit:hover {
+    opacity: 0.9;
+}
+
 button[disabled] {
     opacity: 0.5;
     cursor: not-allowed;

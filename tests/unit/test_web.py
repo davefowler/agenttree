@@ -590,6 +590,83 @@ class TestApproveIssueEndpoint:
         )
 
 
+class TestRejectIssueEndpoint:
+    """Tests for reject issue endpoint."""
+
+    @patch("agenttree.api.reject_issue")
+    @patch("agenttree.web.app.issue_crud")
+    def test_reject_issue_success(
+        self, mock_crud, mock_api_reject,
+        client, mock_review_issue
+    ):
+        """Test rejecting issue at implement.review stage."""
+        from agenttree.issues import Issue
+
+        mock_crud.get_issue.return_value = mock_review_issue
+
+        # Mock the API function to return an updated issue
+        updated_issue = Issue(
+            id="2",
+            slug="test",
+            title="Test",
+            stage="implement.code",
+            created="2026-01-01T00:00:00Z",
+            updated="2026-01-01T00:00:00Z",
+        )
+        mock_api_reject.return_value = updated_issue
+
+        response = client.post("/api/issues/002/reject", json={})
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["ok"] is True
+        mock_api_reject.assert_called_once_with("2", None)
+
+    @patch("agenttree.api.reject_issue")
+    @patch("agenttree.web.app.issue_crud")
+    def test_reject_issue_not_at_review_stage(self, mock_crud, mock_api_reject, client, mock_issue):
+        """Test rejecting issue that's not at review stage."""
+        mock_issue.stage = "implement.code"  # Not a review stage
+        mock_crud.get_issue.return_value = mock_issue
+
+        # Mock API to raise ValueError for non-review stage
+        mock_api_reject.side_effect = ValueError(
+            "Issue is at 'implement.code', not a human review stage. Valid stages: plan.review, implement.review"
+        )
+
+        response = client.post("/api/issues/001/reject", json={})
+
+        assert response.status_code == 400
+        assert "not a human review stage" in response.json()["detail"]
+
+    @patch("agenttree.api.reject_issue")
+    @patch("agenttree.web.app.issue_crud")
+    def test_reject_issue_with_message(
+        self, mock_crud, mock_api_reject,
+        client, mock_review_issue
+    ):
+        """Test rejecting issue with feedback message."""
+        from agenttree.issues import Issue
+
+        mock_crud.get_issue.return_value = mock_review_issue
+
+        updated_issue = Issue(
+            id="2",
+            slug="test",
+            title="Test",
+            stage="implement.code",
+            created="2026-01-01T00:00:00Z",
+            updated="2026-01-01T00:00:00Z",
+        )
+        mock_api_reject.return_value = updated_issue
+
+        response = client.post("/api/issues/002/reject", json={"message": "Please fix the tests"})
+
+        assert response.status_code == 200
+        assert response.json()["ok"] is True
+        mock_api_reject.assert_called_once_with("2", "Please fix the tests")
+
+
 class TestRebaseIssueEndpoint:
     """Tests for rebase issue endpoint."""
 
