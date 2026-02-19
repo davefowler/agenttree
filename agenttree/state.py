@@ -258,26 +258,23 @@ def unregister_all_agents_for_issue(issue_id: str) -> list[ActiveAgent]:
 
 
 
-def get_issue_names(issue_id: str, slug: str, project: str = "agenttree", role: str = "developer") -> dict:
+def get_issue_names(issue_id: str, slug: str = "", project: str = "agenttree", role: str = "developer") -> dict:
     """Get standardized names for issue-bound resources.
 
     Args:
         issue_id: Issue ID (e.g., "023")
-        slug: Issue slug (e.g., "fix-login-bug")
+        slug: Unused, kept for call-site compatibility
         project: Project name
         role: Agent role (default: "developer")
 
     Returns:
         Dictionary with container, worktree, branch, tmux_session names
     """
-    # Truncate slug for filesystem friendliness
-    short_slug = slug[:30] if len(slug) > 30 else slug
-
     config = load_config()
     return {
         "container": config.get_issue_container_name(issue_id),
-        "worktree": f"issue-{issue_id}-{short_slug}",
-        "branch": f"issue-{issue_id}-{short_slug}",
+        "worktree": f"issue-{issue_id}",
+        "branch": f"issue-{issue_id}",
         "tmux_session": config.get_issue_tmux_session(issue_id, role),
     }
 

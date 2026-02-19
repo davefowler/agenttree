@@ -2278,7 +2278,7 @@ def ensure_pr_for_issue(issue_id: str) -> bool:
 
     # Fall back to guessing the path
     if not worktree_path:
-        worktree_path = Path.cwd() / ".worktrees" / f"issue-{issue_id.zfill(3)}-{issue.slug[:30]}"
+        worktree_path = Path.cwd() / ".worktrees" / f"issue-{issue_id.zfill(3)}"
         if not worktree_path.exists():
             # Try without leading zeros
             for p in Path.cwd().glob(f".worktrees/issue-{issue_id}*"):
