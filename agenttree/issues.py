@@ -829,7 +829,10 @@ def update_issue_stage(
         issue.ci_escalated = False
 
     # Clear ci_notified when entering ci_wait so new CI runs get detected
+    # (must pop from data dict since _write_issue_yaml uses exclude_none=True,
+    #  so setting to None on the model won't remove from YAML)
     if stage == "implement.ci_wait":
+        data.pop("ci_notified", None)
         issue.ci_notified = None
 
     # Pop legacy substage field
@@ -839,6 +842,9 @@ def update_issue_stage(
     if ci_escalated is not None:
         issue.ci_escalated = ci_escalated
     if clear_pr:
+        # Must pop from data dict since exclude_none=True skips None values
+        data.pop("pr_number", None)
+        data.pop("pr_url", None)
         issue.pr_number = None
         issue.pr_url = None
 
