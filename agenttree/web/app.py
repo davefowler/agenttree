@@ -493,6 +493,26 @@ async def kanban(
     )
 
 
+@app.get("/kanban/board", response_class=HTMLResponse)
+async def kanban_board(
+    request: Request,
+    search: str | None = None,
+    user: str | None = Depends(get_current_user)
+) -> HTMLResponse:
+    """Kanban board partial - returns just the columns for htmx polling refresh."""
+    agent_manager.clear_session_cache()  # Fresh session data per request
+    board = await asyncio.to_thread(get_kanban_board, search)
+
+    return templates.TemplateResponse(
+        "partials/kanban_board.html",
+        {
+            "request": request,
+            "board": board,
+            "stages": _config.get_all_dot_paths(),
+        }
+    )
+
+
 # File ordering by workflow stage (problem first, then spec, etc.)
 STAGE_FILE_ORDER = [
     "problem.md",
