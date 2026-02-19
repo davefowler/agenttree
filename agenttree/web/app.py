@@ -5,7 +5,7 @@
 import asyncio
 asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
 
-from fastapi import FastAPI, Request, Form, Depends, HTTPException, status
+from fastapi import FastAPI, Request, Form, File, UploadFile, Depends, HTTPException, status
 from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse, Response
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
@@ -1267,17 +1267,27 @@ async def approve_issue(
         issue_crud.set_processing(issue_id_normalized, None)
 
 
+# Allowed file extensions for attachments
+ALLOWED_ATTACHMENT_EXTENSIONS = {
+    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg",  # Images
+    ".txt", ".log", ".md", ".json", ".yaml", ".yml",   # Text files
+}
+MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024  # 10MB
+
+
 @app.post("/api/issues")
 async def create_issue_api(
     request: Request,
     description: str = Form(""),
     title: str = Form(""),
+    files: list[UploadFile] = File(default=[]),
     user: Optional[str] = Depends(get_current_user)
 ) -> dict:
     """Create a new issue via the web UI.
 
     Creates a new issue with the default starting stage.
     If no title is provided, one is auto-generated from the description.
+    Accepts optional file attachments.
     """
     from agenttree.issues import Priority
 
@@ -1292,6 +1302,30 @@ async def create_issue_api(
     if not title:
         title = "(untitled)"
 
+    # Validate and read attachments
+    attachments: list[tuple[str, bytes]] = []
+    for file in files:
+        if not file.filename:
+            continue
+
+        # Check file extension
+        ext = Path(file.filename).suffix.lower()
+        if ext not in ALLOWED_ATTACHMENT_EXTENSIONS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"File type '{ext}' not allowed. Allowed types: {', '.join(sorted(ALLOWED_ATTACHMENT_EXTENSIONS))}"
+            )
+
+        # Read and check size
+        content = await file.read()
+        if len(content) > MAX_ATTACHMENT_SIZE:
+            raise HTTPException(
+                status_code=400,
+                detail=f"File '{file.filename}' exceeds maximum size of 10MB"
+            )
+
+        attachments.append((file.filename, content))
+
     import asyncio
     from agenttree.api import start_agent
 
@@ -1300,6 +1334,7 @@ async def create_issue_api(
             title=title,
             priority=Priority.MEDIUM,
             problem=description,
+            attachments=attachments if attachments else None,
         )
 
         # Auto-start agent for the new issue
@@ -1312,6 +1347,46 @@ async def create_issue_api(
         return {"ok": True, "issue_id": issue.id, "title": issue.title}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/issues/{issue_id}/attachments/{filename:path}")
+async def get_attachment(
+    issue_id: str,
+    filename: str,
+    user: Optional[str] = Depends(get_current_user)
+) -> FileResponse:
+    """Serve an attachment file for an issue.
+
+    Used to display images in markdown previews and allow file downloads.
+    """
+    from agenttree.issues import get_issue_dir
+
+    # Normalize issue ID
+    issue_id_normalized = issue_id.lstrip("0") or "0"
+
+    # Get issue directory
+    issue_dir = get_issue_dir(issue_id_normalized)
+    if not issue_dir:
+        raise HTTPException(status_code=404, detail=f"Issue {issue_id} not found")
+
+    # Build attachment path
+    attachments_dir = issue_dir / "attachments"
+    file_path = attachments_dir / filename
+
+    # Security: Ensure the resolved path is within the attachments directory
+    try:
+        resolved_path = file_path.resolve()
+        resolved_attachments = attachments_dir.resolve()
+        if not str(resolved_path).startswith(str(resolved_attachments)):
+            raise HTTPException(status_code=400, detail="Invalid filename")
+    except (ValueError, OSError):
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    # Check if file exists
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(status_code=404, detail=f"Attachment '{filename}' not found")
+
+    return FileResponse(file_path)
 
 
 @app.delete("/api/issues/{issue_id}/dependencies/{dep_id}")
