@@ -173,7 +173,10 @@ flows:
                   expect: empty
                   on_fail: address_review
           address_review:
-            redirect_only: true
+            post_completion:
+              - rollback:
+                  to: code_review
+                  max_rollbacks: 5
           wrapup:
             pre_completion:
               - wrapup_verified: review.md
@@ -208,18 +211,10 @@ flows:
             output: independent_review_response.md
             skill: address_independent.md
             post_start:
-              - version_file:
-                  file: independent_review.md
-              - version_file:
-                  file: independent_review_response.md
               - create_file:
                   template: independent_review_response.md
                   dest: independent_review_response.md
             pre_completion:
-              - loop_check:
-                  count_files: independent_review_v*.md
-                  max: 5
-                  error: "Review loop exceeded 5 iterations. Escalating to human review."
               - section_check:
                   file: independent_review_response.md
                   section: Changes Made
@@ -227,6 +222,7 @@ flows:
             post_completion:
               - rollback:
                   to: independent_review
+                  max_rollbacks: 5
 
           ui_review:
             condition: "{{ needs_ui_review }}"
