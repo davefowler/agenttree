@@ -113,6 +113,88 @@ def cleanup_container(runtime: str, container_name: str) -> None:
             pass
 
 
+def cleanup_containers_by_prefix(runtime: str, prefix: str) -> int:
+    """Stop and delete all containers whose name starts with prefix.
+
+    Used to clean up old timestamp-suffixed containers before starting a new one.
+    Avoids the leak where each restart creates a new container but never cleans up
+    the previous one.
+
+    Args:
+        runtime: Container runtime command
+        prefix: Container name prefix to match (e.g., "agenttree-agenttree-042")
+
+    Returns:
+        Number of containers cleaned up
+    """
+    import json
+
+    try:
+        if runtime == "container":
+            result = subprocess.run(
+                ["container", "list", "--format", "json"],
+                capture_output=True, text=True, timeout=30,
+            )
+            if result.returncode != 0:
+                return 0
+            containers = json.loads(result.stdout) if result.stdout.strip() else []
+            matching = [
+                c.get("name", "") for c in containers
+                if c.get("name", "").startswith(prefix)
+            ]
+        else:
+            result = subprocess.run(
+                [runtime, "ps", "-a", "--filter", f"name={prefix}", "--format", "{{.Names}}"],
+                capture_output=True, text=True, timeout=10,
+            )
+            matching = [n.strip() for n in result.stdout.splitlines() if n.strip()]
+
+        cleaned = 0
+        for name in matching:
+            _run_stop(runtime, name, timeout=10)
+            _run_delete(runtime, name, timeout=10)
+            cleaned += 1
+        return cleaned
+
+    except (subprocess.TimeoutExpired, subprocess.SubprocessError, json.JSONDecodeError):
+        return 0
+
+
+def is_container_running(container_name: str) -> bool:
+    """Check if a container with the given name is currently running.
+
+    Args:
+        container_name: Container name to check
+
+    Returns:
+        True if a running container with that name exists
+    """
+    import json
+
+    runtime = get_container_runtime()
+    if not runtime.runtime:
+        return False
+
+    try:
+        if runtime.runtime == "container":
+            result = subprocess.run(
+                ["container", "inspect", container_name],
+                capture_output=True, text=True, timeout=10,
+            )
+            if result.returncode != 0:
+                return False
+            data = json.loads(result.stdout) if result.stdout.strip() else []
+            return any(c.get("status") == "running" for c in data)
+        else:
+            result = subprocess.run(
+                [runtime.runtime, "inspect", "-f", "{{.State.Running}}", container_name],
+                capture_output=True, text=True, timeout=10,
+            )
+            return result.returncode == 0 and "true" in result.stdout.lower()
+    except (subprocess.TimeoutExpired, subprocess.SubprocessError, json.JSONDecodeError):
+        return False
+
+
 def get_git_worktree_info(worktree_path: Path) -> Tuple[Optional[Path], Optional[Path]]:
     """Get git directory info for a worktree.
 

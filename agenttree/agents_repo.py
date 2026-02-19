@@ -250,21 +250,24 @@ def check_manager_stages(agents_dir: Path) -> int:
                     # Hook wants to redirect (e.g., merge conflict → developer)
                     from agenttree.issues import update_issue_stage
                     update_issue_stage(issue.id, redirect.target)
-                    # Notify agent about the redirect so it knows to act
                     from agenttree.api import _notify_agent
                     _notify_agent(
                         issue.id,
                         f"Issue redirected to {redirect.target}: {redirect.reason}. Run `agenttree next` for instructions.",
                         interrupt=True,
                     )
-                    # Clear the flag since we redirected away from this stage
                     data["manager_hooks_executed"] = None
                     with open(issue_yaml, "w") as f:
                         yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
                     processed += 1
                     continue
+                except Exception as e:
+                    # Hook failed — mark as done to prevent infinite retry loop.
+                    # Retrying every heartbeat won't fix structural errors.
+                    log.warning("Manager hooks failed for issue %s at %s: %s",
+                                data.get("id", "?"), stage, e)
 
-                # Hooks succeeded - mark as fully executed
+                # Mark as fully executed (success or non-retryable failure)
                 data["manager_hooks_executed"] = stage
                 with open(issue_yaml, "w") as f:
                     yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
@@ -428,27 +431,21 @@ def check_custom_agent_stages(agents_dir: Path) -> int:
 
             # Check if in a custom agent stage
             if stage in custom_agent_stages:
-                # Get the stage config to find the host name
-                stage_config = config.get_stage(stage)
-                if not stage_config:
-                    continue
-
-                role_name = stage_config.role
+                # Get the effective role for this dot path
+                role_name = config.role_for(stage)
                 agent_config = config.get_custom_role(role_name)
                 if not agent_config:
                     console.print(f"[yellow]Custom role '{role_name}' not found in config[/yellow]")
                     continue
 
-                # Check if custom agent is already running (runtime check, not cached marker)
+                # Check if custom agent is already running
                 issue_id = data.get("id", "")
                 custom_agent_session = f"{config.project}-{role_name}-{issue_id}"
 
                 from agenttree.tmux import is_claude_running, send_message
 
                 if session_exists(custom_agent_session):
-                    # Session exists - check if Claude is still running
                     if is_claude_running(custom_agent_session):
-                        # Ping the agent to let it know about the stage
                         result = send_message(
                             custom_agent_session,
                             f"Stage is now {stage}. Run `agenttree next` for your instructions."
@@ -457,18 +454,26 @@ def check_custom_agent_stages(agents_dir: Path) -> int:
                             console.print(f"[dim]Pinged {role_name} agent for issue #{issue_id}[/dim]")
                         continue
                     else:
-                        # Session exists but Claude exited - need to restart
-                        console.print(f"[yellow]{role_name} agent session exists but Claude exited, restarting...[/yellow]")
-                        # Fall through to spawn logic below
+                        # Claude exited — force restart (kills old container + session)
+                        console.print(f"[yellow]{role_name} agent for issue #{issue_id} exited, restarting...[/yellow]")
+                        needs_force = True
+                else:
+                    # No tmux session — force if orphaned container exists
+                    from agenttree.container import is_container_running
+                    container_name = config.get_issue_container_name(issue_id)
+                    if is_container_running(container_name):
+                        console.print(f"[yellow]Orphaned container for issue #{issue_id}, cleaning up...[/yellow]")
+                        needs_force = True
+                    else:
+                        needs_force = False
 
                 issue = Issue(**data)
                 console.print(f"[cyan]Starting {role_name} agent for issue #{issue.id} at stage {stage}...[/cyan]")
 
-                # Use api to spawn the agent
                 try:
                     from agenttree.api import start_agent
 
-                    start_agent(issue.id, host=role_name, skip_preflight=True, quiet=True)
+                    start_agent(issue.id, host=role_name, skip_preflight=True, quiet=True, force=needs_force)
                     console.print(f"[green]✓ Started {role_name} agent for issue #{issue.id}[/green]")
                     spawned += 1
                 except Exception as e:
