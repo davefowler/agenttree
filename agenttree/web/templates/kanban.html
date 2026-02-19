@@ -45,8 +45,11 @@
 
     <div class="kanban-board">
         {% for stage in stages %}
-        <div class="kanban-column" data-stage="{{ stage }}">
+        <div class="kanban-column" data-stage="{{ stage }}" data-group="{{ stage.split('.')[0] }}">
             <div class="column-header">
+                {% if '.' in stage %}
+                <span class="column-group">{{ stage.split('.')[0] }}</span>
+                {% endif %}
                 <span>{{ stage | stage_name }}</span>
                 <span class="column-count">{{ board.stages[stage]|length }}</span>
             </div>
@@ -60,28 +63,14 @@
         </div>
         {% endfor %}
 
-        <!-- Mini dropzones for hidden columns and backlog -->
+        <!-- Mini dropzones for parking-lot stages when hidden -->
         <div class="mini-dropzones" id="mini-dropzones">
-            <div class="mini-dropzone" data-stage="backlog" id="mini-backlog">
-                <span class="dropzone-label">Backlog</span>
-                <span class="dropzone-count" id="backlog-count">0</span>
+            {% for stage in parking_lot_stages %}
+            <div class="mini-dropzone" data-stage="{{ stage }}">
+                <span class="dropzone-label">{{ stage | stage_name }}</span>
+                <span class="dropzone-count">0</span>
             </div>
-            <div class="mini-dropzone" data-stage="accepted" id="mini-accepted">
-                <span class="dropzone-label">Accepted</span>
-                <span class="dropzone-count" id="accepted-count">0</span>
-            </div>
-            <div class="mini-dropzone" data-stage="not_doing" id="mini-not-doing">
-                <span class="dropzone-label">Not Doing</span>
-                <span class="dropzone-count" id="not-doing-count">0</span>
-            </div>
-        </div>
-
-        <!-- Stage indicators for hidden stages in review mode -->
-        <div class="stage-indicator" id="indicator-pre-review" title="Click to view all stages">
-            <span class="indicator-count" id="pre-review-count">0</span>
-        </div>
-        <div class="stage-indicator" id="indicator-pre-impl" title="Click to view all stages">
-            <span class="indicator-count" id="pre-impl-count">0</span>
+            {% endfor %}
         </div>
     </div>
 
@@ -288,92 +277,26 @@
 
         // New issue modal functions are provided by partials/new_issue_modal.html
 
-        // Stage toggle functionality — column data-stage values are top-level stage groups
-        // Review stages: columns whose issues commonly need human review
-        const reviewStages = ['backlog', 'explore', 'implement'];
-        // Pre-review: exploration columns shown as collapsed indicator in review mode
-        const preReviewStages = ['explore'];
-        const preImplStages = ['implement'];
+        // Stage metadata from server (dot paths)
+        const parkingLotStages = {{ parking_lot_stages | tojson }};
+        const humanReviewStages = {{ human_review_stages | tojson }};
 
         function updateMiniDropzones() {
             const miniDropzones = document.getElementById('mini-dropzones');
-            const backlogCol = document.querySelector('.kanban-column[data-stage="backlog"]');
-            const acceptedCol = document.querySelector('.kanban-column[data-stage="accepted"]');
-            const notDoingCol = document.querySelector('.kanban-column[data-stage="not_doing"]');
+            let anyVisible = false;
 
-            const backlogHidden = backlogCol && backlogCol.classList.contains('hidden');
-            const acceptedHidden = acceptedCol && acceptedCol.classList.contains('hidden');
-            const notDoingHidden = notDoingCol && notDoingCol.classList.contains('hidden');
-
-            // Show mini dropzones if any target is hidden
-            if (backlogHidden || acceptedHidden || notDoingHidden) {
-                miniDropzones.classList.add('visible');
-            } else {
-                miniDropzones.classList.remove('visible');
-            }
-
-            // Show/hide individual mini dropzones
-            document.getElementById('mini-backlog').style.display = backlogHidden ? 'block' : 'none';
-            document.getElementById('mini-accepted').style.display = acceptedHidden ? 'block' : 'none';
-            document.getElementById('mini-not-doing').style.display = notDoingHidden ? 'block' : 'none';
-
-            // Update counts
-            if (backlogCol) {
-                document.getElementById('backlog-count').textContent = backlogCol.querySelectorAll('.issue-item').length;
-            }
-            if (acceptedCol) {
-                document.getElementById('accepted-count').textContent = acceptedCol.querySelectorAll('.issue-item').length;
-            }
-            if (notDoingCol) {
-                document.getElementById('not-doing-count').textContent = notDoingCol.querySelectorAll('.issue-item').length;
-            }
-        }
-
-        function updateIndicators() {
-            const currentView = localStorage.getItem('kanbanStageView') || 'review';
-            const preReviewIndicator = document.getElementById('indicator-pre-review');
-            const preImplIndicator = document.getElementById('indicator-pre-impl');
-
-            // Hide indicators if not in review mode
-            if (currentView !== 'review') {
-                preReviewIndicator.classList.remove('visible');
-                preImplIndicator.classList.remove('visible');
-                return;
-            }
-
-            // Count issues in pre-review stages
-            let preReviewCount = 0;
-            preReviewStages.forEach(stage => {
+            miniDropzones.querySelectorAll('.mini-dropzone').forEach(dz => {
+                const stage = dz.dataset.stage;
                 const col = document.querySelector(`.kanban-column[data-stage="${stage}"]`);
-                if (col) {
-                    preReviewCount += col.querySelectorAll('.issue-item').length;
-                }
+                const isHidden = col && col.classList.contains('hidden');
+                dz.style.display = isHidden ? 'block' : 'none';
+                if (isHidden) anyVisible = true;
+
+                const count = col ? col.querySelectorAll('.issue-item').length : 0;
+                dz.querySelector('.dropzone-count').textContent = count;
             });
 
-            // Count issues in pre-impl stages
-            let preImplCount = 0;
-            preImplStages.forEach(stage => {
-                const col = document.querySelector(`.kanban-column[data-stage="${stage}"]`);
-                if (col) {
-                    preImplCount += col.querySelectorAll('.issue-item').length;
-                }
-            });
-
-            // Update counts and visibility
-            document.getElementById('pre-review-count').textContent = preReviewCount;
-            document.getElementById('pre-impl-count').textContent = preImplCount;
-
-            if (preReviewCount > 0) {
-                preReviewIndicator.classList.add('visible');
-            } else {
-                preReviewIndicator.classList.remove('visible');
-            }
-
-            if (preImplCount > 0) {
-                preImplIndicator.classList.add('visible');
-            } else {
-                preImplIndicator.classList.remove('visible');
-            }
+            miniDropzones.classList.toggle('visible', anyVisible);
         }
 
         // Stage view toggle
@@ -381,15 +304,15 @@
             const columns = document.querySelectorAll('.kanban-column');
             const selectEl = document.getElementById('stage-view-select');
 
-            // Update select dropdown to match current view
             if (selectEl) {
                 selectEl.value = view;
             }
 
             if (view === 'review') {
+                // Show only human review stages (plus parking lot for drag targets)
                 columns.forEach(col => {
                     const stage = col.dataset.stage;
-                    if (reviewStages.includes(stage)) {
+                    if (humanReviewStages.includes(stage)) {
                         col.classList.remove('hidden');
                     } else {
                         col.classList.add('hidden');
@@ -398,39 +321,25 @@
             } else if (view === 'nonempty') {
                 columns.forEach(col => {
                     const cardCount = col.querySelectorAll('.issue-item').length;
-                    if (cardCount > 0) {
-                        col.classList.remove('hidden');
-                    } else {
-                        col.classList.add('hidden');
-                    }
+                    col.classList.toggle('hidden', cardCount === 0);
                 });
             } else {
                 columns.forEach(col => col.classList.remove('hidden'));
             }
 
-            // Save preference to localStorage and URL
             localStorage.setItem('kanbanStageView', view);
             const url = new URL(window.location);
             url.searchParams.set('view', view);
             history.replaceState({}, '', url);
 
-            // Update mini dropzones visibility
             updateMiniDropzones();
-
-            // Update stage indicators visibility
-            updateIndicators();
         };
 
-        // Apply view from URL first, then localStorage, then default to 'review'
+        // Apply view from URL first, then localStorage, then default to 'nonempty'
         const urlParams = new URLSearchParams(window.location.search);
         const urlView = urlParams.get('view');
-        const savedView = urlView || localStorage.getItem('kanbanStageView') || 'review';
+        const savedView = urlView || localStorage.getItem('kanbanStageView') || 'nonempty';
         window.setStageView(savedView);
-
-        // Stage indicator click handlers
-        document.querySelectorAll('.stage-indicator').forEach(indicator => {
-            indicator.addEventListener('click', () => setStageView('all'));
-        });
 
         // Mini dropzone drag/drop handlers
         document.querySelectorAll('.mini-dropzone').forEach(dropzone => {

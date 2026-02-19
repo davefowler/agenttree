@@ -359,32 +359,27 @@ def filter_issues(issues: list[WebIssue], search: Optional[str]) -> list[WebIssu
 def get_kanban_board(search: Optional[str] = None) -> KanbanBoard:
     """Build a kanban board from issues.
 
-    Groups issues by their top-level stage group (the part before the dot).
-    E.g., "explore.define" and "explore.research" both go in the "explore" column.
+    Each column is a dot-path substage (e.g., "explore.define", "implement.code").
+    Stages without substages (e.g., "backlog", "accepted") get a single column.
 
     Args:
         search: Optional search query to filter issues
     """
-    # Initialize columns for all top-level stage groups
-    stage_names = _config.get_stage_names()
-    stages: dict[str, list[WebIssue]] = {name: [] for name in stage_names}
+    dot_paths = _config.get_all_dot_paths()
+    stages: dict[str, list[WebIssue]] = {path: [] for path in dot_paths}
 
-    # Get all issues and organize by stage group (no sync for fast web reads)
     issues = issue_crud.list_issues(sync=False)
     web_issues = [convert_issue_to_web(issue) for issue in issues]
 
-    # Apply search filter if provided
     if search:
         web_issues = filter_issues(web_issues, search)
 
     for web_issue in web_issues:
-        group = _config.stage_group_name(web_issue.stage)
-        if group in stages:
-            stages[group].append(web_issue)
+        if web_issue.stage in stages:
+            stages[web_issue.stage].append(web_issue)
         else:
-            # Unrecognized stage — show in backlog so issues aren't silently hidden
-            logger.warning("Issue #%s has unrecognized stage '%s' (group '%s'), showing in backlog",
-                        web_issue.number, web_issue.stage, group)
+            logger.warning("Issue #%s has unrecognized stage '%s', showing in backlog",
+                        web_issue.number, web_issue.stage)
             if "backlog" in stages:
                 stages["backlog"].append(web_issue)
 
@@ -461,7 +456,9 @@ async def kanban(
         {
             "request": request,
             "board": board,
-            "stages": _config.get_stage_names(),
+            "stages": _config.get_all_dot_paths(),
+            "parking_lot_stages": [p for p in _config.get_all_dot_paths() if _config.is_parking_lot(p)],
+            "human_review_stages": _config.get_human_review_stages(),
             "active_page": "kanban",
             "selected_issue": selected_issue,
             "files": files,

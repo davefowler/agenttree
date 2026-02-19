@@ -1350,7 +1350,8 @@ button[disabled] {
 }
 
 .kanban-column {
-    flex: 0 0 280px;
+    flex: 0 0 220px;
+    min-width: 180px;
     display: flex;
     flex-direction: column;
     max-height: calc(100vh - 90px);
@@ -1363,11 +1364,22 @@ button[disabled] {
 .column-header {
     padding: 10px 0;
     font-weight: 600;
-    font-size: 14px;
+    font-size: 13px;
     color: var(--text-primary);
     display: flex;
     justify-content: space-between;
-    align-items: center;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 2px;
+}
+
+.column-group {
+    font-size: 10px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-tertiary);
+    width: 100%;
 }
 
 .column-count {
