@@ -198,7 +198,7 @@ window.submitNewIssue = async function(event) {
     // Paste handler on textarea
     if (textarea) {
         textarea.addEventListener('paste', function(e) {
-            var items = (e.clipboardData || e.originalEvent.clipboardData).items;
+            var items = e.clipboardData.items;
             for (var i = 0; i < items.length; i++) {
                 if (items[i].type.indexOf('image') !== -1) {
                     var file = items[i].getAsFile();

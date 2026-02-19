@@ -1353,7 +1353,7 @@ async def create_issue_api(
 async def get_attachment(
     issue_id: str,
     filename: str,
-    user: Optional[str] = Depends(get_current_user)
+    user: str | None = Depends(get_current_user)
 ) -> FileResponse:
     """Serve an attachment file for an issue.
 
