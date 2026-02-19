@@ -186,9 +186,11 @@ def start_agent(
         raise AgentAlreadyRunningError(issue.id, host)
 
     # Check if container already running (catches orphaned containers without tmux sessions)
+    # Only check for developer role — custom role agents (review etc.) coexist with
+    # the developer container, and container names don't encode role.
     from agenttree.container import is_container_running
     container_name = config.get_issue_container_name(issue.id)
-    if is_container_running(container_name) and not force:
+    if host == "developer" and is_container_running(container_name) and not force:
         raise AgentAlreadyRunningError(issue.id, host)
 
     # If force, clean up existing container before proceeding
@@ -253,10 +255,11 @@ def start_agent(
             create_worktree(repo_path, worktree_path, names["branch"])
 
     # Get deterministic port using config method
-    port = config.get_port_for_issue(issue.id)
-    if port is None:
+    # Non-developer agents (review etc.) don't serve anything, so port is optional
+    port = config.get_port_for_issue(issue.id) or 0
+    if port == 0 and host == "developer":
         raise AgentStartError(issue.id, f"Could not derive port for issue #{issue.id}")
-    if not quiet:
+    if port and not quiet:
         console.print(f"[dim]Using port: {port} (derived from issue #{issue.id})[/dim]")
 
     # Register agent in state
