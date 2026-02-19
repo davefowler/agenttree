@@ -5,6 +5,7 @@ This module handles CRUD operations for issues stored in _agenttree/issues/.
 
 import logging
 import re
+import time
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
@@ -251,6 +252,42 @@ def get_next_issue_number() -> int:
     return max_num + 1
 
 
+def sanitize_filename(filename: str) -> str:
+    """Sanitize a filename for safe storage.
+
+    Removes path traversal attempts, replaces unsafe characters,
+    and adds a timestamp prefix for uniqueness.
+
+    Args:
+        filename: Original filename from user upload
+
+    Returns:
+        Safe filename with timestamp prefix
+    """
+    # Remove path components (handles both / and \)
+    filename = filename.replace("\\", "/")
+    filename = filename.split("/")[-1]
+
+    # Remove leading dots (hidden files, path traversal)
+    filename = filename.lstrip(".")
+
+    # Replace unsafe characters with underscores
+    unsafe_chars = '<>:"|?*'
+    for char in unsafe_chars:
+        filename = filename.replace(char, "_")
+
+    # Replace spaces with underscores
+    filename = filename.replace(" ", "_")
+
+    # Ensure we have something left
+    if not filename:
+        filename = "attachment"
+
+    # Add timestamp prefix for uniqueness
+    timestamp = int(time.time())
+    return f"{timestamp}_{filename}"
+
+
 def create_issue(
     title: str,
     priority: Priority = Priority.MEDIUM,
@@ -262,6 +299,7 @@ def create_issue(
     solutions: Optional[str] = None,
     dependencies: Optional[list[str]] = None,
     needs_ui_review: bool = False,
+    attachments: list[tuple[str, bytes]] | None = None,
 ) -> Issue:
     """Create a new issue.
 
@@ -276,6 +314,7 @@ def create_issue(
         solutions: Possible solutions text (fills problem.md)
         dependencies: Optional list of issue IDs that must be completed first
         needs_ui_review: If True, ui_review substage will run for this issue
+        attachments: Optional list of (filename, content) tuples to attach
 
     Returns:
         The created Issue object
@@ -376,6 +415,39 @@ def create_issue(
 -
 
 """)
+
+    # Save attachments if provided
+    if attachments:
+        attachments_dir = issue_dir / "attachments"
+        attachments_dir.mkdir(exist_ok=True)
+
+        # Image extensions that should use image markdown syntax
+        image_extensions = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"}
+
+        attachment_lines: list[str] = []
+        for attachment in attachments:
+            filename = attachment[0]
+            file_content = attachment[1]
+            # Sanitize and save the file
+            safe_filename = sanitize_filename(filename)
+            file_path = attachments_dir / safe_filename
+            file_path.write_bytes(file_content)
+
+            # Determine markdown syntax based on file type
+            ext = Path(filename).suffix.lower()
+            relative_path = f"attachments/{safe_filename}"
+
+            if ext in image_extensions:
+                # Image syntax: ![alt](path)
+                attachment_lines.append(f"![{filename}]({relative_path})")
+            else:
+                # Link syntax: [name](path)
+                attachment_lines.append(f"[{filename}]({relative_path})")
+
+        # Append attachments section to problem.md
+        attachments_section = "\n\n## Attachments\n\n" + "\n".join(attachment_lines) + "\n"
+        with open(problem_path, "a") as f:
+            f.write(attachments_section)
 
     # Sync after creating issue
     sync_agents_repo(agents_path, pull_only=False, commit_message=f"Create issue {issue_id}: {title}")
