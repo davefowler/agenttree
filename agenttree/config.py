@@ -271,11 +271,10 @@ class Config(BaseModel):
         expanded_dir = Path(self.worktrees_dir).expanduser()
         return expanded_dir / f"{self.project}-agent-{agent_num}"
 
-    def get_issue_worktree_path(self, issue_id: str, slug: str) -> Path:
+    def get_issue_worktree_path(self, issue_id: str, slug: str = "") -> Path:
         """Get worktree path for an issue-bound agent."""
         expanded_dir = Path(self.worktrees_dir).expanduser()
-        short_slug = slug[:30] if len(slug) > 30 else slug
-        return expanded_dir / f"issue-{issue_id}-{short_slug}"
+        return expanded_dir / f"issue-{issue_id}"
 
     def get_tmux_session_name(self, agent_num: int) -> str:
         """Get tmux session name for a specific agent (legacy numbered agents)."""

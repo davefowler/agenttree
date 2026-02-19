@@ -333,15 +333,14 @@ def get_heartbeat_interval(agents_dir: Path | None = None) -> int:
     
     try:
         config = load_config()
-        raw_config = config.model_dump() if hasattr(config, "model_dump") else {}
+        raw_config = config.model_dump()
         on_config = raw_config.get("on", {})
         heartbeat_config = on_config.get("heartbeat", {})
-        
-        if isinstance(heartbeat_config, dict):
-            return int(heartbeat_config.get("interval_s", 10))
-        
-        # Fall back to refresh_interval for backwards compatibility
-        return getattr(config, "refresh_interval", 10)
-        
+
+        if isinstance(heartbeat_config, dict) and "interval_s" in heartbeat_config:
+            return int(heartbeat_config["interval_s"])
+
+        return config.refresh_interval
+
     except Exception:
         return 10
