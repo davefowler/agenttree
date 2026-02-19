@@ -38,7 +38,7 @@
                     {% if issue.pr_url %}
                     <span><a href="{{ issue.pr_url }}" target="_blank">PR #{{ issue.pr_number }}</a> (<a href="{{ issue.pr_url }}/files" target="_blank">diff</a>)</span>
                     {% endif %}
-                    {% if issue.port and issue.tmux_active %}
+                    {% if issue.port %}
                     <span><a href="http://localhost:{{ issue.port }}" target="_blank" title="http://localhost:{{ issue.port }}">Dev Server :{{ issue.port }}</a></span>
                     {% endif %}
                     {% if issue.dependencies %}
