@@ -423,7 +423,6 @@
         // Apply parking stage visibility based on localStorage
         function applyParkingVisibility() {
             const miniDropzones = document.getElementById('mini-dropzones');
-            let anyCollapsed = false;
 
             PARKING_STAGES.forEach(stageName => {
                 const isExpanded = localStorage.getItem(`kanbanShowParking_${stageName}`) === 'true';
@@ -457,7 +456,6 @@
                     column.classList.add('hidden');
                     miniDropzone.style.display = 'block';
                     headerBtn.style.display = 'none';
-                    anyCollapsed = true;
                     // Update count
                     const countEl = miniDropzone.querySelector('.dropzone-count');
                     if (countEl && column) {
@@ -561,7 +559,7 @@
                                     targetCol.appendChild(draggedCard);
                                     draggedCard.dataset.stage = newStage;
                                 }
-                                updateMiniDropzones();
+                                applyParkingVisibility();
                                 console.log(`Moved issue #${issueNumber} to ${newStage}`);
                             } else {
                                 console.error('Failed to move issue');
