@@ -64,6 +64,12 @@ BASE_DIR = Path(__file__).resolve().parent
 _heartbeat_task: Optional[asyncio.Task] = None
 _heartbeat_count: int = 0
 
+# Dedicated executor for heartbeat so it never competes with request handlers.
+# Heartbeat actions (sync, check_ci, check_stalled) can take 10-15s and would
+# starve asyncio.to_thread() calls in request handlers if sharing the default pool.
+from concurrent.futures import ThreadPoolExecutor
+_heartbeat_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="heartbeat")
+
 
 async def heartbeat_loop(interval: int = 10) -> None:
     """Background task that fires heartbeat events periodically.
@@ -87,9 +93,8 @@ async def heartbeat_loop(interval: int = 10) -> None:
     while True:
         try:
             _heartbeat_count += 1
-            # Run fire_event in executor to avoid blocking event loop
             await asyncio.get_event_loop().run_in_executor(
-                None,
+                _heartbeat_executor,
                 lambda: fire_event(HEARTBEAT, agents_dir, heartbeat_count=_heartbeat_count)
             )
         except Exception as e:
