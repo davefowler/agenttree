@@ -226,30 +226,29 @@ def check_manager_stages(agents_dir: Path) -> int:
 
         try:
             data = safe_yaml_load(issue_yaml)
+            issue = Issue(**data)
 
-            stage = data.get("stage", "")
+            if issue.stage not in manager_stages:
+                continue
 
-            # Check if in a manager stage
-            if stage in manager_stages:
-                # Skip if hooks already executed for this stage
-                hooks_executed_stage = data.get("manager_hooks_executed")
-                if hooks_executed_stage == stage:
-                    continue
+            stage = issue.stage
 
-                # Set flag to "running" to prevent re-entry during hook execution
-                # (hooks may call sync_agents_repo which calls check_manager_stages)
-                data["manager_hooks_executed"] = f"{stage}:running"
-                with open(issue_yaml, "w") as f:
-                    yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
+            # Skip if hooks already executed for this stage
+            if issue.manager_hooks_executed == stage:
+                continue
 
-                issue = Issue(**data)
+            # Set flag to "running" to prevent re-entry during hook execution
+            # (hooks may call sync_agents_repo which calls check_manager_stages)
+            data["manager_hooks_executed"] = f"{stage}:running"
+            with open(issue_yaml, "w") as f:
+                yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
 
                 try:
                     execute_enter_hooks(issue, stage)
                 except StageRedirect as redirect:
                     # Hook wants to redirect (e.g., merge conflict → developer)
                     from agenttree.issues import update_issue_stage
-                    update_issue_stage(issue.id, redirect.target)
+                    update_issue_stage(issue.id, redirect.target, _issue_dir=issue_dir)
                     from agenttree.api import _notify_agent
                     _notify_agent(
                         issue.id,
@@ -267,7 +266,7 @@ def check_manager_stages(agents_dir: Path) -> int:
                     # Hook failed — mark as done to prevent infinite retry loop.
                     # Retrying every heartbeat won't fix structural errors.
                     log.warning("Manager hooks failed for issue %s at %s: %s",
-                                data.get("id", "?"), stage, e)
+                                issue.id, stage, e)
 
                 # Re-read yaml — hooks like create_pr update metadata (pr_number etc.)
                 # and writing back stale `data` would clobber those changes.
@@ -299,10 +298,9 @@ def ensure_review_branches(agents_dir: Path) -> int:
     Returns:
         Number of issues processed
     """
-    import yaml
     from rich.console import Console
     from agenttree.hooks import is_running_in_container, ensure_pr_for_issue
-    from agenttree.issues import safe_yaml_load
+    from agenttree.issues import Issue
 
     if is_running_in_container():
         return 0
@@ -323,21 +321,20 @@ def ensure_review_branches(agents_dir: Path) -> int:
             continue
 
         try:
-            data = safe_yaml_load(issue_yaml)
+            issue = Issue.from_yaml(issue_yaml)
 
-            stage = data.get("stage", "")
-            if stage != "implement.review":
+            if issue.stage != "implement.review":
                 continue
 
-            issue_id = data.get("id", "")
-            pr_number = data.get("pr_number")
+            issue_id = issue.id
+            pr_number = issue.pr_number
 
             # 1. No PR yet - create one
             if not pr_number:
                 if ensure_pr_for_issue(issue_id):
                     # Re-read to get updated pr_number
-                    data = safe_yaml_load(issue_yaml)
-                    pr_number = data.get("pr_number")
+                    issue = Issue.from_yaml(issue_yaml)
+                    pr_number = issue.pr_number
                     if pr_number:
                         console.print(f"[green]✓ Created PR #{pr_number} for issue #{issue_id}[/green]")
                         processed += 1
@@ -353,7 +350,7 @@ def ensure_review_branches(agents_dir: Path) -> int:
                     # Conflicts - redirect to developer to rebase
                     console.print(f"[yellow]PR #{pr_number} (issue #{issue_id}) has conflicts with main - redirecting to developer[/yellow]")
                     from agenttree.issues import update_issue_stage
-                    update_issue_stage(issue_id, "implement.code")
+                    update_issue_stage(issue_id, "implement.code", _issue_dir=issue_dir)
                     # Try to notify developer agent
                     try:
                         from agenttree.state import get_active_agent
@@ -415,7 +412,6 @@ def check_custom_agent_stages(agents_dir: Path) -> int:
     import yaml
     from rich.console import Console
     from agenttree.tmux import session_exists
-    from agenttree.issues import safe_yaml_load
     console = Console()
 
     spawned = 0
@@ -430,76 +426,76 @@ def check_custom_agent_stages(agents_dir: Path) -> int:
 
         try:
             data = safe_yaml_load(issue_yaml)
+            issue = Issue(**data)
 
-            stage = data.get("stage", "")
+            if issue.stage not in custom_agent_stages:
+                continue
 
-            # Check if in a custom agent stage
-            if stage in custom_agent_stages:
-                # Re-entry guard: skip if we're already spawning/spawned for this stage
-                spawned_stage = data.get("agent_ensured")
-                if spawned_stage == stage or spawned_stage == f"{stage}:starting":
+            stage = issue.stage
+
+            # Re-entry guard: skip if we're already spawning/spawned for this stage
+            if issue.agent_ensured == stage or issue.agent_ensured == f"{stage}:starting":
+                continue
+
+            role_name = config.role_for(stage)
+            agent_config = config.get_custom_role(role_name)
+            if not agent_config:
+                console.print(f"[yellow]Custom role '{role_name}' not found in config[/yellow]")
+                continue
+
+            issue_id = issue.id
+            custom_agent_session = f"{config.project}-{role_name}-{issue_id}"
+
+            from agenttree.tmux import is_claude_running, send_message
+
+            if session_exists(custom_agent_session):
+                if is_claude_running(custom_agent_session):
+                    result = send_message(
+                        custom_agent_session,
+                        f"Stage is now {stage}. Run `agenttree next` for your instructions."
+                    )
+                    if result == "sent":
+                        console.print(f"[dim]Pinged {role_name} agent for issue #{issue_id}[/dim]")
+                    # Mark as spawned (in case it wasn't already)
+                    if issue.agent_ensured != stage:
+                        data["agent_ensured"] = stage
+                        with open(issue_yaml, "w") as f:
+                            yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
                     continue
-
-                role_name = config.role_for(stage)
-                agent_config = config.get_custom_role(role_name)
-                if not agent_config:
-                    console.print(f"[yellow]Custom role '{role_name}' not found in config[/yellow]")
-                    continue
-
-                issue_id = data.get("id", "")
-                custom_agent_session = f"{config.project}-{role_name}-{issue_id}"
-
-                from agenttree.tmux import is_claude_running, send_message
-
-                if session_exists(custom_agent_session):
-                    if is_claude_running(custom_agent_session):
-                        result = send_message(
-                            custom_agent_session,
-                            f"Stage is now {stage}. Run `agenttree next` for your instructions."
-                        )
-                        if result == "sent":
-                            console.print(f"[dim]Pinged {role_name} agent for issue #{issue_id}[/dim]")
-                        # Mark as spawned (in case it wasn't already)
-                        if spawned_stage != stage:
-                            data["agent_ensured"] = stage
-                            with open(issue_yaml, "w") as f:
-                                yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
-                        continue
-                    else:
-                        console.print(f"[yellow]{role_name} agent for issue #{issue_id} exited, restarting...[/yellow]")
-                        needs_force = True
                 else:
-                    from agenttree.container import is_container_running
-                    container_name = config.get_issue_container_name(issue_id)
-                    if is_container_running(container_name):
-                        console.print(f"[yellow]Orphaned container for issue #{issue_id}, cleaning up...[/yellow]")
-                        needs_force = True
-                    else:
-                        needs_force = False
+                    console.print(f"[yellow]{role_name} agent for issue #{issue_id} exited, restarting...[/yellow]")
+                    needs_force = True
+            else:
+                from agenttree.container import is_container_running
+                container_name = config.get_issue_container_name(issue_id)
+                if is_container_running(container_name):
+                    console.print(f"[yellow]Orphaned container for issue #{issue_id}, cleaning up...[/yellow]")
+                    needs_force = True
+                else:
+                    needs_force = False
 
-                # Set guard BEFORE the slow start_agent call to prevent re-entry
-                data["agent_ensured"] = f"{stage}:starting"
-                with open(issue_yaml, "w") as f:
-                    yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
+            # Set guard BEFORE the slow start_agent call to prevent re-entry
+            data["agent_ensured"] = f"{stage}:starting"
+            with open(issue_yaml, "w") as f:
+                yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
 
-                issue = Issue(**data)
-                console.print(f"[cyan]Starting {role_name} agent for issue #{issue.id} at stage {stage}...[/cyan]")
+            console.print(f"[cyan]Starting {role_name} agent for issue #{issue.id} at stage {stage}...[/cyan]")
 
-                try:
-                    from agenttree.api import start_agent
+            try:
+                from agenttree.api import start_agent
 
-                    start_agent(issue.id, host=role_name, skip_preflight=True, quiet=True, force=needs_force)
-                    data["agent_ensured"] = stage
-                    console.print(f"[green]✓ Started {role_name} agent for issue #{issue.id}[/green]")
-                    spawned += 1
-                except Exception as e:
-                    # Clear guard so next heartbeat can retry
-                    data["agent_ensured"] = None
-                    console.print(f"[red]Failed to start {role_name} agent for issue #{issue.id}[/red]")
-                    console.print(f"[dim]{str(e)[:200]}[/dim]")
+                start_agent(issue.id, host=role_name, skip_preflight=True, quiet=True, force=needs_force)
+                data["agent_ensured"] = stage
+                console.print(f"[green]✓ Started {role_name} agent for issue #{issue.id}[/green]")
+                spawned += 1
+            except Exception as e:
+                # Clear guard so next heartbeat can retry
+                data["agent_ensured"] = None
+                console.print(f"[red]Failed to start {role_name} agent for issue #{issue.id}[/red]")
+                console.print(f"[dim]{str(e)[:200]}[/dim]")
 
-                with open(issue_yaml, "w") as f:
-                    yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
+            with open(issue_yaml, "w") as f:
+                yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
 
         except Exception as e:
             from rich.console import Console
@@ -508,57 +504,6 @@ def check_custom_agent_stages(agents_dir: Path) -> int:
 
     return spawned
 
-
-def _update_issue_stage_direct(yaml_path: Path, data: dict, new_stage: str) -> None:
-    """Update issue stage directly without triggering sync (to avoid recursion).
-
-    Used by check_merged_prs to avoid infinite loop since update_issue_stage
-    calls sync_agents_repo which calls check_merged_prs.
-
-    Args:
-        yaml_path: Path to issue.yaml
-        data: Issue data dict
-        new_stage: Target stage dot path (e.g., "implement.code")
-    """
-    from datetime import datetime, timezone
-    import yaml as yaml_module
-
-    # Validate stage exists in config
-    from agenttree.config import load_config
-    try:
-        config = load_config()
-        group = config.stage_group_name(new_stage)
-        if group not in config.get_stage_names():
-            log.warning("Stage '%s' (group '%s') does not exist in config — "
-                        "issue may become invisible on kanban board", new_stage, group)
-    except (FileNotFoundError, ValueError, yaml_module.YAMLError) as e:
-        log.debug("Stage validation skipped (config unavailable): %s", e)
-
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    old_stage = data.get("stage")
-    data["stage"] = new_stage
-    data.pop("substage", None)
-    data["updated"] = now
-
-    # Clear ci_escalated flag when moving out of implement.review
-    if old_stage == "implement.review" and new_stage != "implement.review":
-        data["ci_escalated"] = False
-
-    # Clear ci_notified when entering ci_wait so new CI runs get detected
-    if new_stage == "implement.ci_wait":
-        data.pop("ci_notified", None)
-
-    # Add history entry
-    if "history" not in data:
-        data["history"] = []
-    data["history"].append({
-        "stage": new_stage,
-        "timestamp": now,
-        "agent": None,
-    })
-
-    with open(yaml_path, "w") as f:
-        yaml_module.dump(data, f, default_flow_style=False, sort_keys=False)
 
 
 def check_merged_prs(agents_dir: Path) -> int:
@@ -590,10 +535,9 @@ def check_merged_prs(agents_dir: Path) -> int:
         return 0
 
     import json
-    import yaml
     from rich.console import Console
     from agenttree.config import load_config
-    from agenttree.issues import safe_yaml_load
+    from agenttree.issues import Issue
 
     console = Console()
     config = load_config()
@@ -612,21 +556,17 @@ def check_merged_prs(agents_dir: Path) -> int:
             continue
 
         try:
-            data = safe_yaml_load(issue_yaml)
+            issue = Issue.from_yaml(issue_yaml)
 
-            # Skip issues already in terminal/parking-lot stages
-            stage = data.get("stage", "")
-            if stage in parking_lot_stages:
+            if issue.stage in parking_lot_stages:
                 continue
 
-            # Only check issues that have a PR
-            pr_number = data.get("pr_number")
-            if not pr_number:
+            if not issue.pr_number:
                 continue
 
-            issue_id = data.get("id", "")
-            if not issue_id:
-                continue
+            issue_id = issue.id
+            pr_number = issue.pr_number
+            stage = issue.stage
 
             # Check PR status via gh CLI
             result = subprocess.run(
@@ -648,21 +588,22 @@ def check_merged_prs(agents_dir: Path) -> int:
                 # Note: This skips knowledge_base stage (can't run it — PR is
                 # already merged and the agent may not be running).
                 console.print(f"[green]PR #{pr_number} was merged externally (issue was at {stage}), advancing issue #{issue_id} to accepted[/green]")
-                _update_issue_stage_direct(issue_yaml, data, "accepted")
+                from agenttree.issues import update_issue_stage
+                updated = update_issue_stage(issue_id, "accepted", skip_sync=True, _issue_dir=issue_dir)
                 issues_advanced += 1
-                from agenttree.hooks import cleanup_issue_agent, check_and_start_blocked_issues
-                from agenttree.issues import Issue
-                issue = Issue(**data)
-                cleanup_issue_agent(issue)
-                check_and_start_blocked_issues(issue)
+                if updated:
+                    from agenttree.hooks import cleanup_issue_agent, check_and_start_blocked_issues
+                    cleanup_issue_agent(updated)
+                    check_and_start_blocked_issues(updated)
             elif pr_state == "CLOSED":
                 # PR was closed without merging - advance to not_doing
                 console.print(f"[yellow]PR #{pr_number} was closed without merge (issue was at {stage}), advancing issue #{issue_id} to not_doing[/yellow]")
-                _update_issue_stage_direct(issue_yaml, data, "not_doing")
+                from agenttree.issues import update_issue_stage
+                updated = update_issue_stage(issue_id, "not_doing", skip_sync=True, _issue_dir=issue_dir)
                 issues_advanced += 1
-                from agenttree.hooks import cleanup_issue_agent
-                from agenttree.issues import Issue
-                cleanup_issue_agent(Issue(**data))
+                if updated:
+                    from agenttree.hooks import cleanup_issue_agent
+                    cleanup_issue_agent(updated)
 
         except subprocess.TimeoutExpired:
             console.print(f"[yellow]Timeout checking PR status[/yellow]")
@@ -705,7 +646,7 @@ def check_ci_status(agents_dir: Path) -> int:
     from agenttree.state import get_active_agent
     from agenttree.config import load_config
     from agenttree.tmux import TmuxManager
-    from agenttree.issues import safe_yaml_load
+    from agenttree.issues import Issue
 
     console = Console()
     issues_notified = 0
@@ -719,23 +660,18 @@ def check_ci_status(agents_dir: Path) -> int:
             continue
 
         try:
-            data = safe_yaml_load(issue_yaml)
+            issue = Issue.from_yaml(issue_yaml)
 
-            stage = data.get("stage", "")
-            # Handle both ci_wait and review stages
-            if stage not in ("implement.ci_wait", "implement.review"):
+            if issue.stage not in ("implement.ci_wait", "implement.review"):
                 continue
-            pr_number = data.get("pr_number")
-            if not pr_number:
+            if not issue.pr_number:
                 continue
-
-            # Skip if already notified for this CI run
-            if data.get("ci_notified"):
+            if issue.ci_notified:
                 continue
 
-            issue_id = data.get("id", "")
-            if not issue_id:
-                continue
+            issue_id = issue.id
+            pr_number = issue.pr_number
+            stage = issue.stage
 
             # Check CI status
             checks = get_pr_checks(pr_number)
@@ -760,7 +696,8 @@ def check_ci_status(agents_dir: Path) -> int:
                 if stage == "implement.ci_wait":
                     # Advance ci_wait → review and notify agent
                     console.print(f"[green]CI passed for issue #{issue_id}, advancing to review[/green]")
-                    _update_issue_stage_direct(issue_yaml, data, "implement.review")
+                    from agenttree.issues import update_issue_stage
+                    update_issue_stage(issue_id, "implement.review", skip_sync=True, _issue_dir=issue_dir)
 
                     # Notify agent that CI passed (best-effort)
                     from agenttree.api import _notify_agent
@@ -816,12 +753,11 @@ def check_ci_status(agents_dir: Path) -> int:
             feedback_file = issue_dir / "ci_feedback.md"
 
             # Count how many times CI has already bounced this issue back
-            history = data.get("history", [])
             ci_stages = ("implement.review", "implement.ci_wait")
             ci_bounce_count = sum(
-                1 for i, entry in enumerate(history)
-                if entry.get("stage") == "implement.debug"
-                and i > 0 and history[i - 1].get("stage") in ci_stages
+                1 for i, entry in enumerate(issue.history)
+                if entry.stage == "implement.debug"
+                and i > 0 and issue.history[i - 1].stage in ci_stages
             )
 
             max_ci_bounces = 3
@@ -832,8 +768,8 @@ def check_ci_status(agents_dir: Path) -> int:
                 feedback_file.write_text(feedback_content)
 
                 console.print(f"[red]CI failed {ci_bounce_count}x for issue #{issue_id} — escalating to human review[/red]")
-                data["ci_escalated"] = True
-                _update_issue_stage_direct(issue_yaml, data, "implement.review")
+                from agenttree.issues import update_issue_stage
+                update_issue_stage(issue_id, "implement.review", skip_sync=True, ci_escalated=True, _issue_dir=issue_dir)
                 issues_notified += 1
                 continue
 
@@ -843,7 +779,8 @@ def check_ci_status(agents_dir: Path) -> int:
             console.print(f"[yellow]CI failed for PR #{pr_number} (attempt {ci_bounce_count + 1}/{max_ci_bounces}), notifying issue #{issue_id}[/yellow]")
 
             # Transition issue back to implement.debug stage for CI fix
-            _update_issue_stage_direct(issue_yaml, data, "implement.debug")
+            from agenttree.issues import update_issue_stage
+            update_issue_stage(issue_id, "implement.debug", skip_sync=True, _issue_dir=issue_dir)
             console.print(f"[yellow]Issue #{issue_id} moved back to implement.debug stage for CI fix[/yellow]")
 
             # Ensure agent is running and notify it
@@ -908,9 +845,8 @@ def push_pending_branches(agents_dir: Path) -> int:
     if not issues_dir.exists():
         return 0
 
-    import yaml
     from rich.console import Console
-    from agenttree.issues import safe_yaml_load
+    from agenttree.issues import Issue
     console = Console()
 
     branches_pushed = 0
@@ -924,16 +860,14 @@ def push_pending_branches(agents_dir: Path) -> int:
             continue
 
         try:
-            data = safe_yaml_load(issue_yaml)
+            issue = Issue.from_yaml(issue_yaml)
 
-            issue_id = data.get("id", "")
-            branch = data.get("branch")
-            worktree_dir = data.get("worktree_dir")
-
-            if not branch or not worktree_dir:
+            if not issue.branch or not issue.worktree_dir:
                 continue
 
-            worktree_path = Path(worktree_dir)
+            issue_id = issue.id
+            branch = issue.branch
+            worktree_path = Path(issue.worktree_dir)
             if not worktree_path.exists():
                 continue
 

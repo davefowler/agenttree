@@ -102,41 +102,20 @@ class TestUpdateHookState:
         """State should be created for new hooks."""
         from agenttree.manager_hooks import update_hook_state
 
-        state = {}
+        state: dict = {}
         update_hook_state("new_hook", state, success=True)
 
         assert "new_hook" in state
-        assert state["new_hook"]["run_count"] == 1
-        assert state["new_hook"]["last_success"] is True
         assert "last_run_at" in state["new_hook"]
 
-    def test_increments_run_count(self):
-        """Run count should increment on each run."""
+    def test_updates_last_run_at(self):
+        """last_run_at should update on each run."""
         from agenttree.manager_hooks import update_hook_state
 
-        state = {"existing_hook": {"run_count": 5}}
+        state: dict = {"existing_hook": {"last_run_at": "2024-01-01T00:00:00Z"}}
         update_hook_state("existing_hook", state, success=True)
 
-        assert state["existing_hook"]["run_count"] == 6
-
-    def test_records_error_on_failure(self):
-        """Error should be recorded on failed runs."""
-        from agenttree.manager_hooks import update_hook_state
-
-        state = {}
-        update_hook_state("failed_hook", state, success=False, error="Connection failed")
-
-        assert state["failed_hook"]["last_success"] is False
-        assert state["failed_hook"]["last_error"] == "Connection failed"
-
-    def test_clears_error_on_success(self):
-        """Error should be cleared on successful run."""
-        from agenttree.manager_hooks import update_hook_state
-
-        state = {"hook": {"last_error": "Previous error"}}
-        update_hook_state("hook", state, success=True)
-
-        assert "last_error" not in state["hook"]
+        assert state["existing_hook"]["last_run_at"] != "2024-01-01T00:00:00Z"
 
 
 class TestRunHook:
@@ -204,15 +183,14 @@ class TestLoadSaveHookState:
         """Should create state file with YAML content."""
         from agenttree.hooks import save_hook_state, load_hook_state
 
-        state = {"test_hook": {"run_count": 3}, "_sync_count": 10}
+        state = {"test_hook": {"last_run_at": "2024-01-01T00:00:00Z"}}
         save_hook_state(tmp_path, state)
 
         state_file = tmp_path / ".heartbeat_state.yaml"
         assert state_file.exists()
 
         loaded = load_hook_state(tmp_path)
-        assert loaded["test_hook"]["run_count"] == 3
-        assert loaded["_sync_count"] == 10
+        assert loaded["test_hook"]["last_run_at"] == "2024-01-01T00:00:00Z"
 
 
 class TestRunPostControllerHooks:
@@ -270,8 +248,8 @@ class TestRunPostControllerHooks:
                 # Command should NOT have been called due to rate limit
                 mock_run.assert_not_called()
 
-    def test_increments_sync_count(self, tmp_path):
-        """Should increment sync count on each run."""
+    def test_runs_multiple_times_without_error(self, tmp_path):
+        """Should run multiple times without error."""
         from agenttree.manager_hooks import run_post_manager_hooks, load_sync_hook_state
 
         (tmp_path / "issues").mkdir()
@@ -281,9 +259,10 @@ class TestRunPostControllerHooks:
             mock_cfg.model_dump.return_value = {"manager_hooks": {"post_sync": []}}
             mock_config.return_value = mock_cfg
 
-            # Run twice
+            # Run twice — should not error
             run_post_manager_hooks(tmp_path)
             run_post_manager_hooks(tmp_path)
 
+            # State file should exist
             state = load_sync_hook_state(tmp_path)
-            assert state["_sync_count"] == 2
+            assert isinstance(state, dict)

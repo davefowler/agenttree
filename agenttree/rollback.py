@@ -43,26 +43,22 @@ def execute_rollback(
     from datetime import datetime, timezone
     from agenttree.state import get_active_agent, unregister_agent
     from agenttree.config import load_config
-    from agenttree.issues import get_issue, get_issue_dir, delete_session
+    from agenttree.issues import Issue, get_issue_dir, delete_session
     import shutil
-    import yaml as pyyaml
 
     # Normalize issue ID
     issue_id_normalized = issue_id.lstrip("0") or "0"
-    issue = get_issue(issue_id_normalized)
+    issue = Issue.get(issue_id_normalized)
     if not issue:
         console.print(f"[red]Issue {issue_id} not found[/red]")
         return False
 
     # Check max rollbacks limit
     if max_rollbacks is not None:
-        rollbacks_to_target = 0
-        for h in issue.history or []:
-            # Handle both dict (from YAML) and HistoryEntry object (from get_issue)
-            h_type = h.get("type") if isinstance(h, dict) else getattr(h, "type", None)
-            h_stage = h.get("stage") if isinstance(h, dict) else getattr(h, "stage", None)
-            if h_type == "rollback" and h_stage == target_stage:
-                rollbacks_to_target += 1
+        rollbacks_to_target = sum(
+            1 for h in issue.history
+            if h.type == "rollback" and h.stage == target_stage
+        )
         if rollbacks_to_target >= max_rollbacks:
             console.print(
                 f"[red]Review loop exceeded {max_rollbacks} iterations. "
@@ -138,35 +134,14 @@ def execute_rollback(
             console.print(f"[dim]Archived {archived_count} file(s) to archive/rollback_{timestamp}/[/dim]")
 
     # Update issue stage with rollback history entry
-    if issue_dir:
-        yaml_path = issue_dir / "issue.yaml"
-        if yaml_path.exists():
-            with open(yaml_path) as fh:
-                data = pyyaml.safe_load(fh)
-
-            now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-            data["stage"] = target_stage
-            data["updated"] = now
-
-            history_entry = {
-                "stage": target_stage,
-                "timestamp": now,
-                "type": "rollback",
-            }
-            if "history" not in data:
-                data["history"] = []
-            data["history"].append(history_entry)
-
-            # Clear PR metadata
-            if "pr_number" in data:
-                del data["pr_number"]
-            if "pr_url" in data:
-                del data["pr_url"]
-            # Remove legacy substage field if present
-            data.pop("substage", None)
-
-            with open(yaml_path, "w") as fh:
-                pyyaml.dump(data, fh, default_flow_style=False, sort_keys=False)
+    from agenttree.issues import update_issue_stage
+    update_issue_stage(
+        issue_id_normalized,
+        target_stage,
+        skip_sync=skip_sync,
+        history_type="rollback",
+        clear_pr=True,
+    )
 
     # Clear agent session
     delete_session(issue_id_normalized)
@@ -188,12 +163,5 @@ def execute_rollback(
                 )
             except subprocess.CalledProcessError as e:
                 console.print(f"[yellow]Warning: Git reset failed: {e}[/yellow]")
-
-    # Sync changes (unless skipped)
-    if not skip_sync:
-        from agenttree.agents_repo import sync_agents_repo
-        from agenttree.issues import get_agenttree_path
-        agents_path = get_agenttree_path()
-        sync_agents_repo(agents_path, pull_only=False, commit_message=f"Rollback issue {issue_id} to {target_stage}")
 
     return True

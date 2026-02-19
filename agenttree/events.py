@@ -85,22 +85,29 @@ def check_action_rate_limit(
     action_config: dict[str, Any],
     state: dict[str, Any],
     heartbeat_count: int | None = None,
+    sync_count: int | None = None,
 ) -> tuple[bool, str]:
     """Check if a rate-limited action should run.
-    
-    Supports two rate limiting modes:
+
+    Supports rate limiting modes:
     - min_interval_s: Minimum seconds between runs
     - every_n: Only run every Nth heartbeat (count-based)
-    
+    - run_every_n_syncs: Legacy alias for every_n
+
     Args:
         action_name: Identifier for this action
         action_config: Action configuration with optional rate limit settings
         state: State dict with last_run_at timestamps
-        heartbeat_count: Current heartbeat count (for every_n)
-        
+        heartbeat_count: Current heartbeat/sync count (for every_n)
+        sync_count: Legacy alias for heartbeat_count
+
     Returns:
         Tuple of (should_run, reason)
     """
+    # Accept sync_count as alias for heartbeat_count (legacy hooks compatibility)
+    if heartbeat_count is None and sync_count is not None:
+        heartbeat_count = sync_count
+
     action_state = state.get(action_name, {})
     
     # Check time-based rate limit
@@ -138,25 +145,19 @@ def update_action_state(
     error: str | None = None,
 ) -> None:
     """Update action state after running.
-    
+
+    Only persists last_run_at — the sole field used for rate-limit decisions.
+
     Args:
         action_name: Identifier for this action
         state: State dict to update in place
-        success: Whether the action succeeded
-        error: Error message if failed
+        success: Whether the action succeeded (unused, kept for API compat)
+        error: Error message if failed (unused, kept for API compat)
     """
     if action_name not in state:
         state[action_name] = {}
-    
-    action_state = state[action_name]
-    action_state["last_run_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    action_state["run_count"] = action_state.get("run_count", 0) + 1
-    action_state["last_success"] = success
-    
-    if error:
-        action_state["last_error"] = error
-    elif "last_error" in action_state:
-        del action_state["last_error"]
+
+    state[action_name]["last_run_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def parse_action_entry(
@@ -265,11 +266,9 @@ def fire_event(
     # Load state for rate limiting
     state = load_event_state(agents_dir)
     
-    # Increment heartbeat count in state
-    if event == HEARTBEAT:
-        if heartbeat_count is None:
-            heartbeat_count = state.get("_heartbeat_count", 0) + 1
-        state["_heartbeat_count"] = heartbeat_count
+    # Use caller-provided heartbeat count (web app tracks its own)
+    if event == HEARTBEAT and heartbeat_count is None:
+        heartbeat_count = 0
     
     # Execute each action
     for entry in actions:

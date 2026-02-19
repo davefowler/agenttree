@@ -28,7 +28,8 @@ from typing import Any
 
 from rich.console import Console
 
-# Import shared hook infrastructure (still needed for backwards compat)
+# Import shared hook infrastructure — canonical source is events.py,
+# re-exported via hooks.py for backwards compatibility
 from agenttree.hooks import (
     run_hook,
     load_hook_state,
@@ -106,10 +107,7 @@ def run_post_manager_hooks(agents_dir: Path, verbose: bool = False) -> None:
 
     # Load hook state (for rate limiting)
     state = load_hook_state(agents_dir)
-
-    # Increment sync count (used by run_every_n_syncs rate limiting)
-    sync_count = state.get("_sync_count", 0) + 1
-    state["_sync_count"] = sync_count
+    sync_count = 0
 
     # Run each configured hook
     for hook_entry in hooks:

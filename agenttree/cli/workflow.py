@@ -721,10 +721,6 @@ def rollback_issue(
         agenttree rollback 042 plan --yes    # Skip confirmation
         agenttree rollback 042 define --reset-worktree  # Also discard code changes
     """
-    from datetime import datetime, timezone
-    import shutil
-    import yaml as pyyaml
-
     # Block if in container
     if is_running_in_container():
         console.print("[red]Error: 'rollback' cannot be run from inside a container[/red]")
@@ -760,40 +756,29 @@ def rollback_issue(
         console.print("[dim]Rollback is for going backwards in the workflow.[/dim]")
         sys.exit(1)
 
-    # Cannot rollback to redirect_only stages (they're not in normal progression)
-    target_group, _ = config.parse_stage(stage_name)
-    target_stage_config = config.get_stage(target_group)
-    if target_stage_config and target_stage_config.redirect_only:
+    # Cannot rollback to redirect_only stages
+    stage_cfg = config.get_stage(stage_name)
+    if stage_cfg and stage_cfg.redirect_only:
         console.print(f"[red]Cannot rollback to redirect-only stage '{stage_name}'[/red]")
         sys.exit(1)
 
-    # Collect output files from stages after target that are being rolled back
-    stages_to_archive = flow_stages[target_idx + 1 : current_idx + 1]
+    # Show confirmation UI
+    from agenttree.state import get_active_agents_for_issue
+    active_agents = get_active_agents_for_issue(issue_id_normalized)
+    issue_dir = get_issue_dir(issue_id_normalized)
 
-    files_to_archive: list[str] = []
-    for dot_path in stages_to_archive:
-        output = config.output_for(dot_path)
-        if output:
-            files_to_archive.append(output)
-
-    # Determine worktree reset behavior
-    # Auto-reset if rolling back to before any implement stage
+    # Determine worktree reset for display
     implement_paths = [dp for dp in flow_stages if dp.startswith("implement")]
     if implement_paths:
         first_implement_idx = flow_stages.index(implement_paths[0])
         auto_reset = target_idx < first_implement_idx
     else:
         auto_reset = False
-
     should_reset = reset_worktree or (auto_reset and not keep_changes)
 
-    # Check for active agents (all hosts)
-    from agenttree.state import get_active_agents_for_issue
-    active_agents = get_active_agents_for_issue(issue_id_normalized)
-    active_agent = active_agents[0] if active_agents else None  # For worktree reference
-
-    # Show confirmation
-    issue_dir = get_issue_dir(issue_id_normalized)
+    # Collect files to archive (for display)
+    stages_to_archive = flow_stages[target_idx + 1 : current_idx + 1]
+    files_to_archive: list[str] = [out for dp in stages_to_archive if (out := config.output_for(dp))]
 
     console.print(f"\n[bold]Rollback Issue #{issue.id}: {issue.title}[/bold]")
     console.print(f"\n  Current stage: [yellow]{issue.stage}[/yellow]")
@@ -801,16 +786,16 @@ def rollback_issue(
 
     if files_to_archive:
         console.print(f"\n  Files to archive:")
-        for f in files_to_archive:
-            file_path = issue_dir / f if issue_dir else Path(f)
+        for fname in files_to_archive:
+            file_path = issue_dir / fname if issue_dir else Path(fname)
             exists = " (exists)" if file_path.exists() else " (not found)"
-            console.print(f"    - {f}{exists}")
+            console.print(f"    - {fname}{exists}")
 
     if active_agents:
-        console.print(f"\n  [yellow]⚠ {len(active_agents)} active agent(s) will be unregistered[/yellow]")
+        console.print(f"\n  [yellow]{len(active_agents)} active agent(s) will be unregistered[/yellow]")
 
     if should_reset:
-        console.print(f"\n  [yellow]⚠ Worktree will be reset to origin/main[/yellow]")
+        console.print(f"\n  [yellow]Worktree will be reset to origin/main[/yellow]")
     else:
         console.print(f"\n  [dim]Worktree changes will be preserved[/dim]")
 
@@ -822,95 +807,19 @@ def rollback_issue(
             console.print("[yellow]Cancelled[/yellow]")
             return
 
-    # === Execute rollback ===
+    # Delegate to execute_rollback for the actual work
+    from agenttree.rollback import execute_rollback
+    success = execute_rollback(
+        issue_id=issue_id_normalized,
+        target_stage=stage_name,
+        yes=True,
+        reset_worktree=reset_worktree,
+        keep_changes=keep_changes,
+    )
 
-    # 1. Archive output files
-    if issue_dir and files_to_archive:
-        archive_dir = issue_dir / "archive"
-        archive_dir.mkdir(exist_ok=True)
-
-        # Create timestamped subdirectory for this rollback
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        rollback_dir = archive_dir / f"rollback_{timestamp}"
-        rollback_dir.mkdir(exist_ok=True)
-
-        archived_count = 0
-        for filename in files_to_archive:
-            src = issue_dir / filename
-            if src.exists():
-                dst = rollback_dir / filename
-                shutil.move(str(src), str(dst))
-                console.print(f"  [dim]Archived: {filename}[/dim]")
-                archived_count += 1
-
-        if archived_count > 0:
-            console.print(f"[green]✓ Archived {archived_count} file(s) to archive/rollback_{timestamp}/[/green]")
-
-    # 2. Update issue stage with rollback history entry
-    if issue_dir:
-        yaml_path = issue_dir / "issue.yaml"
-        if yaml_path.exists():
-            with open(yaml_path) as fh:
-                data = pyyaml.safe_load(fh)
-
-            # Update stage and substage (first substage of target, or clear)
-            now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-            data["stage"] = stage_name
-            data["updated"] = now
-
-            # Add rollback history entry
-            history_entry = {
-                "stage": stage_name,
-                "timestamp": now,
-                "type": "rollback",
-            }
-            if "history" not in data:
-                data["history"] = []
-            data["history"].append(history_entry)
-
-            # Clear PR metadata (don't close the PR, just clear the reference)
-            if "pr_number" in data:
-                del data["pr_number"]
-            if "pr_url" in data:
-                del data["pr_url"]
-
-            with open(yaml_path, "w") as fh:
-                pyyaml.dump(data, fh, default_flow_style=False, sort_keys=False)
-
-            console.print(f"[green]✓ Issue stage set to {stage_name}[/green]")
-
-    # 3. Clear agent session
-    delete_session(issue_id_normalized)
-    console.print("[green]✓ Cleared agent session[/green]")
-
-    # 4. Unregister all active agents (if any)
-    if active_agents:
-        from agenttree.state import unregister_all_agents_for_issue
-        unregister_all_agents_for_issue(issue_id_normalized)
-        console.print(f"[green]✓ Unregistered {len(active_agents)} active agent(s)[/green]")
-
-    # 5. Reset worktree if requested
-    if should_reset and active_agent:
-        worktree_path = active_agent.worktree
-        if worktree_path.exists():
-            try:
-                subprocess.run(
-                    ["git", "reset", "--hard", "origin/main"],
-                    cwd=worktree_path,
-                    capture_output=True,
-                    check=True,
-                )
-                console.print(f"[green]✓ Reset worktree to origin/main[/green]")
-            except subprocess.CalledProcessError as e:
-                console.print(f"[yellow]Warning: Failed to reset worktree: {e}[/yellow]")
-
-    # 6. Sync changes
-    from agenttree.agents_repo import sync_agents_repo
-    from agenttree.issues import get_agenttree_path
-    agents_path = get_agenttree_path()
-    sync_agents_repo(agents_path, pull_only=False, commit_message=f"Rollback issue {issue_id} to {stage_name}")
-
-    console.print(f"\n[green]✓ Issue #{issue.id} rolled back to {stage_name}[/green]")
-    if active_agent:
+    if success:
+        console.print(f"\n[green]Issue #{issue.id} rolled back to {stage_name}[/green]")
         console.print(f"\n[dim]Restart the agent when ready:[/dim]")
         console.print(f"  agenttree start {issue.id}")
+    else:
+        console.print(f"\n[red]Rollback failed[/red]")
