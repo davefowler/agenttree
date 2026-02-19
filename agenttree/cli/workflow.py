@@ -210,6 +210,14 @@ def stage_next(issue_id: str | None, reassess: bool) -> None:
         mark_session_oriented(issue_id, issue.stage)
         return
 
+    # Block agents from advancing past human_review stages — only `agenttree approve` can do that
+    current_stage_config = config.get_stage(issue.stage)
+    if current_stage_config and current_stage_config.human_review and is_running_in_container():
+        console.print(f"\n[yellow]⏳ Waiting for human review at {issue.stage}[/yellow]")
+        console.print(f"[dim]This stage requires human approval.[/dim]")
+        console.print(f"[dim]Use 'agenttree approve {issue_id}' from the host to advance.[/dim]")
+        return
+
     # Handle --reassess flag for plan revision cycling
     if reassess:
         if issue.stage != "plan.revise":
