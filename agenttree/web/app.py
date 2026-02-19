@@ -1233,23 +1233,25 @@ async def approve_issue(
 @app.post("/api/issues")
 async def create_issue_api(
     request: Request,
-    description: str = Form(""),
+    problem: str = Form(""),
+    solutions: str = Form(""),
     title: str = Form(""),
     user: Optional[str] = Depends(get_current_user)
 ) -> dict:
     """Create a new issue via the web UI.
 
     Creates a new issue with the default starting stage.
-    If no title is provided, one is auto-generated from the description.
+    If no title is provided, one is auto-generated from the problem description.
     """
     from agenttree.issues import Priority
 
-    description = description.strip()
+    problem_text = problem.strip()
+    solutions_text = solutions.strip()
     title = title.strip()
 
-    # Require at least a description
-    if not description:
-        raise HTTPException(status_code=400, detail="Please provide a description")
+    # Require a problem description
+    if not problem_text:
+        raise HTTPException(status_code=400, detail="Please provide a problem description")
 
     # Use placeholder if no title - agent will fill it in during define stage
     if not title:
@@ -1262,7 +1264,8 @@ async def create_issue_api(
         issue = issue_crud.create_issue(
             title=title,
             priority=Priority.MEDIUM,
-            problem=description,
+            problem=problem_text,
+            solutions=solutions_text if solutions_text else None,
         )
 
         # Auto-start agent for the new issue
