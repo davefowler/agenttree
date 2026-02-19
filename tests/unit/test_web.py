@@ -1280,3 +1280,132 @@ class TestFileToStageMapping:
 
         problem_file = files[0]
         assert problem_file["is_passed"] == "false"
+
+
+class TestCreateIssueWithFlow:
+    """Tests for creating issues with flow parameter."""
+
+    @patch("agenttree.api.start_agent")
+    @patch("agenttree.web.app.issue_crud")
+    def test_create_issue_with_flow(self, mock_crud, mock_start, client, mock_issue):
+        """Test creating an issue with explicit flow parameter."""
+        mock_issue.id = "001"
+        mock_issue.title = "(untitled)"
+        mock_crud.create_issue.return_value = mock_issue
+        mock_start.return_value = None
+
+        response = client.post(
+            "/api/issues",
+            data={"description": "Test description", "flow": "quick"}
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["ok"] is True
+        assert data["issue_id"] == "001"
+        mock_crud.create_issue.assert_called_once()
+        call_kwargs = mock_crud.create_issue.call_args[1]
+        assert call_kwargs["flow"] == "quick"
+
+    @patch("agenttree.api.start_agent")
+    @patch("agenttree.web.app.issue_crud")
+    def test_create_issue_default_flow(self, mock_crud, mock_start, client, mock_issue):
+        """Test creating an issue without flow parameter uses default."""
+        mock_issue.id = "002"
+        mock_issue.title = "(untitled)"
+        mock_crud.create_issue.return_value = mock_issue
+        mock_start.return_value = None
+
+        response = client.post(
+            "/api/issues",
+            data={"description": "Test description"}
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["ok"] is True
+        mock_crud.create_issue.assert_called_once()
+        call_kwargs = mock_crud.create_issue.call_args[1]
+        assert call_kwargs["flow"] == "default"
+
+    @patch("agenttree.api.start_agent")
+    @patch("agenttree.web.app.issue_crud")
+    def test_create_issue_empty_flow_uses_default(self, mock_crud, mock_start, client, mock_issue):
+        """Test creating an issue with empty flow parameter uses default."""
+        mock_issue.id = "003"
+        mock_issue.title = "(untitled)"
+        mock_crud.create_issue.return_value = mock_issue
+        mock_start.return_value = None
+
+        response = client.post(
+            "/api/issues",
+            data={"description": "Test description", "flow": ""}
+        )
+
+        assert response.status_code == 200
+        mock_crud.create_issue.assert_called_once()
+        call_kwargs = mock_crud.create_issue.call_args[1]
+        assert call_kwargs["flow"] == "default"
+
+
+class TestFlowsInTemplateContext:
+    """Tests for flows being included in template context."""
+
+    @patch("agenttree.web.app._config")
+    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.app.agent_manager")
+    def test_kanban_includes_flows(self, mock_agent_mgr, mock_crud, mock_config, client):
+        """Test kanban endpoint includes flows in template context."""
+        mock_crud.list_issues.return_value = []
+        mock_agent_mgr.clear_session_cache = Mock()
+        mock_config.flows = {"default": Mock(), "quick": Mock()}
+        mock_config.get_all_dot_paths.return_value = []
+        mock_config.is_parking_lot.return_value = False
+        mock_config.get_human_review_stages.return_value = []
+
+        response = client.get("/kanban")
+
+        assert response.status_code == 200
+        # Check that the response contains the flow names in dropdown options
+        assert b"default" in response.content
+        assert b"quick" in response.content
+
+    @patch("agenttree.web.app._config")
+    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.app.agent_manager")
+    def test_flow_view_includes_flows(self, mock_agent_mgr, mock_crud, mock_config, client):
+        """Test flow view endpoint includes flows in template context."""
+        mock_crud.list_issues.return_value = []
+        mock_agent_mgr.clear_session_cache = Mock()
+        mock_config.flows = {"default": Mock(), "quick": Mock()}
+        mock_config.get_flow_stage_names.return_value = []
+        mock_config.get_parking_lot_stages.return_value = []
+        mock_config.is_parking_lot.return_value = False
+        mock_config.is_human_review.return_value = False
+        mock_config.role_for.return_value = "developer"
+
+        response = client.get("/flow")
+
+        assert response.status_code == 200
+        assert b"default" in response.content
+        assert b"quick" in response.content
+
+    @patch("agenttree.web.app._config")
+    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.app.agent_manager")
+    def test_mobile_includes_flows(self, mock_agent_mgr, mock_crud, mock_config, client):
+        """Test mobile endpoint includes flows in template context."""
+        mock_crud.list_issues.return_value = []
+        mock_agent_mgr.clear_session_cache = Mock()
+        mock_config.flows = {"default": Mock(), "quick": Mock()}
+        mock_config.get_flow_stage_names.return_value = []
+        mock_config.get_parking_lot_stages.return_value = []
+        mock_config.is_parking_lot.return_value = False
+        mock_config.is_human_review.return_value = False
+        mock_config.role_for.return_value = "developer"
+
+        response = client.get("/mobile")
+
+        assert response.status_code == 200
+        assert b"default" in response.content
+        assert b"quick" in response.content

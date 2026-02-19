@@ -489,6 +489,7 @@ async def kanban(
             "search": search or "",
             "current_view": view or "nonempty",
             "rate_limit_warning": rate_limit_warning,
+            "flows": list(_config.flows.keys()),
         }
     )
 
@@ -868,6 +869,7 @@ async def flow(
             "search": search or "",
             "current_sort": sort or "stage",
             "current_filter": filter or "all",
+            "flows": list(_config.flows.keys()),
         }
     )
 
@@ -934,6 +936,7 @@ async def mobile(
             "commits_behind": commits_behind,
             "active_page": "mobile",
             "active_tab": active_tab,
+            "flows": list(_config.flows.keys()),
         }
     )
 
@@ -1272,6 +1275,7 @@ async def create_issue_api(
     request: Request,
     description: str = Form(""),
     title: str = Form(""),
+    flow: str = Form(""),
     user: Optional[str] = Depends(get_current_user)
 ) -> dict:
     """Create a new issue via the web UI.
@@ -1283,6 +1287,7 @@ async def create_issue_api(
 
     description = description.strip()
     title = title.strip()
+    flow = flow.strip()
 
     # Require at least a description
     if not description:
@@ -1300,6 +1305,7 @@ async def create_issue_api(
             title=title,
             priority=Priority.MEDIUM,
             problem=description,
+            flow=flow if flow else "default",
         )
 
         # Auto-start agent for the new issue
