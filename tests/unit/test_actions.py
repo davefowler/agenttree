@@ -246,10 +246,16 @@ class TestCheckStalledAgentsReNotification:
 
         check_stalled_agents(tmp_path, threshold_min=15)
 
-        # Should have notified manager
-        mock_send.assert_called_once()
-        msg = mock_send.call_args[0][1]
-        assert "042" in msg
+        # Should have notified agent (nudge) and manager (stall report)
+        assert mock_send.call_count == 2
+        # First call is to agent
+        agent_call = mock_send.call_args_list[0]
+        assert agent_call[0][0] == "at-042"
+        assert "You appear stalled" in agent_call[0][1]
+        # Second call is to manager
+        mgr_call = mock_send.call_args_list[1]
+        assert mgr_call[0][0] == "mgr"
+        assert "042" in mgr_call[0][1]
 
         # stalled.yaml should have notified_at_minutes
         data = yaml.safe_load((tmp_path / "stalled.yaml").read_text())
@@ -282,8 +288,12 @@ class TestCheckStalledAgentsReNotification:
 
         check_stalled_agents(tmp_path, threshold_min=15)
 
-        # Should NOT have notified (25 - 20 = 5 < 15)
-        mock_send.assert_not_called()
+        # Agent still gets nudged, but manager is NOT re-notified (25 - 20 = 5 < 15)
+        assert mock_send.call_count == 1
+        # Only the agent gets nudged, not the manager
+        agent_call = mock_send.call_args_list[0]
+        assert agent_call[0][0] == "at-042"
+        assert "You appear stalled" in agent_call[0][1]
 
     @patch("agenttree.tmux.send_message", return_value="sent")
     @patch("agenttree.tmux.is_claude_running", return_value=True)
@@ -313,10 +323,16 @@ class TestCheckStalledAgentsReNotification:
 
         check_stalled_agents(tmp_path, threshold_min=15)
 
-        # Should have re-notified
-        mock_send.assert_called_once()
-        msg = mock_send.call_args[0][1]
-        assert "STILL STALLED" in msg
+        # Should have notified agent (nudge) and manager (re-notification)
+        assert mock_send.call_count == 2
+        # First call is to agent
+        agent_call = mock_send.call_args_list[0]
+        assert agent_call[0][0] == "at-042"
+        assert "You appear stalled" in agent_call[0][1]
+        # Second call is to manager with STILL STALLED
+        mgr_call = mock_send.call_args_list[1]
+        assert mgr_call[0][0] == "mgr"
+        assert "STILL STALLED" in mgr_call[0][1]
 
         # notified_at_minutes should be updated to ~36
         data = yaml.safe_load((tmp_path / "stalled.yaml").read_text())
