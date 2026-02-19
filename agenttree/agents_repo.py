@@ -250,21 +250,24 @@ def check_manager_stages(agents_dir: Path) -> int:
                     # Hook wants to redirect (e.g., merge conflict → developer)
                     from agenttree.issues import update_issue_stage
                     update_issue_stage(issue.id, redirect.target)
-                    # Notify agent about the redirect so it knows to act
                     from agenttree.api import _notify_agent
                     _notify_agent(
                         issue.id,
                         f"Issue redirected to {redirect.target}: {redirect.reason}. Run `agenttree next` for instructions.",
                         interrupt=True,
                     )
-                    # Clear the flag since we redirected away from this stage
                     data["manager_hooks_executed"] = None
                     with open(issue_yaml, "w") as f:
                         yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
                     processed += 1
                     continue
+                except Exception as e:
+                    # Hook failed — mark as done to prevent infinite retry loop.
+                    # Retrying every heartbeat won't fix structural errors.
+                    log.warning("Manager hooks failed for issue %s at %s: %s",
+                                data.get("id", "?"), stage, e)
 
-                # Hooks succeeded - mark as fully executed
+                # Mark as fully executed (success or non-retryable failure)
                 data["manager_hooks_executed"] = stage
                 with open(issue_yaml, "w") as f:
                     yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
@@ -428,12 +431,8 @@ def check_custom_agent_stages(agents_dir: Path) -> int:
 
             # Check if in a custom agent stage
             if stage in custom_agent_stages:
-                # Get the stage config to find the host name
-                stage_config = config.get_stage(stage)
-                if not stage_config:
-                    continue
-
-                role_name = stage_config.role
+                # Get the effective role for this dot path
+                role_name = config.role_for(stage)
                 agent_config = config.get_custom_role(role_name)
                 if not agent_config:
                     console.print(f"[yellow]Custom role '{role_name}' not found in config[/yellow]")

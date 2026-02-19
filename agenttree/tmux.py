@@ -550,13 +550,10 @@ class TmuxManager:
         suffix = int(time.time()) % 10000
         container_name = f"{base_container_name}-{suffix}"
 
-        # Clean up any existing containers with this base name pattern
+        # Clean up ALL existing containers for this issue (any suffix)
         if container_runtime.runtime:
-            from agenttree.container import cleanup_container
-            # Clean up the exact name (unlikely to exist with timestamp, but safe)
-            cleanup_container(container_runtime.runtime, container_name)
-            # Clean up the old-style name (no suffix) from previous runs
-            cleanup_container(container_runtime.runtime, base_container_name)
+            from agenttree.container import cleanup_containers_by_prefix
+            cleanup_containers_by_prefix(container_runtime.runtime, base_container_name)
 
         container_cmd = container_runtime.build_run_command(
             worktree_path=worktree_path,
