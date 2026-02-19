@@ -543,17 +543,16 @@ class TmuxManager:
             except (ValueError, TypeError):
                 pass  # Skip port exposure if issue_id is not a valid number
 
-        # Generate container name with timestamp suffix to avoid Apple Container
-        # mDNS hostname collisions (hostname lingers after container delete).
-        import time
-        base_container_name = self.config.get_issue_container_name(issue_id)
-        suffix = int(time.time()) % 10000
-        container_name = f"{base_container_name}-{suffix}"
+        # Deterministic container name — one issue, one container, enforced by name.
+        # cleanup_container waits for the old one to fully die before we proceed.
+        container_name = self.config.get_issue_container_name(issue_id)
 
-        # Clean up ALL existing containers for this issue (any suffix)
         if container_runtime.runtime:
-            from agenttree.container import cleanup_containers_by_prefix
-            cleanup_containers_by_prefix(container_runtime.runtime, base_container_name)
+            from agenttree.container import cleanup_container, cleanup_containers_by_prefix
+            # Kill any legacy suffixed containers from before this fix
+            cleanup_containers_by_prefix(container_runtime.runtime, container_name)
+            # Kill the exact-name container (the normal path going forward)
+            cleanup_container(container_runtime.runtime, container_name)
 
         container_cmd = container_runtime.build_run_command(
             worktree_path=worktree_path,
