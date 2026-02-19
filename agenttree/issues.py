@@ -224,7 +224,7 @@ def get_agenttree_path() -> Path:
             if main_agenttree.exists():
                 return main_agenttree
 
-    # Fallback to local path
+    # No worktree .git, use local path
     return local_path
 
 

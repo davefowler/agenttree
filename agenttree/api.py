@@ -204,10 +204,10 @@ def start_agent(
     tmux_manager = TmuxManager(config)
 
     # Get names for this issue and host
-    names = get_issue_names(issue.id, issue.slug, config.project, host)
+    names = get_issue_names(issue.id, config.project, host)
 
     # Create worktree for issue
-    worktree_path = config.get_issue_worktree_path(issue.id, issue.slug)
+    worktree_path = config.get_issue_worktree_path(issue.id)
     worktree_path.parent.mkdir(parents=True, exist_ok=True)
 
     has_merge_conflicts = False
@@ -265,7 +265,6 @@ def start_agent(
     # Register agent in state
     agent = create_agent_for_issue(
         issue_id=issue.id,
-        slug=issue.slug,
         worktree_path=worktree_path,
         port=port,
         project=config.project,
