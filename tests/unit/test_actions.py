@@ -246,10 +246,13 @@ class TestCheckStalledAgentsReNotification:
 
         check_stalled_agents(tmp_path, threshold_min=15)
 
-        # Should have notified manager
-        mock_send.assert_called_once()
-        msg = mock_send.call_args[0][1]
-        assert "042" in msg
+        # Should have notified both agent and manager (2 calls)
+        assert mock_send.call_count == 2
+        # First call is agent nudge, second is manager report
+        agent_msg = mock_send.call_args_list[0][0][1]
+        manager_msg = mock_send.call_args_list[1][0][1]
+        assert "stalled" in agent_msg.lower()
+        assert "042" in manager_msg
 
         # stalled.yaml should have notified_at_minutes
         data = yaml.safe_load((tmp_path / "stalled.yaml").read_text())
@@ -282,8 +285,13 @@ class TestCheckStalledAgentsReNotification:
 
         check_stalled_agents(tmp_path, threshold_min=15)
 
-        # Should NOT have notified (25 - 20 = 5 < 15)
-        mock_send.assert_not_called()
+        # Should have nudged agent but NOT re-notified manager (25 - 20 = 5 < 15)
+        # Only 1 call (agent nudge), not 2 (agent + manager)
+        assert mock_send.call_count == 1
+        # Verify it's the agent nudge, not manager report
+        agent_msg = mock_send.call_args[0][1]
+        assert "stalled" in agent_msg.lower()
+        assert "STALL REPORT" not in agent_msg
 
     @patch("agenttree.tmux.send_message", return_value="sent")
     @patch("agenttree.tmux.is_claude_running", return_value=True)
@@ -313,10 +321,11 @@ class TestCheckStalledAgentsReNotification:
 
         check_stalled_agents(tmp_path, threshold_min=15)
 
-        # Should have re-notified
-        mock_send.assert_called_once()
-        msg = mock_send.call_args[0][1]
-        assert "STILL STALLED" in msg
+        # Should have notified both agent and manager (2 calls)
+        assert mock_send.call_count == 2
+        # Second call is manager report with STILL STALLED
+        manager_msg = mock_send.call_args_list[1][0][1]
+        assert "STILL STALLED" in manager_msg
 
         # notified_at_minutes should be updated to ~36
         data = yaml.safe_load((tmp_path / "stalled.yaml").read_text())
