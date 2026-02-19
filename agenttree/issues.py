@@ -720,7 +720,7 @@ def _write_issue_yaml(yaml_path: Path, data: dict, issue: "Issue") -> None:
     Merges model fields into the original data dict so fields like
     manager_hooks_executed (written by agents_repo) survive round-trips.
     """
-    data.update(issue.model_dump(mode="json"))
+    data.update(issue.model_dump(exclude_none=True, mode="json"))
     with open(yaml_path, "w") as f:
         yaml.dump(data, f, default_flow_style=False, sort_keys=False)
 
