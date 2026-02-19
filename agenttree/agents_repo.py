@@ -243,39 +243,39 @@ def check_manager_stages(agents_dir: Path) -> int:
             with open(issue_yaml, "w") as f:
                 yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
 
-                try:
-                    execute_enter_hooks(issue, stage)
-                except StageRedirect as redirect:
-                    # Hook wants to redirect (e.g., merge conflict → developer)
-                    from agenttree.issues import update_issue_stage
-                    update_issue_stage(issue.id, redirect.target, _issue_dir=issue_dir)
-                    from agenttree.api import _notify_agent
-                    _notify_agent(
-                        issue.id,
-                        f"Issue redirected to {redirect.target}: {redirect.reason}. Run `agenttree next` for instructions.",
-                        interrupt=True,
-                    )
-                    # Re-read yaml (hooks may have modified it) before writing flag
-                    data = safe_yaml_load(issue_yaml)
-                    data["manager_hooks_executed"] = None
-                    with open(issue_yaml, "w") as f:
-                        yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
-                    processed += 1
-                    continue
-                except Exception as e:
-                    # Hook failed — mark as done to prevent infinite retry loop.
-                    # Retrying every heartbeat won't fix structural errors.
-                    log.warning("Manager hooks failed for issue %s at %s: %s",
-                                issue.id, stage, e)
-
-                # Re-read yaml — hooks like create_pr update metadata (pr_number etc.)
-                # and writing back stale `data` would clobber those changes.
+            try:
+                execute_enter_hooks(issue, stage)
+            except StageRedirect as redirect:
+                # Hook wants to redirect (e.g., merge conflict → developer)
+                from agenttree.issues import update_issue_stage
+                update_issue_stage(issue.id, redirect.target, _issue_dir=issue_dir)
+                from agenttree.api import _notify_agent
+                _notify_agent(
+                    issue.id,
+                    f"Issue redirected to {redirect.target}: {redirect.reason}. Run `agenttree next` for instructions.",
+                    interrupt=True,
+                )
+                # Re-read yaml (hooks may have modified it) before writing flag
                 data = safe_yaml_load(issue_yaml)
-                data["manager_hooks_executed"] = stage
+                data["manager_hooks_executed"] = None
                 with open(issue_yaml, "w") as f:
                     yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
-
                 processed += 1
+                continue
+            except Exception as e:
+                # Hook failed — mark as done to prevent infinite retry loop.
+                # Retrying every heartbeat won't fix structural errors.
+                log.warning("Manager hooks failed for issue %s at %s: %s",
+                            issue.id, stage, e)
+
+            # Re-read yaml — hooks like create_pr update metadata (pr_number etc.)
+            # and writing back stale `data` would clobber those changes.
+            data = safe_yaml_load(issue_yaml)
+            data["manager_hooks_executed"] = stage
+            with open(issue_yaml, "w") as f:
+                yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
+
+            processed += 1
 
         except Exception as e:
             log.warning("Error processing manager hooks for %s: %s", issue_yaml.stem, e)

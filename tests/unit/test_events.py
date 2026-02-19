@@ -121,7 +121,7 @@ class TestUpdateActionState:
     def test_creates_state_on_first_run(self) -> None:
         """Creates action state entry on first run."""
         state: dict = {}
-        update_action_state("new_action", state, success=True)
+        update_action_state("new_action", state)
 
         assert "new_action" in state
         assert "last_run_at" in state["new_action"]

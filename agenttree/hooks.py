@@ -1393,15 +1393,15 @@ def run_hook(
             # Built-in validator/action
             errors = run_builtin_validator(context_dir, hook, **kwargs)
 
-        # Update state on success
+        # Update state (tracks last_run_at for rate limiting)
         if hook_state is not None:
-            update_hook_state(hook_key, hook_state, success=len(errors) == 0)
+            update_hook_state(hook_key, hook_state)
 
     except Exception as e:
         error_msg = f"Hook {hook_type} failed: {e}"
         errors = [error_msg]
         if hook_state is not None:
-            update_hook_state(hook_key, hook_state, success=False, error=str(e))
+            update_hook_state(hook_key, hook_state)
 
     # Handle optional flag
     if params.get("optional") and errors:

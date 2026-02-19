@@ -103,7 +103,7 @@ class TestUpdateHookState:
         from agenttree.manager_hooks import update_hook_state
 
         state: dict = {}
-        update_hook_state("new_hook", state, success=True)
+        update_hook_state("new_hook", state)
 
         assert "new_hook" in state
         assert "last_run_at" in state["new_hook"]
@@ -113,7 +113,7 @@ class TestUpdateHookState:
         from agenttree.manager_hooks import update_hook_state
 
         state: dict = {"existing_hook": {"last_run_at": "2024-01-01T00:00:00Z"}}
-        update_hook_state("existing_hook", state, success=True)
+        update_hook_state("existing_hook", state)
 
         assert state["existing_hook"]["last_run_at"] != "2024-01-01T00:00:00Z"
 
@@ -220,14 +220,14 @@ class TestRunPostControllerHooks:
 
     def test_skips_rate_limited_hooks(self, tmp_path):
         """Should skip hooks that don't pass rate limits."""
-        from agenttree.manager_hooks import run_post_manager_hooks, save_sync_hook_state
+        from agenttree.manager_hooks import run_post_manager_hooks, save_hook_state
 
         (tmp_path / "issues").mkdir()
 
         # Pre-seed state with recent run
         now = datetime.now(timezone.utc)
         recent_run = now.strftime("%Y-%m-%dT%H:%M:%SZ")
-        save_sync_hook_state(tmp_path, {
+        save_hook_state(tmp_path, {
             "rate_limited_hook": {"last_run_at": recent_run},
             "_sync_count": 0
         })
@@ -250,7 +250,7 @@ class TestRunPostControllerHooks:
 
     def test_runs_multiple_times_without_error(self, tmp_path):
         """Should run multiple times without error."""
-        from agenttree.manager_hooks import run_post_manager_hooks, load_sync_hook_state
+        from agenttree.manager_hooks import run_post_manager_hooks, load_hook_state
 
         (tmp_path / "issues").mkdir()
 
@@ -264,5 +264,5 @@ class TestRunPostControllerHooks:
             run_post_manager_hooks(tmp_path)
 
             # State file should exist
-            state = load_sync_hook_state(tmp_path)
+            state = load_hook_state(tmp_path)
             assert isinstance(state, dict)

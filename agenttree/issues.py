@@ -830,7 +830,7 @@ def update_issue_stage(
 
     # Clear ci_notified when entering ci_wait so new CI runs get detected
     if stage == "implement.ci_wait":
-        data.pop("ci_notified", None)
+        issue.ci_notified = None
 
     # Pop legacy substage field
     data.pop("substage", None)
