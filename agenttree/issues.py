@@ -697,6 +697,18 @@ def update_issue_stage(
     Returns:
         Updated Issue object or None if not found
     """
+    # Validate stage exists in config to catch renames/typos early
+    from agenttree.config import load_config
+    try:
+        config = load_config()
+        group = config.stage_group_name(stage)
+        stage_names = config.get_stage_names()
+        if group not in stage_names:
+            log.warning("Stage '%s' (group '%s') does not exist in config — "
+                        "issue #%s may become invisible on kanban board", stage, group, issue_id)
+    except (FileNotFoundError, ValueError, yaml.YAMLError) as e:
+        log.debug("Stage validation skipped (config unavailable): %s", e)
+
     # Sync before and after writing
     agents_path = get_agenttree_path()
     sync_agents_repo(agents_path, pull_only=True)

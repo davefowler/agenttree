@@ -790,6 +790,13 @@ class TestUpdateIssueStage:
         result = update_issue_stage("999", "explore.define")
         assert result is None
 
+    def test_update_issue_stage_unrecognized_stage_still_succeeds(self, temp_agenttrees):
+        """Stage transition succeeds even with an unrecognized stage name (logs warning)."""
+        issue = create_issue("Test Issue")
+        updated = update_issue_stage("001", "nonexistent_stage")
+        assert updated is not None
+        assert updated.stage == "nonexistent_stage"
+
 
 class TestLoadSkill:
     """Tests for load_skill function."""

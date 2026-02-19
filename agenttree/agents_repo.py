@@ -497,6 +497,17 @@ def _update_issue_stage_direct(yaml_path: Path, data: dict, new_stage: str) -> N
     from datetime import datetime, timezone
     import yaml as yaml_module
 
+    # Validate stage exists in config
+    from agenttree.config import load_config
+    try:
+        config = load_config()
+        group = config.stage_group_name(new_stage)
+        if group not in config.get_stage_names():
+            log.warning("Stage '%s' (group '%s') does not exist in config — "
+                        "issue may become invisible on kanban board", new_stage, group)
+    except (FileNotFoundError, ValueError, yaml_module.YAMLError) as e:
+        log.debug("Stage validation skipped (config unavailable): %s", e)
+
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     old_stage = data.get("stage")
     data["stage"] = new_stage
