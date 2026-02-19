@@ -31,7 +31,7 @@ class TestLoadSaveEventState:
 
     def test_save_creates_state_file(self, tmp_path: Path) -> None:
         """Save creates state file with provided data."""
-        state = {"sync": {"last_run_at": "2024-01-01T00:00:00Z", "run_count": 5}}
+        state = {"sync": {"last_run_at": "2024-01-01T00:00:00Z"}}
         save_event_state(tmp_path, state)
         
         state_file = tmp_path / ".heartbeat_state.yaml"
@@ -42,7 +42,7 @@ class TestLoadSaveEventState:
 
     def test_load_returns_saved_state(self, tmp_path: Path) -> None:
         """Load returns previously saved state."""
-        original = {"action1": {"run_count": 3}}
+        original = {"action1": {"last_run_at": "2024-01-01T00:00:00Z"}}
         save_event_state(tmp_path, original)
         
         loaded = load_event_state(tmp_path)
@@ -121,33 +121,16 @@ class TestUpdateActionState:
     def test_creates_state_on_first_run(self) -> None:
         """Creates action state entry on first run."""
         state: dict = {}
-        update_action_state("new_action", state, success=True)
-        
+        update_action_state("new_action", state)
+
         assert "new_action" in state
-        assert state["new_action"]["run_count"] == 1
-        assert state["new_action"]["last_success"] is True
         assert "last_run_at" in state["new_action"]
 
-    def test_increments_run_count(self) -> None:
-        """Increments run count on subsequent runs."""
-        state = {"action": {"run_count": 5}}
+    def test_updates_last_run_at(self) -> None:
+        """Updates last_run_at on subsequent runs."""
+        state: dict = {"action": {"last_run_at": "2024-01-01T00:00:00Z"}}
         update_action_state("action", state)
-        assert state["action"]["run_count"] == 6
-
-    def test_records_error_on_failure(self) -> None:
-        """Records error message on failure."""
-        state: dict = {}
-        update_action_state("failing_action", state, success=False, error="Connection timeout")
-        
-        assert state["failing_action"]["last_success"] is False
-        assert state["failing_action"]["last_error"] == "Connection timeout"
-
-    def test_clears_error_on_success(self) -> None:
-        """Clears error on successful run after failure."""
-        state = {"action": {"last_error": "Previous error"}}
-        update_action_state("action", state, success=True)
-        
-        assert "last_error" not in state["action"]
+        assert state["action"]["last_run_at"] != "2024-01-01T00:00:00Z"
 
 
 class TestParseActionEntry:

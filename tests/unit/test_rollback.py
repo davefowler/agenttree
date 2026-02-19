@@ -306,10 +306,10 @@ class TestRollbackValidation:
 
 
 class TestRollbackUpdatesState:
-    """Tests for rollback state updates."""
+    """Tests for rollback state updates (CLI delegates to execute_rollback)."""
 
     def test_updates_stage(self, cli_runner, mock_config, temp_issue_dir):
-        """Should update issue stage after rollback."""
+        """Should call execute_rollback with correct params."""
         from agenttree.cli import main
         from agenttree.issues import Issue
 
@@ -326,20 +326,20 @@ class TestRollbackUpdatesState:
             with patch("agenttree.cli.workflow.get_issue_func", return_value=mock_issue):
                 with patch("agenttree.cli.workflow.is_running_in_container", return_value=False):
                     with patch("agenttree.cli.workflow.get_issue_dir", return_value=temp_issue_dir):
-                        with patch("agenttree.cli.workflow.delete_session"):
-                            with patch("agenttree.agents_repo.sync_agents_repo"):
-                                with patch("agenttree.state.get_active_agent", return_value=None):
-                                    result = cli_runner.invoke(main, ["rollback", "42", "plan.draft", "-y"])
+                        with patch("agenttree.rollback.execute_rollback", return_value=True) as mock_rb:
+                            result = cli_runner.invoke(main, ["rollback", "42", "plan.draft", "-y"])
 
         assert result.exit_code == 0
-        # Check the issue.yaml was updated
-        yaml_path = temp_issue_dir / "issue.yaml"
-        with open(yaml_path) as f:
-            data = yaml.safe_load(f)
-        assert data["stage"] == "plan.draft"
+        mock_rb.assert_called_once_with(
+            issue_id="42",
+            target_stage="plan.draft",
+            yes=True,
+            reset_worktree=False,
+            keep_changes=False,
+        )
 
     def test_clears_pr_metadata(self, cli_runner, mock_config, temp_issue_dir):
-        """Should clear PR metadata when rolling back."""
+        """Should pass correct params when rolling back from implement.review."""
         from agenttree.cli import main
         from agenttree.issues import Issue
 
@@ -354,130 +354,83 @@ class TestRollbackUpdatesState:
             pr_url="https://github.com/org/repo/pull/123",
         )
 
-        # Update the issue.yaml with PR metadata
-        yaml_path = temp_issue_dir / "issue.yaml"
-        with open(yaml_path) as f:
-            data = yaml.safe_load(f)
-        data["stage"] = "implement.review"
-        data["pr_number"] = 123
-        data["pr_url"] = "https://github.com/org/repo/pull/123"
-        with open(yaml_path, "w") as f:
-            yaml.dump(data, f)
-
         with patch("agenttree.cli.workflow.load_config", return_value=mock_config):
             with patch("agenttree.cli.workflow.get_issue_func", return_value=mock_issue):
                 with patch("agenttree.cli.workflow.is_running_in_container", return_value=False):
                     with patch("agenttree.cli.workflow.get_issue_dir", return_value=temp_issue_dir):
-                        with patch("agenttree.cli.workflow.delete_session"):
-                            with patch("agenttree.agents_repo.sync_agents_repo"):
-                                with patch("agenttree.state.get_active_agent", return_value=None):
-                                    result = cli_runner.invoke(main, ["rollback", "42", "implement.code", "-y"])
+                        with patch("agenttree.rollback.execute_rollback", return_value=True) as mock_rb:
+                            result = cli_runner.invoke(main, ["rollback", "42", "implement.code", "-y"])
 
         assert result.exit_code == 0
-        # Check the issue.yaml had PR metadata cleared
-        with open(yaml_path) as f:
-            data = yaml.safe_load(f)
-        assert "pr_number" not in data
-        assert "pr_url" not in data
+        mock_rb.assert_called_once()
 
 
 class TestRollbackHandlesAgent:
     """Tests for agent cleanup during rollback."""
 
     def test_kills_running_agent(self, cli_runner, mock_config, temp_issue_dir):
-        """Should unregister running agent when rolling back."""
+        """Should call execute_rollback (which handles agent cleanup)."""
         from agenttree.cli import main
         from agenttree.issues import Issue
-        from agenttree.state import ActiveAgent
 
         mock_issue = Issue(
             id="42",
             slug="test-issue",
             title="Test",
             stage="implement.code",
-            assigned_agent="1",
             created="2026-01-01T00:00:00Z",
             updated="2026-01-01T00:00:00Z",
         )
-
-        mock_agent = MagicMock(spec=ActiveAgent)
-        mock_agent.tmux_session = "testproject-issue-42"
-        mock_agent.issue_id = "42"
-        mock_agent.worktree = Path("/path/to/worktree")
-
-        agent_unregistered = False
-
-        def capture_unregister(issue_id):
-            nonlocal agent_unregistered
-            agent_unregistered = True
 
         with patch("agenttree.cli.workflow.load_config", return_value=mock_config):
             with patch("agenttree.cli.workflow.get_issue_func", return_value=mock_issue):
                 with patch("agenttree.cli.workflow.is_running_in_container", return_value=False):
                     with patch("agenttree.cli.workflow.get_issue_dir", return_value=temp_issue_dir):
-                        with patch("agenttree.cli.workflow.delete_session"):
-                            with patch("agenttree.agents_repo.sync_agents_repo"):
-                                with patch("agenttree.state.get_active_agents_for_issue", return_value=[mock_agent]):
-                                    with patch("agenttree.state.unregister_all_agents_for_issue", side_effect=capture_unregister):
-                                        result = cli_runner.invoke(main, ["rollback", "42", "explore.research", "-y"])
+                        with patch("agenttree.rollback.execute_rollback", return_value=True) as mock_rb:
+                            result = cli_runner.invoke(main, ["rollback", "42", "explore.research", "-y"])
 
         assert result.exit_code == 0
-        assert agent_unregistered is True
+        # Agent cleanup is handled inside execute_rollback
+        mock_rb.assert_called_once()
 
 
 class TestRollbackWorktreeReset:
     """Tests for worktree reset during rollback."""
 
-    def test_reset_worktree_runs_git_reset(self, cli_runner, mock_config, temp_issue_dir):
-        """With --reset-worktree and active agent, should run git reset --hard."""
+    def test_reset_worktree_passes_flag(self, cli_runner, mock_config, temp_issue_dir):
+        """With --reset-worktree, should pass flag to execute_rollback."""
         from agenttree.cli import main
         from agenttree.issues import Issue
-        from agenttree.state import ActiveAgent
 
         mock_issue = Issue(
             id="42",
             slug="test-issue",
             title="Test",
             stage="implement.code",
-            worktree_dir="/path/to/worktree",
             created="2026-01-01T00:00:00Z",
             updated="2026-01-01T00:00:00Z",
         )
-
-        # Mock active agent with worktree path
-        mock_agent = MagicMock(spec=ActiveAgent)
-        mock_agent.tmux_session = "testproject-issue-42"
-        mock_agent.issue_id = "42"
-        mock_agent.worktree = temp_issue_dir  # Use temp dir as worktree
-
-        git_reset_called = False
-
-        def mock_run(cmd, **kwargs):
-            nonlocal git_reset_called
-            if isinstance(cmd, list) and "git" in cmd and "reset" in cmd:
-                git_reset_called = True
-            result = MagicMock()
-            result.returncode = 0
-            return result
 
         with patch("agenttree.cli.workflow.load_config", return_value=mock_config):
             with patch("agenttree.cli.workflow.get_issue_func", return_value=mock_issue):
                 with patch("agenttree.cli.workflow.is_running_in_container", return_value=False):
                     with patch("agenttree.cli.workflow.get_issue_dir", return_value=temp_issue_dir):
-                        with patch("agenttree.cli.workflow.delete_session"):
-                            with patch("agenttree.agents_repo.sync_agents_repo"):
-                                with patch("agenttree.state.get_active_agents_for_issue", return_value=[mock_agent]):
-                                    with patch("agenttree.state.unregister_all_agents_for_issue"):
-                                        with patch("subprocess.run", side_effect=mock_run):
-                                            result = cli_runner.invoke(
-                                                main, ["rollback", "42", "explore.research", "-y", "--reset-worktree"]
-                                            )
+                        with patch("agenttree.rollback.execute_rollback", return_value=True) as mock_rb:
+                            result = cli_runner.invoke(
+                                main, ["rollback", "42", "explore.research", "-y", "--reset-worktree"]
+                            )
 
         assert result.exit_code == 0
-        assert git_reset_called is True
+        mock_rb.assert_called_once_with(
+            issue_id="42",
+            target_stage="explore.research",
+            yes=True,
+            reset_worktree=True,
+            keep_changes=False,
+        )
 
-    def test_no_reset_without_flag(self, cli_runner, mock_config, temp_issue_dir):
-        """Without --reset-worktree, should not run git reset (for implement stage onwards)."""
+    def test_keep_changes_passes_flag(self, cli_runner, mock_config, temp_issue_dir):
+        """With --keep-changes, should pass flag to execute_rollback."""
         from agenttree.cli import main
         from agenttree.issues import Issue
 
@@ -486,34 +439,25 @@ class TestRollbackWorktreeReset:
             slug="test-issue",
             title="Test",
             stage="implement.code",
-            worktree_dir="/path/to/worktree",
             created="2026-01-01T00:00:00Z",
             updated="2026-01-01T00:00:00Z",
         )
-
-        git_reset_called = False
-
-        def mock_run(cmd, **kwargs):
-            nonlocal git_reset_called
-            if isinstance(cmd, list) and "git" in cmd and "reset" in cmd:
-                git_reset_called = True
-            result = MagicMock()
-            result.returncode = 0
-            return result
 
         with patch("agenttree.cli.workflow.load_config", return_value=mock_config):
             with patch("agenttree.cli.workflow.get_issue_func", return_value=mock_issue):
                 with patch("agenttree.cli.workflow.is_running_in_container", return_value=False):
                     with patch("agenttree.cli.workflow.get_issue_dir", return_value=temp_issue_dir):
-                        with patch("agenttree.cli.workflow.delete_session"):
-                            with patch("agenttree.agents_repo.sync_agents_repo"):
-                                with patch("agenttree.state.get_active_agent", return_value=None):
-                                    with patch("subprocess.run", side_effect=mock_run):
-                                        # Rolling back to plan.draft (before implement) but with --keep-changes
-                                        result = cli_runner.invoke(main, ["rollback", "42", "plan.draft", "-y", "--keep-changes"])
+                        with patch("agenttree.rollback.execute_rollback", return_value=True) as mock_rb:
+                            result = cli_runner.invoke(main, ["rollback", "42", "plan.draft", "-y", "--keep-changes"])
 
-        # With --keep-changes, git reset should not be called even for pre-implement rollback
-        assert git_reset_called is False
+        assert result.exit_code == 0
+        mock_rb.assert_called_once_with(
+            issue_id="42",
+            target_stage="plan.draft",
+            yes=True,
+            reset_worktree=False,
+            keep_changes=True,
+        )
 
 
 class TestRollbackCLIIntegration:

@@ -85,22 +85,29 @@ def check_action_rate_limit(
     action_config: dict[str, Any],
     state: dict[str, Any],
     heartbeat_count: int | None = None,
+    sync_count: int | None = None,
 ) -> tuple[bool, str]:
     """Check if a rate-limited action should run.
-    
-    Supports two rate limiting modes:
+
+    Supports rate limiting modes:
     - min_interval_s: Minimum seconds between runs
     - every_n: Only run every Nth heartbeat (count-based)
-    
+    - run_every_n_syncs: Alias for every_n (used by manager_hooks)
+
     Args:
         action_name: Identifier for this action
         action_config: Action configuration with optional rate limit settings
         state: State dict with last_run_at timestamps
-        heartbeat_count: Current heartbeat count (for every_n)
-        
+        heartbeat_count: Current heartbeat/sync count (for every_n)
+        sync_count: Alias for heartbeat_count (used by manager_hooks callers)
+
     Returns:
         Tuple of (should_run, reason)
     """
+    # Accept sync_count as alias for heartbeat_count (legacy hooks compatibility)
+    if heartbeat_count is None and sync_count is not None:
+        heartbeat_count = sync_count
+
     action_state = state.get(action_name, {})
     
     # Check time-based rate limit
@@ -122,7 +129,7 @@ def check_action_rate_limit(
         if heartbeat_count % every_n != 0:
             return False, f"Skipped: heartbeat #{heartbeat_count} (runs every {every_n})"
     
-    # Legacy: run_every_n_syncs (backwards compatibility)
+    # run_every_n_syncs: alias for every_n (used by manager_hooks)
     run_every_n = action_config.get("run_every_n_syncs")
     if run_every_n and heartbeat_count is not None:
         if heartbeat_count % run_every_n != 0:
@@ -134,29 +141,19 @@ def check_action_rate_limit(
 def update_action_state(
     action_name: str,
     state: dict[str, Any],
-    success: bool = True,
-    error: str | None = None,
 ) -> None:
     """Update action state after running.
-    
+
+    Only persists last_run_at — the sole field used for rate-limit decisions.
+
     Args:
         action_name: Identifier for this action
         state: State dict to update in place
-        success: Whether the action succeeded
-        error: Error message if failed
     """
     if action_name not in state:
         state[action_name] = {}
-    
-    action_state = state[action_name]
-    action_state["last_run_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    action_state["run_count"] = action_state.get("run_count", 0) + 1
-    action_state["last_success"] = success
-    
-    if error:
-        action_state["last_error"] = error
-    elif "last_error" in action_state:
-        del action_state["last_error"]
+
+    state[action_name]["last_run_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def parse_action_entry(
@@ -265,10 +262,10 @@ def fire_event(
     # Load state for rate limiting
     state = load_event_state(agents_dir)
     
-    # Increment heartbeat count in state
-    if event == HEARTBEAT:
-        if heartbeat_count is None:
-            heartbeat_count = state.get("_heartbeat_count", 0) + 1
+    # Use caller-provided heartbeat count (web app tracks its own),
+    # otherwise increment from persisted state
+    if event == HEARTBEAT and heartbeat_count is None:
+        heartbeat_count = state.get("_heartbeat_count", 0) + 1
         state["_heartbeat_count"] = heartbeat_count
     
     # Execute each action
@@ -301,13 +298,13 @@ def fire_event(
                 console.print(f"[dim]Running {action_name}...[/dim]")
             
             action_fn(agents_dir, **action_config)
-            update_action_state(action_name, state, success=True)
+            update_action_state(action_name, state)
             results["actions_run"] += 1
-            
+
         except Exception as e:
             error = f"{action_name} failed: {e}"
             results["errors"].append(error)
-            update_action_state(action_name, state, success=False, error=str(e))
+            update_action_state(action_name, state)
             
             # Check if action is optional
             if action_config.get("optional", False):

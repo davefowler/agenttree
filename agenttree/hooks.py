@@ -419,123 +419,15 @@ COMMON_HOOK_OPTIONS = set(BASE_HOOK_OPTIONS.keys())
 
 
 # =============================================================================
-# Rate Limiting
+# Rate Limiting — delegated to events.py (single source of truth)
 # =============================================================================
 
-def check_rate_limit(
-    hook_name: str,
-    hook_config: Dict[str, Any],
-    state: Dict[str, Any],
-    sync_count: Optional[int] = None,
-) -> tuple[bool, str]:
-    """Check if a rate-limited hook should run.
-
-    All hooks support rate limiting via:
-    - min_interval_s: Minimum seconds between runs
-    - run_every_n_syncs: Only run every Nth sync (requires sync_count)
-
-    Args:
-        hook_name: Identifier for this hook (used for state lookup)
-        hook_config: Hook configuration with optional rate limit settings
-        state: Hook state dict with last_run_at timestamps
-        sync_count: Current sync count (for run_every_n_syncs)
-
-    Returns:
-        Tuple of (should_run, reason)
-    """
-    from datetime import datetime, timezone
-
-    hook_state = state.get(hook_name, {})
-
-    # Check time-based rate limit
-    min_interval = hook_config.get("min_interval_s")
-    if min_interval:
-        last_run = hook_state.get("last_run_at")
-        if last_run:
-            try:
-                last_run_dt = datetime.fromisoformat(last_run.replace("Z", "+00:00"))
-                elapsed = (datetime.now(timezone.utc) - last_run_dt).total_seconds()
-                if elapsed < min_interval:
-                    return False, f"Rate limited: {elapsed:.0f}s < {min_interval}s"
-            except (ValueError, TypeError):
-                pass  # Invalid timestamp, allow run
-
-    # Check count-based rate limit
-    run_every_n = hook_config.get("run_every_n_syncs")
-    if run_every_n and sync_count is not None:
-        if sync_count % run_every_n != 0:
-            return False, f"Skipped: sync #{sync_count} (runs every {run_every_n})"
-
-    return True, "Running"
-
-
-def update_hook_state(
-    hook_name: str,
-    state: Dict[str, Any],
-    success: bool = True,
-    error: Optional[str] = None,
-) -> None:
-    """Update hook state after running.
-
-    Args:
-        hook_name: Identifier for this hook
-        state: State dict to update in place
-        success: Whether the hook succeeded
-        error: Error message if failed
-    """
-    from datetime import datetime, timezone
-
-    if hook_name not in state:
-        state[hook_name] = {}
-
-    hook_state = state[hook_name]
-    hook_state["last_run_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    hook_state["run_count"] = hook_state.get("run_count", 0) + 1
-    hook_state["last_success"] = success
-
-    if error:
-        hook_state["last_error"] = error
-    elif "last_error" in hook_state:
-        del hook_state["last_error"]
-
-
-def load_hook_state(agents_dir: Path) -> Dict[str, Any]:
-    """Load hook state from _agenttree/.heartbeat_state.yaml
-
-    Args:
-        agents_dir: Path to _agenttree directory
-
-    Returns:
-        State dict, empty if file doesn't exist
-    """
-    import yaml
-
-    state_file = agents_dir / ".heartbeat_state.yaml"
-    if state_file.exists():
-        try:
-            with open(state_file) as f:
-                data = yaml.safe_load(f)
-                return data if isinstance(data, dict) else {}
-        except Exception:
-            return {}
-    return {}
-
-
-def save_hook_state(agents_dir: Path, state: Dict[str, Any]) -> None:
-    """Save hook state to _agenttree/.heartbeat_state.yaml
-
-    Args:
-        agents_dir: Path to _agenttree directory
-        state: State dict to save
-    """
-    import yaml
-
-    state_file = agents_dir / ".heartbeat_state.yaml"
-    try:
-        with open(state_file, "w") as f:
-            yaml.dump(state, f, default_flow_style=False, sort_keys=False)
-    except Exception as e:
-        console.print(f"[yellow]Warning: Could not save hook state: {e}[/yellow]")
+from agenttree.events import (
+    check_action_rate_limit as check_rate_limit,
+    update_action_state as update_hook_state,
+    load_event_state as load_hook_state,
+    save_event_state as save_hook_state,
+)
 
 
 # =============================================================================
@@ -1501,15 +1393,15 @@ def run_hook(
             # Built-in validator/action
             errors = run_builtin_validator(context_dir, hook, **kwargs)
 
-        # Update state on success
+        # Update state (tracks last_run_at for rate limiting)
         if hook_state is not None:
-            update_hook_state(hook_key, hook_state, success=len(errors) == 0)
+            update_hook_state(hook_key, hook_state)
 
     except Exception as e:
         error_msg = f"Hook {hook_type} failed: {e}"
         errors = [error_msg]
         if hook_state is not None:
-            update_hook_state(hook_key, hook_state, success=False, error=str(e))
+            update_hook_state(hook_key, hook_state)
 
     # Handle optional flag
     if params.get("optional") and errors:

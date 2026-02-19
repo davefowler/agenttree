@@ -1026,21 +1026,20 @@ class TestRollbackCommand:
             with patch("agenttree.cli.workflow.get_issue_func", return_value=mock_issue):
                 with patch("agenttree.cli.workflow.get_issue_dir", return_value=issue_dir):
                     with patch("agenttree.cli.workflow.is_running_in_container", return_value=False):
-                        with patch("agenttree.state.get_active_agent", return_value=None):
-                            with patch("agenttree.cli.workflow.delete_session"):
-                                with patch("agenttree.agents_repo.sync_agents_repo"):
-                                    with patch("agenttree.issues.get_agenttree_path", return_value=tmp_path):
-                                        result = cli_runner.invoke(main, ["rollback", "42", "explore.research", "--yes"])
+                        with patch("agenttree.rollback.execute_rollback", return_value=True) as mock_rollback:
+                            result = cli_runner.invoke(main, ["rollback", "42", "explore.research", "--yes"])
 
         assert result.exit_code == 0
         assert "rolled back" in result.output.lower()
 
-        # Verify issue.yaml was updated
-        with open(issue_dir / "issue.yaml") as f:
-            updated_data = yaml.safe_load(f)
-        assert updated_data["stage"] == "explore.research"
-        assert len(updated_data["history"]) == 1
-        assert updated_data["history"][0]["type"] == "rollback"
+        # Verify execute_rollback was called with correct args
+        mock_rollback.assert_called_once_with(
+            issue_id="42",
+            target_stage="explore.research",
+            yes=True,
+            reset_worktree=False,
+            keep_changes=False,
+        )
 
     def test_rollback_archives_files(self, cli_runner, mock_config, tmp_path):
         """Should archive output files from rolled back stages."""
@@ -1102,25 +1101,17 @@ class TestRollbackCommand:
             with patch("agenttree.cli.workflow.get_issue_func", return_value=mock_issue):
                 with patch("agenttree.cli.workflow.get_issue_dir", return_value=issue_dir):
                     with patch("agenttree.cli.workflow.is_running_in_container", return_value=False):
-                        with patch("agenttree.state.get_active_agent", return_value=None):
-                            with patch("agenttree.cli.workflow.delete_session"):
-                                with patch("agenttree.agents_repo.sync_agents_repo"):
-                                    with patch("agenttree.issues.get_agenttree_path", return_value=tmp_path):
-                                        result = cli_runner.invoke(main, ["rollback", "42", "explore.research", "--yes"])
+                        with patch("agenttree.rollback.execute_rollback", return_value=True) as mock_rollback:
+                            result = cli_runner.invoke(main, ["rollback", "42", "explore.research", "--yes"])
 
         assert result.exit_code == 0
 
-        # Verify files were moved to archive
-        archive_dirs = list((issue_dir / "archive").iterdir())
-        assert len(archive_dirs) == 1
-        rollback_dir = archive_dirs[0]
-        assert rollback_dir.name.startswith("rollback_")
-        assert (rollback_dir / "spec.md").exists()
-        assert (rollback_dir / "review.md").exists()
+        # Verify execute_rollback was called (archiving is tested in rollback unit tests)
+        mock_rollback.assert_called_once()
 
-        # Verify original files are gone
-        assert not (issue_dir / "spec.md").exists()
-        assert not (issue_dir / "review.md").exists()
+        # Verify the files to archive were displayed in output
+        assert "spec.md" in result.output
+        assert "review.md" in result.output
 
     def test_rollback_with_active_agent(self, cli_runner, mock_config, tmp_path):
         """Should unregister active agent during rollback."""
@@ -1166,14 +1157,12 @@ class TestRollbackCommand:
                 with patch("agenttree.cli.workflow.get_issue_dir", return_value=issue_dir):
                     with patch("agenttree.cli.workflow.is_running_in_container", return_value=False):
                         with patch("agenttree.state.get_active_agents_for_issue", return_value=[mock_agent]):
-                            with patch("agenttree.state.unregister_all_agents_for_issue") as mock_unregister:
-                                with patch("agenttree.cli.workflow.delete_session"):
-                                    with patch("agenttree.agents_repo.sync_agents_repo"):
-                                        with patch("agenttree.issues.get_agenttree_path", return_value=tmp_path):
-                                            result = cli_runner.invoke(main, ["rollback", "42", "explore.research", "--yes"])
+                            with patch("agenttree.rollback.execute_rollback", return_value=True) as mock_rollback:
+                                result = cli_runner.invoke(main, ["rollback", "42", "explore.research", "--yes"])
 
         assert result.exit_code == 0
-        mock_unregister.assert_called_once_with("42")
+        # Verify execute_rollback was called (agent unregistration happens inside execute_rollback)
+        mock_rollback.assert_called_once()
 
 
 class TestManagerCommands:

@@ -19,7 +19,7 @@ DEPRECATION NOTICE:
             - push_pending_branches: {}
             - check_ci_status: { min_interval_s: 60 }
 
-This module now delegates to the event system for backwards compatibility.
+This module delegates to the event system.
 """
 
 import warnings
@@ -28,7 +28,7 @@ from typing import Any
 
 from rich.console import Console
 
-# Import shared hook infrastructure (still needed for backwards compat)
+# Import shared hook infrastructure from hooks.py (delegates to events.py)
 from agenttree.hooks import (
     run_hook,
     load_hook_state,
@@ -106,8 +106,6 @@ def run_post_manager_hooks(agents_dir: Path, verbose: bool = False) -> None:
 
     # Load hook state (for rate limiting)
     state = load_hook_state(agents_dir)
-
-    # Increment sync count (used by run_every_n_syncs rate limiting)
     sync_count = state.get("_sync_count", 0) + 1
     state["_sync_count"] = sync_count
 
@@ -140,13 +138,8 @@ def run_post_manager_hooks(agents_dir: Path, verbose: bool = False) -> None:
     save_hook_state(agents_dir, state)
 
 
-# Re-export for backwards compatibility and testing
-# (these now come from hooks.py)
+# Re-export for testing (canonical source: events.py → hooks.py)
 from agenttree.hooks import (
     check_rate_limit,
     update_hook_state,
 )
-
-# Legacy function aliases
-load_sync_hook_state = load_hook_state
-save_sync_hook_state = save_hook_state

@@ -111,10 +111,10 @@ class HistoryEntry(BaseModel):
 class Issue(BaseModel):
     """An issue in the agenttree workflow."""
     id: str
-    slug: str
-    title: str
-    created: str
-    updated: str
+    slug: str = ""
+    title: str = ""
+    created: str = ""
+    updated: str = ""
 
     stage: str = "explore.define"  # Dot path (e.g., "explore.define", "backlog")
     flow: str = "default"  # Which workflow flow this issue follows
@@ -143,6 +143,44 @@ class Issue(BaseModel):
 
     # Set when CI fails too many times and issue is escalated to human review
     ci_escalated: bool = False
+
+    # Tracks whether CI notification was sent for current PR check run
+    ci_notified: Optional[bool] = None
+
+    # Guard for manager hook re-entry (e.g., "implement.review", "implement.review:running")
+    manager_hooks_executed: Optional[str] = None
+
+    @classmethod
+    def from_yaml(cls, path: Path | str) -> "Issue":
+        """Load an Issue from a YAML file.
+
+        Args:
+            path: Path to issue.yaml file
+
+        Returns:
+            Issue object
+
+        Raises:
+            FileNotFoundError: If file doesn't exist
+            pydantic.ValidationError: If data is invalid
+        """
+        return cls(**safe_yaml_load(Path(path)))
+
+    @classmethod
+    def get(cls, issue_id: str, sync: bool = True) -> Optional["Issue"]:
+        """Get an issue by ID.
+
+        Convenience wrapper around get_issue(). Looks up the issue directory
+        and loads from YAML.
+
+        Args:
+            issue_id: Issue ID (e.g., "001", "42", or "001-fix-login")
+            sync: If True, sync with remote before reading
+
+        Returns:
+            Issue object or None if not found
+        """
+        return get_issue(issue_id, sync=sync)
 
 
 def slugify(text: str) -> str:
@@ -729,6 +767,11 @@ def update_issue_stage(
     issue_id: str,
     stage: str,
     agent: Optional[int] = None,
+    skip_sync: bool = False,
+    history_type: Optional[str] = None,
+    clear_pr: bool = False,
+    ci_escalated: Optional[bool] = None,
+    _issue_dir: Optional[Path] = None,
 ) -> Optional[Issue]:
     """Update an issue's stage.
 
@@ -736,6 +779,13 @@ def update_issue_stage(
         issue_id: Issue ID
         stage: New stage dot path (e.g., "explore.define", "implement.code")
         agent: Agent number making the change (optional)
+        skip_sync: If True, skip syncing to remote (for heartbeat callers
+            that would otherwise cause recursion via sync_agents_repo)
+        history_type: Optional type for history entry (e.g., "rollback")
+        clear_pr: If True, clear pr_number and pr_url
+        ci_escalated: If provided, set ci_escalated flag
+        _issue_dir: If provided, use this directory instead of looking up via
+            get_issue_dir. For internal callers that already know the path.
 
     Returns:
         Updated Issue object or None if not found
@@ -752,11 +802,11 @@ def update_issue_stage(
     except (FileNotFoundError, ValueError, yaml.YAMLError) as e:
         log.debug("Stage validation skipped (config unavailable): %s", e)
 
-    # Sync before and after writing
-    agents_path = get_agenttree_path()
-    sync_agents_repo(agents_path, pull_only=True)
+    if not skip_sync:
+        agents_path = get_agenttree_path()
+        sync_agents_repo(agents_path, pull_only=True)
 
-    issue_dir = get_issue_dir(issue_id)
+    issue_dir = _issue_dir or get_issue_dir(issue_id)
     if not issue_dir:
         return None
 
@@ -765,6 +815,7 @@ def update_issue_stage(
         return None
 
     data = safe_yaml_load(yaml_path)
+    old_stage = data.get("stage")
 
     issue = Issue(**data)
 
@@ -773,18 +824,44 @@ def update_issue_stage(
     issue.stage = stage
     issue.updated = now
 
+    # Clear ci_escalated when leaving implement.review
+    if old_stage == "implement.review" and stage != "implement.review":
+        issue.ci_escalated = False
+
+    # Clear ci_notified when entering ci_wait so new CI runs get detected
+    # (must pop from data dict since _write_issue_yaml uses exclude_none=True,
+    #  so setting to None on the model won't remove from YAML)
+    if stage == "implement.ci_wait":
+        data.pop("ci_notified", None)
+        issue.ci_notified = None
+
+    # Pop legacy substage field
+    data.pop("substage", None)
+
+    # Explicit overrides from caller
+    if ci_escalated is not None:
+        issue.ci_escalated = ci_escalated
+    if clear_pr:
+        # Must pop from data dict since exclude_none=True skips None values
+        data.pop("pr_number", None)
+        data.pop("pr_url", None)
+        issue.pr_number = None
+        issue.pr_url = None
+
     # Add history entry
-    history_entry = HistoryEntry(
-        stage=stage,
-        timestamp=now,
-        agent=agent,
-    )
+    entry_kwargs: dict[str, Any] = {"stage": stage, "timestamp": now}
+    if agent is not None:
+        entry_kwargs["agent"] = agent
+    if history_type is not None:
+        entry_kwargs["type"] = history_type
+    history_entry = HistoryEntry(**entry_kwargs)
     issue.history.append(history_entry)
 
     _write_issue_yaml(yaml_path, data, issue)
 
-    # Sync after updating stage
-    sync_agents_repo(agents_path, pull_only=False, commit_message=f"Update issue {issue_id} to stage {stage}")
+    if not skip_sync:
+        agents_path = get_agenttree_path()
+        sync_agents_repo(agents_path, pull_only=False, commit_message=f"Update issue {issue_id} to stage {stage}")
 
     return issue
 
