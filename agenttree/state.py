@@ -111,8 +111,14 @@ def _build_agent_from_session(
     from agenttree.issues import get_issue
     issue = get_issue(issue_id)
 
-    worktree = Path(issue.worktree_dir) if issue and issue.worktree_dir else Path(f".worktrees/issue-{issue_id}")
-    branch = issue.branch if issue and issue.branch else f"issue-{issue_id}"
+    if not issue:
+        raise RuntimeError(f"Issue {issue_id} not found")
+    if not issue.worktree_dir:
+        raise RuntimeError(f"Issue {issue_id} has no worktree_dir set")
+    if not issue.branch:
+        raise RuntimeError(f"Issue {issue_id} has no branch set")
+    worktree = Path(issue.worktree_dir)
+    branch = issue.branch
 
     # Port is deterministic from issue ID
     config = load_config()

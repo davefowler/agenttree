@@ -2268,25 +2268,11 @@ def ensure_pr_for_issue(issue_id: str) -> bool:
         raise RuntimeError(f"Issue #{issue_id} has no branch")
 
     # Find the worktree for this issue
-    # Prefer stored worktree_dir, fall back to path guessing
-    worktree_path: Optional[Path] = None
-    if issue.worktree_dir:
-        worktree_path = Path(issue.worktree_dir)
-        if not worktree_path.exists():
-            console.print(f"[yellow]Stored worktree_dir {issue.worktree_dir} doesn't exist[/yellow]")
-            worktree_path = None
-
-    # Fall back to guessing the path
-    if not worktree_path:
-        worktree_path = Path.cwd() / ".worktrees" / f"issue-{issue_id.zfill(3)}"
-        if not worktree_path.exists():
-            # Try without leading zeros
-            for p in Path.cwd().glob(f".worktrees/issue-{issue_id}*"):
-                worktree_path = p
-                break
-
-    if not worktree_path or not worktree_path.exists():
-        raise RuntimeError(f"Worktree not found for issue #{issue_id}")
+    if not issue.worktree_dir:
+        raise RuntimeError(f"Issue #{issue_id} has no worktree_dir set")
+    worktree_path = Path(issue.worktree_dir)
+    if not worktree_path.exists():
+        raise RuntimeError(f"Worktree {issue.worktree_dir} does not exist for issue #{issue_id}")
 
     console.print(f"[dim]Creating PR for issue #{issue_id} from host...[/dim]")
 
