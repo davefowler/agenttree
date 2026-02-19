@@ -249,14 +249,10 @@ flows:
 
           # CI wait and human review
           ci_wait:
-            role: manager
             post_start:
               - create_pr:
             pre_completion:
               - ci_check:
-                  timeout: 600
-                  poll_interval: 30
-                host_only: true
 
           review:
             human_review: true

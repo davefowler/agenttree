@@ -544,6 +544,10 @@ def _update_issue_stage_direct(yaml_path: Path, data: dict, new_stage: str) -> N
     if old_stage == "implement.review" and new_stage != "implement.review":
         data["ci_escalated"] = False
 
+    # Clear ci_notified when entering ci_wait so new CI runs get detected
+    if new_stage == "implement.ci_wait":
+        data.pop("ci_notified", None)
+
     # Add history entry
     if "history" not in data:
         data["history"] = []
@@ -721,7 +725,7 @@ def check_ci_status(agents_dir: Path) -> int:
             if not pr_number:
                 continue
 
-            # Skip if already notified for this CI failure
+            # Skip if already notified for this CI run
             if data.get("ci_notified"):
                 continue
 
@@ -750,9 +754,21 @@ def check_ci_status(agents_dir: Path) -> int:
             if not failed_checks:
                 # All checks passed
                 if stage == "implement.ci_wait":
-                    # Advance ci_wait → review
+                    # Advance ci_wait → review and notify agent
                     console.print(f"[green]CI passed for issue #{issue_id}, advancing to review[/green]")
                     _update_issue_stage_direct(issue_yaml, data, "implement.review")
+
+                    # Notify agent that CI passed
+                    config = load_config()
+                    tmux_manager = TmuxManager(config)
+                    agent = get_active_agent(issue_id)
+                    if agent and tmux_manager.is_issue_running(agent.tmux_session):
+                        try:
+                            message = f"CI passed for PR #{pr_number}. Stage advanced to implement.review. Run 'agenttree next' to continue."
+                            tmux_manager.send_message_to_issue(agent.tmux_session, message, interrupt=False)
+                        except Exception:
+                            pass  # Best-effort notification
+
                     issues_notified += 1
                 # For implement.review with passing CI, nothing to do
                 continue

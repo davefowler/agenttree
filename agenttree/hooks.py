@@ -1012,47 +1012,37 @@ def run_builtin_validator(
                     errors.append(f"Error approving PR #{pr_number}: {e}")
 
     elif hook_type == "ci_check":
-        # CI status check hook - waits for CI to complete and reports failures
+        # Quick CI status gate — checks current GH status, no blocking poll
         if pr_number is None:
             errors.append("No PR number available to check CI status")
         else:
-            from agenttree.github import wait_for_ci, get_pr_checks, get_pr_comments, get_check_failed_logs
+            from agenttree.github import get_pr_checks, get_pr_comments, get_check_failed_logs
 
-            timeout = params.get("timeout", 600)
-            poll_interval = params.get("poll_interval", 30)
+            console.print(f"[dim]Checking CI status for PR #{pr_number}...[/dim]")
+            checks = get_pr_checks(pr_number)
 
-            console.print(f"[dim]Waiting for CI checks on PR #{pr_number}...[/dim]")
-            ci_passed = wait_for_ci(pr_number, timeout, poll_interval)
-
-            if ci_passed:
-                console.print(f"[green]✓ CI checks passed for PR #{pr_number}[/green]")
+            if not checks:
+                errors.append(f"No CI checks found for PR #{pr_number}. Wait for CI to start.")
             else:
-                # Get detailed check status
-                checks = get_pr_checks(pr_number)
+                pending = [c for c in checks if c.state == "PENDING"]
+                failed = [c for c in checks if c.state == "FAILURE"]
 
-                # Filter to failed/incomplete checks
-                # state is FAILURE for failed checks, PENDING for still running
-                failed_checks = [
-                    check for check in checks
-                    if check.state in ("FAILURE", "PENDING")
-                ]
-
-                if failed_checks:
-                    # Create ci_feedback.md file in issue directory with logs and comments
+                if pending:
+                    names = ", ".join(c.name for c in pending)
+                    errors.append(f"CI still running: {names}. Wait for completion.")
+                elif failed:
+                    # Write ci_feedback.md with failure details
                     if issue_dir:
-                        feedback_path = issue_dir / "ci_feedback.md"
                         feedback_content = "# CI Failure Report\n\nThe following CI checks failed:\n\n"
-                        for check in failed_checks:
-                            feedback_content += f"- **{check.name}**: {check.state}\n"
+                        for check in checks:
+                            status = "PASSED" if check.state == "SUCCESS" else "FAILED"
+                            feedback_content += f"- **{check.name}**: {status}\n"
 
-                        # Fetch and include failed logs for each failed check
-                        for check in failed_checks:
-                            if check.state == "FAILURE":
-                                logs = get_check_failed_logs(check)
-                                if logs:
-                                    feedback_content += f"\n---\n\n## Failed Logs: {check.name}\n\n```\n{logs}\n```\n"
+                        for check in failed:
+                            logs = get_check_failed_logs(check)
+                            if logs:
+                                feedback_content += f"\n---\n\n## Failed Logs: {check.name}\n\n```\n{logs}\n```\n"
 
-                        # Fetch and include PR review comments
                         comments = get_pr_comments(pr_number)
                         if comments:
                             feedback_content += "\n---\n\n## Review Comments\n\n"
@@ -1060,16 +1050,15 @@ def run_builtin_validator(
                                 feedback_content += f"### From @{comment.author}\n\n"
                                 feedback_content += f"{comment.body}\n\n"
 
-                        feedback_content += "\n---\n\nPlease fix these issues and run `agenttree next` to re-submit for CI.\n"
+                        feedback_content += "\n---\n\nPlease fix these issues and run `agenttree next` to re-submit.\n"
+                        feedback_path = issue_dir / "ci_feedback.md"
                         feedback_path.write_text(feedback_content)
                         console.print(f"[dim]Created {feedback_path}[/dim]")
 
-                    # Build error message
-                    check_names = ", ".join(c.name for c in failed_checks)
+                    check_names = ", ".join(c.name for c in failed)
                     errors.append(f"CI checks failed: {check_names}")
                 else:
-                    # No checks at all, or all passed but timeout
-                    errors.append("CI check timed out or failed")
+                    console.print(f"[green]✓ CI checks passed for PR #{pr_number}[/green]")
 
     # Action types (side effects, don't return errors on success)
     elif hook_type == "create_file":
