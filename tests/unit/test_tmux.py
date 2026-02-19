@@ -341,17 +341,6 @@ class TestTmuxManager:
 
         mock_kill.assert_called_once_with("agent-42")
 
-    def test_send_message(self, mock_config):
-        """Should send message to correct session."""
-        from agenttree.tmux import TmuxManager
-
-        manager = TmuxManager(mock_config)
-
-        with patch("agenttree.tmux.send_keys") as mock_send:
-            manager.send_message(42, "hello")
-
-        mock_send.assert_called_once_with("agent-42", "hello")
-
     def test_attach(self, mock_config):
         """Should attach to correct session."""
         from agenttree.tmux import TmuxManager

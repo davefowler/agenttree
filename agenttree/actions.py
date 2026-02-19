@@ -329,14 +329,6 @@ def check_stalled_agents(
                     "reason": "claude_exited",
                 })
             elif elapsed_min > threshold_min:
-                # Nudge the agent directly before reporting as stalled
-                send_message(
-                    session_name,
-                    f"You appear stalled at {issue.stage} ({elapsed_min}min). "
-                    f"Run `agenttree next` to check your instructions and continue.",
-                    check_claude=True,
-                    interrupt=False,
-                )
                 stalled.append({
                     "id": issue.id,
                     "title": issue.title[:60],
@@ -402,7 +394,18 @@ def check_stalled_agents(
     if not needs_notify_dead and not needs_notify_stalled:
         console.print(f"[dim]Stall state unchanged ({len(dead)} dead, {len(stalled)} stalled) - not re-alerting manager[/dim]")
         return
-    
+
+    # Nudge stalled agents directly (same rate limit as manager notifications)
+    for agent in needs_notify_stalled:
+        agent_session = config.get_issue_tmux_session(agent["id"], "developer")
+        send_message(
+            agent_session,
+            f"You appear stalled at {agent['stage']} ({agent['stalled_minutes']}min). "
+            f"Run `agenttree next` to check your instructions and continue.",
+            check_claude=True,
+            interrupt=False,
+        )
+
     # Ensure manager is running before sending notification
     if not session_exists(manager_session):
         console.print("[yellow]Manager not running, restarting...[/yellow]")
