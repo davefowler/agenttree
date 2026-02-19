@@ -1185,7 +1185,7 @@ class TestManagerCommands:
 
         with patch("agenttree.cli.agents.load_config", return_value=mock_config):
             with patch("agenttree.tmux.session_exists", return_value=True):
-                with patch("agenttree.tmux.send_keys") as mock_send:
+                with patch("agenttree.tmux.send_message", return_value="sent") as mock_send:
                     result = cli_runner.invoke(main, ["send", "0", "hello manager"])
 
         assert result.exit_code == 0

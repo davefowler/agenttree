@@ -324,7 +324,7 @@ def convert_issue_to_web(issue: issue_crud.Issue, load_dependents: bool = False)
         has_worktree=bool(issue.worktree_dir),
         pr_url=issue.pr_url,
         pr_number=issue.pr_number,
-        port=_config.get_port_for_issue(issue.id),  # Dev server port from config
+        port=_config.get_port_for_issue(issue.id),
         created_at=datetime.fromisoformat(issue.created.replace("Z", "+00:00")),
         updated_at=datetime.fromisoformat(issue.updated.replace("Z", "+00:00")),
         dependencies=dependencies,
@@ -413,26 +413,30 @@ async def kanban(
     agent_manager.clear_session_cache()  # Fresh session data per request
     board = await asyncio.to_thread(get_kanban_board, search)
 
-    # If issue param provided, load issue detail for modal
+    # If issue param provided, load issue detail for modal.
+    # All disk I/O runs in a thread to keep the event loop free for polling.
     selected_issue = None
     files: list[dict[str, str]] = []
     commits_ahead = 0
     commits_behind = 0
     default_doc: str | None = None
     if issue:
-        issue_obj = issue_crud.get_issue(issue, sync=False)
-        if issue_obj:
-            selected_issue = convert_issue_to_web(issue_obj, load_dependents=True)
-            # Load all file contents upfront for CSS toggle tabs
-            files = get_issue_files(issue, include_content=True, current_stage=issue_obj.stage)
-            # Get default doc to show for this stage
-            default_doc = get_default_doc(issue_obj.stage)
-            # Get commits ahead/behind for rebase button
-            if selected_issue.tmux_active and issue_obj.worktree_dir:
+        def _load_issue_detail() -> tuple[WebIssue | None, list[dict[str, str]], str | None, int, int]:
+            issue_obj = issue_crud.get_issue(issue, sync=False)
+            if not issue_obj:
+                return None, [], None, 0, 0
+            web_issue = convert_issue_to_web(issue_obj, load_dependents=True)
+            issue_files = get_issue_files(issue, include_content=True, current_stage=issue_obj.stage)
+            doc = get_default_doc(issue_obj.stage)
+            ca, cb = 0, 0
+            if web_issue.tmux_active and issue_obj.worktree_dir:
                 from agenttree.hooks import get_commits_ahead_behind_main
-                commits_ahead, commits_behind = await asyncio.to_thread(
-                    get_commits_ahead_behind_main, issue_obj.worktree_dir
-                )
+                ca, cb = get_commits_ahead_behind_main(issue_obj.worktree_dir)
+            return web_issue, issue_files, doc, ca, cb
+
+        selected_issue, files, default_doc, commits_ahead, commits_behind = (
+            await asyncio.to_thread(_load_issue_detail)
+        )
 
     # Check rate limit status for warning banner
     config = load_config()

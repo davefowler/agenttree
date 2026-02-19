@@ -777,8 +777,16 @@ def _expand_flow_references(
     return expanded
 
 
+_config_cache: dict[Path, tuple[float, "Config"]] = {}
+
+
 def load_config(path: Path | None = None) -> "Config":
-    """Load configuration from .agenttree.yaml file."""
+    """Load configuration from .agenttree.yaml file.
+
+    Results are cached by resolved config file path and invalidated when
+    the file's mtime changes, so repeated calls within the same request
+    (or render pass) only hit the filesystem for a single stat().
+    """
     if path is None:
         path = Path.cwd()
 
@@ -786,6 +794,11 @@ def load_config(path: Path | None = None) -> "Config":
 
     if config_file is None:
         return Config()
+
+    mtime = config_file.stat().st_mtime
+    cached = _config_cache.get(config_file)
+    if cached is not None and cached[0] == mtime:
+        return cached[1]
 
     with open(config_file, "r") as f:
         data = yaml.safe_load(f)
@@ -872,4 +885,6 @@ def load_config(path: Path | None = None) -> "Config":
     # Remove old-style 'stages' if it was a list (backward compat not needed)
     # The new format always has stages extracted from flows
 
-    return Config(**data)
+    result = Config(**data)
+    _config_cache[config_file] = (mtime, result)
+    return result

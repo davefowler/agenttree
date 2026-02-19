@@ -407,7 +407,7 @@ def send_message(
     from agenttree.config import load_config
     from agenttree.issues import get_issue
     from agenttree.state import get_active_agent
-    from agenttree.tmux import TmuxManager, session_exists, send_keys
+    from agenttree.tmux import TmuxManager, session_exists, send_message as tmux_send_message
 
     if not quiet:
         from rich.console import Console
@@ -424,7 +424,11 @@ def send_message(
         session_name = config.get_manager_tmux_session()
         if not session_exists(session_name):
             raise ControllerNotRunningError()
-        send_keys(session_name, message, interrupt=interrupt)
+        result = tmux_send_message(session_name, message, interrupt=interrupt)
+        if result != "sent":
+            if not quiet:
+                console.print(f"[red]Error: Failed to send to controller ({result})[/red]")
+            return "error"
         if not quiet:
             console.print("[green]✓ Sent message to controller[/green]")
         return "sent"
