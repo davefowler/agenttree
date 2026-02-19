@@ -1,4 +1,4 @@
-"""Server commands (web, serve, run, stop-all, stalls)."""
+"""Server commands (run, stop-all, stalls)."""
 
 import subprocess
 import sys
@@ -60,54 +60,6 @@ def _start_manager(
     console.print(f"  agenttree attach 0")
     console.print(f"  agenttree send 0 'message'")
     console.print(f"  agenttree kill 0")
-
-
-@click.command()
-@click.option("--host", default="127.0.0.1", help="Host to bind to")
-@click.option("--port", default=None, type=int, help="Port to bind to (default: from port_range config)")
-@click.option("--config", "config_path", type=click.Path(exists=True), help="Path to config file")
-def web(host: str, port: int | None, config_path: str | None) -> None:
-    """Start the web dashboard for monitoring agents.
-
-    The dashboard provides:
-    - Real-time agent status monitoring
-    - Live tmux output streaming
-    - Task start via web UI
-    - Command execution for agents
-    """
-    from agenttree.web.app import run_server
-
-    if port is None:
-        port = load_config().server_port
-    console.print(f"[cyan]Starting AgentTree dashboard at http://{host}:{port}[/cyan]")
-    console.print("[dim]Press Ctrl+C to stop[/dim]\n")
-
-    config_path_obj = Path(config_path) if config_path else None
-    run_server(host=host, port=port, config_path=config_path_obj)
-
-
-@click.command()
-@click.option("--host", default="127.0.0.1", help="Host to bind to")
-@click.option("--port", default=None, type=int, help="Port to bind to (default: from port_range config)")
-def serve(host: str, port: int | None) -> None:
-    """Start the AgentTree server (runs syncs, spawns agents).
-
-    This is the main manager process that:
-    - Syncs the _agenttree repo periodically
-    - Spawns agents for issues in agent stages
-    - Runs hooks for manager stages
-    - Provides the web dashboard
-
-    Use 'agenttree start' to run this in a tmux session.
-    """
-    from agenttree.web.app import run_server
-
-    if port is None:
-        port = load_config().server_port
-    console.print(f"[cyan]Starting AgentTree server at http://{host}:{port}[/cyan]")
-    console.print("[dim]Press Ctrl+C to stop[/dim]\n")
-
-    run_server(host=host, port=port)
 
 
 @click.command()
