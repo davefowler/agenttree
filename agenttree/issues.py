@@ -3,16 +3,84 @@
 This module handles CRUD operations for issues stored in _agenttree/issues/.
 """
 
+import logging
 import re
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import yaml
 from pydantic import BaseModel, Field
 
 from agenttree.agents_repo import sync_agents_repo
+
+log = logging.getLogger("agenttree.issues")
+
+
+def resolve_conflict_markers(content: str) -> tuple[str, bool]:
+    """Resolve git merge conflict markers in content by keeping local (ours) changes.
+
+    Handles conflict blocks like:
+        <<<<<<< Updated upstream
+        remote content
+        =======
+        local content
+        >>>>>>> Stashed changes
+
+    Args:
+        content: File content that may contain conflict markers
+
+    Returns:
+        Tuple of (resolved_content, had_conflicts)
+    """
+    # Pattern matches conflict blocks and captures local (ours) content
+    # Conflict markers can have various suffixes (HEAD, Updated upstream, Stashed changes, etc.)
+    pattern = re.compile(
+        r'<{7}[^\n]*\n'      # <<<<<<< marker with optional suffix
+        r'(?:.*?\n)*?'       # remote/theirs content (non-greedy)
+        r'={7}\n'            # ======= separator
+        r'((?:.*?\n)*?)'     # local/ours content (captured)
+        r'>{7}[^\n]*\n?',    # >>>>>>> marker with optional suffix
+        re.DOTALL
+    )
+
+    resolved, count = pattern.subn(r'\1', content)
+    return resolved, count > 0
+
+
+def safe_yaml_load(file_path: Path | str) -> Any:
+    """Load YAML file with automatic git conflict marker resolution.
+
+    If the file contains git merge conflict markers (from failed stash pop,
+    merge, etc.), this function automatically resolves them by keeping the
+    local (ours) changes and logs a warning.
+
+    Args:
+        file_path: Path to YAML file
+
+    Returns:
+        Parsed YAML content
+
+    Raises:
+        FileNotFoundError: If file doesn't exist
+        yaml.YAMLError: If YAML parsing fails after conflict resolution
+    """
+    path = Path(file_path)
+    content = path.read_text()
+
+    # Check for and resolve conflict markers
+    resolved_content, had_conflicts = resolve_conflict_markers(content)
+
+    if had_conflicts:
+        log.warning(
+            "Auto-resolved git conflict markers in %s (kept local changes)",
+            path.name
+        )
+        # Write the resolved content back to fix the file
+        path.write_text(resolved_content)
+
+    return yaml.safe_load(resolved_content)
 
 
 class Priority(str, Enum):
@@ -301,8 +369,7 @@ def list_issues(
         if not yaml_path.exists():
             continue
 
-        with open(yaml_path) as f:
-            data = yaml.safe_load(f)
+        data = safe_yaml_load(yaml_path)
 
         try:
             issue = Issue(**data)
@@ -352,8 +419,7 @@ def get_issue(issue_id: str, sync: bool = True) -> Optional[Issue]:
         if dir_id == normalized_id or issue_dir.name == issue_id:
             yaml_path = issue_dir / "issue.yaml"
             if yaml_path.exists():
-                with open(yaml_path) as f:
-                    data = yaml.safe_load(f)
+                data = safe_yaml_load(yaml_path)
                 return Issue(**data)
 
     return None
@@ -435,8 +501,7 @@ def remove_dependency(issue_id: str, dep_id: str) -> Optional[Issue]:
     if not yaml_path.exists():
         return None
 
-    with open(yaml_path) as f:
-        data = yaml.safe_load(f)
+    data = safe_yaml_load(yaml_path)
 
     issue = Issue(**data)
 
@@ -644,8 +709,7 @@ def update_issue_stage(
     if not yaml_path.exists():
         return None
 
-    with open(yaml_path) as f:
-        data = yaml.safe_load(f)
+    data = safe_yaml_load(yaml_path)
 
     issue = Issue(**data)
 
@@ -716,8 +780,7 @@ def update_issue_metadata(
     if not yaml_path.exists():
         return None
 
-    with open(yaml_path) as f:
-        data = yaml.safe_load(f)
+    data = safe_yaml_load(yaml_path)
 
     issue = Issue(**data)
 
@@ -778,8 +841,7 @@ def set_processing(issue_id: str, processing_state: str | None) -> bool:
     if not yaml_path.exists():
         return False
 
-    with open(yaml_path) as f:
-        data = yaml.safe_load(f)
+    data = safe_yaml_load(yaml_path)
 
     data["processing"] = processing_state
 
@@ -1072,9 +1134,8 @@ def get_session(issue_id: str) -> Optional[AgentSession]:
         return None
 
     try:
-        with open(session_path) as f:
-            data = yaml.safe_load(f)
-            return AgentSession(**data)
+        data = safe_yaml_load(session_path)
+        return AgentSession(**data)
     except Exception:
         return None
 
