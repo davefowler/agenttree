@@ -35,6 +35,7 @@
                             <option value="critical" {% if issue.priority == 'critical' %}selected{% endif %}>Critical</option>
                         </select>
                     </span>
+                    <span>Flow: <span class="flow-badge flow-{{ issue.flow }}">{{ issue.flow | capitalize }}</span></span>
                     {% if issue.pr_url %}
                     <span><a href="{{ issue.pr_url }}" target="_blank">PR #{{ issue.pr_number }}</a> (<a href="{{ issue.pr_url }}/files" target="_blank">diff</a>)</span>
                     {% endif %}

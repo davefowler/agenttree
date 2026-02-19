@@ -41,6 +41,7 @@ class Issue(IssueBase):
     dependents: list[int] = Field(default_factory=list)
     processing: str | None = None  # "exit", "enter", or None
     ci_escalated: bool = False
+    flow: str = "default"  # Workflow flow: "default" or "quick"
 
     @property
     def is_review(self) -> bool:

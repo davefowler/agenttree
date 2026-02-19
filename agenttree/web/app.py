@@ -331,6 +331,7 @@ def convert_issue_to_web(issue: issue_crud.Issue, load_dependents: bool = False)
         dependents=dependents,
         processing=issue.processing,
         ci_escalated=issue.ci_escalated,
+        flow=issue.flow,
     )
 
 
