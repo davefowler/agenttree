@@ -51,7 +51,7 @@ __all__ = [
 class IssueNotFoundError(Exception):
     """Raised when the specified issue does not exist."""
 
-    def __init__(self, issue_id: str):
+    def __init__(self, issue_id: int | str):
         self.issue_id = issue_id
         super().__init__(f"Issue #{issue_id} not found")
 
@@ -59,7 +59,7 @@ class IssueNotFoundError(Exception):
 class AgentStartError(Exception):
     """Raised when an agent fails to start."""
 
-    def __init__(self, issue_id: str, reason: str):
+    def __init__(self, issue_id: int | str, reason: str):
         self.issue_id = issue_id
         self.reason = reason
         super().__init__(f"Failed to start agent for issue #{issue_id}: {reason}")
@@ -68,7 +68,7 @@ class AgentStartError(Exception):
 class AgentAlreadyRunningError(Exception):
     """Raised when trying to start an agent that's already running."""
 
-    def __init__(self, issue_id: str, host: str = "developer"):
+    def __init__(self, issue_id: int | str, host: str = "developer"):
         self.issue_id = issue_id
         self.host = host
         super().__init__(
@@ -101,7 +101,7 @@ class ControllerNotRunningError(Exception):
 
 
 def start_agent(
-    issue_id: str,
+    issue_id: int | str,
     *,
     host: str = "developer",
     skip_preflight: bool = False,
@@ -114,7 +114,7 @@ def start_agent(
     Creates a worktree, container, and tmux session for the agent.
 
     Args:
-        issue_id: Issue ID (e.g., "042" or "42")
+        issue_id: Issue ID (int or string like "042")
         host: Agent host type (default: "developer", can be "reviewer" etc.)
         skip_preflight: Skip preflight checks if True
         force: Force restart if agent already running
@@ -133,6 +133,7 @@ def start_agent(
     """
     from agenttree.config import load_config
     from agenttree.container import get_container_runtime
+    from agenttree.ids import parse_issue_id
     from agenttree.issues import get_issue, update_issue_stage, update_issue_metadata
     from agenttree.preflight import run_preflight
     from agenttree.state import (
@@ -146,6 +147,10 @@ def start_agent(
     from agenttree.worktree import create_worktree, update_worktree_with_main
     import subprocess
     import time
+
+    # Normalize issue_id to int
+    if isinstance(issue_id, str):
+        issue_id = parse_issue_id(issue_id)
 
     if not quiet:
         from rich.console import Console
@@ -165,11 +170,8 @@ def start_agent(
         if not quiet:
             console.print("[green]✓ Preflight checks passed[/green]\n")
 
-    # Normalize issue ID
-    issue_id_normalized = issue_id.lstrip("0") or "0"
-
     # Load issue
-    issue = get_issue(issue_id_normalized)
+    issue = get_issue(issue_id)
     if not issue:
         raise IssueNotFoundError(issue_id)
 
@@ -375,7 +377,7 @@ def start_controller(
 
 
 def send_message(
-    issue_id: str,
+    issue_id: int | str,
     message: str,
     *,
     host: str = "developer",
@@ -389,7 +391,7 @@ def send_message(
     automatically.
 
     Args:
-        issue_id: Issue ID (e.g., "042" or "42"), or "0" for controller
+        issue_id: Issue ID (int or string), or 0/"0" for controller
         message: Message to send
         host: Agent host type (default: "developer")
         auto_start: Start agent if not running (default: True)
@@ -404,6 +406,7 @@ def send_message(
         ControllerNotRunningError: If sending to controller and it's not running
     """
     from agenttree.config import load_config
+    from agenttree.ids import parse_issue_id
     from agenttree.issues import get_issue
     from agenttree.state import get_active_agent
     from agenttree.tmux import TmuxManager, session_exists, send_message as tmux_send_message
@@ -415,11 +418,11 @@ def send_message(
     config = load_config()
     tmux_manager = TmuxManager(config)
 
-    # Normalize issue ID
-    issue_id_normalized = issue_id.lstrip("0") or "0"
+    # Parse issue ID to int
+    parsed_id = parse_issue_id(issue_id) if isinstance(issue_id, str) else issue_id
 
-    # Special handling for controller
-    if issue_id_normalized == "0":
+    # Special handling for controller (issue 0)
+    if parsed_id == 0:
         session_name = config.get_manager_tmux_session()
         if not session_exists(session_name):
             raise ControllerNotRunningError()
@@ -433,15 +436,13 @@ def send_message(
         return "sent"
 
     # Get issue to validate it exists
-    issue = get_issue(issue_id_normalized)
+    issue = get_issue(parsed_id)
     if not issue:
-        raise IssueNotFoundError(issue_id)
-
-    issue_id_normalized = issue.id
+        raise IssueNotFoundError(parsed_id)
 
     def ensure_agent_running() -> bool:
         """Start agent if not running. Returns True if agent is now running."""
-        agent = get_active_agent(issue_id_normalized, host)
+        agent = get_active_agent(issue.id, host)
         if agent and tmux_manager.is_issue_running(agent.tmux_session):
             return True
 
@@ -454,7 +455,7 @@ def send_message(
 
         try:
             start_agent(
-                issue_id_normalized,
+                issue.id,
                 host=host,
                 skip_preflight=True,
                 quiet=quiet,
@@ -472,7 +473,7 @@ def send_message(
         return "no_agent"
 
     # Re-fetch agent after potential start
-    agent = get_active_agent(issue_id_normalized, host)
+    agent = get_active_agent(issue.id, host)
     if not agent:
         if not quiet:
             console.print(f"[red]Error: Agent started but not found in state[/red]")
@@ -491,7 +492,7 @@ def send_message(
         if not quiet:
             console.print(f"[yellow]Claude CLI exited, restarting agent...[/yellow]")
         if ensure_agent_running():
-            agent = get_active_agent(issue_id_normalized, host)
+            agent = get_active_agent(issue.id, host)
             if agent:
                 result = tmux_manager.send_message_to_issue(agent.tmux_session, message, interrupt=interrupt)
                 if result == "sent":
@@ -517,7 +518,7 @@ def send_message(
 
 
 def transition_issue(
-    issue_id: str,
+    issue_id: int | str,
     next_stage: str,
     *,
     skip_pr_approval: bool = False,
@@ -530,7 +531,7 @@ def transition_issue(
     ensure consistent behavior: exit hooks -> stage update -> enter hooks.
 
     Args:
-        issue_id: Issue ID
+        issue_id: Issue ID (int or string)
         next_stage: Target dot path (e.g., "explore.define", "implement.code")
         skip_pr_approval: Skip PR approval check (for self-approval)
         trigger: What triggered this transition ("cli", "web", "manager")
@@ -544,7 +545,12 @@ def transition_issue(
         RuntimeError: If stage update fails
     """
     from agenttree.hooks import execute_exit_hooks, execute_enter_hooks, StageRedirect
+    from agenttree.ids import parse_issue_id
     from agenttree.issues import get_issue, update_issue_stage
+
+    # Normalize to int
+    if isinstance(issue_id, str):
+        issue_id = parse_issue_id(issue_id)
 
     issue = get_issue(issue_id)
     if not issue:
@@ -583,7 +589,7 @@ def transition_issue(
     return updated
 
 
-def _notify_agent(issue_id: str, message: str, *, interrupt: bool = False) -> None:
+def _notify_agent(issue_id: int, message: str, *, interrupt: bool = False) -> None:
     """Best-effort notify an active agent via tmux. Never raises.
 
     Args:
@@ -608,7 +614,7 @@ def _notify_agent(issue_id: str, message: str, *, interrupt: bool = False) -> No
 # =============================================================================
 
 
-def stop_agent(issue_id: str, role: str = "developer", quiet: bool = False) -> bool:
+def stop_agent(issue_id: int, role: str = "developer", quiet: bool = False) -> bool:
     """Stop an active agent - kills tmux and stops container.
 
     Uses config methods to ensure consistent naming across the system.
@@ -623,6 +629,7 @@ def stop_agent(issue_id: str, role: str = "developer", quiet: bool = False) -> b
     """
     from agenttree.config import load_config
     from agenttree.container import get_container_runtime
+    from agenttree.ids import format_issue_id
     from agenttree.tmux import kill_session, session_exists
 
     config = load_config()
@@ -634,7 +641,7 @@ def stop_agent(issue_id: str, role: str = "developer", quiet: bool = False) -> b
 
     # 1. Kill serve session (if it exists) - runs on host, not in container
     try:
-        serve_session_name = f"{config.project}-serve-{issue_id}"
+        serve_session_name = f"{config.project}-serve-{format_issue_id(issue_id)}"
         if session_exists(serve_session_name):
             kill_session(serve_session_name)
             stopped_something = True
@@ -681,7 +688,7 @@ def stop_agent(issue_id: str, role: str = "developer", quiet: bool = False) -> b
     return stopped_something
 
 
-def stop_all_agents_for_issue(issue_id: str, quiet: bool = False) -> int:
+def stop_all_agents_for_issue(issue_id: int, quiet: bool = False) -> int:
     """Stop all agents for an issue (across all roles).
 
     Args:
@@ -749,7 +756,7 @@ def cleanup_orphaned_containers(quiet: bool = False) -> int:
         if not match:
             continue
 
-        issue_id = match.group(1)
+        issue_id = int(match.group(1))
 
         # Check if there's a tmux session for this container (developer is default role)
         session_name = config.get_issue_tmux_session(issue_id, "developer")

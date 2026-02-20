@@ -258,10 +258,14 @@ class Config(BaseModel):
             )
         return port
 
-    def get_port_for_issue(self, issue_id: str) -> int | None:
+    def get_port_for_issue(self, issue_id: int | str) -> int | None:
         """Get port number for a specific issue."""
+        from agenttree.ids import parse_issue_id
         try:
-            issue_num = int(issue_id)
+            if isinstance(issue_id, str):
+                issue_num = parse_issue_id(issue_id)
+            else:
+                issue_num = issue_id
             return self.get_port_for_agent(issue_num)
         except (ValueError, TypeError):
             return None
@@ -271,35 +275,40 @@ class Config(BaseModel):
         expanded_dir = Path(self.worktrees_dir).expanduser()
         return expanded_dir / f"{self.project}-agent-{agent_num}"
 
-    def get_issue_worktree_path(self, issue_id: str) -> Path:
+    def get_issue_worktree_path(self, issue_id: int) -> Path:
         """Get worktree path for an issue-bound agent."""
+        from agenttree.ids import worktree_dir_name
         expanded_dir = Path(self.worktrees_dir).expanduser()
-        return expanded_dir / f"issue-{issue_id}"
+        return expanded_dir / worktree_dir_name(issue_id)
 
     def get_tmux_session_name(self, agent_num: int) -> str:
         """Get tmux session name for a specific agent (legacy numbered agents)."""
         return f"{self.project}-developer-{agent_num}"
 
-    def get_issue_tmux_session(self, issue_id: str, role: str = "developer") -> str:
+    def get_issue_tmux_session(self, issue_id: int, role: str = "developer") -> str:
         """Get tmux session name for an issue-bound agent."""
-        return f"{self.project}-{role}-{issue_id}"
+        from agenttree.ids import tmux_session_name
+        return tmux_session_name(self.project, issue_id, role)
 
     def get_manager_tmux_session(self) -> str:
         """Get tmux session name for the manager agent."""
-        return f"{self.project}-manager-000"
+        from agenttree.ids import manager_session_name
+        return manager_session_name(self.project)
 
-    def get_issue_session_patterns(self, issue_id: str) -> list[str]:
+    def get_issue_session_patterns(self, issue_id: int) -> list[str]:
         """Get all possible tmux session names for an issue."""
         from agenttree.tmux import get_session_patterns
-        return get_session_patterns(self.project, issue_id)
+        from agenttree.ids import format_issue_id
+        return get_session_patterns(self.project, format_issue_id(issue_id))
 
     def is_project_session(self, session_name: str) -> bool:
         """Check if a session name belongs to this project."""
         return session_name.startswith(f"{self.project}-")
 
-    def get_issue_container_name(self, issue_id: str) -> str:
+    def get_issue_container_name(self, issue_id: int) -> str:
         """Get container name for an issue-bound agent."""
-        return f"agenttree-{self.project}-{issue_id}"
+        from agenttree.ids import container_name
+        return container_name(self.project, issue_id)
 
     def get_tool_config(self, tool_name: str) -> ToolConfig:
         """Get configuration for a tool."""

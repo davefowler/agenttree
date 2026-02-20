@@ -17,7 +17,7 @@ console = Console()
 
 
 def execute_rollback(
-    issue_id: str,
+    issue_id: int | str,
     target_stage: str,
     yes: bool = True,
     reset_worktree: bool = False,
@@ -28,7 +28,7 @@ def execute_rollback(
     """Execute a rollback programmatically. Used by both CLI and hooks.
 
     Args:
-        issue_id: Issue ID to rollback
+        issue_id: Issue ID to rollback (int or string)
         target_stage: Dot path to rollback to (e.g., "explore.define", "implement.code")
         yes: Auto-confirm (default True for programmatic use)
         reset_worktree: Reset worktree to origin/main
@@ -44,11 +44,15 @@ def execute_rollback(
     from agenttree.state import get_active_agent, unregister_agent
     from agenttree.config import load_config
     from agenttree.issues import Issue, get_issue_dir, delete_session
+    from agenttree.ids import parse_issue_id
     import shutil
 
-    # Normalize issue ID
-    issue_id_normalized = issue_id.lstrip("0") or "0"
-    issue = Issue.get(issue_id_normalized)
+    # Parse issue_id to int
+    if isinstance(issue_id, str):
+        issue_id = parse_issue_id(issue_id)
+
+    # Get issue
+    issue = Issue.get(issue_id)
     if not issue:
         console.print(f"[red]Issue {issue_id} not found[/red]")
         return False
@@ -109,8 +113,8 @@ def execute_rollback(
     should_reset = reset_worktree or (auto_reset and not keep_changes)
 
     # Check for active agent
-    active_agent = get_active_agent(issue_id_normalized)
-    issue_dir = get_issue_dir(issue_id_normalized)
+    active_agent = get_active_agent(issue.id)
+    issue_dir = get_issue_dir(issue.id)
 
     # Archive output files
     if issue_dir and files_to_archive:
@@ -136,7 +140,7 @@ def execute_rollback(
     # Update issue stage with rollback history entry
     from agenttree.issues import update_issue_stage
     update_issue_stage(
-        issue_id_normalized,
+        issue.id,
         target_stage,
         skip_sync=skip_sync,
         history_type="rollback",
@@ -144,11 +148,11 @@ def execute_rollback(
     )
 
     # Clear agent session
-    delete_session(issue_id_normalized)
+    delete_session(issue.id)
 
     # Unregister active agent
     if active_agent:
-        unregister_agent(issue_id_normalized)
+        unregister_agent(issue.id)
 
     # Reset worktree if requested
     if should_reset and active_agent:

@@ -186,7 +186,7 @@ def issue_create(
         console.print(f"[dim]  _agenttree/issues/{issue.id}-{issue.slug}/[/dim]")
         console.print(f"[dim]  Stage: {issue.stage} | Flow: {issue.flow}[/dim]")
         if issue.dependencies:
-            console.print(f"[dim]  Dependencies: {', '.join(issue.dependencies)}[/dim]")
+            console.print(f"[dim]  Dependencies: {', '.join(str(d) for d in issue.dependencies)}[/dim]")
 
         # Auto-start agent unless blocked or --no-start specified
         if has_unmet_deps:
@@ -263,7 +263,7 @@ def issue_list(stage: str | None, priority: str | None, as_json: bool) -> None:
         }.get(issue.priority, "white")
 
         table.add_row(
-            issue.id,
+            str(issue.id),
             issue.title[:40] + ("..." if len(issue.title) > 40 else ""),
             stage_str,
             f"[{priority_style}]{issue.priority.value}[/{priority_style}]",
@@ -337,11 +337,11 @@ def issue_show(issue_id: str, as_json: bool, field_name: str | None) -> None:
 
     if issue.dependencies:
         all_met, unmet = check_dependencies_met(issue)
-        deps_str = ", ".join(issue.dependencies)
+        deps_str = ", ".join(str(d) for d in issue.dependencies)
         if all_met:
             console.print(f"[bold]Dependencies:[/bold] {deps_str} [green](all met)[/green]")
         else:
-            console.print(f"[bold]Dependencies:[/bold] {deps_str} [yellow](waiting on: {', '.join(unmet)})[/yellow]")
+            console.print(f"[bold]Dependencies:[/bold] {deps_str} [yellow](waiting on: {', '.join(str(u) for u in unmet)})[/yellow]")
 
     if issue.branch:
         console.print(f"[bold]Branch:[/bold] {issue.branch}")
@@ -437,7 +437,7 @@ def issue_doc(doc_type: str, issue_id: str) -> None:
         if template_file.exists():
             content = template_file.read_text()
             # Replace template variables
-            content = content.replace("{{issue_id}}", issue.id)
+            content = content.replace("{{issue_id}}", str(issue.id))
             content = content.replace("{{title}}", issue.title)
             doc_file.write_text(content)
             console.print(f"[green]✓ Created {doc_type}.md from template[/green]")
@@ -481,15 +481,15 @@ def issue_check_deps() -> None:
 
     for issue in issues_with_deps:
         all_met, unmet = check_dependencies_met(issue)
-        deps_str = ", ".join(issue.dependencies)
+        deps_str = ", ".join(str(d) for d in issue.dependencies)
 
         if all_met:
             status = "[green]✓ Ready to start[/green]"
         else:
-            status = f"[red]Blocked by: {', '.join(unmet)}[/red]"
+            status = f"[red]Blocked by: {', '.join(str(u) for u in unmet)}[/red]"
 
         table.add_row(
-            issue.id,
+            str(issue.id),
             issue.title[:35] + ("..." if len(issue.title) > 35 else ""),
             deps_str,
             status,
@@ -500,5 +500,5 @@ def issue_check_deps() -> None:
     # Show ready issues
     ready = get_ready_issues()
     if ready:
-        console.print(f"\n[green]Ready to start: {', '.join(i.id for i in ready)}[/green]")
+        console.print(f"\n[green]Ready to start: {', '.join(str(i.id) for i in ready)}[/green]")
         console.print("[dim]These will auto-start when their dependencies are accepted[/dim]")

@@ -72,7 +72,7 @@ def _start_agents_background(config: "Config", repo_path: Path) -> None:
     issues = list_issues(sync=True)
 
     # Launch all agent starts in parallel
-    pending: list[tuple[str, subprocess.Popen[str]]] = []
+    pending: list[tuple[int, subprocess.Popen[str]]] = []
     skipped_count = 0
 
     for issue in issues:
@@ -85,7 +85,7 @@ def _start_agents_background(config: "Config", repo_path: Path) -> None:
 
         console.print(f"[cyan]Starting agent for issue #{issue.id} ({issue.stage})...[/cyan]")
         proc = subprocess.Popen(
-            ["agenttree", "start", issue.id, "--skip-preflight"],
+            ["agenttree", "start", str(issue.id), "--skip-preflight"],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
             text=True,

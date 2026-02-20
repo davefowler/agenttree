@@ -136,7 +136,7 @@ def auto_start_agents(agents_dir: Path, **kwargs: Any) -> None:
         
         console.print(f"[cyan]Starting agent for issue #{issue.id} ({issue.stage})...[/cyan]")
         result = subprocess.run(
-            ["agenttree", "start", issue.id, "--skip-preflight"],
+            ["agenttree", "start", str(issue.id), "--skip-preflight"],
             capture_output=True,
             text=True,
             timeout=120,  # Container startup can be slow
@@ -293,7 +293,7 @@ def check_stalled_agents(
 
     # Load heartbeat state for stall notification tracking
     state = load_event_state(agents_dir)
-    stall_state: dict[str, Any] = state.get("stall_notifications", {})
+    stall_state: dict[int | str, Any] = state.get("stall_notifications", {})
     now = datetime.now(timezone.utc)
 
     for issue in issues:
@@ -633,12 +633,15 @@ def switch_agent_to_api_key(
     
     config = load_config()
     
-    # Extract issue_id from session name (e.g., "agenttree-developer-128" -> "128")
+    # Extract issue_id from session name (e.g., "agenttree-developer-128" -> 128)
     parts = session_name.split("-")
     if len(parts) < 3:
         return False
-    issue_id = parts[-1]
-    
+    try:
+        issue_id = int(parts[-1])
+    except ValueError:
+        return False
+
     # Get worktree path from issue
     from agenttree.issues import get_issue
     issue = get_issue(issue_id)
@@ -701,21 +704,24 @@ def switch_agent_to_oauth(
     parts = session_name.split("-")
     if len(parts) < 3:
         return False
-    issue_id = parts[-1]
-    
+    try:
+        issue_id = int(parts[-1])
+    except ValueError:
+        return False
+
     # Get worktree path from issue
     from agenttree.issues import get_issue
     issue = get_issue(issue_id)
     if not issue or not issue.worktree_dir:
         return False
-    
+
     worktree_path = Path(issue.worktree_dir)
     if not worktree_path.exists():
         return False
-    
+
     # Kill the tmux session
     kill_session(session_name)
-    
+
     # Build new claude command with -r to resume API key session (tested to work!)
     claude_cmd = f"claude -r --model {model} --dangerously-skip-permissions"
 

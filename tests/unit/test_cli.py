@@ -139,7 +139,7 @@ class TestStopCommand:
                         result = cli_runner.invoke(main, ["stop", "42"])
 
         assert result.exit_code == 0
-        mock_stop.assert_called_once_with("42", "developer")
+        mock_stop.assert_called_once_with(42, "developer")
 
 
 class TestAttachCommand:
@@ -1034,7 +1034,7 @@ class TestRollbackCommand:
 
         # Verify execute_rollback was called with correct args
         mock_rollback.assert_called_once_with(
-            issue_id="42",
+            issue_id=42,
             target_stage="explore.research",
             yes=True,
             reset_worktree=False,
@@ -1273,7 +1273,7 @@ class TestIssueShowCommand:
             branch="issue-042-test-issue",
         )
 
-        issue_dir = tmp_path / "_agenttree" / "issues" / "042-test-issue"
+        issue_dir = tmp_path / "_agenttree" / "issues" / "042"
         issue_dir.mkdir(parents=True)
         (issue_dir / "problem.md").write_text("# Problem")
 
@@ -1285,12 +1285,13 @@ class TestIssueShowCommand:
 
         assert result.exit_code == 0
         data = json.loads(result.output)
-        assert data["id"] == "042"
+        assert data["id"] == 42
         assert data["title"] == "Test Issue"
         assert data["stage"] == "implement.code"
         assert data["branch"] == "issue-042-test-issue"
         assert data["priority"] == "high"
-        assert data["issue_dir_rel"] == "_agenttree/issues/042-test-issue"
+        # issue_dir_rel uses dir_name property which is format_issue_id(id) = "042"
+        assert data["issue_dir_rel"] == "_agenttree/issues/042"
         # JSON includes docs
         assert "problem_md" in data
 

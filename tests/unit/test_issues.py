@@ -168,7 +168,7 @@ class TestIssueModel:
             created="2026-01-11T12:00:00Z",
             updated="2026-01-11T12:00:00Z",
         )
-        assert issue.id == "001"
+        assert issue.id == 1
         assert issue.stage == "explore.define"  # New issues start at explore.define
         assert issue.priority == Priority.MEDIUM
 
@@ -224,7 +224,7 @@ class TestProcessingHelpers:
         (agenttrees_path / "issues").mkdir()
 
         # Create an issue directory and issue.yaml
-        issue_dir = agenttrees_path / "issues" / "001-test-issue"
+        issue_dir = agenttrees_path / "issues" / "001"
         issue_dir.mkdir()
 
         issue_data = {
@@ -259,7 +259,7 @@ class TestProcessingHelpers:
         assert result is True
 
         # Verify it was written to issue.yaml
-        issue_yaml = temp_agenttrees_with_issue / "issues" / "001-test-issue" / "issue.yaml"
+        issue_yaml = temp_agenttrees_with_issue / "issues" / "001" / "issue.yaml"
         with open(issue_yaml) as f:
             data = yaml.safe_load(f)
         assert data["processing"] == "exit"
@@ -281,7 +281,7 @@ class TestProcessingHelpers:
         assert result is True
 
         # Verify it was cleared in issue.yaml
-        issue_yaml = temp_agenttrees_with_issue / "issues" / "001-test-issue" / "issue.yaml"
+        issue_yaml = temp_agenttrees_with_issue / "issues" / "001" / "issue.yaml"
         with open(issue_yaml) as f:
             data = yaml.safe_load(f)
         assert data.get("processing") is None
@@ -313,13 +313,13 @@ class TestIssueCRUD:
     def test_create_issue(self, temp_agenttrees):
         issue = create_issue("Test Issue", Priority.HIGH)
 
-        assert issue.id == "001"
+        assert issue.id == 1
         assert issue.title == "Test Issue"
         assert issue.priority == Priority.HIGH
         assert issue.stage == "explore.define"  # New issues start at explore.define
 
         # Check files created
-        issue_dir = temp_agenttrees / "issues" / "001-test-issue"
+        issue_dir = temp_agenttrees / "issues" / "001"
         assert issue_dir.exists()
         assert (issue_dir / "issue.yaml").exists()
         assert (issue_dir / "problem.md").exists()
@@ -329,9 +329,9 @@ class TestIssueCRUD:
         issue2 = create_issue("Second Issue")
         issue3 = create_issue("Third Issue")
 
-        assert issue1.id == "001"
-        assert issue2.id == "002"
-        assert issue3.id == "003"
+        assert issue1.id == 1
+        assert issue2.id == 2
+        assert issue3.id == 3
 
     def test_list_issues(self, temp_agenttrees):
         create_issue("Issue A", Priority.LOW)
@@ -361,7 +361,7 @@ class TestIssueCRUD:
 
         issue = get_issue("1")
         assert issue is not None
-        assert issue.id == "001"
+        assert issue.id == 1
 
     def test_get_issue_not_found(self, temp_agenttrees):
         issue = get_issue("999")
@@ -372,7 +372,7 @@ class TestIssueCRUD:
         """Test creating an issue with a custom starting stage."""
         issue = create_issue("Test Issue", stage="explore.define")
 
-        assert issue.id == "001"
+        assert issue.id == 1
         assert issue.title == "Test Issue"
         assert issue.stage == "explore.define"
 
@@ -1412,10 +1412,10 @@ class TestGetIssueContext:
         context = get_issue_context(issue)
 
         # Derived fields
-        assert context["issue_id"] == "001"  # alias
+        assert context["issue_id"] == 1  # alias
         assert context["issue_title"] == "Test Issue"  # alias
         assert "issue_dir" in context
-        assert context["issue_dir_rel"] == "_agenttree/issues/001-test-issue"
+        assert context["issue_dir_rel"] == "_agenttree/issues/001"
         # Dot path is parsed into stage_group and substage
         assert context["stage_group"] == "explore"
         assert context["substage"] == "define"
@@ -1440,7 +1440,7 @@ class TestGetIssueContext:
         issue = create_issue("Test Issue")
 
         # Write some document content
-        issue_dir = temp_agenttrees / "issues" / "001-test-issue"
+        issue_dir = temp_agenttrees / "issues" / "001"
         (issue_dir / "research.md").write_text("Research findings here")
 
         context = get_issue_context(issue, include_docs=True)

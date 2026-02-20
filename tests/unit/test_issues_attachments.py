@@ -77,7 +77,7 @@ class TestCreateIssueWithAttachments:
             attachments=attachments,
         )
 
-        issue_dir = mock_agenttree_path / "_agenttree" / "issues" / f"{issue.id}-test-issue-with-attachment"
+        issue_dir = mock_agenttree_path / "_agenttree" / "issues" / issue.dir_name
         attachments_dir = issue_dir / "attachments"
         assert attachments_dir.exists()
         assert attachments_dir.is_dir()
@@ -93,7 +93,7 @@ class TestCreateIssueWithAttachments:
             attachments=attachments,
         )
 
-        issue_dir = mock_agenttree_path / "_agenttree" / "issues" / f"{issue.id}-test-issue-with-file"
+        issue_dir = mock_agenttree_path / "_agenttree" / "issues" / issue.dir_name
         attachments_dir = issue_dir / "attachments"
 
         # Find the saved file (has timestamp prefix)
@@ -111,7 +111,7 @@ class TestCreateIssueWithAttachments:
             attachments=attachments,
         )
 
-        issue_dir = mock_agenttree_path / "_agenttree" / "issues" / f"{issue.id}-test-with-attachments-section"
+        issue_dir = mock_agenttree_path / "_agenttree" / "issues" / issue.dir_name
         problem_md = issue_dir / "problem.md"
         content = problem_md.read_text()
 
@@ -127,7 +127,7 @@ class TestCreateIssueWithAttachments:
             attachments=attachments,
         )
 
-        issue_dir = mock_agenttree_path / "_agenttree" / "issues" / f"{issue.id}-test-image-syntax"
+        issue_dir = mock_agenttree_path / "_agenttree" / "issues" / issue.dir_name
         problem_md = issue_dir / "problem.md"
         content = problem_md.read_text()
 
@@ -144,7 +144,7 @@ class TestCreateIssueWithAttachments:
             attachments=attachments,
         )
 
-        issue_dir = mock_agenttree_path / "_agenttree" / "issues" / f"{issue.id}-test-link-syntax"
+        issue_dir = mock_agenttree_path / "_agenttree" / "issues" / issue.dir_name
         problem_md = issue_dir / "problem.md"
         content = problem_md.read_text()
 
@@ -159,7 +159,7 @@ class TestCreateIssueWithAttachments:
             problem="Test problem",
         )
 
-        issue_dir = mock_agenttree_path / "_agenttree" / "issues" / f"{issue.id}-test-no-attachments"
+        issue_dir = mock_agenttree_path / "_agenttree" / "issues" / issue.dir_name
         problem_md = issue_dir / "problem.md"
         content = problem_md.read_text()
 
@@ -179,7 +179,7 @@ class TestCreateIssueWithAttachments:
             attachments=attachments,
         )
 
-        issue_dir = mock_agenttree_path / "_agenttree" / "issues" / f"{issue.id}-test-multiple-attachments"
+        issue_dir = mock_agenttree_path / "_agenttree" / "issues" / issue.dir_name
         attachments_dir = issue_dir / "attachments"
 
         # Should have 3 files

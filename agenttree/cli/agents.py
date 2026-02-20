@@ -71,7 +71,7 @@ def start_agent(
     issue_id_normalized = normalize_issue_id(issue_id)
 
     # Special handling for manager (agent 0)
-    if issue_id_normalized == "0":
+    if issue_id_normalized == 0:
         _start_manager(tool, force, config, repo_path)
         return
 
@@ -266,7 +266,7 @@ def agents_status() -> None:
             status_str = "⚪ Stopped"
 
         table.add_row(
-            agent.issue_id,
+            str(agent.issue_id),
             agent.role,
             issue_title,
             status_str,
@@ -437,7 +437,7 @@ def attach(issue_id: str, role: str) -> None:
     issue_id_normalized = normalize_issue_id(issue_id)
 
     # Special handling for manager (agent 0)
-    if issue_id_normalized == "0":
+    if issue_id_normalized == 0:
         session_name = get_manager_session_name(config)
         if not session_exists(session_name):
             console.print("[red]Error: Manager not running[/red]")
@@ -494,7 +494,7 @@ def output(issue_id: str, role: str, lines: int) -> None:
     issue_id_normalized = normalize_issue_id(issue_id)
 
     # Special handling for manager (agent 0)
-    if issue_id_normalized == "0":
+    if issue_id_normalized == 0:
         session_name = get_manager_session_name(config)
         if not session_exists(session_name):
             console.print("[red]Error: Manager not running[/red]")
@@ -548,7 +548,7 @@ def send(issue_id: str, message: str, role: str, interrupt: bool) -> None:
     issue_id_normalized = normalize_issue_id(issue_id)
 
     # Special handling for manager (agent 0)
-    if issue_id_normalized == "0":
+    if issue_id_normalized == 0:
         session_name = get_manager_session_name(config)
         if not session_exists(session_name):
             console.print("[red]Error: Manager not running[/red]")
@@ -582,7 +582,7 @@ def send(issue_id: str, message: str, role: str, interrupt: bool) -> None:
         console.print(f"[dim]Agent{role_label} not running, starting...[/dim]")
 
         result = subprocess.run(
-            ["agenttree", "start", issue_id_normalized] + (["--role", role] if role != "developer" else []) + ["--skip-preflight"],
+            ["agenttree", "start", str(issue_id_normalized)] + (["--role", role] if role != "developer" else []) + ["--skip-preflight"],
             capture_output=True,
             text=True,
         )
@@ -653,7 +653,7 @@ def stop(issue_id: str, role: str, all_roles: bool) -> None:
     issue_id_normalized = normalize_issue_id(issue_id)
 
     # Special handling for manager (agent 0)
-    if issue_id_normalized == "0":
+    if issue_id_normalized == 0:
         session_name = get_manager_session_name(config)
         if not session_exists(session_name):
             console.print("[yellow]Manager not running[/yellow]")

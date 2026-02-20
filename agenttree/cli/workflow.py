@@ -108,7 +108,7 @@ def stage_status(issue_id: str | None, active_only: bool) -> None:
 
         for active_issue in active_issues:
             table.add_row(
-                active_issue.id,
+                str(active_issue.id),
                 active_issue.title[:40],
                 active_issue.stage,
                 _time_in_stage(active_issue),
@@ -302,7 +302,7 @@ def stage_next(issue_id: str | None, reassess: bool) -> None:
     if config.save_tmux_history:
         issue_dir = get_issue_dir(issue_id)
         if issue_dir:
-            session_name = config.get_issue_tmux_session(issue_id)
+            session_name = config.get_issue_tmux_session(issue.id)
             history_file = issue_dir / "tmux_history.log"
             if save_tmux_history_to_file(session_name, history_file, from_stage):
                 console.print(f"[dim]Saved tmux history to {history_file.name}[/dim]")

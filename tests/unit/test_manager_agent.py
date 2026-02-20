@@ -53,7 +53,7 @@ class TestGetStalledAgents:
         stalled = get_stalled_agents(tmp_path, threshold_min=20)
 
         assert len(stalled) == 1
-        assert stalled[0]["issue_id"] == "042"
+        assert stalled[0]["issue_id"] == 42
         assert stalled[0]["stage"] == "implement.code"
 
     @patch("agenttree.state.get_active_agent")
