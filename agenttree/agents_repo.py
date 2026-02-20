@@ -341,7 +341,11 @@ def ensure_review_branches(agents_dir: Path) -> int:
                 if updated:
                     console.print(f"[dim]Branch up to date for PR #{pr_number} (issue #{issue_id})[/dim]")
                 else:
-                    # Conflicts - redirect to developer to rebase
+                    # Conflicts — but re-read issue first to avoid TOCTOU race.
+                    # The issue may have been approved while we checked the branch.
+                    issue = Issue.from_yaml(issue_yaml)
+                    if issue.stage != "implement.review":
+                        continue
                     console.print(f"[yellow]PR #{pr_number} (issue #{issue_id}) has conflicts with main - redirecting to developer[/yellow]")
                     from agenttree.issues import update_issue_stage
                     update_issue_stage(issue_id, "implement.code", _issue_dir=issue_dir)
@@ -888,6 +892,12 @@ def check_ci_status(agents_dir: Path) -> int:
                 console.print(f"[red]CI failed {ci_bounce_count}x for issue #{issue_id} — escalating to human review[/red]")
                 from agenttree.issues import update_issue_stage
                 update_issue_stage(issue_id, "implement.review", skip_sync=True, ci_escalated=True, _issue_dir=issue_dir)
+
+                # Mark as notified so the heartbeat doesn't re-escalate every cycle
+                issue = Issue.from_yaml(issue_yaml)
+                issue.ci_notified = True
+                issue.save()
+
                 issues_notified += 1
                 continue
 
