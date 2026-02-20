@@ -43,71 +43,11 @@
     </div>
     {% endif %}
 
-    <div class="kanban-board">
-        {% for stage in stages %}
-        <div class="kanban-column" data-stage="{{ stage }}" data-group="{{ stage.split('.')[0] }}">
-            <div class="column-header">
-                {% if '.' in stage %}
-                <span class="column-group">{{ stage.split('.')[0] }}</span>
-                {% endif %}
-                <span>{{ stage | stage_name }}</span>
-                <span class="column-count">{{ board.stages[stage]|length }}</span>
-            </div>
-            <div class="column-cards">
-                {% for issue in board.stages[stage] %}
-                {% set base_url = '/kanban' %}
-                {% set draggable = true %}
-                {% include 'partials/issue_item.html' %}
-                {% endfor %}
-            </div>
-        </div>
-        {% endfor %}
-
-        <!-- Mini dropzones for parking stages (always visible for toggle access) -->
-        <div class="mini-dropzones" id="mini-dropzones">
-            <div class="mini-dropzone" data-stage="backlog" id="mini-backlog">
-                <button class="toggle-parking-btn" onclick="toggleParkingVisibility('backlog', event)" title="Show column">
-                    <svg class="eye-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                        <circle cx="12" cy="12" r="3"></circle>
-                    </svg>
-                    <svg class="eye-off-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none">
-                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
-                        <line x1="1" y1="1" x2="23" y2="23"></line>
-                    </svg>
-                </button>
-                <span class="dropzone-label">Backlog</span>
-                <span class="dropzone-count" id="backlog-count">0</span>
-            </div>
-            <div class="mini-dropzone" data-stage="accepted" id="mini-accepted">
-                <button class="toggle-parking-btn" onclick="toggleParkingVisibility('accepted', event)" title="Show column">
-                    <svg class="eye-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                        <circle cx="12" cy="12" r="3"></circle>
-                    </svg>
-                    <svg class="eye-off-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none">
-                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
-                        <line x1="1" y1="1" x2="23" y2="23"></line>
-                    </svg>
-                </button>
-                <span class="dropzone-label">Accepted</span>
-                <span class="dropzone-count" id="accepted-count">0</span>
-            </div>
-            <div class="mini-dropzone" data-stage="not_doing" id="mini-not-doing">
-                <button class="toggle-parking-btn" onclick="toggleParkingVisibility('not_doing', event)" title="Show column">
-                    <svg class="eye-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                        <circle cx="12" cy="12" r="3"></circle>
-                    </svg>
-                    <svg class="eye-off-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none">
-                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
-                        <line x1="1" y1="1" x2="23" y2="23"></line>
-                    </svg>
-                </button>
-                <span class="dropzone-label">Not Doing</span>
-                <span class="dropzone-count" id="not-doing-count">0</span>
-            </div>
-        </div>
+    <div class="kanban-board"
+         hx-get="/kanban/board{% if search %}?search={{ search | urlencode }}{% endif %}"
+         hx-trigger="every 10s [document.hasFocus()]"
+         hx-swap="innerHTML">
+        {% include 'partials/kanban_board.html' %}
     </div>
 
     <!-- Modal for issue detail -->
@@ -422,55 +362,71 @@
         const savedView = urlView || localStorage.getItem('kanbanStageView') || 'nonempty';
         window.setStageView(savedView);
 
-        // Mini dropzone drag/drop handlers
-        document.querySelectorAll('.mini-dropzone').forEach(dropzone => {
-            dropzone.addEventListener('dragover', (e) => {
-                e.preventDefault();
-                dropzone.classList.add('drag-over');
-            });
+        // Re-apply view and parking visibility after htmx polling refresh
+        document.body.addEventListener('htmx:afterSwap', function(e) {
+            // Only handle swaps targeting the kanban board
+            if (e.detail.target && e.detail.target.classList.contains('kanban-board')) {
+                // Re-apply current view filter
+                const currentView = localStorage.getItem('kanbanStageView') || 'nonempty';
+                window.setStageView(currentView);
+                // Re-register mini-dropzone handlers since DOM was replaced
+                setupMiniDropzoneHandlers();
+            }
+        });
 
-            dropzone.addEventListener('dragleave', (e) => {
-                dropzone.classList.remove('drag-over');
-            });
+        // Mini dropzone drag/drop handlers — extracted to function so we can
+        // re-register after HTMX swaps replace the DOM elements
+        function setupMiniDropzoneHandlers() {
+            document.querySelectorAll('.mini-dropzone').forEach(dropzone => {
+                dropzone.addEventListener('dragover', (e) => {
+                    e.preventDefault();
+                    dropzone.classList.add('drag-over');
+                });
 
-            dropzone.addEventListener('drop', async (e) => {
-                e.preventDefault();
-                dropzone.classList.remove('drag-over');
+                dropzone.addEventListener('dragleave', (e) => {
+                    dropzone.classList.remove('drag-over');
+                });
 
-                if (draggedCard) {
-                    const issueNumber = draggedCard.dataset.issue;
-                    const newStage = dropzone.dataset.stage;
-                    const oldStage = draggedCard.dataset.stage;
+                dropzone.addEventListener('drop', async (e) => {
+                    e.preventDefault();
+                    dropzone.classList.remove('drag-over');
 
-                    if (newStage !== oldStage) {
-                        try {
-                            const response = await fetch(`/api/issues/${issueNumber}/move`, {
-                                method: 'POST',
-                                headers: {'Content-Type': 'application/json'},
-                                body: JSON.stringify({stage: newStage})
-                            });
+                    if (draggedCard) {
+                        const issueNumber = draggedCard.dataset.issue;
+                        const newStage = dropzone.dataset.stage;
+                        const oldStage = draggedCard.dataset.stage;
 
-                            if (response.ok) {
-                                // Move card to the hidden column
-                                const targetCol = document.querySelector(`.kanban-column[data-stage="${newStage}"] .column-cards`);
-                                if (targetCol) {
-                                    targetCol.appendChild(draggedCard);
-                                    draggedCard.dataset.stage = newStage;
+                        if (newStage !== oldStage) {
+                            try {
+                                const response = await fetch(`/api/issues/${issueNumber}/move`, {
+                                    method: 'POST',
+                                    headers: {'Content-Type': 'application/json'},
+                                    body: JSON.stringify({stage: newStage})
+                                });
+
+                                if (response.ok) {
+                                    // Move card to the hidden column
+                                    const targetCol = document.querySelector(`.kanban-column[data-stage="${newStage}"] .column-cards`);
+                                    if (targetCol) {
+                                        targetCol.appendChild(draggedCard);
+                                        draggedCard.dataset.stage = newStage;
+                                    }
+                                    applyParkingVisibility();
+                                    console.log(`Moved issue #${issueNumber} to ${newStage}`);
+                                } else {
+                                    console.error('Failed to move issue');
+                                    location.reload();
                                 }
-                                applyParkingVisibility();
-                                console.log(`Moved issue #${issueNumber} to ${newStage}`);
-                            } else {
-                                console.error('Failed to move issue');
+                            } catch (error) {
+                                console.error('Error moving issue:', error);
                                 location.reload();
                             }
-                        } catch (error) {
-                            console.error('Error moving issue:', error);
-                            location.reload();
                         }
                     }
-                }
+                });
             });
-        });
+        }
+        setupMiniDropzoneHandlers();
 
         // Poll agent status until running or max attempts reached
         async function pollAgentStatus(issueNumber, lightElement, maxAttempts = 15) {

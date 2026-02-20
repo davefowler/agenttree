@@ -1042,6 +1042,54 @@ class TestKanbanUnrecognizedStage:
         assert 162 in backlog_numbers
 
 
+class TestKanbanBoardPartialEndpoint:
+    """Tests for kanban board partial endpoint used for htmx polling."""
+
+    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.app.agent_manager")
+    def test_kanban_board_returns_html_partial(self, mock_agent_mgr, mock_crud, client):
+        """Test /kanban/board returns HTML partial (not full page)."""
+        mock_crud.list_issues.return_value = []
+        mock_agent_mgr.clear_session_cache = Mock()
+
+        response = client.get("/kanban/board")
+
+        assert response.status_code == 200
+        assert "text/html" in response.headers["content-type"]
+        # Should NOT contain full HTML document structure
+        assert b"<!DOCTYPE html>" not in response.content
+        assert b"<html" not in response.content
+        # Should contain kanban column structure
+        assert b"kanban-column" in response.content or b"mini-dropzones" in response.content
+
+    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.app.agent_manager")
+    def test_kanban_board_with_search_param(self, mock_agent_mgr, mock_crud, client, mock_issue):
+        """Test /kanban/board respects search parameter."""
+        mock_crud.list_issues.return_value = [mock_issue]
+        mock_agent_mgr.clear_session_cache = Mock()
+        mock_agent_mgr._check_issue_tmux_session = Mock(return_value=False)
+
+        response = client.get("/kanban/board?search=test")
+
+        assert response.status_code == 200
+        assert "text/html" in response.headers["content-type"]
+
+    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.app.agent_manager")
+    def test_kanban_board_contains_issues(self, mock_agent_mgr, mock_crud, client, mock_issue):
+        """Test /kanban/board includes issue items."""
+        mock_crud.list_issues.return_value = [mock_issue]
+        mock_agent_mgr.clear_session_cache = Mock()
+        mock_agent_mgr._check_issue_tmux_session = Mock(return_value=False)
+
+        response = client.get("/kanban/board")
+
+        assert response.status_code == 200
+        # Should contain the issue number
+        assert b"#1" in response.content or b"Test Issue" in response.content
+
+
 class TestKanbanSearchEndpoint:
     """Tests for kanban board search functionality."""
 
