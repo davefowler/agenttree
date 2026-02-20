@@ -1240,3 +1240,118 @@ class TestPushPendingBranches:
         result = push_pending_branches(agents_dir)
 
         assert result == 0
+
+
+@pytest.mark.usefixtures("host_environment")
+class TestCiEscalationReport:
+    """Tests for CI escalation report content."""
+
+    @pytest.fixture
+    def agents_dir(self, tmp_path):
+        """Create a temporary _agenttree directory with issues subfolder."""
+        agents_dir = tmp_path / "_agenttree"
+        agents_dir.mkdir()
+        (agents_dir / "issues").mkdir()
+        return agents_dir
+
+    @pytest.fixture
+    def issue_with_ci_history(self, agents_dir):
+        """Create an issue with enough CI bounces to trigger escalation."""
+        import yaml
+        issue_dir = agents_dir / "issues" / "042-test-issue"
+        issue_dir.mkdir()
+        issue_yaml = issue_dir / "issue.yaml"
+        # Create history with 3 CI bounces (implement.ci_wait -> implement.debug transitions)
+        data = {
+            "id": "42",
+            "title": "Test issue",
+            "stage": "implement.ci_wait",
+            "pr_number": 123,
+            "history": [
+                {"stage": "implement.code", "timestamp": "2026-01-01T10:00:00Z"},
+                {"stage": "implement.ci_wait", "timestamp": "2026-01-01T10:05:00Z"},
+                {"stage": "implement.debug", "timestamp": "2026-01-01T10:10:00Z"},
+                {"stage": "implement.ci_wait", "timestamp": "2026-01-01T10:15:00Z"},
+                {"stage": "implement.debug", "timestamp": "2026-01-01T10:20:00Z"},
+                {"stage": "implement.ci_wait", "timestamp": "2026-01-01T10:25:00Z"},
+                {"stage": "implement.debug", "timestamp": "2026-01-01T10:30:00Z"},
+                {"stage": "implement.ci_wait", "timestamp": "2026-01-01T10:35:00Z"},
+            ],
+        }
+        with open(issue_yaml, "w") as f:
+            yaml.dump(data, f)
+        return issue_dir, data
+
+    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    def test_escalation_report_has_executive_summary(
+        self, mock_container, agents_dir, issue_with_ci_history
+    ):
+        """Verify escalation report starts with Summary section containing failure count."""
+        from agenttree.agents_repo import check_ci_status
+        from agenttree.github import CheckStatus
+
+        issue_dir, _ = issue_with_ci_history
+
+        with patch("agenttree.github.get_pr_checks") as mock_get_checks:
+            with patch("agenttree.state.get_active_agent", return_value=None):
+                with patch("agenttree.github.get_check_failed_logs", return_value="Error: test failed"):
+                    mock_get_checks.return_value = [
+                        CheckStatus(name="test", state="FAILURE"),
+                    ]
+                    check_ci_status(agents_dir)
+
+        feedback_file = issue_dir / "ci_feedback.md"
+        assert feedback_file.exists()
+        content = feedback_file.read_text()
+
+        # Should have Summary section with failure count
+        assert "## Summary" in content
+        assert "3" in content  # 3 failures
+
+    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    def test_escalation_report_includes_recommendations(
+        self, mock_container, agents_dir, issue_with_ci_history
+    ):
+        """Verify escalation report includes Recommendations section."""
+        from agenttree.agents_repo import check_ci_status
+        from agenttree.github import CheckStatus
+
+        issue_dir, _ = issue_with_ci_history
+
+        with patch("agenttree.github.get_pr_checks") as mock_get_checks:
+            with patch("agenttree.state.get_active_agent", return_value=None):
+                with patch("agenttree.github.get_check_failed_logs", return_value="Error: test failed"):
+                    mock_get_checks.return_value = [
+                        CheckStatus(name="test", state="FAILURE"),
+                    ]
+                    check_ci_status(agents_dir)
+
+        feedback_file = issue_dir / "ci_feedback.md"
+        content = feedback_file.read_text()
+
+        # Should have Recommendations section
+        assert "## Recommendations" in content
+
+    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    def test_escalation_report_preserves_logs(
+        self, mock_container, agents_dir, issue_with_ci_history
+    ):
+        """Verify escalation report still includes detailed logs."""
+        from agenttree.agents_repo import check_ci_status
+        from agenttree.github import CheckStatus
+
+        issue_dir, _ = issue_with_ci_history
+
+        with patch("agenttree.github.get_pr_checks") as mock_get_checks:
+            with patch("agenttree.state.get_active_agent", return_value=None):
+                with patch("agenttree.github.get_check_failed_logs", return_value="Error: specific test failure"):
+                    mock_get_checks.return_value = [
+                        CheckStatus(name="test", state="FAILURE"),
+                    ]
+                    check_ci_status(agents_dir)
+
+        feedback_file = issue_dir / "ci_feedback.md"
+        content = feedback_file.read_text()
+
+        # Should still have log content
+        assert "specific test failure" in content
