@@ -67,15 +67,23 @@ git merge-base HEAD origin/<branch>
 git push --force-with-lease -u origin HEAD
 ```
 
-Create the PR using `gh` with the base you determined:
+Determine the issue number from the branch name (branches are named `issue-XXX`):
 ```bash
-gh pr create --base <base-branch> --title "PR title" --body "## Summary
+ISSUE_NUM=$(git branch --show-current | grep -oE '[0-9]+' | head -1)
+ISSUE_TITLE=$(agenttree issue show "$ISSUE_NUM" --field title 2>/dev/null || echo "")
+```
+
+Create the PR using `gh` with the base you determined. **PR titles MUST use the `[Issue X]` prefix format:**
+```bash
+gh pr create --base <base-branch> --title "[Issue $ISSUE_NUM] $DESCRIPTION" --body "## Summary
 - bullet points of what changed
 
 ## Test plan
 - [ ] CI passes
 - [ ] Tests pass"
 ```
+
+For example: `[Issue 42] Add user authentication flow`
 
 If a PR already exists for this branch, skip creation:
 ```bash

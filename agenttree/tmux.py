@@ -30,7 +30,7 @@ class TmuxSession:
 
 
 # Session name slugs in priority order: {project}-{slug}-{issue_id}
-SESSION_SLUGS = ("manager", "developer", "reviewer", "issue", "agent")
+SESSION_SLUGS = ("manager", "developer", "review", "reviewer", "issue", "agent")
 
 
 def get_session_patterns(project: str, issue_id: str) -> list[str]:

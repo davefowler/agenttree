@@ -341,7 +341,11 @@ def ensure_review_branches(agents_dir: Path) -> int:
                 if updated:
                     console.print(f"[dim]Branch up to date for PR #{pr_number} (issue #{issue_id})[/dim]")
                 else:
-                    # Conflicts - redirect to developer to rebase
+                    # Conflicts — but re-read issue first to avoid TOCTOU race.
+                    # The issue may have been approved while we checked the branch.
+                    issue = Issue.from_yaml(issue_yaml)
+                    if issue.stage != "implement.review":
+                        continue
                     console.print(f"[yellow]PR #{pr_number} (issue #{issue_id}) has conflicts with main - redirecting to developer[/yellow]")
                     from agenttree.issues import update_issue_stage
                     update_issue_stage(issue_id, "implement.code", _issue_dir=issue_dir)
@@ -754,6 +758,7 @@ def check_ci_status(agents_dir: Path) -> int:
     from agenttree.issues import Issue
 
     console = Console()
+    config = load_config()
     issues_notified = 0
 
     for issue_dir in issues_dir.iterdir():
@@ -865,7 +870,7 @@ def check_ci_status(agents_dir: Path) -> int:
                 and i > 0 and issue.history[i - 1].stage in ci_stages
             )
 
-            max_ci_bounces = 3
+            max_ci_bounces = config.manager.max_ci_bounces
             if ci_bounce_count >= max_ci_bounces:
                 # Circuit breaker: stop looping, escalate to human review
                 # Generate a structured escalation report for human review
@@ -888,6 +893,12 @@ def check_ci_status(agents_dir: Path) -> int:
                 console.print(f"[red]CI failed {ci_bounce_count}x for issue #{issue_id} — escalating to human review[/red]")
                 from agenttree.issues import update_issue_stage
                 update_issue_stage(issue_id, "implement.review", skip_sync=True, ci_escalated=True, _issue_dir=issue_dir)
+
+                # Mark as notified so the heartbeat doesn't re-escalate every cycle
+                issue = Issue.from_yaml(issue_yaml)
+                issue.ci_notified = True
+                issue.save()
+
                 issues_notified += 1
                 continue
 
@@ -902,7 +913,6 @@ def check_ci_status(agents_dir: Path) -> int:
             console.print(f"[yellow]Issue #{issue_id} moved back to implement.debug stage for CI fix[/yellow]")
 
             # Ensure agent is running and notify it
-            config = load_config()
             tmux_manager = TmuxManager(config)
             agent = get_active_agent(issue_id)
 
