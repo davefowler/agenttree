@@ -8,6 +8,7 @@ import pytest
 from agenttree.issues import (
     Issue,
     Priority,
+    _load_issue_safe,
     slugify,
     create_issue,
     list_issues,
@@ -1721,3 +1722,36 @@ class TestConfigValidation:
                         check_hooks(substage.pre_completion, f"{stage_name}.{substage_name}.pre_completion")
 
         assert not missing_templates, f"Missing template files: {missing_templates}"
+
+
+class TestCorruptedYAMLHandling:
+    """Tests for graceful handling of corrupted issue YAML files."""
+
+    def test_load_issue_safe_corrupted_yaml(self, tmp_path: Path) -> None:
+        """_load_issue_safe returns None for corrupted YAML."""
+        yaml_path = tmp_path / "issue.yaml"
+        yaml_path.write_text(": invalid: yaml: [broken")
+        assert _load_issue_safe(yaml_path) is None
+
+    def test_load_issue_safe_malformed_data(self, tmp_path: Path) -> None:
+        """_load_issue_safe returns None for valid YAML missing required fields."""
+        yaml_path = tmp_path / "issue.yaml"
+        yaml_path.write_text("foo: bar\n")
+        assert _load_issue_safe(yaml_path) is None
+
+    def test_load_issue_safe_valid(self, tmp_path: Path) -> None:
+        """_load_issue_safe returns Issue for valid data."""
+        import yaml
+        yaml_path = tmp_path / "issue.yaml"
+        data = {
+            "id": 42, "title": "Test", "slug": "test",
+            "stage": "backlog", "priority": "medium",
+            "labels": [], "dependencies": [],
+            "created": "2024-01-01T00:00:00Z",
+            "updated": "2024-01-01T00:00:00Z",
+            "history": [],
+        }
+        yaml_path.write_text(yaml.dump(data))
+        issue = _load_issue_safe(yaml_path)
+        assert issue is not None
+        assert issue.id == 42

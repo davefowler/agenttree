@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 import yaml
-from pydantic import BaseModel, Field, PrivateAttr, field_validator
+from pydantic import BaseModel, Field, PrivateAttr, ValidationError, field_validator
 
 from agenttree.agents_repo import sync_agents_repo
 
@@ -260,6 +260,18 @@ class Issue(BaseModel):
             Issue object or None if not found
         """
         return get_issue(issue_id, sync=sync)
+
+
+def _load_issue_safe(yaml_path: Path) -> Issue | None:
+    """Load an issue from YAML, returning None on corruption or malformation."""
+    try:
+        return Issue.from_yaml(yaml_path)
+    except yaml.YAMLError as e:
+        log.warning("Corrupted issue file %s: %s", yaml_path, e)
+        return None
+    except ValidationError as e:
+        log.warning("Malformed issue file %s: %s", yaml_path, e)
+        return None
 
 
 def slugify(text: str) -> str:
@@ -724,7 +736,9 @@ def remove_dependency(issue_id: int | str, dep_id: int | str) -> Optional[Issue]
     if not yaml_path.exists():
         return None
 
-    issue = Issue.from_yaml(yaml_path)
+    issue = _load_issue_safe(yaml_path)
+    if not issue:
+        return None
 
     # Normalize dep_id to int
     if isinstance(dep_id, str):
@@ -954,7 +968,9 @@ def update_issue_stage(
     if not yaml_path.exists():
         return None
 
-    issue = Issue.from_yaml(yaml_path)
+    issue = _load_issue_safe(yaml_path)
+    if not issue:
+        return None
     old_stage = issue.stage
 
     # Update stage
@@ -1039,7 +1055,9 @@ def update_issue_metadata(
     if not yaml_path.exists():
         return None
 
-    issue = Issue.from_yaml(yaml_path)
+    issue = _load_issue_safe(yaml_path)
+    if not issue:
+        return None
 
     # Update fields if provided
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -1095,7 +1113,9 @@ def set_processing(issue_id: int | str, processing_state: str | None) -> bool:
     if not yaml_path.exists():
         return False
 
-    issue = Issue.from_yaml(yaml_path)
+    issue = _load_issue_safe(yaml_path)
+    if not issue:
+        return False
     issue.processing = processing_state
     issue.save()
 
