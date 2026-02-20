@@ -1260,7 +1260,7 @@ def run_builtin_validator(
 def run_command_hook(
     issue_dir: Path,
     hook: Dict[str, Any],
-    issue_id: str = "",
+    issue_id: int | str = "",
     issue_title: str = "",
     branch: str = "",
     stage: str = "",
@@ -1289,7 +1289,7 @@ def run_command_hook(
     command = hook["command"]
 
     # Replace template variables
-    command = command.replace("{{issue_id}}", issue_id)
+    command = command.replace("{{issue_id}}", str(issue_id))
     command = command.replace("{{issue_title}}", issue_title)
     command = command.replace("{{branch}}", branch)
     command = command.replace("{{stage}}", stage)

@@ -138,15 +138,15 @@ class TestAgentStateEdgeCases:
             # Simulate tmux session for developer
             mock_sessions.return_value = [("agenttree-developer-001", "1704067200")]
 
-            found = get_active_agent("001", "developer")
+            found = get_active_agent(1, "developer")
             assert found is not None
-            assert found.issue_id == "001"
+            assert found.issue_id == 1
             assert found.role == "developer"
             assert found.port == 9001
 
             # Simulate tmux session removed (agent stopped)
             mock_sessions.return_value = []
-            found = get_active_agent("001", "developer")
+            found = get_active_agent(1, "developer")
             assert found is None
 
 
@@ -253,10 +253,10 @@ class TestDependencyEdgeCases:
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
                 issue = create_issue(title="Test Missing Dependency")
 
-                yaml_path = agenttree_path / "issues" / f"{issue.id}-{issue.slug}" / "issue.yaml"
+                yaml_path = agenttree_path / "issues" / issue.dir_name / "issue.yaml"
                 with open(yaml_path) as f:
                     data = yaml.safe_load(f)
-                data["dependencies"] = ["999"]
+                data["dependencies"] = [999]
                 with open(yaml_path, "w") as f:
                     yaml.dump(data, f)
 
@@ -264,7 +264,7 @@ class TestDependencyEdgeCases:
                 updated_issue = get_issue(issue.id)
                 met, blocking = check_dependencies_met(updated_issue)
                 assert met is False
-                assert "999" in blocking
+                assert 999 in blocking
 
     def test_dependency_on_completed_issue(self, workflow_repo: Path, mock_sync: MagicMock):
         """Test that dependency on accepted issue is met."""
@@ -279,7 +279,7 @@ class TestDependencyEdgeCases:
 
                 main_issue = create_issue(title="Main Issue")
 
-                yaml_path = agenttree_path / "issues" / f"{main_issue.id}-{main_issue.slug}" / "issue.yaml"
+                yaml_path = agenttree_path / "issues" / main_issue.dir_name / "issue.yaml"
                 with open(yaml_path) as f:
                     data = yaml.safe_load(f)
                 data["dependencies"] = [dep_issue.id]
