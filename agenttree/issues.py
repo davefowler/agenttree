@@ -183,8 +183,6 @@ class Issue(BaseModel):
         """
         p = Path(path)
         data = safe_yaml_load(p)
-        if "id" not in data:
-            data["id"] = p.parent.name.split("-")[0]
         issue = cls(**data)
         issue._yaml_path = p
         return issue
