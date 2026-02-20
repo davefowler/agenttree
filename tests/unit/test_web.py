@@ -937,7 +937,7 @@ class TestConvertIssueToWeb:
     def test_convert_issue_handles_repo_error_gracefully(self, mock_agent_mgr, mock_get_repo, mock_issue):
         """Test that pr_url derivation handles errors gracefully."""
         mock_agent_mgr._check_issue_tmux_session.return_value = False
-        mock_get_repo.side_effect = Exception("Git error")
+        mock_get_repo.side_effect = ValueError("Git error")
         mock_issue.pr_number = 123
         mock_issue.pr_url = None
 
