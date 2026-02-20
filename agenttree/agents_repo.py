@@ -211,9 +211,6 @@ def check_manager_stages(agents_dir: Path) -> int:
     if not manager_stages:
         return 0
 
-    import yaml
-    from agenttree.issues import safe_yaml_load
-
     processed = 0
 
     for issue_dir in issues_dir.iterdir():
@@ -225,8 +222,7 @@ def check_manager_stages(agents_dir: Path) -> int:
             continue
 
         try:
-            data = safe_yaml_load(issue_yaml)
-            issue = Issue(**data)
+            issue = Issue.from_yaml(issue_yaml)
 
             if issue.stage not in manager_stages:
                 continue
@@ -239,9 +235,8 @@ def check_manager_stages(agents_dir: Path) -> int:
 
             # Set flag to "running" to prevent re-entry during hook execution
             # (hooks may call sync_agents_repo which calls check_manager_stages)
-            data["manager_hooks_executed"] = f"{stage}:running"
-            with open(issue_yaml, "w") as f:
-                yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
+            issue.manager_hooks_executed = f"{stage}:running"
+            issue.save()
 
             try:
                 execute_enter_hooks(issue, stage)
@@ -256,10 +251,9 @@ def check_manager_stages(agents_dir: Path) -> int:
                     interrupt=True,
                 )
                 # Re-read yaml (hooks may have modified it) before writing flag
-                data = safe_yaml_load(issue_yaml)
-                data["manager_hooks_executed"] = None
-                with open(issue_yaml, "w") as f:
-                    yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
+                issue = Issue.from_yaml(issue_yaml)
+                issue.manager_hooks_executed = None
+                issue.save()
                 processed += 1
                 continue
             except Exception as e:
@@ -270,10 +264,9 @@ def check_manager_stages(agents_dir: Path) -> int:
 
             # Re-read yaml — hooks like create_pr update metadata (pr_number etc.)
             # and writing back stale `data` would clobber those changes.
-            data = safe_yaml_load(issue_yaml)
-            data["manager_hooks_executed"] = stage
-            with open(issue_yaml, "w") as f:
-                yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
+            issue = Issue.from_yaml(issue_yaml)
+            issue.manager_hooks_executed = stage
+            issue.save()
 
             processed += 1
 
@@ -393,7 +386,7 @@ def check_custom_agent_stages(agents_dir: Path) -> int:
     """
     from agenttree.hooks import is_running_in_container
     from agenttree.config import load_config
-    from agenttree.issues import Issue, safe_yaml_load
+    from agenttree.issues import Issue
 
     # Bail early if running in a container - host operations only
     if is_running_in_container():
@@ -409,7 +402,6 @@ def check_custom_agent_stages(agents_dir: Path) -> int:
     if not custom_agent_stages:
         return 0
 
-    import yaml
     from rich.console import Console
     from agenttree.tmux import session_exists
     console = Console()
@@ -425,8 +417,7 @@ def check_custom_agent_stages(agents_dir: Path) -> int:
             continue
 
         try:
-            data = safe_yaml_load(issue_yaml)
-            issue = Issue(**data)
+            issue = Issue.from_yaml(issue_yaml)
 
             if issue.stage not in custom_agent_stages:
                 continue
@@ -458,9 +449,8 @@ def check_custom_agent_stages(agents_dir: Path) -> int:
                         console.print(f"[dim]Pinged {role_name} agent for issue #{issue_id}[/dim]")
                     # Mark as spawned (in case it wasn't already)
                     if issue.agent_ensured != stage:
-                        data["agent_ensured"] = stage
-                        with open(issue_yaml, "w") as f:
-                            yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
+                        issue.agent_ensured = stage
+                        issue.save()
                     continue
                 else:
                     console.print(f"[yellow]{role_name} agent for issue #{issue_id} exited, restarting...[/yellow]")
@@ -475,9 +465,8 @@ def check_custom_agent_stages(agents_dir: Path) -> int:
                     needs_force = False
 
             # Set guard BEFORE the slow start_agent call to prevent re-entry
-            data["agent_ensured"] = f"{stage}:starting"
-            with open(issue_yaml, "w") as f:
-                yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
+            issue.agent_ensured = f"{stage}:starting"
+            issue.save()
 
             console.print(f"[cyan]Starting {role_name} agent for issue #{issue.id} at stage {stage}...[/cyan]")
 
@@ -485,17 +474,19 @@ def check_custom_agent_stages(agents_dir: Path) -> int:
                 from agenttree.api import start_agent
 
                 start_agent(issue.id, host=role_name, skip_preflight=True, quiet=True, force=needs_force)
-                data["agent_ensured"] = stage
+                # Re-read — start_agent may have modified the yaml
+                issue = Issue.from_yaml(issue_yaml)
+                issue.agent_ensured = stage
                 console.print(f"[green]✓ Started {role_name} agent for issue #{issue.id}[/green]")
                 spawned += 1
             except Exception as e:
                 # Clear guard so next heartbeat can retry
-                data["agent_ensured"] = None
+                issue = Issue.from_yaml(issue_yaml)
+                issue.agent_ensured = None
                 console.print(f"[red]Failed to start {role_name} agent for issue #{issue.id}[/red]")
                 console.print(f"[dim]{str(e)[:200]}[/dim]")
 
-            with open(issue_yaml, "w") as f:
-                yaml.safe_dump(data, f, default_flow_style=False, sort_keys=False)
+            issue.save()
 
         except Exception as e:
             from rich.console import Console
