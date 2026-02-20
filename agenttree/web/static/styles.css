@@ -261,6 +261,23 @@ header h1 {
     background: var(--btn-bg-active);
 }
 
+.btn-create {
+    background: var(--accent-green);
+    border-color: var(--accent-green);
+    color: #fff;
+}
+
+.btn-create:hover {
+    background: var(--accent-green-muted);
+    border-color: var(--accent-green-muted);
+}
+
+.btn-create .shortcut-hint {
+    opacity: 0.7;
+    margin-left: 6px;
+    font-size: 0.9em;
+}
+
 .btn-chat-toggle {
     background: var(--btn-bg);
 }
