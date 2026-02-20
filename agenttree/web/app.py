@@ -69,14 +69,7 @@ def _compute_etag(content: str) -> str:
 
 
 def format_duration(minutes: int) -> str:
-    """Format a duration in minutes as a compact human-readable string.
-
-    Args:
-        minutes: Duration in minutes
-
-    Returns:
-        Formatted string like "0m", "45m", "2h", "3d"
-    """
+    """Format minutes as '0m', '2h', or '3d'."""
     if minutes < 60:
         return f"{minutes}m"
     elif minutes < 1440:  # Less than 24 hours
@@ -343,13 +336,10 @@ def convert_issue_to_web(issue: issue_crud.Issue, load_dependents: bool = False)
     time_in_stage = "0m"
     if issue.history:
         last_entry = issue.history[-1]
-        try:
-            stage_entered = datetime.fromisoformat(last_entry.timestamp.replace("Z", "+00:00"))
-            now = datetime.now(timezone.utc)
-            minutes_elapsed = int((now - stage_entered).total_seconds() / 60)
-            time_in_stage = format_duration(max(0, minutes_elapsed))
-        except (ValueError, TypeError):
-            pass  # Keep default "0m" on parse error
+        stage_entered = datetime.fromisoformat(last_entry.timestamp.replace("Z", "+00:00"))
+        now = datetime.now(timezone.utc)
+        minutes_elapsed = int((now - stage_entered).total_seconds() / 60)
+        time_in_stage = format_duration(max(0, minutes_elapsed))
 
     return WebIssue(
         number=issue.id,
