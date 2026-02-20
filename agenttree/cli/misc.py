@@ -283,7 +283,8 @@ def cleanup_command(
             if len(parts) < 2:
                 continue
 
-            issue_id = parts[1]
+            from agenttree.ids import parse_issue_id
+            issue_id = parse_issue_id(parts[1])
             issue = issue_by_id.get(issue_id)
 
             # Check if worktree should be cleaned
@@ -352,17 +353,18 @@ def cleanup_command(
                 continue
 
             # Check if it's an issue branch
-            branch_issue_id: str | None = None
+            branch_issue_id: int | None = None
             if branch.startswith("issue-"):
                 # issue-XXX-slug format
                 parts = branch.split("-")
                 if len(parts) >= 2:
-                    branch_issue_id = parts[1]
+                    from agenttree.ids import parse_issue_id
+                    branch_issue_id = parse_issue_id(parts[1])
 
             reason = None
             if branch in merged_branches and branch != "main":
                 reason = "merged to main"
-            elif branch_issue_id:
+            elif branch_issue_id is not None:
                 issue = issue_by_id.get(branch_issue_id)
                 if not issue:
                     reason = "issue not found"
@@ -387,7 +389,8 @@ def cleanup_command(
             # Extract issue ID from session name
             suffix = session.name[len(project_prefix):]
             # Could be just ID or ID-host
-            issue_id = suffix.split("-")[0]
+            from agenttree.ids import parse_issue_id
+            issue_id = parse_issue_id(suffix.split("-")[0])
 
             issue = issue_by_id.get(issue_id)
             if not issue:

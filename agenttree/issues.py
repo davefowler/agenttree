@@ -113,7 +113,7 @@ class Issue(BaseModel):
     """An issue in the agenttree workflow."""
     _yaml_path: Path | None = PrivateAttr(default=None)
 
-    id: str
+    id: int
     slug: str = ""
     title: str = ""
     created: str = ""
@@ -129,7 +129,7 @@ class Issue(BaseModel):
     priority: Priority = Priority.MEDIUM
 
     # Dependencies: list of issue IDs that must be completed (accepted stage) before this issue can start
-    dependencies: list[str] = Field(default_factory=list)
+    dependencies: list[int] = Field(default_factory=list)
 
     github_issue: Optional[int] = None
     pr_number: Optional[int] = None
@@ -153,6 +153,35 @@ class Issue(BaseModel):
     # Guard for manager hook re-entry (e.g., "implement.review", "implement.review:running")
     manager_hooks_executed: Optional[str] = None
 
+    @field_validator("id", mode="before")
+    @classmethod
+    def _coerce_id_to_int(cls, v: Any) -> int:
+        """Coerce string IDs to int for backwards compatibility.
+
+        Handles legacy string IDs like '042' from old YAML files.
+        """
+        if isinstance(v, int):
+            return v
+        if isinstance(v, str):
+            return int(v.lstrip("0") or "0")
+        raise ValueError(f"Invalid issue ID: {v}")
+
+    @field_validator("dependencies", mode="before")
+    @classmethod
+    def _coerce_dependencies_to_int(cls, v: Any) -> list[int]:
+        """Coerce string dependency IDs to int for backwards compatibility."""
+        if not v:
+            return []
+        result = []
+        for dep in v:
+            if isinstance(dep, int):
+                result.append(dep)
+            elif isinstance(dep, str):
+                result.append(int(dep.lstrip("0") or "0"))
+            else:
+                raise ValueError(f"Invalid dependency ID: {dep}")
+        return result
+
     @field_validator("created", "updated", mode="before")
     @classmethod
     def _coerce_date_to_str(cls, v: Any) -> Any:
@@ -166,6 +195,12 @@ class Issue(BaseModel):
         if hasattr(v, "isoformat"):  # datetime.date
             return v.isoformat()
         return v
+
+    @property
+    def dir_name(self) -> str:
+        """Get directory name for this issue (e.g., '042')."""
+        from agenttree.ids import format_issue_id
+        return format_issue_id(self.id)
 
     @classmethod
     def from_yaml(cls, path: Path | str) -> "Issue":
@@ -211,7 +246,7 @@ class Issue(BaseModel):
         return None
 
     @classmethod
-    def get(cls, issue_id: str, sync: bool = True) -> Optional["Issue"]:
+    def get(cls, issue_id: int | str, sync: bool = True) -> Optional["Issue"]:
         """Get an issue by ID.
 
         Convenience wrapper around get_issue(). Looks up the issue directory
@@ -286,11 +321,13 @@ def get_next_issue_number() -> int:
     max_num = 0
     for issue_dir in issues_path.iterdir():
         if issue_dir.is_dir() and issue_dir.name != "archive":
-            # Extract number from directory name (e.g., "001-fix-login" -> 1)
-            match = re.match(r'^(\d+)-', issue_dir.name)
-            if match:
-                num = int(match.group(1))
+            # Directory name is just the number (e.g., "001", "042", "1001")
+            try:
+                num = int(issue_dir.name)
                 max_num = max(max_num, num)
+            except ValueError:
+                # Skip directories that aren't valid issue IDs
+                continue
 
     return max_num + 1
 
@@ -340,7 +377,7 @@ def create_issue(
     problem: Optional[str] = None,
     context: Optional[str] = None,
     solutions: Optional[str] = None,
-    dependencies: Optional[list[str]] = None,
+    dependencies: Optional[list[int | str]] = None,
     needs_ui_review: bool = False,
     attachments: list[tuple[str, bytes]] | None = None,
 ) -> Issue:
@@ -362,6 +399,8 @@ def create_issue(
     Returns:
         The created Issue object
     """
+    from agenttree.ids import format_issue_id, parse_issue_id
+
     # Sync before and after writing
     agents_path = get_agenttree_path()
     sync_agents_repo(agents_path, pull_only=True)
@@ -369,29 +408,29 @@ def create_issue(
     issues_path = get_issues_path()
     issues_path.mkdir(parents=True, exist_ok=True)
 
-    # Generate ID and slug
-    num = get_next_issue_number()
-    issue_id = f"{num:03d}"
+    # Generate ID
+    issue_id = get_next_issue_number()
     slug = slugify(title)
-    dir_name = f"{issue_id}-{slug}"
+    dir_name = format_issue_id(issue_id)
 
     # Create issue directory
     issue_dir = issues_path / dir_name
     issue_dir.mkdir(exist_ok=True)
 
-    # Normalize dependencies (ensure they're padded to 3 digits)
-    normalized_deps: list[str] = []
+    # Convert dependencies to ints
+    deps_int: list[int] = []
     if dependencies:
         for dep in dependencies:
-            dep_num = dep.lstrip("0") or "0"
-            normalized_deps.append(f"{int(dep_num):03d}")
+            if isinstance(dep, int):
+                deps_int.append(dep)
+            else:
+                deps_int.append(parse_issue_id(dep))
 
         # Check for circular dependencies before creating
-        cycle = detect_circular_dependency(issue_id, normalized_deps)
+        cycle = detect_circular_dependency(issue_id, deps_int)
         if cycle:
-            raise ValueError(
-                f"Circular dependency detected: {' -> '.join(cycle)}"
-            )
+            cycle_str = " -> ".join(format_issue_id(c) for c in cycle)
+            raise ValueError(f"Circular dependency detected: {cycle_str}")
 
     # Create issue object
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -405,7 +444,7 @@ def create_issue(
         flow=flow,
         priority=priority,
         labels=labels or [],
-        dependencies=normalized_deps,
+        dependencies=deps_int,
         needs_ui_review=needs_ui_review,
         history=[
             HistoryEntry(stage=stage, timestamp=now)
@@ -572,13 +611,13 @@ def list_issues(
     return issues
 
 
-def get_issue(issue_id: str, sync: bool = True) -> Optional[Issue]:
+def get_issue(issue_id: int | str, sync: bool = True) -> Optional[Issue]:
     """Get a single issue by ID.
 
     Routes through _load_all_issues() to benefit from the mtime cache.
 
     Args:
-        issue_id: Issue ID (e.g., "001", "1", or "001-fix-login")
+        issue_id: Issue ID (int or string like "042", "42")
         sync: If True, sync with remote before reading (default True for CLI, False for web)
 
     Returns:
@@ -589,44 +628,51 @@ def get_issue(issue_id: str, sync: bool = True) -> Optional[Issue]:
         sync_agents_repo(agents_path, pull_only=True)
         invalidate_issues_cache()
 
-    # Extract numeric part for comparison (handles "001", "1", "001-fix-login")
-    numeric_part = issue_id.split("-")[0].lstrip("0") or "0"
+    # Normalize to int
+    from agenttree.ids import parse_issue_id
+    if isinstance(issue_id, str):
+        target_id = parse_issue_id(issue_id)
+    else:
+        target_id = issue_id
 
     for issue in _load_all_issues():
-        issue_numeric = issue.id.lstrip("0") or "0"
-        if issue_numeric == numeric_part:
+        if issue.id == target_id:
             return issue
 
     return None
 
 
-def get_issue_dir(issue_id: str) -> Optional[Path]:
+def get_issue_dir(issue_id: int | str) -> Optional[Path]:
     """Get the directory path for an issue.
 
     Args:
-        issue_id: Issue ID
+        issue_id: Issue ID (int or string)
 
     Returns:
         Path to issue directory or None
     """
+    from agenttree.ids import parse_issue_id, format_issue_id
+
     issues_path = get_issues_path()
     if not issues_path.exists():
         return None
 
-    normalized_id = issue_id.lstrip("0") or "0"
+    # Normalize to int, then format as directory name
+    if isinstance(issue_id, str):
+        target_id = parse_issue_id(issue_id)
+    else:
+        target_id = issue_id
 
-    for issue_dir in issues_path.iterdir():
-        if not issue_dir.is_dir() or issue_dir.name == "archive":
-            continue
+    dir_name = format_issue_id(target_id)
+    issue_dir = issues_path / dir_name
 
-        dir_id = issue_dir.name.split("-")[0].lstrip("0") or "0"
-        if dir_id == normalized_id or issue_dir.name == issue_id:
-            return issue_dir
+    if issue_dir.exists() and issue_dir.is_dir():
+        return issue_dir
 
     return None
 
 
-def check_dependencies_met(issue: Issue) -> tuple[bool, list[str]]:
+def check_dependencies_met(issue: Issue) -> tuple[bool, list[int]]:
     """Check if all dependencies for an issue are met.
 
     A dependency is met when the dependent issue is in the ACCEPTED stage.
@@ -637,14 +683,14 @@ def check_dependencies_met(issue: Issue) -> tuple[bool, list[str]]:
     Returns:
         Tuple of (all_met, unmet_ids) where:
         - all_met: True if all dependencies are met
-        - unmet_ids: List of issue IDs that are not yet completed
+        - unmet_ids: List of issue IDs (int) that are not yet completed
     """
     if not issue.dependencies:
         return True, []
 
-    unmet = []
+    unmet: list[int] = []
     for dep_id in issue.dependencies:
-        dep_issue = get_issue(dep_id)
+        dep_issue = get_issue(dep_id, sync=False)
         if dep_issue is None:
             # Dependency doesn't exist - treat as unmet
             unmet.append(dep_id)
@@ -654,7 +700,7 @@ def check_dependencies_met(issue: Issue) -> tuple[bool, list[str]]:
     return len(unmet) == 0, unmet
 
 
-def remove_dependency(issue_id: str, dep_id: str) -> Optional[Issue]:
+def remove_dependency(issue_id: int | str, dep_id: int | str) -> Optional[Issue]:
     """Remove a dependency from an issue.
 
     Args:
@@ -664,6 +710,8 @@ def remove_dependency(issue_id: str, dep_id: str) -> Optional[Issue]:
     Returns:
         Updated Issue object or None if not found
     """
+    from agenttree.ids import parse_issue_id
+
     # Sync before and after writing
     agents_path = get_agenttree_path()
     sync_agents_repo(agents_path, pull_only=True)
@@ -678,14 +726,15 @@ def remove_dependency(issue_id: str, dep_id: str) -> Optional[Issue]:
 
     issue = Issue.from_yaml(yaml_path)
 
-    # Normalize dep_id to match format in dependencies list
-    dep_normalized = f"{int(dep_id.lstrip('0') or '0'):03d}"
+    # Normalize dep_id to int
+    if isinstance(dep_id, str):
+        dep_int = parse_issue_id(dep_id)
+    else:
+        dep_int = dep_id
 
     # Remove the dependency
-    if dep_normalized in issue.dependencies:
-        issue.dependencies.remove(dep_normalized)
-    elif dep_id in issue.dependencies:
-        issue.dependencies.remove(dep_id)
+    if dep_int in issue.dependencies:
+        issue.dependencies.remove(dep_int)
 
     # Update timestamp
     issue.updated = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -697,9 +746,9 @@ def remove_dependency(issue_id: str, dep_id: str) -> Optional[Issue]:
 
 
 def detect_circular_dependency(
-    issue_id: str,
-    new_dependencies: list[str],
-) -> Optional[list[str]]:
+    issue_id: int | str,
+    new_dependencies: list[int],
+) -> Optional[list[int]]:
     """Detect if adding dependencies would create a circular dependency.
 
     Uses DFS to detect cycles in the dependency graph.
@@ -711,31 +760,31 @@ def detect_circular_dependency(
     Returns:
         List of issue IDs forming the cycle if found, None otherwise
     """
+    from agenttree.ids import parse_issue_id
+
     if not new_dependencies:
         return None
 
-    # Normalize issue ID
-    normalized_id = f"{int(issue_id.lstrip('0') or '0'):03d}"
+    # Normalize issue ID to int
+    if isinstance(issue_id, str):
+        target_id = parse_issue_id(issue_id)
+    else:
+        target_id = issue_id
 
     # Build adjacency list of all existing dependencies
-    dep_graph: dict[str, list[str]] = {}
-    for issue in list_issues():
-        issue_normalized = f"{int(issue.id.lstrip('0') or '0'):03d}"
-        dep_graph[issue_normalized] = [
-            f"{int(d.lstrip('0') or '0'):03d}" for d in issue.dependencies
-        ]
+    dep_graph: dict[int, list[int]] = {}
+    for issue in list_issues(sync=False):
+        dep_graph[issue.id] = issue.dependencies.copy()
 
     # Add the new dependencies we're validating
-    dep_graph[normalized_id] = [
-        f"{int(d.lstrip('0') or '0'):03d}" for d in new_dependencies
-    ]
+    dep_graph[target_id] = new_dependencies.copy()
 
     # DFS to detect cycle starting from issue_id
-    visited: set[str] = set()
-    path: list[str] = []
-    path_set: set[str] = set()
+    visited: set[int] = set()
+    path: list[int] = []
+    path_set: set[int] = set()
 
-    def dfs(node: str) -> Optional[list[str]]:
+    def dfs(node: int) -> Optional[list[int]]:
         if node in path_set:
             # Found cycle - return path from cycle start
             cycle_start = path.index(node)
@@ -757,10 +806,10 @@ def detect_circular_dependency(
         path_set.remove(node)
         return None
 
-    return dfs(normalized_id)
+    return dfs(target_id)
 
 
-def get_blocked_issues(completed_issue_id: str) -> list[Issue]:
+def get_blocked_issues(completed_issue_id: int | str) -> list[Issue]:
     """Get all issues in backlog that were waiting on a completed issue.
 
     Args:
@@ -769,22 +818,23 @@ def get_blocked_issues(completed_issue_id: str) -> list[Issue]:
     Returns:
         List of issues that have this issue as a dependency
     """
-    # Normalize the ID for comparison
-    normalized_id = completed_issue_id.lstrip("0") or "0"
+    from agenttree.ids import parse_issue_id
+
+    # Normalize to int
+    if isinstance(completed_issue_id, str):
+        target_id = parse_issue_id(completed_issue_id)
+    else:
+        target_id = completed_issue_id
 
     blocked = []
-    for issue in list_issues(stage="backlog"):
-        # Check if this issue depends on the completed issue
-        for dep_id in issue.dependencies:
-            dep_normalized = dep_id.lstrip("0") or "0"
-            if dep_normalized == normalized_id:
-                blocked.append(issue)
-                break
+    for issue in list_issues(stage="backlog", sync=False):
+        if target_id in issue.dependencies:
+            blocked.append(issue)
 
     return blocked
 
 
-def get_dependent_issues(issue_id: str) -> list[Issue]:
+def get_dependent_issues(issue_id: int | str) -> list[Issue]:
     """Get all issues that depend on this issue (any stage).
 
     Unlike get_blocked_issues which only returns backlog issues,
@@ -796,17 +846,18 @@ def get_dependent_issues(issue_id: str) -> list[Issue]:
     Returns:
         List of issues that depend on this issue
     """
-    # Normalize the ID for comparison
-    normalized_id = issue_id.lstrip("0") or "0"
+    from agenttree.ids import parse_issue_id
+
+    # Normalize to int
+    if isinstance(issue_id, str):
+        target_id = parse_issue_id(issue_id)
+    else:
+        target_id = issue_id
 
     dependents = []
     for issue in list_issues(sync=False):
-        # Check if this issue depends on our target
-        for dep_id in issue.dependencies:
-            dep_normalized = dep_id.lstrip("0") or "0"
-            if dep_normalized == normalized_id:
-                dependents.append(issue)
-                break
+        if target_id in issue.dependencies:
+            dependents.append(issue)
 
     return dependents
 
@@ -853,7 +904,7 @@ def get_next_stage(
 
 
 def update_issue_stage(
-    issue_id: str,
+    issue_id: int | str,
     stage: str,
     agent: Optional[int] = None,
     skip_sync: bool = False,
@@ -946,7 +997,7 @@ def update_issue_stage(
 
 
 def update_issue_metadata(
-    issue_id: str,
+    issue_id: int | str,
     pr_number: Optional[int] = None,
     pr_url: Optional[str] = None,
     branch: Optional[str] = None,
@@ -1022,7 +1073,7 @@ def update_issue_metadata(
     return issue
 
 
-def set_processing(issue_id: str, processing_state: str | None) -> bool:
+def set_processing(issue_id: int | str, processing_state: str | None) -> bool:
     """Set or clear the processing state for an issue.
 
     Used to indicate that hooks are currently running on an issue.
@@ -1051,7 +1102,7 @@ def set_processing(issue_id: str, processing_state: str | None) -> bool:
     return True
 
 
-def update_issue_priority(issue_id: str, priority: Priority) -> Optional[Issue]:
+def update_issue_priority(issue_id: int | str, priority: Priority) -> Optional[Issue]:
     """Update an issue's priority.
 
     Args:
@@ -1295,7 +1346,7 @@ def load_persona(
             "issue_id": issue.id,
             "issue_title": issue.title,
             "issue_dir": str(issue_dir) if issue_dir else "",
-            "issue_dir_rel": f"_agenttree/issues/{issue.id}-{issue.slug}" if issue_dir else "",
+            "issue_dir_rel": f"_agenttree/issues/{issue.dir_name}" if issue_dir else "",
         })
 
     try:
@@ -1312,14 +1363,14 @@ def load_persona(
 class AgentSession(BaseModel):
     """Tracks agent session state for restart detection."""
     session_id: str  # Unique ID per agent start
-    issue_id: str
+    issue_id: int
     started_at: str
     last_stage: str  # Dot path (e.g., "explore.define")
     last_advanced_at: str
     oriented: bool = False  # True if agent has been oriented in this session
 
 
-def get_session_path(issue_id: str) -> Optional[Path]:
+def get_session_path(issue_id: int | str) -> Optional[Path]:
     """Get path to session file for an issue."""
     issue_dir = get_issue_dir(issue_id)
     if not issue_dir:
@@ -1327,7 +1378,7 @@ def get_session_path(issue_id: str) -> Optional[Path]:
     return issue_dir / ".agent_session.yaml"
 
 
-def get_session(issue_id: str) -> Optional[AgentSession]:
+def get_session(issue_id: int | str) -> Optional[AgentSession]:
     """Load session state for an issue."""
     session_path = get_session_path(issue_id)
     if not session_path or not session_path.exists():
@@ -1340,7 +1391,7 @@ def get_session(issue_id: str) -> Optional[AgentSession]:
         return None
 
 
-def create_session(issue_id: str) -> AgentSession:
+def create_session(issue_id: int | str) -> AgentSession:
     """Create a new session for an issue."""
     import uuid
 
@@ -1351,7 +1402,7 @@ def create_session(issue_id: str) -> AgentSession:
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     session = AgentSession(
         session_id=str(uuid.uuid4())[:8],
-        issue_id=issue_id,
+        issue_id=issue.id,
         started_at=now,
         last_stage=issue.stage,
         last_advanced_at=now,
@@ -1429,7 +1480,7 @@ def is_restart(issue_id: str, current_stage: Optional[str] = None) -> bool:
     return not session.oriented
 
 
-def delete_session(issue_id: str) -> None:
+def delete_session(issue_id: int | str) -> None:
     """Delete session file (e.g., when agent is destroyed)."""
     session_path = get_session_path(issue_id)
     if session_path and session_path.exists():
@@ -1538,7 +1589,7 @@ def get_issue_context(issue: Issue, include_docs: bool = True) -> dict:
     context["issue_id"] = issue.id  # Alias for templates
     context["issue_title"] = issue.title  # Alias for templates
     context["issue_dir"] = str(issue_dir) if issue_dir else ""
-    context["issue_dir_rel"] = f"_agenttree/issues/{issue.id}-{issue.slug}" if issue_dir else ""
+    context["issue_dir_rel"] = f"_agenttree/issues/{issue.dir_name}" if issue_dir else ""
 
     # Parse dot path into group and substage for templates
     from agenttree.config import load_config

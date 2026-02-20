@@ -289,10 +289,10 @@ class AgentManager:
         """Clear the cached session list (call at start of each request)."""
         self._active_sessions = None
 
-    def _check_issue_tmux_session(self, issue_id: str) -> bool:
+    def _check_issue_tmux_session(self, issue_id: int) -> bool:
         """Check if tmux session exists for an issue-bound agent.
 
-        Note: Manager is agent 0, so _check_issue_tmux_session("000") checks manager.
+        Note: Manager is agent 0, so _check_issue_tmux_session(0) checks manager.
         Uses config.get_issue_session_patterns() for consistent naming.
         """
         active = self._get_active_sessions()
@@ -314,17 +314,14 @@ def convert_issue_to_web(issue: issue_crud.Issue, load_dependents: bool = False)
     # Check if tmux session is active for this issue
     tmux_active = agent_manager._check_issue_tmux_session(issue.id)
 
-    # Convert dependencies to ints
-    dependencies = [int(d.lstrip("0") or "0") for d in issue.dependencies]
-
     # Load dependents if requested (issues blocked by this one)
     dependents: list[int] = []
     if load_dependents:
         dependent_issues = issue_crud.get_dependent_issues(issue.id)
-        dependents = [int(d.id) for d in dependent_issues]
+        dependents = [d.id for d in dependent_issues]
 
     return WebIssue(
-        number=int(issue.id),
+        number=issue.id,
         title=issue.title,
         body="",  # Loaded separately from problem.md
         labels=issue.labels,
@@ -338,7 +335,7 @@ def convert_issue_to_web(issue: issue_crud.Issue, load_dependents: bool = False)
         port=_config.get_port_for_issue(issue.id),
         created_at=datetime.fromisoformat(issue.created.replace("Z", "+00:00")),
         updated_at=datetime.fromisoformat(issue.updated.replace("Z", "+00:00")),
-        dependencies=dependencies,
+        dependencies=issue.dependencies,
         dependents=dependents,
         processing=issue.processing,
         ci_escalated=issue.ci_escalated,
@@ -539,7 +536,7 @@ FILE_TO_STAGE: dict[str, str] = {
 
 
 def get_issue_files(
-    issue_id: str,
+    issue_id: int | str,
     include_content: bool = False,
     current_stage: str | None = None,
 ) -> list[dict[str, str]]:
@@ -656,7 +653,7 @@ def get_default_doc(dot_path: str) -> str | None:
 MAX_DIFF_SIZE = 200 * 1024
 
 
-def get_issue_diff(issue_id: str) -> dict:
+def get_issue_diff(issue_id: int) -> dict:
     """Get git diff for an issue's worktree.
 
     Returns dict with keys: diff, stat, has_changes, error, truncated
@@ -838,15 +835,21 @@ async def flow(
     web_issues = await asyncio.to_thread(_get_flow_issues, search, sort, filter)
 
     # Select issue from URL param or default to first
+    from agenttree.ids import parse_issue_id
+
     selected_issue = None
-    selected_issue_id = None
+    selected_issue_id: int | None = None
     if issue:
-        for wi in web_issues:
-            if str(wi.number) == issue or str(wi.number).zfill(3) == issue:
-                selected_issue_id = str(wi.number).zfill(3)
-                break
-    if not selected_issue_id and web_issues:
-        selected_issue_id = str(web_issues[0].number).zfill(3)
+        try:
+            target_id = parse_issue_id(issue)
+            for wi in web_issues:
+                if wi.number == target_id:
+                    selected_issue_id = wi.number
+                    break
+        except ValueError:
+            pass
+    if selected_issue_id is None and web_issues:
+        selected_issue_id = web_issues[0].number
 
     # Reload selected issue with dependents for detail view
     if selected_issue_id:
@@ -905,15 +908,21 @@ async def mobile(
     web_issues = await asyncio.to_thread(_get_flow_issues)
 
     # Select issue from URL param or default to first
+    from agenttree.ids import parse_issue_id
+
     selected_issue = None
-    selected_issue_id = None
+    selected_issue_id: int | None = None
     if issue:
-        for wi in web_issues:
-            if str(wi.number) == issue or str(wi.number).zfill(3) == issue:
-                selected_issue_id = str(wi.number).zfill(3)
-                break
-    if not selected_issue_id and web_issues:
-        selected_issue_id = str(web_issues[0].number).zfill(3)
+        try:
+            target_id = parse_issue_id(issue)
+            for wi in web_issues:
+                if wi.number == target_id:
+                    selected_issue_id = wi.number
+                    break
+        except ValueError:
+            pass
+    if selected_issue_id is None and web_issues:
+        selected_issue_id = web_issues[0].number
 
     # Reload selected issue with dependents for detail view
     if selected_issue_id:
@@ -991,12 +1000,11 @@ async def agent_tmux(
     with matching ETag, returns 304 Not Modified to save bandwidth.
     """
     from agenttree.tmux import is_claude_running
+    from agenttree.ids import parse_issue_id
 
     config = load_config()
-    # Pad issue number to 3 digits to match tmux session naming
-    padded_num = agent_num.zfill(3)
-    # Use config for consistent session naming
-    session_names = config.get_issue_session_patterns(padded_num)
+    issue_id = parse_issue_id(agent_num)
+    session_names = config.get_issue_session_patterns(issue_id)
 
     # Capture tmux output in thread pool to avoid blocking event loop
     raw_output, session_name = await asyncio.to_thread(_capture_tmux_output, session_names)
@@ -1058,12 +1066,12 @@ async def send_to_agent(
     )
 
     config = load_config()
-    # Pad issue number to 3 digits to match tmux session naming
-    padded_num = agent_num.zfill(3)
+    from agenttree.ids import parse_issue_id
+    from agenttree.tmux import session_exists
+    issue_id = parse_issue_id(agent_num)
 
     # Find the active session using config patterns
-    from agenttree.tmux import session_exists
-    session_patterns = config.get_issue_session_patterns(padded_num)
+    session_patterns = config.get_issue_session_patterns(issue_id)
     session_name = next((n for n in session_patterns if session_exists(n)), session_patterns[0])
 
     # Send message - result will appear in tmux output on next poll
@@ -1109,11 +1117,12 @@ async def stop_issue(
     """Stop an agent working on an issue (kills tmux, stops container, cleans up state)."""
     import asyncio
     from agenttree.api import stop_all_agents_for_issue
+    from agenttree.ids import parse_issue_id
 
     try:
-        padded_id = issue_id.zfill(3)
+        parsed_id = parse_issue_id(issue_id)
         # Run in thread to avoid blocking event loop
-        count = await asyncio.to_thread(stop_all_agents_for_issue, padded_id, quiet=True)
+        count = await asyncio.to_thread(stop_all_agents_for_issue, parsed_id, quiet=True)
         if count > 0:
             return {"ok": True, "status": f"Stopped {count} agent(s) for issue #{issue_id}"}
         else:
@@ -1128,13 +1137,13 @@ async def get_agent_status(
     user: Optional[str] = Depends(get_current_user)
 ) -> dict:
     """Check if an agent's tmux session is running for an issue."""
-    # Normalize issue ID
-    padded_id = issue_id.zfill(3)
+    from agenttree.ids import parse_issue_id
+    parsed_id = parse_issue_id(issue_id)
     # Check tmux session in thread pool to avoid blocking event loop
-    tmux_active = await asyncio.to_thread(agent_manager._check_issue_tmux_session, padded_id)
+    tmux_active = await asyncio.to_thread(agent_manager._check_issue_tmux_session, parsed_id)
 
     # Get processing state from issue
-    issue = issue_crud.get_issue(padded_id, sync=False)
+    issue = issue_crud.get_issue(parsed_id, sync=False)
     processing = issue.processing if issue else None
 
     return {
@@ -1153,15 +1162,16 @@ async def get_diff(
 
     Returns the raw diff output for rendering with diff2html on the client.
     """
-    issue_id = issue_id.zfill(3)
+    from agenttree.ids import parse_issue_id
+    parsed_id = parse_issue_id(issue_id)
 
     # Check issue exists
-    issue = issue_crud.get_issue(issue_id)
+    issue = issue_crud.get_issue(parsed_id)
     if not issue:
         raise HTTPException(status_code=404, detail="Issue not found")
 
     # Get diff in thread pool to avoid blocking event loop
-    return await asyncio.to_thread(get_issue_diff, issue_id)
+    return await asyncio.to_thread(get_issue_diff, parsed_id)
 
 
 @app.post("/api/issues/{issue_id}/move")
@@ -1223,8 +1233,7 @@ async def approve_issue(
     from agenttree.hooks import ValidationError, StageRedirect
 
     # Get issue
-    issue_id_normalized = issue_id.lstrip("0") or "0"
-    issue = issue_crud.get_issue(issue_id_normalized, sync=False)
+    issue = issue_crud.get_issue(issue_id, sync=False)
     if not issue:
         raise HTTPException(status_code=404, detail="Issue not found")
 
@@ -1240,14 +1249,14 @@ async def approve_issue(
 
     try:
         # Set processing state
-        issue_crud.set_processing(issue_id_normalized, "exit")
+        issue_crud.set_processing(issue_id, "exit")
 
         # Use consolidated transition_issue() — handles exit hooks, stage update, enter hooks
         from agenttree.api import transition_issue
         try:
             updated = await asyncio.to_thread(
                 transition_issue,
-                issue_id_normalized,
+                issue_id,
                 next_stage,
                 skip_pr_approval=config.allow_self_approval,
                 trigger="web",
@@ -1256,7 +1265,7 @@ async def approve_issue(
             # Redirect — retry with new target
             updated = await asyncio.to_thread(
                 transition_issue,
-                issue_id_normalized,
+                issue_id,
                 redirect.target,
                 skip_pr_approval=config.allow_self_approval,
                 trigger="web",
@@ -1269,23 +1278,23 @@ async def approve_issue(
             from agenttree.state import get_active_agent
             from agenttree.tmux import send_message, session_exists
 
-            agent = get_active_agent(issue_id_normalized)
+            agent = get_active_agent(issue.id)
             if agent and agent.tmux_session:
                 if session_exists(agent.tmux_session):
                     message = "Your work was approved! Run `agenttree next` for instructions."
                     await asyncio.to_thread(send_message, agent.tmux_session, message)
         except Exception as e:
-            logger.warning("Agent notification failed for issue %s: %s", issue_id_normalized, e)
+            logger.warning("Agent notification failed for issue %s: %s", issue_id, e)
 
         return {"ok": True}
     except HTTPException:
         raise  # Let FastAPI handle these with proper status codes
     except Exception as e:
-        logger.exception(f"Error approving issue #{issue_id_normalized}")
+        logger.exception(f"Error approving issue #{issue_id}")
         raise HTTPException(status_code=500, detail=f"Internal error: {type(e).__name__}: {e}")
     finally:
         # Always clear processing state
-        issue_crud.set_processing(issue_id_normalized, None)
+        issue_crud.set_processing(issue_id, None)
 
 
 # Allowed file extensions for attachments
@@ -1382,11 +1391,8 @@ async def get_attachment(
     """
     from agenttree.issues import get_issue_dir
 
-    # Normalize issue ID
-    issue_id_normalized = issue_id.lstrip("0") or "0"
-
     # Get issue directory
-    issue_dir = get_issue_dir(issue_id_normalized)
+    issue_dir = get_issue_dir(issue_id)
     if not issue_dir:
         raise HTTPException(status_code=404, detail=f"Issue {issue_id} not found")
 
@@ -1419,11 +1425,8 @@ async def remove_dependency(
     """Remove a dependency from an issue."""
     from agenttree.issues import remove_dependency as remove_dep
 
-    issue_id_normalized = issue_id.lstrip("0") or "0"
-    dep_id_normalized = dep_id.lstrip("0") or "0"
-
     try:
-        issue = remove_dep(issue_id_normalized, dep_id_normalized)
+        issue = remove_dep(issue_id, dep_id)
         if not issue:
             raise HTTPException(status_code=404, detail=f"Issue {issue_id} not found")
         return {"ok": True, "issue_id": issue.id, "dependencies": issue.dependencies}
@@ -1449,8 +1452,7 @@ async def update_issue_priority(
         )
 
     # Get and update issue
-    issue_id_normalized = issue_id.lstrip("0") or "0"
-    issue = issue_crud.get_issue(issue_id_normalized, sync=False)
+    issue = issue_crud.get_issue(issue_id, sync=False)
     if not issue:
         raise HTTPException(status_code=404, detail=f"Issue {issue_id} not found")
 
@@ -1473,26 +1475,26 @@ async def rebase_issue(
     from agenttree.hooks import rebase_issue_branch
 
     # Get issue
-    issue_id_normalized = issue_id.lstrip("0") or "0"
-    issue = issue_crud.get_issue(issue_id_normalized, sync=False)
+    issue = issue_crud.get_issue(issue_id, sync=False)
     if not issue:
         raise HTTPException(status_code=404, detail=f"Issue {issue_id} not found")
 
     # Perform the rebase
-    success, message = rebase_issue_branch(issue_id_normalized)
+    success, message = rebase_issue_branch(issue_id)
 
     if not success:
         raise HTTPException(status_code=400, detail=message)
 
     # Notify the agent if there's an active tmux session
+    from agenttree.ids import parse_issue_id
     from agenttree.tmux import send_message, session_exists
 
     config = load_config()
-    padded_id = issue_id.zfill(3)
-    
+    parsed_id = parse_issue_id(issue_id)
+
     # Find active session using config patterns
     session_name = None
-    for pattern in config.get_issue_session_patterns(padded_id):
+    for pattern in config.get_issue_session_patterns(parsed_id):
         if session_exists(pattern):
             session_name = pattern
             break

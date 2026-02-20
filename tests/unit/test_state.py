@@ -28,13 +28,13 @@ class TestDynamicState:
     def test_parse_tmux_session_name_valid(self):
         """Should parse valid session names."""
         result = _parse_tmux_session_name("agenttree-developer-042", "agenttree")
-        assert result == ("042", "developer")
+        assert result == (42, "developer")
 
         result = _parse_tmux_session_name("agenttree-review-123", "agenttree")
-        assert result == ("123", "review")
+        assert result == (123, "review")
 
         result = _parse_tmux_session_name("myproject-developer-001", "myproject")
-        assert result == ("001", "developer")
+        assert result == (1, "developer")
 
     def test_parse_tmux_session_name_invalid(self):
         """Should return None for non-matching session names."""
@@ -62,10 +62,10 @@ class TestDynamicState:
         mock_issue.branch = "issue-042"
         mock_get_issue.return_value = mock_issue
 
-        agent = get_active_agent("042", "developer")
+        agent = get_active_agent(42, "developer")
 
         assert agent is not None
-        assert agent.issue_id == "042"
+        assert agent.issue_id == 42
         assert agent.role == "developer"
         assert agent.tmux_session == "agenttree-developer-042"
 
@@ -78,7 +78,7 @@ class TestDynamicState:
             ("agenttree-developer-001", "1704067200"),
         ]
 
-        agent = get_active_agent("042", "developer")
+        agent = get_active_agent(42, "developer")
 
         assert agent is None
 
@@ -103,8 +103,8 @@ class TestDynamicState:
 
         assert len(agents) == 3
         issue_ids = {a.issue_id for a in agents}
-        assert "042" in issue_ids
-        assert "043" in issue_ids
+        assert 42 in issue_ids
+        assert 43 in issue_ids
 
 
 class TestStopAgentServeSession:
@@ -121,7 +121,7 @@ class TestStopAgentServeSession:
              patch("agenttree.tmux.kill_session") as mock_kill, \
              patch("agenttree.container.get_container_runtime") as mock_runtime:
             mock_runtime.return_value.runtime = None
-            result = stop_agent("042", quiet=True)
+            result = stop_agent(42, quiet=True)
 
         assert result is True
         # Serve session should be killed
@@ -140,7 +140,7 @@ class TestStopAgentServeSession:
              patch("agenttree.tmux.kill_session") as mock_kill, \
              patch("agenttree.container.get_container_runtime") as mock_runtime:
             mock_runtime.return_value.runtime = None
-            result = stop_agent("042", quiet=True)
+            result = stop_agent(42, quiet=True)
 
         assert result is True
         # Only agent session should be killed, not serve session
@@ -162,7 +162,7 @@ class TestStopAgentServeSession:
              patch("agenttree.tmux.kill_session") as mock_kill, \
              patch("agenttree.container.get_container_runtime") as mock_runtime:
             mock_runtime.return_value.runtime = None
-            result = stop_agent("042", quiet=True)
+            result = stop_agent(42, quiet=True)
 
         assert result is True
         # Agent session should still be killed despite serve failure

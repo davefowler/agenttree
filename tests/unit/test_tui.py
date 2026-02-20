@@ -126,13 +126,13 @@ class TestIssueTable:
             # Initial cursor at row 0 should return first issue
             issue = table.get_selected_issue()
             assert issue is not None
-            assert issue.id == "001"
+            assert issue.id == 1
 
             # Verify we can get issues at different positions
             # by directly checking filtered_issues list
             assert len(table._filtered_issues) == 3
-            assert table._filtered_issues[1].id == "002"
-            assert table._filtered_issues[2].id == "003"
+            assert table._filtered_issues[1].id == 2
+            assert table._filtered_issues[2].id == 3
 
 
 class TestDetailPanel:
@@ -150,7 +150,7 @@ class TestDetailPanel:
 
             # Panel should have the issue
             assert panel.issue is not None
-            assert panel.issue.id == "001"
+            assert panel.issue.id == 1
 
     @pytest.mark.asyncio
     async def test_detail_panel_clear(self, sample_issues: list[Issue]) -> None:
@@ -311,7 +311,7 @@ class TestActions:
                 # Exit hooks should be called for the current stage
                 mock_exit_hooks.assert_called()
                 # update_issue_stage should be called with "plan.draft" (rejection mapping)
-                mock_update.assert_called_with("003", "plan.draft")
+                mock_update.assert_called_with(3, "plan.draft")
                 # Enter hooks should be called for the target stage
                 mock_enter_hooks.assert_called()
 

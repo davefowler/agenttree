@@ -354,7 +354,7 @@ This is the approach section with content.
 
         # Create a real Issue object (get_issue_context requires Issue.model_dump)
         test_issue = Issue(
-            id="046",
+            id=46,
             slug="test-issue",
             title="Test Issue",
             created="2026-01-11T12:00:00Z",
@@ -374,7 +374,7 @@ This is the approach section with content.
         created_file = issue_dir / "review.md"
         assert created_file.exists()
         content = created_file.read_text()
-        assert "Issue #046" in content
+        assert "Issue #46" in content
         assert "**Files Changed:** 5" in content
         assert "+100 -20" in content
 
@@ -397,7 +397,7 @@ This is the approach section with content.
 
         # Create a real Issue object (get_issue_context requires Issue.model_dump)
         test_issue = Issue(
-            id="042",
+            id=42,
             slug="test-issue",
             title="Test Issue",
             created="2026-01-11T12:00:00Z",
@@ -416,7 +416,7 @@ This is the approach section with content.
         output_path = issue_dir / "output.md"
         assert output_path.exists()
         content = output_path.read_text()
-        assert "# Review for 042" in content
+        assert "# Review for 42" in content
         assert "Title: Test Issue" in content
 
     def test_create_file_injects_command_outputs(self, tmp_path, monkeypatch):
@@ -438,7 +438,7 @@ This is the approach section with content.
 
         # Create a real Issue object (get_issue_context requires Issue.model_dump)
         test_issue = Issue(
-            id="001",
+            id=1,
             slug="test",
             title="Test",
             created="2026-01-11T12:00:00Z",
@@ -1155,7 +1155,7 @@ class TestExecuteEnterHooks:
 def mock_issue():
     """Create a mock Issue object."""
     return Issue(
-        id="023",
+        id=23,
         slug="test-issue",
         title="Test Issue",
         created="2026-01-11T12:00:00Z",
@@ -1452,7 +1452,7 @@ class TestGitUtilities:
 
         body = generate_pr_body(mock_issue)
 
-        assert "Issue #023" in body
+        assert "Issue #23" in body
         assert "Test Issue" in body
         assert "agenttree" in body.lower()  # Should mention agenttree
         assert "Review Checklist" in body
@@ -1484,7 +1484,7 @@ class TestGitUtilities:
         mock_run.return_value = MagicMock(returncode=0)
 
         issue = Issue(
-            id="023",
+            id=23,
             slug="test-issue",
             title="Test Issue",
             created="2026-01-11T12:00:00Z",
@@ -1510,7 +1510,7 @@ class TestGitUtilities:
         msg = generate_commit_message(mock_issue, "implement.code")
 
         assert "Implement" in msg
-        assert "#023" in msg
+        assert "#23" in msg
         assert "Test Issue" in msg
 
     # Tests for get_git_diff_stats()
@@ -1707,7 +1707,7 @@ class TestCheckAndStartBlockedIssues:
     def accepted_issue(self):
         """Create an issue that just reached accepted stage."""
         return Issue(
-            id="001",
+            id=1,
             slug="completed-issue",
             title="Completed Issue",
             created="2026-01-15T12:00:00Z",
@@ -1719,13 +1719,13 @@ class TestCheckAndStartBlockedIssues:
     def blocked_issue(self):
         """Create an issue blocked in backlog with dependencies."""
         return Issue(
-            id="002",
+            id=2,
             slug="blocked-issue",
             title="Blocked Issue",
             created="2026-01-15T12:00:00Z",
             updated="2026-01-15T12:00:00Z",
             stage="backlog",
-            dependencies=["001"],
+            dependencies=[1],
         )
 
     @patch('agenttree.hooks.is_running_in_container', return_value=True)
@@ -1835,37 +1835,37 @@ class TestCheckAndStartBlockedIssues:
         from agenttree.hooks import check_and_start_blocked_issues
 
         blocked1 = Issue(
-            id="002",
+            id=2,
             slug="blocked-1",
             title="Blocked 1",
             created="2026-01-15T12:00:00Z",
             updated="2026-01-15T12:00:00Z",
             stage="backlog",
-            dependencies=["001"],
+            dependencies=[1],
         )
         blocked2 = Issue(
-            id="003",
+            id=3,
             slug="blocked-2",
             title="Blocked 2",
             created="2026-01-15T12:00:00Z",
             updated="2026-01-15T12:00:00Z",
             stage="backlog",
-            dependencies=["001"],
+            dependencies=[1],
         )
 
         with patch('agenttree.issues.get_blocked_issues', return_value=[blocked1, blocked2]):
             # blocked1 has all deps met, blocked2 does not
             def check_deps(issue):
-                if issue.id == "002":
+                if issue.id == 2:
                     return (True, [])
-                return (False, ["004"])
+                return (False, [4])
 
             with patch('agenttree.issues.check_dependencies_met', side_effect=check_deps):
                 with patch('agenttree.api.start_agent') as mock_start:
                     check_and_start_blocked_issues(accepted_issue)
 
                     # Should only start blocked1 (blocked2 has unmet deps)
-                    mock_start.assert_called_once_with("002", quiet=True)
+                    mock_start.assert_called_once_with(2, quiet=True)
 
 
 class TestCleanupIssueAgent:
@@ -1880,7 +1880,7 @@ class TestCleanupIssueAgent:
         from agenttree.hooks import cleanup_issue_agent
 
         issue = Issue(
-            id="001",
+            id=1,
             slug="test-issue",
             title="Test Issue",
             created="2026-01-11T12:00:00Z",
@@ -1890,14 +1890,14 @@ class TestCleanupIssueAgent:
 
         with patch("agenttree.api.stop_all_agents_for_issue", return_value=0) as mock_stop:
             cleanup_issue_agent(issue)
-            mock_stop.assert_called_once_with("001")
+            mock_stop.assert_called_once_with(1)
 
     def test_cleanup_delegates_to_stop_all_agents(self):
         """Should delegate to stop_all_agents_for_issue."""
         from agenttree.hooks import cleanup_issue_agent
 
         issue = Issue(
-            id="042",
+            id=42,
             slug="test-issue",
             title="Test Issue",
             created="2026-01-11T12:00:00Z",
@@ -1907,7 +1907,7 @@ class TestCleanupIssueAgent:
 
         with patch("agenttree.api.stop_all_agents_for_issue", return_value=2) as mock_stop:
             cleanup_issue_agent(issue)
-            mock_stop.assert_called_once_with("042")
+            mock_stop.assert_called_once_with(42)
 
 
 class TestBackwardCompatibility:
@@ -2949,7 +2949,7 @@ class TestRollbackHook:
         errors = run_builtin_validator(tmp_path, hook, issue=mock_issue)
 
         mock_rollback.assert_called_once_with(
-            issue_id="42",
+            issue_id=42,
             target_stage="explore.research",
             yes=True,  # Default auto-confirm
             reset_worktree=False,
@@ -3001,7 +3001,7 @@ class TestRollbackHook:
         errors = run_builtin_validator(tmp_path, hook, issue=mock_issue)
 
         mock_rollback.assert_called_once_with(
-            issue_id="42",
+            issue_id=42,
             target_stage="explore.research",
             yes=True,
             reset_worktree=False,
