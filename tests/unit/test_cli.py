@@ -771,7 +771,7 @@ class TestSandboxCommand:
         assert "sandbox" in result.output.lower()
         assert "--list" in result.output
         assert "--kill" in result.output
-        assert "--git" in result.output
+        assert "--no-git" in result.output
 
     def test_sandbox_list_no_active(self, cli_runner, mock_config):
         """Should show message when no active sandboxes."""
