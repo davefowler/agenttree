@@ -284,7 +284,7 @@ class TestProcessingHelpers:
         issue_yaml = temp_agenttrees_with_issue / "issues" / "001-test-issue" / "issue.yaml"
         with open(issue_yaml) as f:
             data = yaml.safe_load(f)
-        assert data["processing"] is None
+        assert data.get("processing") is None
 
 
 class TestIssueCRUD:

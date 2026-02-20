@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PrivateAttr, field_validator
 
 from agenttree.agents_repo import sync_agents_repo
 
@@ -111,6 +111,8 @@ class HistoryEntry(BaseModel):
 
 class Issue(BaseModel):
     """An issue in the agenttree workflow."""
+    _yaml_path: Path | None = PrivateAttr(default=None)
+
     id: str
     slug: str = ""
     title: str = ""
@@ -151,6 +153,20 @@ class Issue(BaseModel):
     # Guard for manager hook re-entry (e.g., "implement.review", "implement.review:running")
     manager_hooks_executed: Optional[str] = None
 
+    @field_validator("created", "updated", mode="before")
+    @classmethod
+    def _coerce_date_to_str(cls, v: Any) -> Any:
+        """Coerce datetime.date/datetime objects to ISO strings.
+
+        PyYAML auto-parses unquoted dates like `2026-01-11` into datetime.date
+        objects. Convert them to strings so Pydantic validation passes.
+        """
+        if isinstance(v, datetime):
+            return v.isoformat()
+        if hasattr(v, "isoformat"):  # datetime.date
+            return v.isoformat()
+        return v
+
     @classmethod
     def from_yaml(cls, path: Path | str) -> "Issue":
         """Load an Issue from a YAML file.
@@ -159,13 +175,42 @@ class Issue(BaseModel):
             path: Path to issue.yaml file
 
         Returns:
-            Issue object
+            Issue object with _yaml_path set
 
         Raises:
             FileNotFoundError: If file doesn't exist
             pydantic.ValidationError: If data is invalid
         """
-        return cls(**safe_yaml_load(Path(path)))
+        p = Path(path)
+        data = safe_yaml_load(p)
+        if "id" not in data:
+            data["id"] = p.parent.name.split("-")[0]
+        issue = cls(**data)
+        issue._yaml_path = p
+        return issue
+
+    def save(self) -> None:
+        """Write this issue to its YAML file and invalidate cache.
+
+        Uses exclude_none=True so None-valued fields are omitted from YAML.
+        This means setting a field to None effectively removes it on save.
+
+        Raises:
+            RuntimeError: If _yaml_path is not set
+        """
+        if self._yaml_path is None:
+            raise RuntimeError("Cannot save: _yaml_path not set (use from_yaml or set _yaml_path)")
+        data = self.model_dump(exclude_none=True, mode="json")
+        with open(self._yaml_path, "w") as f:
+            yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+        _issue_file_cache.pop(self._yaml_path, None)
+
+    @property
+    def dir(self) -> Path | None:
+        """Issue directory path, derived from _yaml_path."""
+        if self._yaml_path is not None:
+            return self._yaml_path.parent
+        return None
 
     @classmethod
     def get(cls, issue_id: str, sync: bool = True) -> Optional["Issue"]:
@@ -370,11 +415,8 @@ def create_issue(
     )
 
     # Write issue.yaml
-    yaml_path = issue_dir / "issue.yaml"
-    with open(yaml_path, "w") as f:
-        # Use mode="json" to get plain strings for enums
-        data = issue.model_dump(mode="json")
-        yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+    issue._yaml_path = issue_dir / "issue.yaml"
+    issue.save()
 
     # Create problem.md - use provided content or template
     problem_path = issue_dir / "problem.md"
@@ -484,9 +526,8 @@ def _load_all_issues() -> list[Issue]:
             issues.append(cached[1])
             continue
 
-        data = safe_yaml_load(yaml_path)
         try:
-            issue = Issue(**data)
+            issue = Issue.from_yaml(yaml_path)
         except Exception:
             continue
 
@@ -536,36 +577,27 @@ def list_issues(
 def get_issue(issue_id: str, sync: bool = True) -> Optional[Issue]:
     """Get a single issue by ID.
 
+    Routes through _load_all_issues() to benefit from the mtime cache.
+
     Args:
-        issue_id: Issue ID (e.g., "001" or "001-fix-login")
+        issue_id: Issue ID (e.g., "001", "1", or "001-fix-login")
         sync: If True, sync with remote before reading (default True for CLI, False for web)
 
     Returns:
         Issue object or None if not found
     """
-    # Sync before reading (skip for web UI to avoid latency)
     if sync:
         agents_path = get_agenttree_path()
         sync_agents_repo(agents_path, pull_only=True)
+        invalidate_issues_cache()
 
-    issues_path = get_issues_path()
-    if not issues_path.exists():
-        return None
+    # Extract numeric part for comparison (handles "001", "1", "001-fix-login")
+    numeric_part = issue_id.split("-")[0].lstrip("0") or "0"
 
-    # Normalize ID (remove leading zeros for comparison)
-    normalized_id = issue_id.lstrip("0") or "0"
-
-    for issue_dir in issues_path.iterdir():
-        if not issue_dir.is_dir() or issue_dir.name == "archive":
-            continue
-
-        # Check if directory starts with the issue ID
-        dir_id = issue_dir.name.split("-")[0].lstrip("0") or "0"
-        if dir_id == normalized_id or issue_dir.name == issue_id:
-            yaml_path = issue_dir / "issue.yaml"
-            if yaml_path.exists():
-                data = safe_yaml_load(yaml_path)
-                return Issue(**data)
+    for issue in _load_all_issues():
+        issue_numeric = issue.id.lstrip("0") or "0"
+        if issue_numeric == numeric_part:
+            return issue
 
     return None
 
@@ -646,9 +678,7 @@ def remove_dependency(issue_id: str, dep_id: str) -> Optional[Issue]:
     if not yaml_path.exists():
         return None
 
-    data = safe_yaml_load(yaml_path)
-
-    issue = Issue(**data)
+    issue = Issue.from_yaml(yaml_path)
 
     # Normalize dep_id to match format in dependencies list
     dep_normalized = f"{int(dep_id.lstrip('0') or '0'):03d}"
@@ -662,7 +692,7 @@ def remove_dependency(issue_id: str, dep_id: str) -> Optional[Issue]:
     # Update timestamp
     issue.updated = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    _write_issue_yaml(yaml_path, data, issue)
+    issue.save()
 
     sync_agents_repo(agents_path)
     return issue
@@ -824,17 +854,6 @@ def get_next_stage(
     return config.get_next_stage(current, flow, issue_context)
 
 
-def _write_issue_yaml(yaml_path: Path, data: dict, issue: "Issue") -> None:
-    """Write an Issue model back to YAML, preserving non-model fields.
-
-    Merges model fields into the original data dict so fields like
-    manager_hooks_executed (written by agents_repo) survive round-trips.
-    """
-    data.update(issue.model_dump(exclude_none=True, mode="json"))
-    with open(yaml_path, "w") as f:
-        yaml.dump(data, f, default_flow_style=False, sort_keys=False)
-
-
 def update_issue_stage(
     issue_id: str,
     stage: str,
@@ -886,10 +905,8 @@ def update_issue_stage(
     if not yaml_path.exists():
         return None
 
-    data = safe_yaml_load(yaml_path)
-    old_stage = data.get("stage")
-
-    issue = Issue(**data)
+    issue = Issue.from_yaml(yaml_path)
+    old_stage = issue.stage
 
     # Update stage
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -901,22 +918,14 @@ def update_issue_stage(
         issue.ci_escalated = False
 
     # Clear ci_notified when entering ci_wait so new CI runs get detected
-    # (must pop from data dict since _write_issue_yaml uses exclude_none=True,
-    #  so setting to None on the model won't remove from YAML)
+    # (save() uses exclude_none=True, so setting to None omits the field)
     if stage == "implement.ci_wait":
-        data.pop("ci_notified", None)
         issue.ci_notified = None
-
-    # Pop legacy substage field
-    data.pop("substage", None)
 
     # Explicit overrides from caller
     if ci_escalated is not None:
         issue.ci_escalated = ci_escalated
     if clear_pr:
-        # Must pop from data dict since exclude_none=True skips None values
-        data.pop("pr_number", None)
-        data.pop("pr_url", None)
         issue.pr_number = None
         issue.pr_url = None
 
@@ -929,7 +938,7 @@ def update_issue_stage(
     history_entry = HistoryEntry(**entry_kwargs)
     issue.history.append(history_entry)
 
-    _write_issue_yaml(yaml_path, data, issue)
+    issue.save()
 
     if not skip_sync:
         agents_path = get_agenttree_path()
@@ -981,9 +990,7 @@ def update_issue_metadata(
     if not yaml_path.exists():
         return None
 
-    data = safe_yaml_load(yaml_path)
-
-    issue = Issue(**data)
+    issue = Issue.from_yaml(yaml_path)
 
     # Update fields if provided
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -1008,7 +1015,7 @@ def update_issue_metadata(
         issue.needs_ui_review = needs_ui_review
     issue.updated = now
 
-    _write_issue_yaml(yaml_path, data, issue)
+    issue.save()
 
     # Sync after updating metadata
     msg = commit_message or f"Update issue {issue_id} metadata"
@@ -1039,12 +1046,9 @@ def set_processing(issue_id: str, processing_state: str | None) -> bool:
     if not yaml_path.exists():
         return False
 
-    data = safe_yaml_load(yaml_path)
-
-    data["processing"] = processing_state
-
-    with open(yaml_path, "w") as f:
-        yaml.dump(data, f, default_flow_style=False, sort_keys=False)
+    issue = Issue.from_yaml(yaml_path)
+    issue.processing = processing_state
+    issue.save()
 
     return True
 
