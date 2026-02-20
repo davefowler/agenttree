@@ -13,10 +13,7 @@ from agenttree.issues import (
 )
 
 def normalize_issue_id(issue_id: str) -> int:
-    """Parse issue ID string to int.
-
-    Deprecated: Use ids.parse_issue_id() directly for new code.
-    """
+    """Parse issue ID string to int."""
     from agenttree.ids import parse_issue_id
     return parse_issue_id(issue_id)
 

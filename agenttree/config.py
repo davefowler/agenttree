@@ -183,6 +183,7 @@ class ManagerConfig(BaseModel):
     stall_threshold_min: int = 20
     nudge_cooldown_min: int = 30
     max_nudges_before_escalate: int = 3
+    max_ci_bounces: int = 5
 
 
 class SecurityConfig(BaseModel):

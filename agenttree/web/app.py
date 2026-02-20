@@ -311,8 +311,16 @@ def convert_issue_to_web(issue: issue_crud.Issue, load_dependents: bool = False)
         issue: The issue to convert
         load_dependents: If True, also load dependent issues (issues blocked by this one)
     """
-    # Check if tmux session is active for this issue
-    tmux_active = agent_manager._check_issue_tmux_session(issue.id)
+    # Check if tmux session is active for this issue.
+    # For human review stages, check the developer agent (the review stage
+    # itself has no agent — it's waiting for human action).
+    if _config.is_human_review(issue.stage):
+        from agenttree.ids import parse_issue_id
+        iid = parse_issue_id(str(issue.id))
+        dev_session = _config.get_issue_tmux_session(iid, "developer")
+        tmux_active = dev_session in agent_manager._get_active_sessions()
+    else:
+        tmux_active = agent_manager._check_issue_tmux_session(issue.id)
 
     # Load dependents if requested (issues blocked by this one)
     dependents: list[int] = []
@@ -1146,11 +1154,17 @@ async def get_agent_status(
     """Check if an agent's tmux session is running for an issue."""
     from agenttree.ids import parse_issue_id
     parsed_id = parse_issue_id(issue_id)
-    # Check tmux session in thread pool to avoid blocking event loop
-    tmux_active = await asyncio.to_thread(agent_manager._check_issue_tmux_session, parsed_id)
 
-    # Get processing state from issue
+    # For human review stages, check the developer agent session
     issue = issue_crud.get_issue(parsed_id, sync=False)
+    if issue and _config.is_human_review(issue.stage):
+        dev_session = _config.get_issue_tmux_session(parsed_id, "developer")
+        tmux_active = await asyncio.to_thread(
+            lambda: dev_session in agent_manager._get_active_sessions()
+        )
+    else:
+        tmux_active = await asyncio.to_thread(agent_manager._check_issue_tmux_session, parsed_id)
+
     processing = issue.processing if issue else None
 
     return {
