@@ -1289,7 +1289,6 @@ class TestGetDefaultDoc:
     def test_get_default_doc_returns_ci_feedback_when_escalated(self, mock_config):
         """Verify get_default_doc returns ci_feedback.md when ci_escalated is True."""
         from agenttree.web.app import get_default_doc
-        from agenttree.config import StageConfig, SubstageConfig
 
         # Setup mock config for implement.review stage
         mock_stage = MagicMock()
@@ -1306,7 +1305,6 @@ class TestGetDefaultDoc:
     def test_get_default_doc_returns_review_md_when_not_escalated(self, mock_config):
         """Verify normal behavior is preserved when ci_escalated=False."""
         from agenttree.web.app import get_default_doc
-        from agenttree.config import StageConfig, SubstageConfig
 
         # Setup mock config for implement.review stage
         mock_stage = MagicMock()
@@ -1323,7 +1321,6 @@ class TestGetDefaultDoc:
     def test_get_default_doc_backward_compatible(self, mock_config):
         """Verify get_default_doc works without ci_escalated parameter."""
         from agenttree.web.app import get_default_doc
-        from agenttree.config import StageConfig, SubstageConfig
 
         # Setup mock config
         mock_stage = MagicMock()

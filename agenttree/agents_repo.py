@@ -11,7 +11,7 @@ import shutil
 import subprocess
 from pathlib import Path
 from datetime import datetime
-from typing import Optional, TYPE_CHECKING
+from typing import Any, Optional, TYPE_CHECKING
 import re
 
 log = logging.getLogger("agenttree.agents_repo")
@@ -19,6 +19,7 @@ log = logging.getLogger("agenttree.agents_repo")
 if TYPE_CHECKING:
     from agenttree.issues import Issue
     from agenttree.config import RoleConfig, StageConfig
+    from agenttree.github import CheckStatus, PRComment
 
 # Global lock file handle (kept open during sync)
 _sync_lock_fd = None
@@ -617,11 +618,11 @@ def check_merged_prs(agents_dir: Path) -> int:
 def _generate_escalation_report(
     ci_bounce_count: int,
     pr_number: int,
-    failed_checks: list,
+    failed_checks: list[CheckStatus],
     all_failing_tests: list[str],
-    history: list[dict],
+    history: list[dict[str, Any]],
     logs_sections: list[str],
-    comments: list,
+    comments: list[PRComment],
 ) -> str:
     """Generate a structured escalation report for human review.
 
@@ -632,8 +633,6 @@ def _generate_escalation_report(
     - Timeline of CI attempts
     - Detailed logs
     """
-    from datetime import datetime
-
     content = "# CI Escalation Report\n\n"
 
     # Summary section
