@@ -286,16 +286,19 @@ def agents_status() -> None:
 @click.option("--list", "-l", "list_sandboxes", is_flag=True, help="List active sandboxes")
 @click.option("--kill", "-k", is_flag=True, help="Kill the sandbox")
 @click.option("--tool", help="AI tool to use (default: from config)")
-@click.option("--git", "-g", "share_git", is_flag=True, help="Share git credentials (~/.ssh, ~/.gitconfig)")
-def sandbox(name: str, list_sandboxes: bool, kill: bool, tool: str | None, share_git: bool) -> None:
+@click.option("--no-git", "no_git", is_flag=True, help="Don't share git credentials (~/.ssh, ~/.gitconfig, ~/.config/gh)")
+def sandbox(name: str, list_sandboxes: bool, kill: bool, tool: str | None, no_git: bool) -> None:
     """Start a sandbox container for ad-hoc work.
+
+    Git/GitHub credentials are shared by default so git push, gh pr create, etc.
+    work inside the sandbox. Use --no-git to disable.
 
     NAME is an optional sandbox name (default: "default").
 
     Examples:
-        agenttree sandbox              # Start default sandbox
+        agenttree sandbox              # Start default sandbox (with git creds)
         agenttree sandbox experiments  # Start named sandbox
-        agenttree sandbox --git        # Start with git credentials
+        agenttree sandbox --no-git     # Start without git credentials
         agenttree sandbox --list       # List active sandboxes
         agenttree sandbox --kill       # Kill default sandbox
         agenttree sandbox exp --kill   # Kill named sandbox
@@ -377,26 +380,17 @@ def sandbox(name: str, list_sandboxes: bool, kill: bool, tool: str | None, share
     # Build container command using current directory (main repo)
     repo_path = Path.cwd()
     tool_name = tool or config.default_tool
-    home = Path.home()
 
-    # Build additional args for git credential sharing
-    additional_args: list[str] = []
+    share_git = not no_git
     if share_git:
-        ssh_dir = home / ".ssh"
-        gitconfig = home / ".gitconfig"
-        if ssh_dir.exists():
-            additional_args.extend(["-v", f"{ssh_dir}:/home/agent/.ssh:ro"])
-            console.print(f"[dim]Sharing ~/.ssh (read-only)[/dim]")
-        if gitconfig.exists():
-            additional_args.extend(["-v", f"{gitconfig}:/home/agent/.gitconfig:ro"])
-            console.print(f"[dim]Sharing ~/.gitconfig (read-only)[/dim]")
+        console.print(f"[dim]Sharing git credentials (read-only)[/dim]")
 
     container_cmd = runtime.build_run_command(
         worktree_path=repo_path,
         ai_tool=tool_name,
         dangerous=True,
         model=config.default_model,
-        additional_args=additional_args if additional_args else None,
+        share_git=share_git,
     )
     container_cmd_str = " ".join(container_cmd)
 

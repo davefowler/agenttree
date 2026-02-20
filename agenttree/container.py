@@ -370,6 +370,7 @@ class ContainerRuntime:
         port: Optional[int] = None,
         container_name: Optional[str] = None,
         force_api_key: bool = False,
+        share_git: bool = False,
     ) -> List[str]:
         """Build the container run command.
 
@@ -385,6 +386,7 @@ class ContainerRuntime:
             port: Dev server port to expose (e.g., 9001). If provided, adds -p port:port mapping.
             container_name: Explicit container name (e.g., "agenttree-issue-123-developer")
             force_api_key: Force API key mode (skip OAuth subscription)
+            share_git: Mount git/gh credentials into container (~/.ssh, ~/.gitconfig, ~/.config/gh)
 
         Returns:
             Command list
@@ -489,6 +491,22 @@ class ContainerRuntime:
 
         # Set agent role for permission checking
         cmd.extend(["-e", f"AGENTTREE_ROLE={role}"])
+
+        # Share git/gh credentials for push/PR access inside the container
+        if share_git:
+            ssh_dir = home / ".ssh"
+            gitconfig = home / ".gitconfig"
+            gh_config = home / ".config" / "gh"
+            if ssh_dir.exists():
+                cmd.extend(["-v", f"{ssh_dir}:/home/agent/.ssh:ro"])
+            if gitconfig.exists():
+                cmd.extend(["-v", f"{gitconfig}:/home/agent/.gitconfig:ro"])
+            if gh_config.exists():
+                cmd.extend(["-v", f"{gh_config}:/home/agent/.config/gh:ro"])
+            # Pass GitHub token env vars if set
+            for var in ("GITHUB_TOKEN", "GH_TOKEN"):
+                if os.environ.get(var):
+                    cmd.extend(["-e", f"{var}={os.environ[var]}"])
 
         if additional_args:
             cmd.extend(additional_args)

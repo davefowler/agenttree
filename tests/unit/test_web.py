@@ -887,8 +887,9 @@ class TestConvertIssueToWeb:
 
     @patch("agenttree.web.app.agent_manager")
     def test_convert_issue_with_active_tmux(self, mock_agent_mgr, mock_review_issue):
-        """Test converting issue with active tmux session."""
-        mock_agent_mgr._check_issue_tmux_session.return_value = True
+        """Test converting review issue checks developer session."""
+        # Review issues check _get_active_sessions for the developer session
+        mock_agent_mgr._get_active_sessions.return_value = {"agenttree-developer-002"}
 
         web_issue = convert_issue_to_web(mock_review_issue)
 

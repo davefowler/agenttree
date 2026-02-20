@@ -1456,7 +1456,7 @@ def mark_session_oriented(issue_id: str, stage: Optional[str] = None) -> None:
     save_session(session)
 
 
-def is_restart(issue_id: str, current_stage: Optional[str] = None) -> bool:
+def is_restart(issue_id: int | str, current_stage: Optional[str] = None) -> bool:
     """Check if agent should re-orient (show instructions without advancing).
 
     Returns True if:
