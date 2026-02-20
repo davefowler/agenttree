@@ -68,6 +68,25 @@ def _compute_etag(content: str) -> str:
     return f'"{content_hash}"'
 
 
+def format_duration(minutes: int) -> str:
+    """Format a duration in minutes as a compact human-readable string.
+
+    Args:
+        minutes: Duration in minutes
+
+    Returns:
+        Formatted string like "0m", "45m", "2h", "3d"
+    """
+    if minutes < 60:
+        return f"{minutes}m"
+    elif minutes < 1440:  # Less than 24 hours
+        hours = minutes // 60
+        return f"{hours}h"
+    else:
+        days = minutes // 1440
+        return f"{days}d"
+
+
 # Get the directory where this file is located
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -320,6 +339,28 @@ def convert_issue_to_web(issue: issue_crud.Issue, load_dependents: bool = False)
         dependent_issues = issue_crud.get_dependent_issues(issue.id)
         dependents = [d.id for d in dependent_issues]
 
+    # Calculate time in current stage from history
+    time_in_stage = "0m"
+    history = getattr(issue, "history", None)
+    if history and isinstance(history, list) and len(history) > 0:
+        last_entry = history[-1]
+        # Handle both HistoryEntry objects and dicts
+        if hasattr(last_entry, "timestamp"):
+            timestamp_str = last_entry.timestamp
+        elif isinstance(last_entry, dict):
+            timestamp_str = last_entry.get("timestamp", "")
+        else:
+            timestamp_str = ""
+
+        if timestamp_str:
+            try:
+                stage_entered = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
+                now = datetime.now(timezone.utc)
+                minutes_elapsed = int((now - stage_entered).total_seconds() / 60)
+                time_in_stage = format_duration(max(0, minutes_elapsed))
+            except (ValueError, TypeError):
+                pass  # Keep default "0m" on parse error
+
     return WebIssue(
         number=issue.id,
         title=issue.title,
@@ -340,6 +381,7 @@ def convert_issue_to_web(issue: issue_crud.Issue, load_dependents: bool = False)
         processing=issue.processing,
         ci_escalated=issue.ci_escalated,
         flow=issue.flow,
+        time_in_stage=time_in_stage,
     )
 
 
