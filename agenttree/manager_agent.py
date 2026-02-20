@@ -14,7 +14,7 @@ import yaml
 class StalledAgent(TypedDict):
     """Type definition for stalled agent info."""
 
-    issue_id: str
+    issue_id: int
     stage: str
     minutes_stalled: int
     title: str

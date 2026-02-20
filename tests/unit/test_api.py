@@ -97,7 +97,7 @@ class TestStartAgent:
                     with pytest.raises(IssueNotFoundError) as exc_info:
                         start_agent("999", quiet=True)
 
-        assert exc_info.value.issue_id == "999"
+        assert exc_info.value.issue_id == 999
 
     def test_start_agent_already_running_without_force_raises(
         self, mock_config, mock_issue, mock_agent, tmp_path, monkeypatch
@@ -344,7 +344,7 @@ class TestSendMessage:
                 with pytest.raises(IssueNotFoundError) as exc_info:
                     send_message("999", "hello", quiet=True)
 
-        assert exc_info.value.issue_id == "999"
+        assert exc_info.value.issue_id == 999
 
 
 class TestStartController:
@@ -576,7 +576,7 @@ class TestCleanupOrphanedContainers:
 
         mock_config = MagicMock()
         mock_config.project = "myproject"
-        mock_config.get_issue_tmux_session.side_effect = lambda issue_id, role: f"myproject-{role}-{issue_id}"
+        mock_config.get_issue_tmux_session.side_effect = lambda issue_id, role: f"myproject-{role}-{issue_id:03d}"
 
         mock_containers = [
             {"name": "agenttree-myproject-042", "id": "container1"},
@@ -757,7 +757,7 @@ class TestTransitionIssue:
 
         assert result == updated_issue
         mock_exit.assert_called_once_with(mock_issue, "plan.review", skip_pr_approval=False)
-        mock_update.assert_called_once_with("42", "implement.code")
+        mock_update.assert_called_once_with(42, "implement.code")
         mock_enter.assert_called_once_with(updated_issue, "implement.code")
 
     def test_transition_exit_hook_redirect(self, mock_issue):
@@ -776,7 +776,7 @@ class TestTransitionIssue:
             result = transition_issue("42", "implement.code")
 
         # Should have updated to the redirected stage, not original target
-        mock_update.assert_called_once_with("42", "explore.define")
+        mock_update.assert_called_once_with(42, "explore.define")
         assert result == updated_issue
 
     def test_transition_enter_hook_redirect(self, mock_issue):

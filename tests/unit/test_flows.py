@@ -338,7 +338,7 @@ class TestCreateIssueWithFlow:
         issue = create_issue(title="Test Issue", flow="quick")
 
         # Read the issue.yaml file
-        issue_dir = agenttree_dir / "issues" / f"{issue.id}-{issue.slug}"
+        issue_dir = agenttree_dir / "issues" / issue.dir_name
         yaml_file = issue_dir / "issue.yaml"
         with open(yaml_file) as f:
             data = yaml.safe_load(f)

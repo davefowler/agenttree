@@ -24,6 +24,9 @@ Optional:
             {% if issue.priority != 'medium' %}
             <span class="priority-badge priority-{{ issue.priority }}" title="Priority: {{ issue.priority }}">{{ issue.priority[:1] | upper }}</span>
             {% endif %}
+            {% if issue.flow == 'quick' %}
+            <span class="flow-badge flow-quick" title="Quick flow">⚡</span>
+            {% endif %}
         </div>
         <div class="issue-header-right">
             {% for label in issue.labels[:2] %}

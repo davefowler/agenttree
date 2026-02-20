@@ -429,7 +429,7 @@ class TestCheckCustomAgentStages:
                             result = check_custom_agent_stages(tmp_path)
                             assert result == 1
                             mock_start.assert_called_once_with(
-                                "170", host="review", skip_preflight=True, quiet=True, force=False
+                                170, host="review", skip_preflight=True, quiet=True, force=False
                             )
 
 

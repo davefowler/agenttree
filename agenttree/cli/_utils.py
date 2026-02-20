@@ -12,9 +12,13 @@ from agenttree.issues import (
     get_issue_dir,
 )
 
-def normalize_issue_id(issue_id: str) -> str:
-    """Normalize issue ID by stripping leading zeros."""
-    return issue_id.lstrip("0") or "0"
+def normalize_issue_id(issue_id: str) -> int:
+    """Parse issue ID string to int.
+
+    Deprecated: Use ids.parse_issue_id() directly for new code.
+    """
+    from agenttree.ids import parse_issue_id
+    return parse_issue_id(issue_id)
 
 
 def format_role_label(role: str) -> str:

@@ -1933,7 +1933,7 @@ def get_commits_ahead_behind_main(worktree_dir: Optional[str]) -> tuple[int, int
         return 0, 0
 
 
-def rebase_issue_branch(issue_id: str) -> tuple[bool, str]:
+def rebase_issue_branch(issue_id: int | str) -> tuple[bool, str]:
     """Rebase an issue's worktree branch onto the latest main.
 
     Called from host (approve command, etc.) to ensure feature branches
@@ -2234,7 +2234,7 @@ def can_agent_operate_in_stage(stage_role: str) -> bool:
     return current_role == stage_role
 
 
-def ensure_pr_for_issue(issue_id: str) -> bool:
+def ensure_pr_for_issue(issue_id: int | str) -> bool:
     """Ensure a PR exists for an issue in a manager stage.
 
     Called by host via create_pr hook for manager stages (role: manager).
@@ -2268,25 +2268,11 @@ def ensure_pr_for_issue(issue_id: str) -> bool:
         raise RuntimeError(f"Issue #{issue_id} has no branch")
 
     # Find the worktree for this issue
-    # Prefer stored worktree_dir, fall back to path guessing
-    worktree_path: Optional[Path] = None
-    if issue.worktree_dir:
-        worktree_path = Path(issue.worktree_dir)
-        if not worktree_path.exists():
-            console.print(f"[yellow]Stored worktree_dir {issue.worktree_dir} doesn't exist[/yellow]")
-            worktree_path = None
-
-    # Fall back to guessing the path
-    if not worktree_path:
-        worktree_path = Path.cwd() / ".worktrees" / f"issue-{issue_id.zfill(3)}-{issue.slug[:30]}"
-        if not worktree_path.exists():
-            # Try without leading zeros
-            for p in Path.cwd().glob(f".worktrees/issue-{issue_id}*"):
-                worktree_path = p
-                break
-
-    if not worktree_path or not worktree_path.exists():
-        raise RuntimeError(f"Worktree not found for issue #{issue_id}")
+    if not issue.worktree_dir:
+        raise RuntimeError(f"Issue #{issue_id} has no worktree_dir set")
+    worktree_path = Path(issue.worktree_dir)
+    if not worktree_path.exists():
+        raise RuntimeError(f"Worktree {issue.worktree_dir} does not exist for issue #{issue_id}")
 
     console.print(f"[dim]Creating PR for issue #{issue_id} from host...[/dim]")
 
@@ -2374,12 +2360,7 @@ def ensure_pr_for_issue(issue_id: str) -> bool:
     body += f"**Issue link:** [View in AgentTree Flow](http://localhost:8080/flow?issue={issue.id})\n\n"
 
     # Try to include brief context from spec.md if it exists
-    spec_path = worktree_path / "_agenttree" / "issues" / f"{issue.id.zfill(3)}-{issue.slug[:40]}" / "spec.md"
-    if not spec_path.exists():
-        # Try finding it with glob
-        for p in (worktree_path / "_agenttree" / "issues").glob(f"{issue.id.zfill(3)}-*/spec.md"):
-            spec_path = p
-            break
+    spec_path = worktree_path / "_agenttree" / "issues" / issue.dir_name / "spec.md"
 
     if spec_path.exists():
         try:
@@ -2494,7 +2475,7 @@ def check_and_start_blocked_issues(issue: Issue) -> None:
             except Exception as e:
                 console.print(f"[yellow]Failed to start issue #{blocked_issue.id}: {e}[/yellow]")
         else:
-            console.print(f"[dim]→ Issue #{blocked_issue.id} still blocked by: {', '.join(unmet)}[/dim]")
+            console.print(f"[dim]→ Issue #{blocked_issue.id} still blocked by: {', '.join(str(u) for u in unmet)}[/dim]")
 
 
 def run_resource_cleanup(dry_run: bool = False, log_file: str | None = None) -> dict:
@@ -2546,7 +2527,10 @@ def run_resource_cleanup(dry_run: bool = False, log_file: str | None = None) -> 
             if len(parts) < 2:
                 continue
 
-            issue_id = parts[1]
+            try:
+                issue_id = int(parts[1])
+            except ValueError:
+                continue
             issue = issue_by_id.get(issue_id)
 
             reason = None
@@ -2603,16 +2587,19 @@ def run_resource_cleanup(dry_run: bool = False, log_file: str | None = None) -> 
             if branch in ("main", "master", "HEAD"):
                 continue
 
-            branch_issue_id: str | None = None
+            branch_issue_id: int | None = None
             if branch.startswith("issue-"):
                 parts = branch.split("-")
                 if len(parts) >= 2:
-                    branch_issue_id = parts[1]
+                    try:
+                        branch_issue_id = int(parts[1])
+                    except ValueError:
+                        pass
 
             reason = None
             if branch in merged_branches and branch != "main":
                 reason = "merged to main"
-            elif branch_issue_id:
+            elif branch_issue_id is not None:
                 issue = issue_by_id.get(branch_issue_id)
                 if not issue:
                     reason = "issue not found"
@@ -2650,7 +2637,10 @@ def run_resource_cleanup(dry_run: bool = False, log_file: str | None = None) -> 
             parts = session.name.split("-")
             if len(parts) < 3:
                 continue
-            issue_id = parts[-1]  # ID is always the last part
+            try:
+                issue_id = int(parts[-1])  # ID is always the last part
+            except ValueError:
+                continue
 
             issue = issue_by_id.get(issue_id)
             reason = None

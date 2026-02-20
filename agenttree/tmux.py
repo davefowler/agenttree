@@ -483,7 +483,7 @@ class TmuxManager:
 
     def start_issue_agent_in_container(
         self,
-        issue_id: str,
+        issue_id: int,
         session_name: str,
         worktree_path: Path,
         tool_name: str,
