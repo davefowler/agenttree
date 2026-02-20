@@ -136,6 +136,19 @@ class Issue(BaseModel):
     ci_escalated: bool = False
 
 
+def _load_issue_file(yaml_path: Path) -> Issue | None:
+    """Load and parse an issue YAML file, returning None on corruption."""
+    try:
+        data = safe_yaml_load(yaml_path)
+        return Issue(**data)
+    except yaml.YAMLError as e:
+        log.warning("Corrupted issue file %s: %s", yaml_path, e)
+        return None
+    except Exception as e:
+        log.warning("Malformed issue file %s: %s", yaml_path, e)
+        return None
+
+
 def slugify(text: str) -> str:
     """Convert text to a URL-friendly slug."""
     # Lowercase and replace spaces with hyphens
@@ -423,16 +436,7 @@ def get_issue(issue_id: str, sync: bool = True) -> Optional[Issue]:
         if dir_id == normalized_id or issue_dir.name == issue_id:
             yaml_path = issue_dir / "issue.yaml"
             if yaml_path.exists():
-                try:
-                    data = safe_yaml_load(yaml_path)
-                    return Issue(**data)
-                except yaml.YAMLError as e:
-                    log.warning("Corrupted issue file %s: %s", yaml_path, e)
-                    return None
-                except Exception as e:
-                    # Malformed issue data (missing required fields, etc.)
-                    log.warning("Malformed issue file %s: %s", yaml_path, e)
-                    return None
+                return _load_issue_file(yaml_path)
 
     return None
 
@@ -513,15 +517,8 @@ def remove_dependency(issue_id: str, dep_id: str) -> Optional[Issue]:
     if not yaml_path.exists():
         return None
 
-    try:
-        data = safe_yaml_load(yaml_path)
-        issue = Issue(**data)
-    except yaml.YAMLError as e:
-        log.warning("Corrupted issue file %s: %s", yaml_path, e)
-        return None
-    except Exception as e:
-        # Malformed issue data
-        log.warning("Malformed issue file %s: %s", yaml_path, e)
+    issue = _load_issue_file(yaml_path)
+    if not issue:
         return None
 
     # Normalize dep_id to match format in dependencies list
@@ -740,15 +737,8 @@ def update_issue_stage(
     if not yaml_path.exists():
         return None
 
-    try:
-        data = safe_yaml_load(yaml_path)
-        issue = Issue(**data)
-    except yaml.YAMLError as e:
-        log.warning("Corrupted issue file %s: %s", yaml_path, e)
-        return None
-    except Exception as e:
-        # Malformed issue data
-        log.warning("Malformed issue file %s: %s", yaml_path, e)
+    issue = _load_issue_file(yaml_path)
+    if not issue:
         return None
 
     # Update stage
@@ -818,15 +808,8 @@ def update_issue_metadata(
     if not yaml_path.exists():
         return None
 
-    try:
-        data = safe_yaml_load(yaml_path)
-        issue = Issue(**data)
-    except yaml.YAMLError as e:
-        log.warning("Corrupted issue file %s: %s", yaml_path, e)
-        return None
-    except Exception as e:
-        # Malformed issue data
-        log.warning("Malformed issue file %s: %s", yaml_path, e)
+    issue = _load_issue_file(yaml_path)
+    if not issue:
         return None
 
     # Update fields if provided
