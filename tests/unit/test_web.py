@@ -26,7 +26,7 @@ def client():
 def mock_issue():
     """Create a mock issue object."""
     mock = Mock()
-    mock.id = "001"
+    mock.id = 1
     mock.title = "Test Issue"
     mock.stage = "backlog"
     mock.labels = ["bug"]
@@ -41,6 +41,7 @@ def mock_issue():
     mock.processing = None
     mock.ci_escalated = False
     mock.flow = "default"
+    mock.history = []  # Empty history for time_in_stage calculation
     return mock
 
 
@@ -48,7 +49,7 @@ def mock_issue():
 def mock_review_issue():
     """Create a mock issue at implement.review stage."""
     mock = Mock()
-    mock.id = "002"
+    mock.id = 2
     mock.title = "Review Issue"
     mock.stage = "implement.review"
     mock.labels = []
@@ -63,6 +64,7 @@ def mock_review_issue():
     mock.processing = None
     mock.ci_escalated = False
     mock.flow = "default"
+    mock.history = []  # Empty history for time_in_stage calculation
     return mock
 
 
