@@ -44,7 +44,7 @@ class TestConvertIssueToWebFlow:
     def mock_core_issue(self):
         """Create a mock core Issue object."""
         mock = Mock()
-        mock.id = "001"
+        mock.id = 1
         mock.title = "Test Issue"
         mock.stage = "backlog"
         mock.labels = []
@@ -58,6 +58,7 @@ class TestConvertIssueToWebFlow:
         mock.processing = None
         mock.ci_escalated = False
         mock.flow = "default"
+        mock.history = []
         return mock
 
     @patch("agenttree.web.app.agent_manager")

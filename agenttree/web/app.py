@@ -341,25 +341,15 @@ def convert_issue_to_web(issue: issue_crud.Issue, load_dependents: bool = False)
 
     # Calculate time in current stage from history
     time_in_stage = "0m"
-    history = getattr(issue, "history", None)
-    if history and isinstance(history, list) and len(history) > 0:
-        last_entry = history[-1]
-        # Handle both HistoryEntry objects and dicts
-        if hasattr(last_entry, "timestamp"):
-            timestamp_str = last_entry.timestamp
-        elif isinstance(last_entry, dict):
-            timestamp_str = last_entry.get("timestamp", "")
-        else:
-            timestamp_str = ""
-
-        if timestamp_str:
-            try:
-                stage_entered = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
-                now = datetime.now(timezone.utc)
-                minutes_elapsed = int((now - stage_entered).total_seconds() / 60)
-                time_in_stage = format_duration(max(0, minutes_elapsed))
-            except (ValueError, TypeError):
-                pass  # Keep default "0m" on parse error
+    if issue.history:
+        last_entry = issue.history[-1]
+        try:
+            stage_entered = datetime.fromisoformat(last_entry.timestamp.replace("Z", "+00:00"))
+            now = datetime.now(timezone.utc)
+            minutes_elapsed = int((now - stage_entered).total_seconds() / 60)
+            time_in_stage = format_duration(max(0, minutes_elapsed))
+        except (ValueError, TypeError):
+            pass  # Keep default "0m" on parse error
 
     return WebIssue(
         number=issue.id,
