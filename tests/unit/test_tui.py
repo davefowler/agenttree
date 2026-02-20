@@ -311,7 +311,7 @@ class TestActions:
                 # Exit hooks should be called for the current stage
                 mock_exit_hooks.assert_called()
                 # update_issue_stage should be called with "plan.draft" (rejection mapping)
-                mock_update.assert_called_with("003", "plan.draft")
+                mock_update.assert_called_with(3, "plan.draft")
                 # Enter hooks should be called for the target stage
                 mock_enter_hooks.assert_called()
 

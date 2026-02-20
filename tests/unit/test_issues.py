@@ -577,7 +577,7 @@ class TestDependencies:
         all_met, unmet = check_dependencies_met(issue)
 
         assert all_met is False
-        assert "999" in unmet
+        assert 999 in unmet
 
     def test_get_blocked_issues(self, temp_agenttrees_deps):
         """get_blocked_issues should return issues in backlog waiting on a dependency."""
@@ -671,8 +671,8 @@ class TestDependencies:
         # Now create an issue that depends on them (using various formats)
         issue = create_issue("Test Issue", dependencies=["1", "02", "003"])
 
-        # Dependencies should be normalized to 3-digit format
-        assert issue.dependencies == ["001", "002", "003"]
+        # Dependencies should be ints
+        assert issue.dependencies == [1, 2, 3]
 
     def test_detect_circular_dependency_none(self, temp_agenttrees_deps):
         """No circular dependency when deps are valid."""
@@ -695,8 +695,8 @@ class TestDependencies:
         # Check if B depending on A would be circular
         cycle = detect_circular_dependency("002", [issue_a.id])
         assert cycle is not None
-        assert "001" in cycle
-        assert "002" in cycle
+        assert 1 in cycle
+        assert 2 in cycle
 
     def test_detect_circular_dependency_indirect(self, temp_agenttrees_deps):
         """Detect indirect circular dependency (A -> B -> C -> A)."""
@@ -710,16 +710,16 @@ class TestDependencies:
         cycle = detect_circular_dependency("003", [issue_a.id])
         assert cycle is not None
         # Cycle should contain all three
-        assert len([c for c in cycle if c in ["001", "002", "003"]]) >= 2
+        assert len([c for c in cycle if c in [1, 2, 3]]) >= 2
 
     def test_detect_circular_dependency_self(self, temp_agenttrees_deps):
         """Detect self-dependency (A -> A)."""
         from agenttree.issues import detect_circular_dependency
 
         # Check if A depending on itself would be circular
-        cycle = detect_circular_dependency("001", ["001"])
+        cycle = detect_circular_dependency("001", [1])
         assert cycle is not None
-        assert "001" in cycle
+        assert 1 in cycle
 
     def test_create_issue_rejects_circular_dependency(self, temp_agenttrees_deps):
         """create_issue should raise ValueError for circular dependencies."""
@@ -737,11 +737,11 @@ class TestDependencies:
 
         # Create B -> A (valid)
         issue_b = create_issue("Issue B", dependencies=[issue_a.id])
-        assert issue_b.dependencies == ["001"]
+        assert issue_b.dependencies == [1]
 
         # Create C -> B (valid)
         issue_c = create_issue("Issue C", dependencies=[issue_b.id])
-        assert issue_c.dependencies == ["002"]
+        assert issue_c.dependencies == [2]
 
 
 class TestUpdateIssueStage:
@@ -909,7 +909,7 @@ class TestLoadSkill:
         )
 
         # Create issue dir
-        issue_dir = temp_agenttrees_with_skills / "issues" / "001-test"
+        issue_dir = temp_agenttrees_with_skills / "issues" / "001"
         issue_dir.mkdir(parents=True)
 
         monkeypatch.setattr(
@@ -942,7 +942,7 @@ class TestLoadSkill:
         )
 
         # Create issue dir
-        issue_dir = temp_agenttrees_with_skills / "issues" / "042-test"
+        issue_dir = temp_agenttrees_with_skills / "issues" / "042"
         issue_dir.mkdir(parents=True)
 
         monkeypatch.setattr(
@@ -952,7 +952,7 @@ class TestLoadSkill:
 
         skill = load_skill("explore.define", issue=issue)
         # Should use the built-in issue_id, not the command output
-        assert skill == "Issue: 042"
+        assert skill == "Issue: 42"
 
     def test_load_skill_only_runs_referenced_commands(self, temp_agenttrees_with_skills, monkeypatch):
         """Only commands referenced in template should be executed."""
@@ -993,7 +993,7 @@ class TestLoadSkill:
             updated="2026-01-11T12:00:00Z",
         )
 
-        issue_dir = temp_agenttrees_with_skills / "issues" / "001-test"
+        issue_dir = temp_agenttrees_with_skills / "issues" / "001"
         issue_dir.mkdir(parents=True)
 
         monkeypatch.setattr(
@@ -1051,7 +1051,7 @@ class TestLoadSkillJinja:
         # Load skill with issue context
         skill = load_skill("explore.define", issue=issue)
 
-        assert skill == "Issue #001: Test Issue"
+        assert skill == "Issue #1: Test Issue"
 
     def test_load_skill_renders_document_content(self, temp_agenttrees_jinja):
         """load_skill should render document content variables."""
@@ -1061,7 +1061,7 @@ class TestLoadSkillJinja:
 
         # Create an issue and update its problem.md
         issue = create_issue("Test Issue")
-        issue_dir = temp_agenttrees_jinja / "issues" / f"{issue.id}-{issue.slug}"
+        issue_dir = temp_agenttrees_jinja / "issues" / issue.dir_name
         (issue_dir / "problem.md").write_text("This is the problem description.")
 
         # Load skill with issue context
@@ -1340,7 +1340,7 @@ class TestLoadPersona:
             current_stage="plan.draft",
         )
         assert persona is not None
-        assert issue.id in persona
+        assert str(issue.id) in persona
         assert "Test Feature" in persona
 
     def test_load_persona_loads_different_agent_types(self, temp_agenttrees_with_persona):
@@ -1395,7 +1395,7 @@ class TestGetIssueContext:
         context = get_issue_context(issue)
 
         # Core model fields
-        assert context["id"] == "001"
+        assert context["id"] == 1
         assert context["slug"] == "test-issue"
         assert context["title"] == "Test Issue"
         assert context["stage"] == "explore.define"

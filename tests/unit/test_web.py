@@ -584,7 +584,7 @@ class TestApproveIssueEndpoint:
 
         assert response.status_code == 200
         mock_transition.assert_called_once_with(
-            "2", "accepted",
+            "002", "accepted",
             skip_pr_approval=False,
             trigger="web",
         )
