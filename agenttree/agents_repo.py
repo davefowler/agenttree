@@ -11,7 +11,7 @@ import shutil
 import subprocess
 from pathlib import Path
 from datetime import datetime
-from typing import Optional, TYPE_CHECKING
+from typing import Any, Optional, TYPE_CHECKING
 import re
 
 log = logging.getLogger("agenttree.agents_repo")
@@ -19,6 +19,7 @@ log = logging.getLogger("agenttree.agents_repo")
 if TYPE_CHECKING:
     from agenttree.issues import Issue
     from agenttree.config import RoleConfig, StageConfig
+    from agenttree.github import CheckStatus, PRComment
 
 # Global lock file handle (kept open during sync)
 _sync_lock_fd = None
@@ -605,6 +606,119 @@ def check_merged_prs(agents_dir: Path) -> int:
     return issues_advanced
 
 
+def _generate_escalation_report(
+    ci_bounce_count: int,
+    pr_number: int,
+    failed_checks: list[CheckStatus],
+    all_failing_tests: list[str],
+    history: list[dict[str, Any]],
+    logs_sections: list[str],
+    comments: list[PRComment],
+) -> str:
+    """Generate a structured escalation report for human review.
+
+    Creates a comprehensive report with:
+    - Executive summary with failure count and failed checks
+    - Failing tests (deduplicated)
+    - Recommendations for fixing
+    - Timeline of CI attempts
+    - Detailed logs
+    """
+    content = "# CI Escalation Report\n\n"
+
+    # Summary section
+    content += "## Summary\n\n"
+    content += f"**CI has failed {ci_bounce_count} times.** The agent could not resolve these failures.\n\n"
+    content += f"- **PR:** #{pr_number}\n"
+
+    failed_check_names = [c.name for c in failed_checks]
+    content += f"- **Failed Checks:** {', '.join(failed_check_names) if failed_check_names else 'None'}\n"
+
+    # Calculate time span from history
+    ci_stages = ("implement.review", "implement.ci_wait", "implement.debug")
+    ci_entries = [
+        e for e in history
+        if e.get("stage") in ci_stages and e.get("timestamp")
+    ]
+    if len(ci_entries) >= 2:
+        try:
+            first_ts = ci_entries[0].get("timestamp", "")
+            last_ts = ci_entries[-1].get("timestamp", "")
+            if first_ts and last_ts:
+                # Parse timestamps and calculate duration
+                first_dt = datetime.fromisoformat(first_ts.replace("Z", "+00:00"))
+                last_dt = datetime.fromisoformat(last_ts.replace("Z", "+00:00"))
+                duration = last_dt - first_dt
+                hours, remainder = divmod(int(duration.total_seconds()), 3600)
+                minutes = remainder // 60
+                if hours > 0:
+                    content += f"- **Duration:** {hours}h {minutes}m of CI debugging\n"
+                else:
+                    content += f"- **Duration:** {minutes}m of CI debugging\n"
+        except (ValueError, TypeError):
+            pass
+
+    content += "\n"
+
+    # Failing tests section (deduplicated)
+    if all_failing_tests:
+        unique_tests = list(dict.fromkeys(all_failing_tests))  # Preserve order, remove duplicates
+        content += "## Failing Tests\n\n"
+        content += "These tests have been failing across CI attempts:\n\n"
+        for test in unique_tests[:10]:  # Limit to 10 tests
+            content += f"- `{test}`\n"
+        if len(unique_tests) > 10:
+            content += f"- ... and {len(unique_tests) - 10} more\n"
+        content += "\n"
+
+    # Recommendations section
+    content += "## Recommendations\n\n"
+    if failed_check_names:
+        if any("test" in name.lower() for name in failed_check_names):
+            content += "1. **Fix failing tests** - Run tests locally to debug: `uv run pytest`\n"
+        if any("lint" in name.lower() or "mypy" in name.lower() or "type" in name.lower() for name in failed_check_names):
+            content += "2. **Fix type/lint errors** - Run locally: `uv run mypy agenttree`\n"
+        if any("build" in name.lower() for name in failed_check_names):
+            content += "3. **Fix build errors** - Check logs for missing dependencies or syntax errors\n"
+    content += "4. **Review the detailed logs below** for specific error messages\n"
+    content += "5. **Consider if the approach needs rethinking** - Multiple failures may indicate a fundamental issue\n"
+    content += "\n"
+
+    # Timeline section
+    if ci_entries:
+        content += "## Timeline\n\n"
+        for entry in ci_entries[-6:]:  # Last 6 entries
+            stage = entry.get("stage", "unknown")
+            timestamp = entry.get("timestamp", "unknown")
+            if timestamp != "unknown":
+                try:
+                    dt = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+                    timestamp = dt.strftime("%Y-%m-%d %H:%M")
+                except (ValueError, TypeError):
+                    pass
+            content += f"- `{timestamp}` - {stage}\n"
+        content += "\n"
+
+    # PR review comments
+    if comments:
+        content += "## Review Comments\n\n"
+        for comment in comments:
+            content += f"### From @{comment.author}\n\n"
+            content += f"{comment.body}\n\n"
+
+    # Detailed logs section
+    if logs_sections:
+        content += "## Detailed Logs\n\n"
+        content += "Expand each section to see the full error output:\n"
+        for section in logs_sections:
+            content += section
+
+    content += "\n---\n\n"
+    content += "This issue has been escalated to human review. Please investigate and fix manually.\n"
+
+    return content
+
+
 def check_ci_status(agents_dir: Path) -> int:
     """Check CI status for issues at ci_wait or review and handle results.
 
@@ -754,9 +868,22 @@ def check_ci_status(agents_dir: Path) -> int:
             max_ci_bounces = 3
             if ci_bounce_count >= max_ci_bounces:
                 # Circuit breaker: stop looping, escalate to human review
-                feedback_content += f"\n---\n\n## ⛔ CI has failed {ci_bounce_count} times. Escalated to human review.\n"
-                feedback_content += "\nThe agent could not resolve these CI failures after multiple attempts.\n"
-                feedback_file.write_text(feedback_content)
+                # Generate a structured escalation report for human review
+                # Convert issue.history to list[dict] format for report
+                history_dicts = [
+                    {"stage": h.stage, "timestamp": h.timestamp or "unknown"}
+                    for h in issue.history
+                ]
+                escalation_content = _generate_escalation_report(
+                    ci_bounce_count=ci_bounce_count,
+                    pr_number=pr_number,
+                    failed_checks=failed_checks,
+                    all_failing_tests=all_failing_tests,
+                    history=history_dicts,
+                    logs_sections=logs_sections,
+                    comments=comments,
+                )
+                feedback_file.write_text(escalation_content)
 
                 console.print(f"[red]CI failed {ci_bounce_count}x for issue #{issue_id} — escalating to human review[/red]")
                 from agenttree.issues import update_issue_stage
