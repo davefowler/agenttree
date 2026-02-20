@@ -49,13 +49,17 @@ jobs:
 
             If ANY scope issues are found, mark as CRITICAL and recommend splitting the PR.
 
-            ## PRIORITY 1: Anti-Slop (see CLAUDE.md)
+            ## PRIORITY 1: Anti-Slop — THESE ARE CRITICAL (see CLAUDE.md)
 
-            - Dead code - new modules/classes added but not actually used
+            Every item below is a CRITICAL issue that MUST block merge. Do NOT downgrade these to suggestions.
+
+            - Dead code - new modules/classes/functions added but not actually used. This includes unused imports, unreferenced helper functions, and aliases that nothing calls. Dead code is ALWAYS critical.
             - Half-finished refactors - new code alongside old code that should be deleted
             - Repetitive functions that should be ONE parameterized function
             - Cowardly code - try/except around our own imports, defensive checks for guaranteed fields
-            - Backwards compat cruft - aliases, duplicate fields (we are pre-launch, no BC needed)
+            - Backwards compat cruft - aliases, duplicate fields, "Deprecated" comments on actively-used code (we are pre-launch, no BC needed)
+
+            If you find ANY Anti-Slop violation, you MUST use verdict 🔄 REQUEST CHANGES and CRITICAL_ISSUES_FOUND: YES.
 
             ## PRIORITY 2: Standard Review
 

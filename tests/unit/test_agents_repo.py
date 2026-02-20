@@ -614,21 +614,23 @@ class TestCheckCiStatus:
 
         issue_dir, _ = issue_at_implementation_review
 
-        with patch("agenttree.github.get_pr_checks") as mock_get_checks:
-            with patch("agenttree.state.get_active_agent", return_value=None):
-                mock_get_checks.return_value = [
-                    CheckStatus(name="build", state="SUCCESS"),
-                    CheckStatus(name="test", state="FAILURE"),
-                ]
-                result = check_ci_status(agents_dir)
+        with patch("agenttree.github.get_pr_checks") as mock_get_checks, \
+             patch("agenttree.state.get_active_agent", return_value=None), \
+             patch("agenttree.api.start_agent"), \
+             patch("agenttree.tmux.TmuxManager"):
+            mock_get_checks.return_value = [
+                CheckStatus(name="build", state="SUCCESS"),
+                CheckStatus(name="test", state="FAILURE"),
+            ]
+            result = check_ci_status(agents_dir)
 
-                # Should create ci_feedback.md
-                feedback_file = issue_dir / "ci_feedback.md"
-                assert feedback_file.exists()
-                content = feedback_file.read_text()
-                assert "test" in content
-                assert "FAILED" in content or "fail" in content.lower()
-                assert result == 1
+            # Should create ci_feedback.md
+            feedback_file = issue_dir / "ci_feedback.md"
+            assert feedback_file.exists()
+            content = feedback_file.read_text()
+            assert "test" in content
+            assert "FAILED" in content or "fail" in content.lower()
+            assert result == 1
 
     @patch("agenttree.hooks.is_running_in_container", return_value=False)
     def test_check_ci_status_on_ci_failure_transitions_to_implement(self, mock_container, agents_dir, issue_at_implementation_review):
@@ -639,17 +641,19 @@ class TestCheckCiStatus:
 
         issue_dir, _ = issue_at_implementation_review
 
-        with patch("agenttree.github.get_pr_checks") as mock_get_checks:
-            with patch("agenttree.state.get_active_agent", return_value=None):
-                mock_get_checks.return_value = [
-                    CheckStatus(name="test", state="FAILURE"),
-                ]
-                check_ci_status(agents_dir)
+        with patch("agenttree.github.get_pr_checks") as mock_get_checks, \
+             patch("agenttree.state.get_active_agent", return_value=None), \
+             patch("agenttree.api.start_agent"), \
+             patch("agenttree.tmux.TmuxManager"):
+            mock_get_checks.return_value = [
+                CheckStatus(name="test", state="FAILURE"),
+            ]
+            check_ci_status(agents_dir)
 
-                # Verify stage was changed to implement.debug
-                with open(issue_dir / "issue.yaml") as f:
-                    data = yaml.safe_load(f)
-                assert data["stage"] == "implement.debug"
+            # Verify stage was changed to implement.debug
+            with open(issue_dir / "issue.yaml") as f:
+                data = yaml.safe_load(f)
+            assert data["stage"] == "implement.debug"
 
     @patch("agenttree.hooks.is_running_in_container", return_value=False)
     def test_check_ci_status_on_ci_failure_sends_tmux_message(self, mock_container, agents_dir, issue_at_implementation_review):
@@ -723,16 +727,18 @@ class TestCheckCiStatus:
 
         issue_dir, _ = issue_at_implementation_review
 
-        with patch("agenttree.github.get_pr_checks") as mock_get_checks:
-            with patch("agenttree.state.get_active_agent", return_value=None):
-                mock_get_checks.return_value = [
-                    CheckStatus(name="test", state="FAILURE"),
-                ]
-                check_ci_status(agents_dir)
+        with patch("agenttree.github.get_pr_checks") as mock_get_checks, \
+             patch("agenttree.state.get_active_agent", return_value=None), \
+             patch("agenttree.api.start_agent"), \
+             patch("agenttree.tmux.TmuxManager"):
+            mock_get_checks.return_value = [
+                CheckStatus(name="test", state="FAILURE"),
+            ]
+            check_ci_status(agents_dir)
 
-                # The issue transitions to implement, so ci_notified doesn't matter
-                # But let's verify the feedback file was created
-                assert (issue_dir / "ci_feedback.md").exists()
+            # The issue transitions to implement, so ci_notified doesn't matter
+            # But let's verify the feedback file was created
+            assert (issue_dir / "ci_feedback.md").exists()
 
     @patch("agenttree.hooks.is_running_in_container", return_value=False)
     def test_check_ci_status_handles_no_active_agent_gracefully(self, mock_container, agents_dir, issue_at_implementation_review):
@@ -742,17 +748,19 @@ class TestCheckCiStatus:
 
         issue_dir, _ = issue_at_implementation_review
 
-        with patch("agenttree.github.get_pr_checks") as mock_get_checks:
-            with patch("agenttree.state.get_active_agent", return_value=None):
-                mock_get_checks.return_value = [
-                    CheckStatus(name="test", state="FAILURE"),
-                ]
-                # Should not raise even without active agent
-                result = check_ci_status(agents_dir)
+        with patch("agenttree.github.get_pr_checks") as mock_get_checks, \
+             patch("agenttree.state.get_active_agent", return_value=None), \
+             patch("agenttree.api.start_agent"), \
+             patch("agenttree.tmux.TmuxManager"):
+            mock_get_checks.return_value = [
+                CheckStatus(name="test", state="FAILURE"),
+            ]
+            # Should not raise even without active agent
+            result = check_ci_status(agents_dir)
 
-                # Feedback file should still be created
-                assert (issue_dir / "ci_feedback.md").exists()
-                assert result == 1
+            # Feedback file should still be created
+            assert (issue_dir / "ci_feedback.md").exists()
+            assert result == 1
 
 
 @pytest.mark.usefixtures("host_environment")
@@ -1261,7 +1269,8 @@ class TestCiEscalationReport:
         issue_dir = agents_dir / "issues" / "042-test-issue"
         issue_dir.mkdir()
         issue_yaml = issue_dir / "issue.yaml"
-        # Create history with 3 CI bounces (implement.ci_wait -> implement.debug transitions)
+        # Create history with 5 CI bounces (implement.ci_wait -> implement.debug transitions)
+        # to trigger escalation at the default max_ci_bounces=5
         data = {
             "id": "42",
             "title": "Test issue",
@@ -1276,6 +1285,10 @@ class TestCiEscalationReport:
                 {"stage": "implement.ci_wait", "timestamp": "2026-01-01T10:25:00Z"},
                 {"stage": "implement.debug", "timestamp": "2026-01-01T10:30:00Z"},
                 {"stage": "implement.ci_wait", "timestamp": "2026-01-01T10:35:00Z"},
+                {"stage": "implement.debug", "timestamp": "2026-01-01T10:40:00Z"},
+                {"stage": "implement.ci_wait", "timestamp": "2026-01-01T10:45:00Z"},
+                {"stage": "implement.debug", "timestamp": "2026-01-01T10:50:00Z"},
+                {"stage": "implement.ci_wait", "timestamp": "2026-01-01T10:55:00Z"},
             ],
         }
         with open(issue_yaml, "w") as f:
@@ -1306,7 +1319,7 @@ class TestCiEscalationReport:
 
         # Should have Summary section with failure count
         assert "## Summary" in content
-        assert "3" in content  # 3 failures
+        assert "5" in content  # 5 failures (default max_ci_bounces)
 
     @patch("agenttree.hooks.is_running_in_container", return_value=False)
     def test_escalation_report_includes_recommendations(

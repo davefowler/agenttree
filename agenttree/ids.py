@@ -49,17 +49,6 @@ def format_issue_id(issue_id: int) -> str:
     return f"{issue_id:03d}"
 
 
-def issue_dir_name(issue_id: int) -> str:
-    """Get directory name for an issue.
-
-    Args:
-        issue_id: Integer issue ID
-
-    Returns:
-        Directory name (e.g., "042")
-    """
-    return format_issue_id(issue_id)
-
 
 def container_name(project: str, issue_id: int) -> str:
     """Get container name for an issue-bound agent.
