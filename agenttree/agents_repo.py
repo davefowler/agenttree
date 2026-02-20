@@ -878,12 +878,17 @@ def check_ci_status(agents_dir: Path) -> int:
             if ci_bounce_count >= max_ci_bounces:
                 # Circuit breaker: stop looping, escalate to human review
                 # Generate a structured escalation report for human review
+                # Convert issue.history to list[dict] format for report
+                history_dicts = [
+                    {"stage": h.stage, "timestamp": h.timestamp or "unknown"}
+                    for h in issue.history
+                ]
                 escalation_content = _generate_escalation_report(
                     ci_bounce_count=ci_bounce_count,
                     pr_number=pr_number,
                     failed_checks=failed_checks,
                     all_failing_tests=all_failing_tests,
-                    history=history,
+                    history=history_dicts,
                     logs_sections=logs_sections,
                     comments=comments,
                 )
