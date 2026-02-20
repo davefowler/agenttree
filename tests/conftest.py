@@ -6,6 +6,7 @@ This prevents tests from attempting remote git operations, PR creation, etc.
 
 import os
 import pytest
+from click.testing import CliRunner
 
 
 @pytest.fixture(autouse=True)
@@ -44,3 +45,9 @@ def host_environment(monkeypatch):
     monkeypatch.delenv("AGENTTREE_CONTAINER", raising=False)
     # Also patch the function directly for environments where /.dockerenv exists
     monkeypatch.setattr("agenttree.hooks.is_running_in_container", lambda: False)
+
+
+@pytest.fixture
+def cli_runner():
+    """Create a Click test runner."""
+    return CliRunner()

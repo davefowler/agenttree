@@ -5,7 +5,8 @@
 import asyncio
 asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
 
-from fastapi import FastAPI, Request, Form, Depends, HTTPException, status
+from fastapi import FastAPI, Request, Form, Body, Depends, HTTPException, status
+from pydantic import BaseModel
 from fastapi.responses import HTMLResponse, FileResponse, RedirectResponse, Response
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
@@ -1264,6 +1265,54 @@ async def approve_issue(
         raise HTTPException(status_code=500, detail=f"Internal error: {type(e).__name__}: {e}")
     finally:
         # Always clear processing state
+        issue_crud.set_processing(issue_id_normalized, None)
+
+
+class RejectRequest(BaseModel):
+    """Request body for reject endpoint."""
+    message: str = ""
+
+
+@app.post("/api/issues/{issue_id}/reject")
+async def reject_issue_endpoint(
+    issue_id: str,
+    body: RejectRequest = Body(default=RejectRequest()),
+    user: Optional[str] = Depends(get_current_user)
+) -> dict:
+    """Reject an issue at a human review stage and move it back.
+
+    Moves the issue back to its corresponding work stage:
+    - plan.review → plan.revise
+    - implement.review → implement.code
+    """
+    import asyncio
+    from agenttree.api import reject_issue as api_reject_issue
+
+    issue_id_normalized = issue_id.lstrip("0") or "0"
+
+    # Check issue exists first (for 404)
+    issue = issue_crud.get_issue(issue_id_normalized, sync=False)
+    if not issue:
+        raise HTTPException(status_code=404, detail="Issue not found")
+
+    try:
+        issue_crud.set_processing(issue_id_normalized, "reject")
+
+        # Call the shared API function
+        message = body.message if body.message else None
+        await asyncio.to_thread(api_reject_issue, issue_id_normalized, message)
+
+        return {"ok": True}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error rejecting issue #{issue_id_normalized}")
+        raise HTTPException(status_code=500, detail=f"Internal error: {type(e).__name__}: {e}")
+    finally:
         issue_crud.set_processing(issue_id_normalized, None)
 
 

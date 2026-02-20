@@ -87,6 +87,11 @@
                             {% if issue.processing %}disabled{% endif %}>
                         {% if issue.processing %}Processing...{% else %}Approve{% endif %}
                     </button>
+                    <button class="btn btn-reject"
+                            onclick="showRejectModal('{{ issue.number }}')"
+                            {% if issue.processing %}disabled{% endif %}>
+                        Request Changes
+                    </button>
                     {% endif %}
                 </div>
             </div>
@@ -294,6 +299,73 @@ async function approveIssue(issueNumber, btn) {
             agentLight.classList.remove('processing');
             agentLight.classList.add('off');
             agentLight.title = 'Click to start agent';
+        }
+    }
+}
+
+// Reject modal state
+let currentRejectIssue = null;
+
+function showRejectModal(issueNumber) {
+    currentRejectIssue = issueNumber;
+    const modal = document.getElementById('reject-modal');
+    const textarea = document.getElementById('reject-feedback');
+    if (modal) {
+        modal.style.display = 'flex';
+        textarea.value = '';
+        textarea.focus();
+    }
+}
+
+function hideRejectModal() {
+    const modal = document.getElementById('reject-modal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+    currentRejectIssue = null;
+}
+
+async function submitReject() {
+    if (!currentRejectIssue) return;
+
+    const textarea = document.getElementById('reject-feedback');
+    const message = textarea ? textarea.value.trim() : '';
+    const submitBtn = document.querySelector('#reject-modal .btn-reject-submit');
+
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Submitting...';
+    }
+
+    try {
+        const response = await fetch(`/api/issues/${currentRejectIssue}/reject`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ message: message })
+        });
+
+        if (response.ok) {
+            hideRejectModal();
+            // Reload to show updated state
+            if (typeof goToNextIssue === 'function') {
+                goToNextIssue();
+            } else {
+                setTimeout(afterAction, 500);
+            }
+        } else {
+            const data = await response.json();
+            alert(`Cannot reject: ${data.detail || 'Unknown error'}`);
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Submit';
+            }
+        }
+    } catch (error) {
+        console.error('Error rejecting:', error);
+        alert(`Error rejecting issue: ${error.message || error}`);
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Submit';
         }
     }
 }
@@ -525,3 +597,16 @@ async function loadDiff(issueNumber) {
     }
 }
 </script>
+
+<!-- Reject Modal -->
+<div id="reject-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-content">
+        <h3>Request Changes</h3>
+        <p>Enter feedback for the agent (optional):</p>
+        <textarea id="reject-feedback" placeholder="Describe what changes are needed..." rows="4"></textarea>
+        <div class="modal-buttons">
+            <button class="btn btn-secondary" onclick="hideRejectModal()">Cancel</button>
+            <button class="btn btn-reject-submit" onclick="submitReject()">Submit</button>
+        </div>
+    </div>
+</div>

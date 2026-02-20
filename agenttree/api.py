@@ -17,8 +17,11 @@ Example:
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
+
+import yaml as pyyaml
 
 if TYPE_CHECKING:
     from agenttree.issues import Issue
@@ -33,6 +36,7 @@ __all__ = [
     "stop_agent",
     "stop_all_agents_for_issue",
     "transition_issue",
+    "reject_issue",
     "cleanup_orphaned_containers",
     "cleanup_all_agenttree_containers",
     "cleanup_all_with_retry",
@@ -582,6 +586,111 @@ def transition_issue(
         log.warning("Enter hooks failed for issue #%s (%s trigger): %s", issue_id, trigger, e)
 
     return updated
+
+
+# Mapping from human review stages to their rejection target stages
+REJECT_TARGET_STAGES = {
+    "plan.review": "plan.revise",
+    "implement.review": "implement.code",
+    "implement.independent_review": "implement.code",
+}
+
+
+def reject_issue(issue_id: str, message: str | None = None) -> Issue:
+    """Reject an issue at a human review stage and move it back.
+
+    This function handles all the logic for rejection:
+    - Validates issue is at a human review stage
+    - Updates issue.yaml directly (skipping hooks, like rollback)
+    - Adds history entry with type: "reject"
+    - Syncs to agents repo
+    - Notifies agent with feedback
+
+    Unlike rollback, reject preserves PR metadata since the PR just needs updates.
+
+    Args:
+        issue_id: Issue ID to reject
+        message: Optional feedback message to send to the agent
+
+    Returns:
+        The updated Issue object
+
+    Raises:
+        ValueError: If issue is not at a human review stage
+        RuntimeError: If issue not found or directory missing
+    """
+    from agenttree.config import load_config
+    from agenttree.issues import get_issue, get_issue_dir, get_agenttree_path
+    from agenttree.agents_repo import sync_agents_repo
+
+    issue = get_issue(issue_id)
+    if not issue:
+        raise RuntimeError(f"Issue #{issue_id} not found")
+
+    config = load_config()
+    if not config.is_human_review(issue.stage):
+        human_review_stages = config.get_human_review_stages()
+        raise ValueError(
+            f"Issue is at '{issue.stage}', not a human review stage. "
+            f"Valid stages: {', '.join(human_review_stages)}"
+        )
+
+    target_stage = REJECT_TARGET_STAGES.get(issue.stage)
+    if not target_stage:
+        raise ValueError(f"No target stage defined for rejecting from '{issue.stage}'")
+
+    # Update issue.yaml directly (like rollback, skip hooks)
+    issue_dir = get_issue_dir(issue_id)
+    if not issue_dir:
+        raise RuntimeError(f"Issue directory not found for #{issue_id}")
+
+    yaml_path = issue_dir / "issue.yaml"
+    if not yaml_path.exists():
+        raise RuntimeError(f"Issue yaml not found at {yaml_path}")
+
+    with open(yaml_path) as fh:
+        data = pyyaml.safe_load(fh)
+
+    # Update stage (hierarchical dot-path format)
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    data["stage"] = target_stage
+    data["updated"] = now
+
+    # Add reject history entry
+    history_entry = {
+        "stage": target_stage,
+        "timestamp": now,
+        "type": "reject",
+    }
+    if "history" not in data:
+        data["history"] = []
+    data["history"].append(history_entry)
+
+    # NOTE: Unlike rollback, we preserve PR metadata since the PR just needs updates
+
+    with open(yaml_path, "w") as fh:
+        pyyaml.dump(data, fh, default_flow_style=False, sort_keys=False)
+
+    # Sync to agents repo
+    agents_path = get_agenttree_path()
+    sync_agents_repo(
+        agents_path,
+        pull_only=False,
+        commit_message=f"Reject issue {issue_id} to {target_stage}"
+    )
+
+    # Notify agent with feedback
+    if message:
+        notify_message = f"Review feedback: {message}. Run `agenttree next` to continue."
+    else:
+        notify_message = "Your work was rejected. Run `agenttree next` for instructions."
+    _notify_agent(issue_id, notify_message)
+
+    # Return updated issue
+    updated_issue = get_issue(issue_id)
+    if not updated_issue:
+        raise RuntimeError(f"Failed to reload issue #{issue_id} after rejection")
+    return updated_issue
 
 
 def _notify_agent(issue_id: str, message: str, *, interrupt: bool = False) -> None:

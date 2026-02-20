@@ -427,6 +427,45 @@ def approve_issue(issue_id: str, skip_approval: bool) -> None:
             console.print(f"[green]✓ Notified agent to continue[/green]")
 
 
+@click.command("reject")
+@click.argument("issue_id", type=str)
+@click.option("--message", "-m", help="Feedback message to send to the agent")
+def reject_issue(issue_id: str, message: str | None) -> None:
+    """Reject an issue at a human review stage and move it back.
+
+    Only works at human review stages (plan.review, implement.review).
+    Cannot be run from inside a container - humans only.
+
+    Moves the issue back to its corresponding work stage:
+    - plan.review → plan.revise
+    - implement.review → implement.code
+
+    Example:
+        agenttree reject 042
+        agenttree reject 042 --message "Please fix the test failures"
+    """
+    from agenttree.api import reject_issue as api_reject_issue
+
+    # Block if in container
+    if is_running_in_container():
+        console.print("[red]Error: 'reject' cannot be run from inside a container[/red]")
+        console.print("[dim]This command is for human reviewers only.[/dim]")
+        sys.exit(1)
+
+    # Normalize issue ID
+    issue_id_normalized = normalize_issue_id(issue_id)
+
+    try:
+        updated = api_reject_issue(issue_id_normalized, message)
+        console.print(f"[green]✓ Rejected! Issue #{updated.id} moved to {updated.stage}[/green]")
+    except ValueError as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+    except RuntimeError as e:
+        console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+
+
 @click.command("defer")
 @click.argument("issue_id", type=str)
 def defer_issue(issue_id: str) -> None:

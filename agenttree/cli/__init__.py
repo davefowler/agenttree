@@ -29,6 +29,7 @@ from agenttree.cli.workflow import (
     stage_status,
     stage_next,
     approve_issue,
+    reject_issue,
     defer_issue,
     shutdown_issue,
     rollback_issue,
@@ -73,6 +74,7 @@ main.add_command(stalls)
 main.add_command(stage_status)
 main.add_command(stage_next)
 main.add_command(approve_issue)
+main.add_command(reject_issue)
 main.add_command(defer_issue)
 main.add_command(shutdown_issue)
 main.add_command(rollback_issue)

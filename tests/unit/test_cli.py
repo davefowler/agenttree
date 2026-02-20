@@ -4,13 +4,6 @@ from pathlib import Path
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
-from click.testing import CliRunner
-
-
-@pytest.fixture
-def cli_runner():
-    """Create a Click test runner."""
-    return CliRunner()
 
 
 @pytest.fixture
