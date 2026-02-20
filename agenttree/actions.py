@@ -105,10 +105,11 @@ def start_manager(agents_dir: Path, **kwargs: Any) -> None:
 
 @register_action("auto_start_agents")
 def auto_start_agents(agents_dir: Path, **kwargs: Any) -> None:
-    """Start agents for all issues not in parking lot stages.
-    
-    Uses fast session_exists checks instead of slow get_active_agent.
-    
+    """Start agents for issues that should have a running agent but don't.
+
+    Skips parking lots, human review stages, and manager stages.
+    Uses config.role_for(stage) to check the correct role's session.
+
     Args:
         agents_dir: Path to _agenttree directory
     """
@@ -116,35 +117,40 @@ def auto_start_agents(agents_dir: Path, **kwargs: Any) -> None:
     from agenttree.config import load_config
     from agenttree.issues import list_issues
     from agenttree.tmux import session_exists
-    
+
     config = load_config()
-    
-    # Get active issues (not parking lot stages)
-    issues = [
-        i for i in list_issues(sync=False)
-        if not config.is_parking_lot(i.stage)
-    ]
-    
+    issues = list_issues(sync=False)
     started = 0
-    
+
     for issue in issues:
-        # Fast check using session_exists instead of slow get_active_agent
-        session_name = config.get_issue_tmux_session(issue.id, "developer")
-        if session_exists(session_name):
-            console.print(f"[dim]Issue #{issue.id} already has an agent[/dim]")
+        if config.is_parking_lot(issue.stage):
             continue
-        
+        if config.is_human_review(issue.stage):
+            continue
+
+        role = config.role_for(issue.stage)
+        if role == "manager":
+            continue
+
+        session_name = config.get_issue_tmux_session(issue.id, role)
+        if session_exists(session_name):
+            continue
+
         console.print(f"[cyan]Starting agent for issue #{issue.id} ({issue.stage})...[/cyan]")
         result = subprocess.run(
             ["agenttree", "start", str(issue.id), "--skip-preflight"],
             capture_output=True,
             text=True,
-            timeout=120,  # Container startup can be slow
+            timeout=120,
         )
         if result.returncode == 0:
+            console.print(f"[green]✓ Started agent for issue #{issue.id}[/green]")
             started += 1
-    
-    console.print(f"[green]✓ Started {started} agent(s)[/green]")
+        else:
+            console.print(f"[yellow]Failed to start agent for issue #{issue.id}[/yellow]")
+
+    if started:
+        console.print(f"[green]Auto-started {started} agent(s)[/green]")
 
 
 @register_action("stop_all_agents")
@@ -877,6 +883,7 @@ DEFAULT_EVENT_CONFIGS: dict[str, list[str] | dict[str, Any]] = {
         "actions": [
             "sync",
             {"start_manager": {"min_interval_s": 30}},  # Ensure manager stays alive
+            {"auto_start_agents": {"min_interval_s": 30}},  # Start agents for new issues
             {"push_pending_branches": {}},
             {"check_manager_stages": {}},
             {"ensure_review_branches": {"min_interval_s": 60}},
