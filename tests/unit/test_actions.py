@@ -2,6 +2,7 @@
 
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch, MagicMock
 
 import pytest
@@ -495,3 +496,32 @@ class TestCheckStalledAgents:
 
         # Should NOT notify (25 < threshold*3=30)
         mock_send.assert_not_called()
+
+    @patch("agenttree.events.save_event_state")
+    @patch("agenttree.tmux.send_message", return_value="sent")
+    @patch("agenttree.tmux.session_exists")
+    @patch("agenttree.issues.list_issues")
+    @patch("agenttree.config.load_config")
+    def test_shared_event_state_modifies_in_place_skips_save(
+        self, mock_load_config: MagicMock, mock_list: MagicMock,
+        mock_exists: MagicMock, mock_send: MagicMock,
+        mock_save: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """When _event_state is passed, modifies it in-place and skips save."""
+        mock_load_config.return_value = self._make_config()
+        mock_list.return_value = [self._make_issue(minutes_ago=15)]
+        mock_exists.side_effect = lambda name: name == "mgr"
+
+        shared_state: dict[str, Any] = {}
+        check_stalled_agents(tmp_path, threshold_min=10, _event_state=shared_state)
+
+        # Should have notified manager
+        mock_send.assert_called_once()
+
+        # Should have modified the shared dict in-place
+        assert "stall_notifications" in shared_state
+        assert shared_state["stall_notifications"]["042"]["count"] == 1
+
+        # Should NOT have called save_event_state (dispatcher does it)
+        mock_save.assert_not_called()
