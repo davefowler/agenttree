@@ -691,6 +691,10 @@ def stop_agent(issue_id: int, role: str = "developer", quiet: bool = False) -> b
 def stop_all_agents_for_issue(issue_id: int, quiet: bool = False) -> int:
     """Stop all agents for an issue (across all roles).
 
+    Stops agents found via tmux sessions, then always attempts to stop the
+    container by name — even if no tmux sessions exist. This prevents orphaned
+    containers from continuing to modify issue state after archiving.
+
     Args:
         issue_id: Issue ID
         quiet: If True, suppress output messages
@@ -698,13 +702,20 @@ def stop_all_agents_for_issue(issue_id: int, quiet: bool = False) -> int:
     Returns:
         Number of agents stopped
     """
-    # Use lazy import to avoid circular dependency
     from agenttree.state import get_active_agents_for_issue
 
     agents = get_active_agents_for_issue(issue_id)
+    roles_stopped: set[str] = set()
     count = 0
     for agent in agents:
         if stop_agent(issue_id, agent.role, quiet):
+            count += 1
+        roles_stopped.add(agent.role)
+
+    # Always try to stop the container directly — tmux session may be gone
+    # while the container is still running and modifying issue state.
+    if "developer" not in roles_stopped:
+        if stop_agent(issue_id, "developer", quiet):
             count += 1
     return count
 
