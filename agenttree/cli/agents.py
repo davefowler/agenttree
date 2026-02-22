@@ -343,149 +343,6 @@ def agents_status() -> None:
     console.print(f"  agenttree stop <id> [--role <role>]")
 
 
-@click.command()
-@click.argument("name", default="default", required=False)
-@click.option("--list", "-l", "list_sandboxes", is_flag=True, help="List active sandboxes")
-@click.option("--kill", "-k", is_flag=True, help="Kill the sandbox")
-@click.option("--tool", help="AI tool to use (default: from config)")
-@click.option("--git", "-g", "share_git", is_flag=True, help="Share git credentials (~/.ssh, ~/.gitconfig)")
-def sandbox(name: str, list_sandboxes: bool, kill: bool, tool: str | None, share_git: bool) -> None:
-    """Start a sandbox container for ad-hoc work.
-
-    NAME is an optional sandbox name (default: "default").
-
-    Examples:
-        agenttree sandbox              # Start default sandbox
-        agenttree sandbox experiments  # Start named sandbox
-        agenttree sandbox --git        # Start with git credentials
-        agenttree sandbox --list       # List active sandboxes
-        agenttree sandbox --kill       # Kill default sandbox
-        agenttree sandbox exp --kill   # Kill named sandbox
-    """
-    from agenttree.container import get_container_runtime
-    from agenttree.tmux import (
-        create_session,
-        kill_session,
-        session_exists,
-        attach_session,
-        list_sessions,
-        wait_for_prompt,
-        send_keys,
-    )
-
-    config = load_config()
-    project = config.project
-
-    # Sandbox session naming convention: {project}-sandbox-{name}
-    def get_sandbox_session_name(sandbox_name: str) -> str:
-        return f"{project}-sandbox-{sandbox_name}"
-
-    # List sandboxes
-    if list_sandboxes:
-        sessions = list_sessions()
-        sandbox_prefix = f"{project}-sandbox-"
-        sandbox_sessions = [s for s in sessions if s.name.startswith(sandbox_prefix)]
-
-        if not sandbox_sessions:
-            console.print("[dim]No active sandboxes[/dim]")
-            console.print("\nStart one with:")
-            console.print("  agenttree sandbox [name]")
-            return
-
-        table = Table(title="Active Sandboxes")
-        table.add_column("Name", style="bold cyan")
-        table.add_column("Session", style="dim")
-
-        for session in sandbox_sessions:
-            sandbox_name = session.name[len(sandbox_prefix):]
-            table.add_row(sandbox_name, session.name)
-
-        console.print(table)
-        console.print(f"\n[dim]Commands:[/dim]")
-        console.print(f"  agenttree sandbox <name>        # Attach to sandbox")
-        console.print(f"  agenttree sandbox <name> --kill # Kill sandbox")
-        return
-
-    session_name = get_sandbox_session_name(name)
-
-    # Kill sandbox
-    if kill:
-        if session_exists(session_name):
-            kill_session(session_name)
-            console.print(f"[green]✓ Killed sandbox '{name}'[/green]")
-        else:
-            console.print(f"[yellow]Sandbox '{name}' not running[/yellow]")
-        return
-
-    # Check if sandbox already exists - if so, attach to it
-    if session_exists(session_name):
-        console.print(f"[cyan]Attaching to existing sandbox '{name}' (Ctrl+B, D to detach)...[/cyan]")
-        attach_session(session_name)
-        return
-
-    # Start new sandbox
-    runtime = get_container_runtime()
-    if not runtime.is_available():
-        console.print(f"[red]Error: No container runtime available[/red]")
-        console.print(f"Recommendation: {runtime.get_recommended_action()}")
-        sys.exit(1)
-
-    console.print(f"[cyan]Starting sandbox '{name}'...[/cyan]")
-    console.print(f"[dim]Container runtime: {runtime.get_runtime_name()}[/dim]")
-
-    # Ensure container system is running
-    runtime.ensure_system_running()
-
-    # Build container command using current directory (main repo)
-    repo_path = Path.cwd()
-    tool_name = tool or config.default_tool
-
-    # Get git mounts using shared helper
-    git_mounts = prepare_git_mounts(
-        runtime_name=runtime.get_runtime_name(),
-        share_git=share_git,
-        staging_dir=repo_path,
-    )
-
-    # Build container type config with git mounts
-    from agenttree.config import ContainerTypeConfig
-    from agenttree.container import build_container_command
-    container_type = ContainerTypeConfig(
-        image="agenttree-agent:latest",
-        mounts=git_mounts,
-        allow_dangerous=True,
-    )
-
-    tool_config = config.get_tool_config(tool_name)
-    container_cmd = build_container_command(
-        runtime=runtime.runtime or "docker",
-        worktree_path=repo_path,
-        container_type=container_type,
-        container_name=f"agenttree-{config.project}-sandbox-{name}",
-        tool_config=tool_config,
-        role="sandbox",
-        model=config.default_model,
-    )
-    container_cmd_str = " ".join(container_cmd)
-
-    # Create tmux session running the container
-    create_session(session_name, repo_path, container_cmd_str)
-    console.print(f"[green]✓ Started sandbox '{name}'[/green]")
-
-    # Wait for prompt and send a friendly message
-    if wait_for_prompt(session_name, prompt_char="❯", timeout=30.0):
-        send_keys(session_name, "echo 'Sandbox ready! Working in main repo.'")
-
-    console.print(f"\n[bold]Sandbox '{name}' ready[/bold]")
-    console.print(f"\n[dim]Commands:[/dim]")
-    console.print(f"  agenttree sandbox {name}        # Attach")
-    console.print(f"  agenttree sandbox {name} --kill # Stop")
-    console.print(f"  agenttree sandbox --list        # List all")
-
-    # Auto-attach
-    console.print(f"\n[cyan]Attaching... (Ctrl+B, D to detach)[/cyan]")
-    attach_session(session_name)
-
 
 @click.command()
 @click.argument("issue_id", type=str)
@@ -844,17 +701,15 @@ def new_container(
     # Ensure container system is running
     runtime.ensure_system_running()
 
-    # Get container type config (or create default)
+    # Get container type config
     if container_type in config.containers:
         resolved_type = resolve_container_type(container_type, config.containers)
     else:
-        # Default config for unknown types (backwards compatible with sandbox)
-        resolved_type = ContainerTypeConfig(
-            image="agenttree-agent:latest",
-            allow_dangerous=True,
-        )
-        if container_type != "sandbox":
-            console.print(f"[yellow]Warning: Unknown container type '{container_type}', using defaults[/yellow]")
+        console.print(f"[red]Error: Unknown container type '{container_type}'[/red]")
+        console.print("[dim]Define it in .agenttree.yaml under 'containers:'[/dim]")
+        if config.containers:
+            console.print(f"[dim]Available types: {', '.join(config.containers.keys())}[/dim]")
+        sys.exit(1)
 
     # Build container command
     repo_path = Path.cwd()

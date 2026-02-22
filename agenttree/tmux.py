@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 from dataclasses import dataclass
 
 from agenttree.config import Config
+from agenttree.ids import serve_session_name as get_serve_session_name
 
 if TYPE_CHECKING:
     from agenttree.container import ContainerRuntime
@@ -525,7 +526,6 @@ class TmuxManager:
         serve_command = self.config.commands.get("serve")
         if serve_command and ports:
             port = ports[0]
-            from agenttree.ids import serve_session_name as get_serve_session_name
             serve_session = get_serve_session_name(self.config.project, int(issue_id))
             try:
                 # Kill existing serve session if it exists (for agent restarts)

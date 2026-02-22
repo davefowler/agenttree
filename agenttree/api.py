@@ -17,8 +17,11 @@ Example:
 from __future__ import annotations
 
 import logging
+import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
+
+from agenttree.ids import serve_session_name as get_serve_session_name
 
 if TYPE_CHECKING:
     from agenttree.issues import Issue
@@ -638,16 +641,14 @@ def stop_agent(issue_id: int, role: str = "developer", quiet: bool = False) -> b
 
     # 1. Kill serve session (if it exists) - runs on host, not in container
     try:
-        from agenttree.ids import serve_session_name as get_serve_session_name
         serve_session = get_serve_session_name(config.project, issue_id)
         if session_exists(serve_session):
             kill_session(serve_session)
             stopped_something = True
             if not quiet:
                 console.print(f"[dim]  Stopped serve session: {serve_session}[/dim]")
-    except Exception as e:
-        if not quiet:
-            console.print(f"[yellow]  Warning: Could not stop serve session: {e}[/yellow]")
+    except subprocess.CalledProcessError:
+        pass
 
     # 2. Kill tmux session if it exists
     try:

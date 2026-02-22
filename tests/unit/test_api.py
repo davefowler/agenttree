@@ -475,15 +475,15 @@ class TestStopAgent:
              patch("agenttree.tmux.kill_session") as mock_kill, \
              patch("agenttree.container.get_container_runtime", return_value=mock_runtime):
 
-            result = stop_agent("042", "developer", quiet=True)
+            result = stop_agent(42, "developer", quiet=True)
 
         assert result is True
         # Verify tmux session was killed using config method
-        mock_config.get_issue_tmux_session.assert_called_with("042", "developer")
+        mock_config.get_issue_tmux_session.assert_called_with(42, "developer")
         mock_kill.assert_any_call("myproject-developer-042")
 
         # Verify container was stopped/deleted using config method
-        mock_config.get_issue_container_name.assert_called_with("042")
+        mock_config.get_issue_container_name.assert_called_with(42)
         mock_runtime.stop.assert_called_with("agenttree-myproject-042")
         mock_runtime.delete.assert_called_with("agenttree-myproject-042")
 
@@ -506,7 +506,7 @@ class TestStopAgent:
              patch("agenttree.tmux.kill_session") as mock_kill, \
              patch("agenttree.container.get_container_runtime", return_value=mock_runtime):
 
-            result = stop_agent("042", "developer", quiet=True)
+            result = stop_agent(42, "developer", quiet=True)
 
         # Should still attempt container cleanup
         assert result is True
@@ -533,7 +533,7 @@ class TestStopAgent:
              patch("agenttree.tmux.kill_session") as mock_kill, \
              patch("agenttree.container.get_container_runtime", return_value=mock_runtime):
 
-            result = stop_agent("042", "developer", quiet=True)
+            result = stop_agent(42, "developer", quiet=True)
 
         assert result is True  # Still returns True because tmux was stopped
         # Should kill tmux session
@@ -720,10 +720,10 @@ class TestContainerNamingConsistency:
              patch("agenttree.tmux.kill_session"), \
              patch("agenttree.container.get_container_runtime", return_value=mock_runtime):
 
-            stop_agent("123", "developer", quiet=True)
+            stop_agent(123, "developer", quiet=True)
 
         # Verify both config methods were called with same issue_id
-        mock_config.get_issue_container_name.assert_called_with("123")
+        mock_config.get_issue_container_name.assert_called_with(123)
         # Verify container operations used the config-derived name
         expected_name = "agenttree-testproject-123"
         mock_runtime.stop.assert_called_with(expected_name)

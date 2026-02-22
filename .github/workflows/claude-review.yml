@@ -31,6 +31,19 @@ jobs:
 
             Review this pull request for the agenttree project.
 
+            ## Before Reviewing: Explore Context
+
+            Do NOT review the diff in isolation. Before writing your review:
+            1. Read the full files being changed (not just the diff hunks) to understand surrounding context
+            2. Check that new functions/classes/imports are actually used somewhere — grep for their names across the codebase
+            3. Check if modified functions have callers that might break from the changes
+            4. Look for similar patterns elsewhere in the codebase that should be updated consistently
+            5. Read related test files to verify coverage exists for new/changed behavior
+            6. Read CLAUDE.md in the repo root for project conventions and anti-slop rules
+
+            This verification step is critical. The most common review failure is flagging issues based on the diff alone
+            without checking whether the code is actually used, imported, or tested. Do your homework first.
+
             ## PRIORITY 0: Scope Check (CHECK THIS FIRST!)
 
             Run `gh pr diff ${{ github.event.pull_request.number }} --stat` and check:
@@ -53,13 +66,15 @@ jobs:
 
             Every item below is a CRITICAL issue that MUST block merge. Do NOT downgrade these to suggestions.
 
-            - Dead code - new modules/classes/functions added but not actually used. This includes unused imports, unreferenced helper functions, and aliases that nothing calls. Dead code is ALWAYS critical.
-            - Half-finished refactors - new code alongside old code that should be deleted
+            - Dead code - new modules/classes/functions added but not actually used. VERIFY by grepping for usages before flagging.
+            - Half-finished refactors - new code alongside old code that should be deleted. VERIFY old code is actually still called.
             - Repetitive functions that should be ONE parameterized function
             - Cowardly code - try/except around our own imports, defensive checks for guaranteed fields
             - Backwards compat cruft - aliases, duplicate fields, "Deprecated" comments on actively-used code (we are pre-launch, no BC needed)
 
             If you find ANY Anti-Slop violation, you MUST use verdict 🔄 REQUEST CHANGES and CRITICAL_ISSUES_FOUND: YES.
+
+            BE THOROUGH: Find ALL issues in a single pass. Do not leave issues for future rounds. The goal is one review cycle, not multiple.
 
             ## PRIORITY 2: Standard Review
 
@@ -75,9 +90,16 @@ jobs:
 
             Reference CLAUDE.md in the repo for project conventions.
 
+            ## NOT Issues (do NOT flag these)
+
+            - Large diffs that are proportional to the stated goal
+            - Deleting code that the PR explicitly says it's replacing
+            - New test files for new functionality
+            - Style preferences that don't violate CLAUDE.md
+
             Format your review with clear sections:
             - Start with **Scope Check** results (diff stats, any concerns)
-            - List any CRITICAL issues (these block merge)
+            - List any CRITICAL issues (these block merge) — for each one, show the evidence (grep results, file reads) that confirms it
             - Then list other suggestions
             - End with a clear **Recommendation** section
 
@@ -91,7 +113,7 @@ jobs:
             If you find CRITICAL issues, include the text "CRITICAL_ISSUES_FOUND: YES" at the end.
             If no critical issues, include "CRITICAL_ISSUES_FOUND: NO" at the end.
 
-          claude_args: '--allowed-tools "Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*)"'
+          claude_args: '--allowed-tools "Read,Glob,Grep,Bash(gh issue view:*),Bash(gh search:*),Bash(gh issue list:*),Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(gh pr list:*)"'
 
       - name: Check for Critical Issues
         if: always()

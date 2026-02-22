@@ -1,7 +1,7 @@
 """CLI for AgentTree.
 
 This package contains the CLI commands organized into submodules:
-- agents: Agent management (start, stop, attach, send, output, sandbox)
+- agents: Agent management (start, stop, attach, send, output, new)
 - issues: Issue management (create, list, show, doc)
 - workflow: Workflow commands (status, next, approve, defer, shutdown, rollback)
 - notes: Notes management (show, search, archive)
@@ -37,7 +37,6 @@ from agenttree.cli.workflow import (
 from agenttree.cli.agents import (
     start_agent,
     agents_status,
-    sandbox,
     attach,
     output,
     send,
@@ -48,7 +47,6 @@ from agenttree.cli.agents import (
 # Register all commands with main group
 main.add_command(start_agent)
 main.add_command(agents_status)
-main.add_command(sandbox)
 main.add_command(attach)
 main.add_command(output)
 main.add_command(send)
