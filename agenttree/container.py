@@ -1,12 +1,17 @@
 """Container runtime support for AgentTree."""
 
+from __future__ import annotations
+
 import os
 import platform
 import re
 import shutil
 import subprocess
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from agenttree.config import ContainerTypeConfig, ToolConfig
 
 
 # =============================================================================
@@ -234,6 +239,159 @@ def get_git_worktree_info(worktree_path: Path) -> Tuple[Optional[Path], Optional
         pass
 
     return None, None
+
+
+def build_container_command(
+    runtime: str,
+    worktree_path: Path,
+    container_type: ContainerTypeConfig,
+    container_name: str,
+    tool_config: ToolConfig,
+    role: str,
+    issue_id: int | None = None,
+    ports: list[int] | None = None,
+    model: str | None = None,
+    force_api_key: bool = False,
+    interactive: bool = True,
+) -> list[str]:
+    """Build a generic container run command.
+
+    This function has ZERO type-specific conditionals. All behavior differences
+    come from the ContainerTypeConfig. There is no "if manager" or "if issue" -
+    just config-driven command building.
+
+    Layering order:
+    1. Implicit system mounts (worktree, .git, _agenttree)
+    2. Tool mounts (Claude config, session storage)
+    3. User mounts (from container_type.mounts)
+    4. System env vars (AGENTTREE_CONTAINER, AGENTTREE_ROLE, etc.)
+    5. Tool env vars (auth tokens, API keys)
+    6. User env vars (from container_type.env)
+    7. Port forwarding (from collected session ports)
+    8. Image and entry command
+
+    Args:
+        runtime: Container runtime command (docker, container, podman)
+        worktree_path: Path to mount as /workspace
+        container_type: Resolved ContainerTypeConfig (extends already resolved)
+        container_name: Name for the container
+        tool_config: Tool config for mounts/env/entry command
+        role: Agent role (developer, reviewer, manager, etc.)
+        issue_id: Issue ID if applicable (None for sandboxes/manager)
+        ports: List of ports to forward
+        model: Model for the AI tool
+        force_api_key: Force API key mode (skip OAuth)
+        interactive: Whether to use -it flags
+
+    Returns:
+        Complete container command as list of strings
+    """
+    from agenttree.config import render_template
+
+    abs_path = worktree_path.resolve()
+    home = Path.home()
+
+    cmd = [runtime, "run"]
+
+    if interactive:
+        cmd.append("-it")
+
+    # Container name
+    cmd.extend(["--name", container_name])
+
+    # === 1. Implicit system mounts (always present) ===
+
+    # Mount worktree as /workspace
+    cmd.extend(["-v", f"{abs_path}:/workspace"])
+    cmd.extend(["-w", "/workspace"])
+
+    # Mount git directory for worktrees so git operations work
+    main_git_dir, _ = get_git_worktree_info(abs_path)
+    if main_git_dir and main_git_dir.exists():
+        cmd.extend(["-v", f"{main_git_dir}:{main_git_dir}"])
+
+        # Mount _agenttree directory
+        main_repo_dir = main_git_dir.parent
+        agenttrees_dir = main_repo_dir / "_agenttree"
+        if agenttrees_dir.exists():
+            cmd.extend(["-v", f"{agenttrees_dir}:/workspace/_agenttree"])
+
+    # === 2. Tool mounts ===
+    for host_path, container_path, mode in tool_config.container_mounts(abs_path, role, home):
+        mount_str = f"{host_path}:{container_path}"
+        if mode and mode != "rw":
+            mount_str += f":{mode}"
+        cmd.extend(["-v", mount_str])
+
+    # === 3. User mounts (from container_type config) ===
+    for mount in container_type.mounts:
+        # Expand ~ in mount paths
+        if mount.startswith("~"):
+            parts = mount.split(":", 2)
+            parts[0] = str(Path(parts[0]).expanduser())
+            mount = ":".join(parts)
+        cmd.extend(["-v", mount])
+
+    # === 4. System env vars ===
+    cmd.extend(["-e", "AGENTTREE_CONTAINER=1"])
+    cmd.extend(["-e", f"AGENTTREE_ROLE={role}"])
+
+    if issue_id is not None:
+        cmd.extend(["-e", f"AGENTTREE_ISSUE_ID={issue_id}"])
+        # Calculate port for this issue
+        # Import here to avoid circular import
+        from agenttree.config import Config
+        # Use default port calculation
+        port_min, port_max = 9000, 9100
+        mod = port_max - port_min
+        remainder = issue_id % mod
+        port = port_max if remainder == 0 else port_min + remainder
+        cmd.extend(["-e", f"PORT={port}"])
+
+    # === 5. Tool env vars ===
+    for key, value in tool_config.container_env(home, force_api_key).items():
+        cmd.extend(["-e", f"{key}={value}"])
+
+    # === 6. User env vars (from container_type config) ===
+    # Build context for Jinja rendering
+    context: dict[str, object] = {
+        "role": role,
+        "port": ports[0] if ports else 9000,
+    }
+    if issue_id is not None:
+        context["issue_id"] = issue_id
+
+    for key, value in container_type.env.items():
+        # Render Jinja templates in env values
+        rendered_value = render_template(str(value), context)
+        cmd.extend(["-e", f"{key}={rendered_value}"])
+
+    # === 7. Port forwarding ===
+    if ports:
+        for port in ports:
+            cmd.extend(["-p", f"{port}:{port}"])
+
+    # === 8. Image ===
+    cmd.append(container_type.image)
+
+    # === 9. Entry command (from tool config) ===
+    # Check if there's a prior session to continue
+    sessions_dir = abs_path / f".claude-sessions-{role}"
+    has_prior_session = sessions_dir.exists() and any(sessions_dir.glob("*.jsonl"))
+
+    # Determine if dangerous mode is allowed
+    # Both container type and role must allow it (we assume role allows since
+    # that check happens at a higher level)
+    dangerous = container_type.allow_dangerous
+
+    entry_cmd = tool_config.container_entry_command(
+        model=model,
+        dangerous=dangerous,
+        continue_session=has_prior_session,
+    )
+    cmd.extend(entry_cmd)
+
+    return cmd
 
 
 class ContainerRuntime:

@@ -11,11 +11,131 @@ logger = logging.getLogger(__name__)
 
 
 class ToolConfig(BaseModel):
-    """Configuration for an AI tool."""
+    """Configuration for an AI tool.
+
+    Tools define the AI CLI that runs inside containers. The tool config
+    provides methods for generating container mounts, env vars, and the
+    entry command. This keeps tool-specific logic in the tool config,
+    not scattered in the container builder.
+    """
 
     command: str
     startup_prompt: str = "Check tasks/ folder and start working on the oldest task."
     skip_permissions: bool = False  # Add --dangerously-skip-permissions to command
+
+    def container_mounts(
+        self,
+        worktree_path: Path,
+        role: str,
+        home: Path | None = None,
+    ) -> list[tuple[str, str, str]]:
+        """Get tool-specific container mounts.
+
+        Returns list of (host_path, container_path, mode) tuples.
+        These are mounts needed by the tool itself (config dirs, session storage).
+
+        Args:
+            worktree_path: Path to the worktree being mounted
+            role: Agent role (used for session storage separation)
+            home: Home directory (defaults to Path.home())
+
+        Returns:
+            List of mount tuples (host, container, mode)
+        """
+        if home is None:
+            home = Path.home()
+
+        mounts: list[tuple[str, str, str]] = []
+
+        # Claude config directory (contains settings.json)
+        claude_config_dir = home / ".claude"
+        if claude_config_dir.exists():
+            mounts.append((str(claude_config_dir), "/home/agent/.claude-host", "ro"))
+
+        # Session storage for conversation persistence across restarts
+        # Each role gets its own session directory to keep conversations separate
+        sessions_dir = worktree_path / f".claude-sessions-{role}"
+        sessions_dir.mkdir(exist_ok=True)
+        mounts.append((str(sessions_dir), "/home/agent/.claude/projects/-workspace", "rw"))
+
+        return mounts
+
+    def container_env(
+        self,
+        home: Path | None = None,
+        force_api_key: bool = False,
+    ) -> dict[str, str]:
+        """Get tool-specific container environment variables.
+
+        Returns dict of env vars needed by the tool (auth tokens, API keys).
+
+        Args:
+            home: Home directory (defaults to Path.home())
+            force_api_key: Skip OAuth token, use API key only
+
+        Returns:
+            Dict of env var name to value
+        """
+        import os
+
+        if home is None:
+            home = Path.home()
+
+        env: dict[str, str] = {}
+
+        def get_credential(env_var: str, file_key: str) -> str | None:
+            # Check environment first
+            if os.environ.get(env_var):
+                return os.environ[env_var]
+            # Fall back to credentials file
+            creds_file = home / ".config" / "agenttree" / "credentials"
+            if creds_file.exists():
+                for line in creds_file.read_text().splitlines():
+                    if line.startswith(f"{file_key}="):
+                        return line.split("=", 1)[1].strip()
+            return None
+
+        # OAuth token for subscription auth (from `claude setup-token`)
+        if not force_api_key:
+            oauth_token = get_credential("CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN")
+            if oauth_token:
+                env["CLAUDE_CODE_OAUTH_TOKEN"] = oauth_token
+
+        # Always pass API key if available (for rate limit fallback)
+        api_key = get_credential("ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY")
+        if api_key:
+            env["ANTHROPIC_API_KEY"] = api_key
+
+        return env
+
+    def container_entry_command(
+        self,
+        model: str | None = None,
+        dangerous: bool = True,
+        continue_session: bool = False,
+    ) -> list[str]:
+        """Get the command to run the tool inside the container.
+
+        Args:
+            model: Model to use (e.g., "opus", "sonnet")
+            dangerous: Whether to skip permission prompts
+            continue_session: Whether to continue a previous session (-c flag)
+
+        Returns:
+            Command list to append to container run command
+        """
+        cmd = [self.command]
+
+        if continue_session:
+            cmd.append("-c")
+
+        if model:
+            cmd.extend(["--model", model])
+
+        if dangerous or self.skip_permissions:
+            cmd.append("--dangerously-skip-permissions")
+
+        return cmd
 
 
 class ContainerConfig(BaseModel):
@@ -438,6 +558,19 @@ class Config(BaseModel):
     def get_port_for_agent(self, agent_num: int) -> int:
         """Get port number for a specific agent (legacy, calls get_port_for_issue)."""
         return self.get_port_for_issue(agent_num)
+
+    def get_dev_server_url(self, issue_id: int | str, host: str = "localhost") -> str:
+        """Get dev server URL for an issue.
+
+        Args:
+            issue_id: Issue ID (int or string)
+            host: Hostname (default: localhost)
+
+        Returns:
+            URL string (e.g., "http://localhost:9042")
+        """
+        port = self.get_port_for_issue(issue_id)
+        return f"http://{host}:{port}"
 
     def get_worktree_path(self, agent_num: int) -> Path:
         """Get worktree path for a specific agent (legacy numbered agents)."""

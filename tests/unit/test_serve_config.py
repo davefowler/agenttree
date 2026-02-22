@@ -1,4 +1,4 @@
-"""Tests for serve architecture configuration (Phase 1).
+"""Tests for serve architecture configuration (Phase 1 & 2).
 
 Tests for:
 - SessionConfig model
@@ -6,9 +6,13 @@ Tests for:
 - resolve_container_type (extends resolution, mount accumulation, env merge)
 - render_template (Jinja template rendering)
 - infer_issue_id (environment variable inference)
+- ToolConfig container methods (Phase 2)
+- build_container_command (Phase 2)
 """
 
 import os
+from pathlib import Path
+
 import pytest
 
 from agenttree.config import (
@@ -400,3 +404,338 @@ class TestConfigWithServeFields:
         assert "_base" in config.containers
         assert "issue" in config.containers
         assert config.containers["issue"].extends == "_base"
+
+
+class TestToolConfigContainerMethods:
+    """Tests for ToolConfig container-related methods."""
+
+    def test_container_entry_command_basic(self) -> None:
+        """Test basic entry command generation."""
+        from agenttree.config import ToolConfig
+
+        tool = ToolConfig(command="claude")
+        cmd = tool.container_entry_command()
+        assert cmd == ["claude", "--dangerously-skip-permissions"]
+
+    def test_container_entry_command_with_model(self) -> None:
+        """Test entry command with model specified."""
+        from agenttree.config import ToolConfig
+
+        tool = ToolConfig(command="claude")
+        cmd = tool.container_entry_command(model="opus")
+        assert "--model" in cmd
+        assert "opus" in cmd
+
+    def test_container_entry_command_with_continue_session(self) -> None:
+        """Test entry command with session continuation."""
+        from agenttree.config import ToolConfig
+
+        tool = ToolConfig(command="claude")
+        cmd = tool.container_entry_command(continue_session=True)
+        assert "-c" in cmd
+
+    def test_container_entry_command_not_dangerous(self) -> None:
+        """Test entry command without dangerous mode."""
+        from agenttree.config import ToolConfig
+
+        tool = ToolConfig(command="claude")
+        cmd = tool.container_entry_command(dangerous=False)
+        assert "--dangerously-skip-permissions" not in cmd
+
+    def test_container_env_returns_dict(self) -> None:
+        """Test container_env returns a dict."""
+        from agenttree.config import ToolConfig
+
+        tool = ToolConfig(command="claude")
+        env = tool.container_env()
+        assert isinstance(env, dict)
+
+    def test_container_mounts_returns_list(self, tmp_path: Path) -> None:
+        """Test container_mounts returns a list of tuples."""
+        from agenttree.config import ToolConfig
+
+        tool = ToolConfig(command="claude")
+        mounts = tool.container_mounts(tmp_path, "developer", tmp_path)
+        assert isinstance(mounts, list)
+        # Should have at least the sessions dir mount
+        assert len(mounts) >= 1
+        # Each mount should be a tuple
+        for mount in mounts:
+            assert isinstance(mount, tuple)
+            assert len(mount) == 3
+
+
+class TestSessionNaming:
+    """Tests for session naming functions in ids.py."""
+
+    def test_session_name_basic(self) -> None:
+        """Test basic session name generation."""
+        from agenttree.ids import session_name
+
+        result = session_name("myapp", "developer", 42)
+        assert result == "myapp-developer-042"
+
+    def test_session_name_with_padding(self) -> None:
+        """Test session name pads issue IDs to 3 digits."""
+        from agenttree.ids import session_name
+
+        assert session_name("app", "dev", 1) == "app-dev-001"
+        assert session_name("app", "dev", 99) == "app-dev-099"
+        assert session_name("app", "dev", 100) == "app-dev-100"
+        assert session_name("app", "dev", 1001) == "app-dev-1001"
+
+    def test_session_name_custom_template(self) -> None:
+        """Test session name with custom template."""
+        from agenttree.ids import session_name
+
+        result = session_name(
+            "myapp", "serve", 42,
+            template="{project}_{session_name}_{issue_id}"
+        )
+        assert result == "myapp_serve_042"
+
+    def test_tmux_session_name_delegates(self) -> None:
+        """Test tmux_session_name is a convenience wrapper."""
+        from agenttree.ids import tmux_session_name, session_name
+
+        assert tmux_session_name("app", 42, "dev") == session_name("app", "dev", 42)
+
+    def test_manager_session_name(self) -> None:
+        """Test manager session name generation."""
+        from agenttree.ids import manager_session_name
+
+        assert manager_session_name("myapp") == "myapp-manager-000"
+
+    def test_serve_session_name(self) -> None:
+        """Test serve session name generation."""
+        from agenttree.ids import serve_session_name
+
+        assert serve_session_name("myapp", 42) == "myapp-serve-042"
+
+    def test_container_type_session_name(self) -> None:
+        """Test container type session name generation."""
+        from agenttree.ids import container_type_session_name
+
+        assert container_type_session_name("myapp", "sandbox", "my-sandbox") == "myapp-sandbox-my-sandbox"
+        assert container_type_session_name("proj", "data-science", "analysis") == "proj-data-science-analysis"
+
+
+class TestBuildContainerCommand:
+    """Tests for build_container_command function."""
+
+    def test_build_container_command_basic(self, tmp_path: Path) -> None:
+        """Test basic container command building."""
+        from agenttree.config import ToolConfig, ContainerTypeConfig
+        from agenttree.container import build_container_command
+
+        tool = ToolConfig(command="claude")
+        container_type = ContainerTypeConfig(image="test-image:latest")
+
+        cmd = build_container_command(
+            runtime="docker",
+            worktree_path=tmp_path,
+            container_type=container_type,
+            container_name="test-container",
+            tool_config=tool,
+            role="developer",
+        )
+
+        assert "docker" in cmd
+        assert "run" in cmd
+        assert "-it" in cmd
+        assert "--name" in cmd
+        assert "test-container" in cmd
+        assert "test-image:latest" in cmd
+        assert "claude" in cmd
+
+    def test_build_container_command_includes_system_env(self, tmp_path: Path) -> None:
+        """Test that system env vars are included."""
+        from agenttree.config import ToolConfig, ContainerTypeConfig
+        from agenttree.container import build_container_command
+
+        tool = ToolConfig(command="claude")
+        container_type = ContainerTypeConfig()
+
+        cmd = build_container_command(
+            runtime="docker",
+            worktree_path=tmp_path,
+            container_type=container_type,
+            container_name="test",
+            tool_config=tool,
+            role="developer",
+            issue_id=42,
+        )
+
+        cmd_str = " ".join(cmd)
+        assert "AGENTTREE_CONTAINER=1" in cmd_str
+        assert "AGENTTREE_ROLE=developer" in cmd_str
+        assert "AGENTTREE_ISSUE_ID=42" in cmd_str
+
+    def test_build_container_command_port_forwarding(self, tmp_path: Path) -> None:
+        """Test that ports are forwarded correctly."""
+        from agenttree.config import ToolConfig, ContainerTypeConfig
+        from agenttree.container import build_container_command
+
+        tool = ToolConfig(command="claude")
+        container_type = ContainerTypeConfig()
+
+        cmd = build_container_command(
+            runtime="docker",
+            worktree_path=tmp_path,
+            container_type=container_type,
+            container_name="test",
+            tool_config=tool,
+            role="developer",
+            ports=[9042, 9142],
+        )
+
+        cmd_str = " ".join(cmd)
+        assert "-p 9042:9042" in cmd_str
+        assert "-p 9142:9142" in cmd_str
+
+    def test_build_container_command_user_mounts(self, tmp_path: Path) -> None:
+        """Test that user mounts from config are included."""
+        from agenttree.config import ToolConfig, ContainerTypeConfig
+        from agenttree.container import build_container_command
+
+        tool = ToolConfig(command="claude")
+        container_type = ContainerTypeConfig(
+            mounts=["/host/path:/container/path:ro"]
+        )
+
+        cmd = build_container_command(
+            runtime="docker",
+            worktree_path=tmp_path,
+            container_type=container_type,
+            container_name="test",
+            tool_config=tool,
+            role="developer",
+        )
+
+        cmd_str = " ".join(cmd)
+        assert "/host/path:/container/path:ro" in cmd_str
+
+    def test_build_container_command_user_env(self, tmp_path: Path) -> None:
+        """Test that user env vars from config are included."""
+        from agenttree.config import ToolConfig, ContainerTypeConfig
+        from agenttree.container import build_container_command
+
+        tool = ToolConfig(command="claude")
+        container_type = ContainerTypeConfig(
+            env={"NODE_ENV": "development", "DEBUG": "true"}
+        )
+
+        cmd = build_container_command(
+            runtime="docker",
+            worktree_path=tmp_path,
+            container_type=container_type,
+            container_name="test",
+            tool_config=tool,
+            role="developer",
+        )
+
+        cmd_str = " ".join(cmd)
+        assert "NODE_ENV=development" in cmd_str
+        assert "DEBUG=true" in cmd_str
+
+    def test_build_container_command_no_type_specific_conditionals(
+        self, tmp_path: Path
+    ) -> None:
+        """Test that the same function works for all container types.
+
+        This verifies the critical requirement: build_container_command has
+        ZERO type-specific conditionals. Manager, issue, and sandbox containers
+        all use the same code path with different configs.
+        """
+        from agenttree.config import ToolConfig, ContainerTypeConfig
+        from agenttree.container import build_container_command
+
+        tool = ToolConfig(command="claude")
+
+        # "Manager" config
+        manager_type = ContainerTypeConfig(
+            image="agenttree-agent:latest",
+            mounts=["~/.ssh:/home/agent/.ssh:ro"],
+        )
+
+        # "Issue" config
+        issue_type = ContainerTypeConfig(
+            image="agenttree-agent:latest",
+            roles=["developer", "reviewer"],
+        )
+
+        # "Sandbox" config
+        sandbox_type = ContainerTypeConfig(
+            image="agenttree-agent:latest",
+            interactive=True,
+        )
+
+        # All three should work with the same function
+        for container_type, name in [
+            (manager_type, "manager-test"),
+            (issue_type, "issue-test"),
+            (sandbox_type, "sandbox-test"),
+        ]:
+            cmd = build_container_command(
+                runtime="docker",
+                worktree_path=tmp_path,
+                container_type=container_type,
+                container_name=name,
+                tool_config=tool,
+                role="developer",
+            )
+            assert "docker" in cmd
+            assert name in cmd
+
+    def test_build_container_command_allow_dangerous_false(
+        self, tmp_path: Path
+    ) -> None:
+        """Test that allow_dangerous=False disables dangerous mode."""
+        from agenttree.config import ToolConfig, ContainerTypeConfig
+        from agenttree.container import build_container_command
+
+        tool = ToolConfig(command="claude")
+        container_type = ContainerTypeConfig(allow_dangerous=False)
+
+        cmd = build_container_command(
+            runtime="docker",
+            worktree_path=tmp_path,
+            container_type=container_type,
+            container_name="test",
+            tool_config=tool,
+            role="developer",
+        )
+
+        assert "--dangerously-skip-permissions" not in cmd
+
+
+class TestDevServerUrl:
+    """Tests for dev server URL functionality."""
+
+    def test_get_dev_server_url_basic(self) -> None:
+        """Test basic dev server URL generation."""
+        from agenttree.config import Config
+
+        config = Config(port_range="9000-9100")
+        url = config.get_dev_server_url(42)
+        assert url == "http://localhost:9042"
+
+    def test_get_dev_server_url_custom_host(self) -> None:
+        """Test dev server URL with custom host."""
+        from agenttree.config import Config
+
+        config = Config(port_range="9000-9100")
+        url = config.get_dev_server_url(42, host="0.0.0.0")
+        assert url == "http://0.0.0.0:9042"
+
+    def test_get_dev_server_url_wrapping(self) -> None:
+        """Test dev server URL with port wrapping."""
+        from agenttree.config import Config
+
+        config = Config(port_range="9000-9100")
+        # Issue #100 wraps to 9100
+        url = config.get_dev_server_url(100)
+        assert url == "http://localhost:9100"
+        # Issue #101 wraps to 9001
+        url = config.get_dev_server_url(101)
+        assert url == "http://localhost:9001"

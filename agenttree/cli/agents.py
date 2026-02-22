@@ -231,6 +231,8 @@ def start_agent(
 def agents_status() -> None:
     """Show status of all active issue agents."""
     from agenttree.state import list_active_agents
+    from agenttree.tmux import session_exists
+    from agenttree.ids import serve_session_name
 
     config = load_config()
     tmux_manager = TmuxManager(config)
@@ -248,7 +250,7 @@ def agents_status() -> None:
     table.add_column("Role", style="blue")
     table.add_column("Title", style="cyan")
     table.add_column("Status", style="magenta")
-    table.add_column("Port", style="green")
+    table.add_column("Dev Server", style="green")
     table.add_column("Branch", style="yellow")
 
     for agent in agents:
@@ -265,12 +267,24 @@ def agents_status() -> None:
         else:
             status_str = "⚪ Stopped"
 
+        # Check if serve session is running and show dev server URL
+        serve_session = serve_session_name(config.project, agent.issue_id)
+        if session_exists(serve_session):
+            dev_server_url = config.get_dev_server_url(agent.issue_id)
+            # Show with green color indicator
+            dev_server_str = f"[link={dev_server_url}]{dev_server_url}[/link]"
+        elif agent.port:
+            # Port configured but serve session not running
+            dev_server_str = f"[dim]:{agent.port}[/dim]"
+        else:
+            dev_server_str = "[dim]-[/dim]"
+
         table.add_row(
             str(agent.issue_id),
             agent.role,
             issue_title,
             status_str,
-            str(agent.port),
+            dev_server_str,
             agent.branch[:20],
         )
 
@@ -388,8 +402,19 @@ def sandbox(name: str, list_sandboxes: bool, kill: bool, tool: str | None, share
             additional_args.extend(["-v", f"{ssh_dir}:/home/agent/.ssh:ro"])
             console.print(f"[dim]Sharing ~/.ssh (read-only)[/dim]")
         if gitconfig.exists():
-            additional_args.extend(["-v", f"{gitconfig}:/home/agent/.gitconfig:ro"])
-            console.print(f"[dim]Sharing ~/.gitconfig (read-only)[/dim]")
+            if runtime.get_runtime_name() == "container":
+                # Apple Container can only mount directories, not files.
+                # Copy .gitconfig into a staging dir and mount that.
+                # The entrypoint or a post-start step copies it into place.
+                import shutil
+                gitconfig_dir = repo_path / ".apple-container-gitconfig"
+                gitconfig_dir.mkdir(exist_ok=True)
+                shutil.copy2(gitconfig, gitconfig_dir / ".gitconfig")
+                additional_args.extend(["-v", f"{gitconfig_dir}:/home/agent/.gitconfig-host:ro"])
+                console.print(f"[dim]Sharing ~/.gitconfig (read-only, via directory mount)[/dim]")
+            else:
+                additional_args.extend(["-v", f"{gitconfig}:/home/agent/.gitconfig:ro"])
+                console.print(f"[dim]Sharing ~/.gitconfig (read-only)[/dim]")
 
     container_cmd = runtime.build_run_command(
         worktree_path=repo_path,
@@ -682,3 +707,184 @@ def stop(issue_id: str, role: str, all_roles: bool) -> None:
 
     # Use consolidated stop_agent function
     stop_agent(actual_id, role)
+
+
+@click.command(name="new")
+@click.argument("container_type", type=str)
+@click.argument("name", type=str)
+@click.option("--tool", help="AI tool to use (default: from config)")
+@click.option("--share-git", is_flag=True, default=True, help="Share ~/.ssh and ~/.gitconfig (default: true)")
+@click.option("--kill", is_flag=True, help="Kill the container instead of starting")
+@click.option("--list", "list_containers", is_flag=True, help="List all containers of this type")
+def new_container(
+    container_type: str,
+    name: str,
+    tool: str | None,
+    share_git: bool,
+    kill: bool,
+    list_containers: bool,
+) -> None:
+    """Create a new container from a configured type.
+
+    CONTAINER_TYPE is the container type from config (e.g., "sandbox", "data-science").
+    NAME is a unique name for this container instance.
+
+    Container types are defined in .agenttree.yaml under 'containers:'. Each type
+    can specify image, mounts, env vars, sessions, and lifecycle hooks.
+
+    Examples:
+        agenttree new sandbox my-sandbox           # Start a sandbox container
+        agenttree new sandbox my-sandbox --kill    # Stop the container
+        agenttree new data-science analysis-1      # Start a data science container
+        agenttree new sandbox x --list             # List all sandbox containers
+
+    If no containers are configured, creates a default sandbox container using
+    the agenttree-agent image with the default AI tool.
+    """
+    from agenttree.config import ContainerTypeConfig, resolve_container_type
+    from agenttree.container import build_container_command
+    from agenttree.ids import container_type_session_name
+    from agenttree.tmux import (
+        session_exists,
+        attach_session,
+        kill_session,
+        create_session,
+        list_sessions,
+        wait_for_prompt,
+        send_keys,
+    )
+
+    config = load_config()
+    runtime = get_container_runtime()
+
+    # List containers of this type
+    if list_containers:
+        prefix = f"{config.project}-{container_type}-"
+        sessions = [s for s in list_sessions() if s.startswith(prefix)]
+        if not sessions:
+            console.print(f"[yellow]No {container_type} containers running[/yellow]")
+        else:
+            console.print(f"[bold]Running {container_type} containers:[/bold]")
+            for session in sessions:
+                # Extract the name from the session (e.g., "myproject-sandbox-foo" -> "foo")
+                instance_name = session[len(prefix):]
+                console.print(f"  • {instance_name}")
+        return
+
+    # Generate session name
+    session_name = container_type_session_name(config.project, container_type, name)
+
+    # Kill mode
+    if kill:
+        if session_exists(session_name):
+            kill_session(session_name)
+            console.print(f"[green]✓ Killed {container_type} '{name}'[/green]")
+        else:
+            console.print(f"[yellow]{container_type.capitalize()} '{name}' not running[/yellow]")
+        return
+
+    # Attach to existing container
+    if session_exists(session_name):
+        console.print(f"[cyan]Attaching to existing {container_type} '{name}' (Ctrl+B, D to detach)...[/cyan]")
+        attach_session(session_name)
+        return
+
+    # Check runtime
+    if not runtime.is_available():
+        console.print("[red]Error: No container runtime available[/red]")
+        console.print(f"Recommendation: {runtime.get_recommended_action()}")
+        sys.exit(1)
+
+    console.print(f"[cyan]Starting {container_type} '{name}'...[/cyan]")
+    console.print(f"[dim]Container runtime: {runtime.get_runtime_name()}[/dim]")
+
+    # Ensure container system is running
+    runtime.ensure_system_running()
+
+    # Get container type config (or create default)
+    if container_type in config.containers:
+        resolved_type = resolve_container_type(container_type, config.containers)
+    else:
+        # Default config for unknown types (backwards compatible with sandbox)
+        resolved_type = ContainerTypeConfig(
+            image="agenttree-agent:latest",
+            allow_dangerous=True,
+        )
+        if container_type != "sandbox":
+            console.print(f"[yellow]Warning: Unknown container type '{container_type}', using defaults[/yellow]")
+
+    # Add user mounts for git sharing
+    if share_git:
+        home = Path.home()
+        ssh_dir = home / ".ssh"
+        gitconfig = home / ".gitconfig"
+        extra_mounts: list[str] = []
+
+        if ssh_dir.exists():
+            extra_mounts.append(f"{ssh_dir}:/home/agent/.ssh:ro")
+            console.print("[dim]Sharing ~/.ssh (read-only)[/dim]")
+
+        if gitconfig.exists():
+            if runtime.get_runtime_name() == "container":
+                # Apple Container needs directory mounts, not file mounts
+                import shutil
+                repo_path = Path.cwd()
+                gitconfig_dir = repo_path / ".apple-container-gitconfig"
+                gitconfig_dir.mkdir(exist_ok=True)
+                shutil.copy2(gitconfig, gitconfig_dir / ".gitconfig")
+                extra_mounts.append(f"{gitconfig_dir}:/home/agent/.gitconfig-host:ro")
+            else:
+                extra_mounts.append(f"{gitconfig}:/home/agent/.gitconfig:ro")
+            console.print("[dim]Sharing ~/.gitconfig (read-only)[/dim]")
+
+        if extra_mounts:
+            resolved_type = ContainerTypeConfig(
+                image=resolved_type.image,
+                roles=resolved_type.roles,
+                sessions=resolved_type.sessions,
+                interactive=resolved_type.interactive,
+                mounts=list(resolved_type.mounts) + extra_mounts,
+                env=dict(resolved_type.env),
+                allow_dangerous=resolved_type.allow_dangerous,
+                pre_start=resolved_type.pre_start,
+                post_start=resolved_type.post_start,
+                pre_stop=resolved_type.pre_stop,
+                post_stop=resolved_type.post_stop,
+            )
+
+    # Get tool config
+    tool_name = tool or config.default_tool
+    tool_config = config.get_tool_config(tool_name)
+
+    # Build container command
+    repo_path = Path.cwd()
+    container_name_str = f"agenttree-{config.project}-{container_type}-{name}"
+
+    cmd = build_container_command(
+        runtime=runtime.runtime or "docker",
+        worktree_path=repo_path,
+        container_type=resolved_type,
+        container_name=container_name_str,
+        tool_config=tool_config,
+        role=container_type,  # Use container type as role
+        model=config.default_model,
+    )
+    cmd_str = " ".join(cmd)
+
+    # Create tmux session running the container
+    create_session(session_name, repo_path, cmd_str)
+    console.print(f"[green]✓ Started {container_type} '{name}'[/green]")
+
+    # Wait for prompt and send a friendly message
+    if wait_for_prompt(session_name, prompt_char="❯", timeout=30.0):
+        send_keys(session_name, f"echo '{container_type.capitalize()} ready! Working in {repo_path.name}.'")
+
+    console.print(f"\n[bold]{container_type.capitalize()} '{name}' ready[/bold]")
+    console.print("\n[dim]Commands:[/dim]")
+    console.print(f"  agenttree new {container_type} {name}        # Attach")
+    console.print(f"  agenttree new {container_type} {name} --kill # Stop")
+    console.print(f"  agenttree new {container_type} x --list      # List all")
+
+    # Auto-attach
+    console.print("\n[cyan]Attaching... (Ctrl+B, D to detach)[/cyan]")
+    attach_session(session_name)
