@@ -157,7 +157,7 @@ def start_agent(
             create_worktree(repo_path, worktree_path, names["branch"])
 
     # Get deterministic port from issue number
-    port = config.get_port_for_issue(issue.id) or 9000 + (int(issue.id) % 1000)
+    port = config.get_port_for_issue(issue.id)
     console.print(f"[dim]Using port: {port} (derived from issue #{issue.id})[/dim]")
 
     # Register agent in state
@@ -760,14 +760,14 @@ def new_container(
     # List containers of this type
     if list_containers:
         prefix = f"{config.project}-{container_type}-"
-        sessions = [s for s in list_sessions() if s.startswith(prefix)]
+        sessions = [s for s in list_sessions() if s.name.startswith(prefix)]
         if not sessions:
             console.print(f"[yellow]No {container_type} containers running[/yellow]")
         else:
             console.print(f"[bold]Running {container_type} containers:[/bold]")
             for session in sessions:
                 # Extract the name from the session (e.g., "myproject-sandbox-foo" -> "foo")
-                instance_name = session[len(prefix):]
+                instance_name = session.name[len(prefix):]
                 console.print(f"  • {instance_name}")
         return
 
@@ -840,16 +840,9 @@ def new_container(
         if extra_mounts:
             resolved_type = ContainerTypeConfig(
                 image=resolved_type.image,
-                roles=resolved_type.roles,
-                sessions=resolved_type.sessions,
-                interactive=resolved_type.interactive,
                 mounts=list(resolved_type.mounts) + extra_mounts,
                 env=dict(resolved_type.env),
                 allow_dangerous=resolved_type.allow_dangerous,
-                pre_start=resolved_type.pre_start,
-                post_start=resolved_type.post_start,
-                pre_stop=resolved_type.pre_stop,
-                post_stop=resolved_type.post_stop,
             )
 
     # Get tool config

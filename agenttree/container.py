@@ -338,15 +338,10 @@ def build_container_command(
 
     if issue_id is not None:
         cmd.extend(["-e", f"AGENTTREE_ISSUE_ID={issue_id}"])
-        # Calculate port for this issue
-        # Import here to avoid circular import
-        from agenttree.config import Config
-        # Use default port calculation
-        port_min, port_max = 9000, 9100
-        mod = port_max - port_min
-        remainder = issue_id % mod
-        port = port_max if remainder == 0 else port_min + remainder
-        cmd.extend(["-e", f"PORT={port}"])
+
+    # Set PORT env var if ports are configured
+    if ports:
+        cmd.extend(["-e", f"PORT={ports[0]}"])
 
     # === 5. Tool env vars ===
     for key, value in tool_config.container_env(home, force_api_key).items():

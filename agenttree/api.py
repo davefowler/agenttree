@@ -257,11 +257,8 @@ def start_agent(
             create_worktree(repo_path, worktree_path, names["branch"])
 
     # Get deterministic port using config method
-    # Non-developer agents (review etc.) don't serve anything, so port is optional
-    port = config.get_port_for_issue(issue.id) or 0
-    if port == 0 and host == "developer":
-        raise AgentStartError(issue.id, f"Could not derive port for issue #{issue.id}")
-    if port and not quiet:
+    port = config.get_port_for_issue(issue.id)
+    if not quiet:
         console.print(f"[dim]Using port: {port} (derived from issue #{issue.id})[/dim]")
 
     # Register agent in state
@@ -641,12 +638,13 @@ def stop_agent(issue_id: int, role: str = "developer", quiet: bool = False) -> b
 
     # 1. Kill serve session (if it exists) - runs on host, not in container
     try:
-        serve_session_name = f"{config.project}-serve-{format_issue_id(issue_id)}"
-        if session_exists(serve_session_name):
-            kill_session(serve_session_name)
+        from agenttree.ids import serve_session_name as get_serve_session_name
+        serve_session = get_serve_session_name(config.project, issue_id)
+        if session_exists(serve_session):
+            kill_session(serve_session)
             stopped_something = True
             if not quiet:
-                console.print(f"[dim]  Stopped serve session: {serve_session_name}[/dim]")
+                console.print(f"[dim]  Stopped serve session: {serve_session}[/dim]")
     except Exception as e:
         if not quiet:
             console.print(f"[yellow]  Warning: Could not stop serve session: {e}[/yellow]")

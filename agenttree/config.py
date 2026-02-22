@@ -310,41 +310,17 @@ class SecurityConfig(BaseModel):
     """Security configuration for agents."""
 
 
-class SessionConfig(BaseModel):
-    """Configuration for a tmux session.
-
-    Sessions are long-running processes (dev servers, workers, etc.) that run
-    alongside the AI agent. Each session gets its own tmux window.
-    """
-
-    command: str  # The long-running command to execute
-    name_template: str | None = None  # Override default naming: {project}-{session_name}-{issue_id}
-    ports: list[str] = Field(default_factory=list)  # Ports to forward (Jinja templates)
-    pre_start: list[dict] = Field(default_factory=list)  # Hooks before command starts
-    post_stop: list[dict] = Field(default_factory=list)  # Hooks after session is killed
-
-
 class ContainerTypeConfig(BaseModel):
     """Configuration for a container type.
 
-    Container types are templates for creating container instances. Two types
-    are reserved (manager, issue); all others are user-defined.
+    Container types are templates for creating container instances.
     """
 
     extends: str | None = None  # Parent container type to inherit from
     image: str = "agenttree-agent:latest"  # Container image
-    roles: list[str] = Field(default_factory=list)  # Roles that can run in this container
-    sessions: list[str] = Field(default_factory=list)  # Which sessions to start
-    interactive: bool = False  # Attach terminal on creation
     mounts: list[str] = Field(default_factory=list)  # Additional mounts (host:container:mode)
     env: dict[str, str] = Field(default_factory=dict)  # Environment variables
     allow_dangerous: bool = True  # Allow --dangerously-skip-permissions
-
-    # Lifecycle hooks
-    pre_start: list[dict] = Field(default_factory=list)  # Before container starts (host)
-    post_start: list[dict] = Field(default_factory=list)  # After container starts (inside)
-    pre_stop: list[dict] = Field(default_factory=list)  # Before container stops (inside)
-    post_stop: list[dict] = Field(default_factory=list)  # After container stops (host)
 
 
 def resolve_container_type(
@@ -355,9 +331,6 @@ def resolve_container_type(
 
     Merge semantics:
     - Scalar values: child wins
-    - Hooks (pre_start, etc.): child replaces entirely
-    - Roles: child replaces entirely
-    - Sessions: child replaces entirely
     - Mounts: accumulate (child adds to parent)
     - Env: dict merge (child keys override parent)
 
@@ -395,28 +368,15 @@ def resolve_container_type(
     # Start with base values
     base = chain[0]
     result_image = base.image
-    result_roles = list(base.roles)
-    result_sessions = list(base.sessions)
-    result_interactive = base.interactive
     result_mounts: list[str] = list(base.mounts)  # Accumulate mounts
     result_env: dict[str, str] = dict(base.env)  # Merge env
     result_allow_dangerous = base.allow_dangerous
-    result_pre_start = list(base.pre_start)
-    result_post_start = list(base.post_start)
-    result_pre_stop = list(base.pre_stop)
-    result_post_stop = list(base.post_stop)
 
     # Apply each child in order
     for cfg in chain[1:]:
         # Scalars: child wins if explicitly set (we check for non-default)
         if cfg.image != "agenttree-agent:latest":
             result_image = cfg.image
-        if cfg.roles:
-            result_roles = list(cfg.roles)
-        if cfg.sessions:
-            result_sessions = list(cfg.sessions)
-        if cfg.interactive:
-            result_interactive = cfg.interactive
         if not cfg.allow_dangerous:
             result_allow_dangerous = cfg.allow_dangerous
 
@@ -426,29 +386,12 @@ def resolve_container_type(
         # Env: merge (child overrides)
         result_env.update(cfg.env)
 
-        # Hooks: replace if child has any
-        if cfg.pre_start:
-            result_pre_start = list(cfg.pre_start)
-        if cfg.post_start:
-            result_post_start = list(cfg.post_start)
-        if cfg.pre_stop:
-            result_pre_stop = list(cfg.pre_stop)
-        if cfg.post_stop:
-            result_post_stop = list(cfg.post_stop)
-
     return ContainerTypeConfig(
         extends=None,  # Resolved config has no extends
         image=result_image,
-        roles=result_roles,
-        sessions=result_sessions,
-        interactive=result_interactive,
         mounts=result_mounts,
         env=result_env,
         allow_dangerous=result_allow_dangerous,
-        pre_start=result_pre_start,
-        post_start=result_post_start,
-        pre_stop=result_pre_stop,
-        post_stop=result_post_stop,
     )
 
 
@@ -515,7 +458,6 @@ class Config(BaseModel):
     on: OnConfig | None = None
     rate_limit_fallback: RateLimitFallbackConfig = Field(default_factory=RateLimitFallbackConfig)
     allow_self_approval: bool = False
-    sessions: dict[str, SessionConfig] = Field(default_factory=dict)
     containers: dict[str, ContainerTypeConfig] = Field(default_factory=dict)
 
     # ── Port / path helpers ──────────────────────────────────────────

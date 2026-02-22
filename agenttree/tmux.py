@@ -562,14 +562,15 @@ class TmuxManager:
         # Start serve session if serve command is configured and port is available
         serve_command = self.config.commands.get("serve")
         if serve_command and port:
-            serve_session_name = f"{self.config.project}-serve-{issue_id}"
+            from agenttree.ids import serve_session_name as get_serve_session_name
+            serve_session = get_serve_session_name(self.config.project, int(issue_id))
             try:
                 # Kill existing serve session if it exists (for agent restarts)
-                if session_exists(serve_session_name):
-                    kill_session(serve_session_name)
+                if session_exists(serve_session):
+                    kill_session(serve_session)
                 # Build command with PORT env var
                 serve_cmd = f"PORT={port} {serve_command}"
-                create_session(serve_session_name, worktree_path, serve_cmd)
+                create_session(serve_session, worktree_path, serve_cmd)
             except subprocess.CalledProcessError as e:
                 # Serve session failure should not block agent startup
                 print(f"[warning] Could not start serve session: {e}", file=sys.stderr)

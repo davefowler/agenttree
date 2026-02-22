@@ -105,9 +105,6 @@ def session_name(
 def tmux_session_name(project: str, issue_id: int, role: str = "developer") -> str:
     """Get tmux session name for an issue-bound agent.
 
-    This is a convenience wrapper around session_name() for backwards
-    compatibility with existing code.
-
     Args:
         project: Project name from config
         issue_id: Integer issue ID

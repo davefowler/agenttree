@@ -919,8 +919,19 @@ def build_container_command(
     return cmd
 ```
 
-**No `if manager` / `if sandbox` / `if issue` branching.** The container type
-config fully describes the container. The callers just do:
+**CRITICAL DESIGN PRINCIPLE: No type-specific conditionals in container logic.**
+The container builder and lifecycle code must have ZERO `if manager` / `if
+sandbox` / `if issue` branches. All behavior differences come from the config.
+If you find yourself writing `if container_type == "manager"` in `container.py`,
+`tmux.py`, or `api.py`, you're doing it wrong — put the difference in the
+container type config instead. The only exceptions are the truly unavoidable
+reserved-type behaviors: (1) `issue` containers are auto-created by `agenttree
+start`, (2) `manager` container is auto-created by `agenttree start`, (3)
+worktree creation differs (issue=from issue_id, manager=main repo, others=from
+name). Everything else — mounts, env, hooks, sessions, image, roles, ports,
+dangerous mode — comes from config, not code branches.
+
+The callers just do:
 
 1. Resolve the container type config (walks `extends` chain)
 2. Collect ports from sessions
@@ -1708,13 +1719,19 @@ None currently — all major decisions resolved. See Resolved Decisions below.
   skip permissions out of the box. Users can lock down a container type or
   restrict a specific role without needing to define new container types.
 
-- **Generic container builder with no type-specific branching.** The current
+- **Generic container builder with ZERO type-specific branching.** The current
   `build_run_command()` is replaced by `build_container_command()` which layers:
   (1) implicit system mounts, (2) tool-specific mounts/env from tool config,
   (3) user mounts/env from container type config, (4) system env vars,
-  (5) session ports, (6) tool entry command. No `if manager` / `if sandbox` /
-  `if issue` logic. `start_manager()`, `start_issue_agent_in_container()`, and
-  the sandbox code all collapse into one `start_container()` function.
+  (5) session ports, (6) tool entry command. `start_manager()`,
+  `start_issue_agent_in_container()`, and the sandbox code all collapse into
+  one `start_container()` function. There must be NO `if container_type ==
+  "manager"` or `if container_type == "issue"` conditionals anywhere in
+  `container.py`, `tmux.py`, or the lifecycle code. All behavior differences
+  come from config. The only unavoidable reserved-type behaviors are: (a) issue
+  and manager containers are auto-created by `agenttree start`, (b) worktree
+  source differs (issue=issue_id, manager=main repo, others=name). Everything
+  else — mounts, env, hooks, sessions, image, dangerous, ports — is config.
   Tool-specific mounts (Claude config, session storage, OAuth token) are driven
   by tool config, not hardcoded — supporting future non-Claude tools.
 
