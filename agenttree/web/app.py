@@ -1538,7 +1538,7 @@ async def health_check() -> dict:
 
 
 # =============================================================================
-# Voice Chat
+# Voice Chat (OpenAI Realtime API)
 # =============================================================================
 
 
@@ -1547,78 +1547,121 @@ async def voice_page(
     request: Request,
     user: str | None = Depends(get_current_user),
 ) -> HTMLResponse:
-    """Voice chat page — mobile-optimized for walk-and-talk."""
-    return templates.TemplateResponse("voice.html", {"request": request})
+    """Voice chat page — standalone version (also embedded in mobile)."""
+    has_openai_key = bool(os.environ.get("OPENAI_API_KEY"))
+    return templates.TemplateResponse("voice.html", {
+        "request": request,
+        "has_openai_key": has_openai_key,
+    })
 
 
-@app.post("/api/voice/chat")
-async def voice_chat(
+@app.get("/api/voice/token")
+async def voice_token(
+    issue: int | None = None,
+    user: str | None = Depends(get_current_user),
+) -> dict:
+    """Create an ephemeral OpenAI Realtime API token.
+
+    The browser uses this to connect directly to OpenAI via WebRTC.
+    Our API key stays server-side.
+    """
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        raise HTTPException(status_code=400, detail="OPENAI_API_KEY not configured")
+
+    # Build context-aware instructions
+    instructions = (
+        "You are a concise voice assistant for AgentTree, a multi-agent AI development framework. "
+        "The user manages AI coding agents that work on issues. Keep responses SHORT and conversational — "
+        "the user is likely on their phone, maybe walking. Summarize data, don't dump it raw. "
+        "Use the provided tools to check status, manage agents, and handle issues. "
+        "When the user says 'approve' without specifying an issue, check status first to find review items."
+    )
+
+    if issue:
+        # Add context about the issue the user is currently viewing
+        from agenttree.mcp_server import get_issue as mcp_get_issue
+        issue_detail = await asyncio.to_thread(mcp_get_issue, issue)
+        instructions += f"\n\nThe user is currently viewing this issue:\n{issue_detail}"
+
+    # Define tools for the Realtime session
+    tools = [
+        {"type": "function", "name": "status",
+         "description": "Get status of all issues and agents. Call this when user asks what's happening, how things are going, etc.",
+         "parameters": {"type": "object", "properties": {}, "required": []}},
+        {"type": "function", "name": "get_issue",
+         "description": "Get details about a specific issue by number",
+         "parameters": {"type": "object", "properties": {
+             "issue_id": {"type": "integer", "description": "Issue number"}
+         }, "required": ["issue_id"]}},
+        {"type": "function", "name": "get_agent_output",
+         "description": "See what an agent is currently doing — its recent terminal output",
+         "parameters": {"type": "object", "properties": {
+             "issue_id": {"type": "integer", "description": "Issue number"}
+         }, "required": ["issue_id"]}},
+        {"type": "function", "name": "send_message",
+         "description": "Send a message/instruction to an agent working on an issue",
+         "parameters": {"type": "object", "properties": {
+             "issue_id": {"type": "integer", "description": "Issue number"},
+             "message": {"type": "string", "description": "Message to send to the agent"}
+         }, "required": ["issue_id", "message"]}},
+        {"type": "function", "name": "create_issue",
+         "description": "Create a new issue and start an agent on it",
+         "parameters": {"type": "object", "properties": {
+             "title": {"type": "string", "description": "Short title (10+ chars)"},
+             "description": {"type": "string", "description": "What needs to be done (50+ chars)"}
+         }, "required": ["title", "description"]}},
+        {"type": "function", "name": "approve",
+         "description": "Approve an issue that's waiting for human review",
+         "parameters": {"type": "object", "properties": {
+             "issue_id": {"type": "integer", "description": "Issue number"}
+         }, "required": ["issue_id"]}},
+        {"type": "function", "name": "start_agent",
+         "description": "Start or restart an agent for an issue",
+         "parameters": {"type": "object", "properties": {
+             "issue_id": {"type": "integer", "description": "Issue number"}
+         }, "required": ["issue_id"]}},
+        {"type": "function", "name": "stop_agent",
+         "description": "Stop an agent that's working on an issue",
+         "parameters": {"type": "object", "properties": {
+             "issue_id": {"type": "integer", "description": "Issue number"}
+         }, "required": ["issue_id"]}},
+    ]
+
+    import httpx
+    async with httpx.AsyncClient(timeout=10) as client:
+        resp = await client.post(
+            "https://api.openai.com/v1/realtime/client_secrets",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json={"session": {
+                "type": "realtime",
+                "model": "gpt-realtime",
+                "audio": {"output": {"voice": "ash"}},
+                "instructions": instructions,
+                "tools": tools,
+                "tool_choice": "auto",
+            }},
+        )
+        if resp.status_code != 200:
+            logger.error("OpenAI token error: %s %s", resp.status_code, resp.text)
+            raise HTTPException(status_code=502, detail="Failed to create voice session")
+        data: dict = resp.json()  # type: ignore[assignment]
+        return data
+
+
+@app.post("/api/voice/tool-call")
+async def voice_tool_call(
     request: Request,
     user: str | None = Depends(get_current_user),
 ) -> dict:
-    """Process a voice/text message and return a response.
+    """Execute an agenttree tool call from the Realtime API.
 
-    Calls agenttree tools directly for known commands, or uses OpenAI
-    for natural language understanding if OPENAI_API_KEY is set.
+    The browser receives function_call events from OpenAI, POSTs them
+    here, and we return the result to send back via the data channel.
     """
-    body = await request.json()
-    message: str = body.get("message", "").strip()
-    if not message:
-        return {"response": "I didn't catch that. Could you say it again?"}
-
-    # Try to handle with local command parsing first
-    response = await asyncio.to_thread(_handle_voice_command, message)
-    if response:
-        return {"response": response}
-
-    # Fall back to OpenAI for natural language if available
-    openai_key = os.environ.get("OPENAI_API_KEY")
-    if openai_key:
-        response = await _openai_voice_chat(message, body.get("history", []), openai_key)
-        return {"response": response}
-
-    # No AI available — try our best with simple matching
-    return {"response": _fallback_response(message)}
-
-
-def _handle_voice_command(message: str) -> str | None:
-    """Try to parse a direct command from the message. Returns None if not a command."""
-    from agenttree.mcp_server import status as mcp_status, get_issue as mcp_get_issue
-    from agenttree.mcp_server import approve as mcp_approve, get_agent_output as mcp_output
-
-    msg = message.lower().strip()
-
-    # Status commands
-    if msg in ("status", "what's the status", "what is the status", "show status",
-               "how are things", "how's it going", "what's happening"):
-        return str(mcp_status())
-
-    # Approve commands: "approve 42", "approve issue 42"
-    import re
-    approve_match = re.match(r"approve\s+(?:issue\s+)?#?(\d+)", msg)
-    if approve_match:
-        return str(mcp_approve(int(approve_match.group(1))))
-
-    # Issue detail: "show issue 42", "issue 42", "what about 42"
-    issue_match = re.match(r"(?:show\s+)?(?:issue\s+)?#?(\d+)$", msg)
-    if issue_match:
-        return str(mcp_get_issue(int(issue_match.group(1))))
-
-    # Agent output: "output 42", "what is agent 42 doing"
-    output_match = re.match(r"(?:output|show output|what is agent)\s+#?(\d+)", msg)
-    if output_match:
-        return str(mcp_output(int(output_match.group(1))))
-
-    return None
-
-
-async def _openai_voice_chat(
-    message: str,
-    history: list[dict[str, str]],
-    api_key: str,
-) -> str:
-    """Use OpenAI to understand natural language and call agenttree tools."""
-    import httpx
     from agenttree.mcp_server import (
         status as mcp_status,
         get_issue as mcp_get_issue,
@@ -1630,51 +1673,12 @@ async def _openai_voice_chat(
         stop_agent as mcp_stop,
     )
 
-    tools = [
-        {"type": "function", "function": {
-            "name": "status", "description": "Get status of all issues and agents",
-            "parameters": {"type": "object", "properties": {}, "required": []}}},
-        {"type": "function", "function": {
-            "name": "get_issue", "description": "Get details about a specific issue",
-            "parameters": {"type": "object", "properties": {
-                "issue_id": {"type": "integer", "description": "Issue number"}
-            }, "required": ["issue_id"]}}},
-        {"type": "function", "function": {
-            "name": "get_agent_output", "description": "Get recent terminal output from an agent",
-            "parameters": {"type": "object", "properties": {
-                "issue_id": {"type": "integer", "description": "Issue number"}
-            }, "required": ["issue_id"]}}},
-        {"type": "function", "function": {
-            "name": "send_message", "description": "Send a message to an agent",
-            "parameters": {"type": "object", "properties": {
-                "issue_id": {"type": "integer", "description": "Issue number"},
-                "message": {"type": "string", "description": "Message to send"}
-            }, "required": ["issue_id", "message"]}}},
-        {"type": "function", "function": {
-            "name": "create_issue", "description": "Create a new issue",
-            "parameters": {"type": "object", "properties": {
-                "title": {"type": "string", "description": "Issue title (10+ chars)"},
-                "description": {"type": "string", "description": "Detailed description (50+ chars)"}
-            }, "required": ["title", "description"]}}},
-        {"type": "function", "function": {
-            "name": "approve", "description": "Approve an issue at review stage",
-            "parameters": {"type": "object", "properties": {
-                "issue_id": {"type": "integer", "description": "Issue number"}
-            }, "required": ["issue_id"]}}},
-        {"type": "function", "function": {
-            "name": "start_agent", "description": "Start or restart an agent",
-            "parameters": {"type": "object", "properties": {
-                "issue_id": {"type": "integer", "description": "Issue number"}
-            }, "required": ["issue_id"]}}},
-        {"type": "function", "function": {
-            "name": "stop_agent", "description": "Stop an agent",
-            "parameters": {"type": "object", "properties": {
-                "issue_id": {"type": "integer", "description": "Issue number"}
-            }, "required": ["issue_id"]}}},
-    ]
+    body = await request.json()
+    fn_name: str = body.get("name", "")
+    fn_args: dict = body.get("arguments", {})  # type: ignore[assignment]
 
-    tool_map = {
-        "status": lambda _: mcp_status(),
+    tool_map: dict[str, object] = {
+        "status": lambda args: mcp_status(),
         "get_issue": lambda args: mcp_get_issue(args["issue_id"]),
         "get_agent_output": lambda args: mcp_output(args["issue_id"]),
         "send_message": lambda args: mcp_send(args["issue_id"], args["message"]),
@@ -1684,86 +1688,12 @@ async def _openai_voice_chat(
         "stop_agent": lambda args: mcp_stop(args["issue_id"]),
     }
 
-    messages: list[dict[str, str]] = [
-        {"role": "system", "content": (
-            "You are a concise voice assistant for AgentTree, a multi-agent development framework. "
-            "The user is managing AI coding agents, likely while on a walk. "
-            "Keep responses SHORT (1-3 sentences). Summarize, don't dump raw data. "
-            "Use the tools to check status, manage agents, and handle issues."
-        )},
-    ]
-    # Add conversation history
-    for h in history[-6:]:
-        if h.get("role") in ("user", "assistant"):
-            messages.append({"role": h["role"], "content": h["content"]})
-    messages.append({"role": "user", "content": message})
+    fn = tool_map.get(fn_name)
+    if not fn:
+        return {"result": f"Unknown tool: {fn_name}"}
 
-    try:
-        import json
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(
-                "https://api.openai.com/v1/chat/completions",
-                headers={"Authorization": f"Bearer {api_key}"},
-                json={
-                    "model": "gpt-4o-mini",
-                    "messages": messages,
-                    "tools": tools,
-                    "tool_choice": "auto",
-                    "max_tokens": 300,
-                },
-            )
-            resp.raise_for_status()
-            data = resp.json()
-
-        choice = data["choices"][0]
-        msg = choice["message"]
-
-        # Handle tool calls
-        if msg.get("tool_calls"):
-            messages.append(msg)
-            for tc in msg["tool_calls"]:
-                fn_name = tc["function"]["name"]
-                fn_args = json.loads(tc["function"]["arguments"])
-                fn = tool_map.get(fn_name)
-                if fn:
-                    result = await asyncio.to_thread(fn, fn_args)
-                else:
-                    result = f"Unknown tool: {fn_name}"
-                messages.append({
-                    "role": "tool",
-                    "tool_call_id": tc["id"],
-                    "content": str(result),
-                })
-
-            # Second call to get the final response
-            async with httpx.AsyncClient(timeout=30) as client:
-                resp2 = await client.post(
-                    "https://api.openai.com/v1/chat/completions",
-                    headers={"Authorization": f"Bearer {api_key}"},
-                    json={
-                        "model": "gpt-4o-mini",
-                        "messages": messages,
-                        "max_tokens": 300,
-                    },
-                )
-                resp2.raise_for_status()
-                data2 = resp2.json()
-            return str(data2["choices"][0]["message"]["content"])
-
-        return str(msg.get("content", "I'm not sure how to help with that."))
-
-    except Exception as e:
-        logger.warning("OpenAI voice chat error: %s", e)
-        return f"Sorry, I had trouble processing that. Error: {e}"
-
-
-def _fallback_response(message: str) -> str:
-    """Simple fallback when no AI is available."""
-    return (
-        "I can handle these commands directly: "
-        "'status', 'approve 42', 'show issue 42', 'output 42'. "
-        "For natural language, set OPENAI_API_KEY in your environment."
-    )
+    result: object = await asyncio.to_thread(fn, fn_args)  # type: ignore[arg-type]
+    return {"result": str(result)}
 
 
 # =============================================================================
