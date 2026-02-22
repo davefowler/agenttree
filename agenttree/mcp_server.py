@@ -60,7 +60,7 @@ def status() -> str:
     # Check which tmux sessions are active
     try:
         active_sessions = {s.name for s in tmux_list_sessions()}
-    except Exception:
+    except (FileNotFoundError, OSError):
         active_sessions = set()
 
     lines: list[str] = []
@@ -224,7 +224,7 @@ def create_issue(title: str, description: str) -> str:
 
     try:
         issue = _create_issue(title=title, priority=Priority.MEDIUM, problem=description)
-    except Exception as e:
+    except (RuntimeError, ValueError, OSError) as e:
         return f"Failed to create issue: {e}"
 
     # Auto-start agent
@@ -233,7 +233,7 @@ def create_issue(title: str, description: str) -> str:
         return f"Created issue #{issue.id}: {issue.title}. Agent started and working."
     except AgentStartError as e:
         return f"Created issue #{issue.id} but failed to start agent: {e}"
-    except Exception as e:
+    except RuntimeError as e:
         return f"Created issue #{issue.id} but agent start failed: {e}"
 
 
@@ -265,7 +265,7 @@ def approve(issue_id: int) -> str:
         transition_issue(issue_id, next_stage, trigger="mcp")
         next_name = config.stage_display_name(next_stage)
         return f"Approved issue #{issue_id}. Advanced to '{next_name}'."
-    except Exception as e:
+    except RuntimeError as e:
         return f"Failed to approve issue #{issue_id}: {e}"
 
 
@@ -296,7 +296,7 @@ def start_agent(issue_id: int) -> str:
         return f"Agent already running for issue #{issue_id}."
     except AgentStartError as e:
         return f"Failed to start agent: {e}"
-    except Exception as e:
+    except RuntimeError as e:
         return f"Error starting agent: {e}"
 
 
@@ -322,7 +322,7 @@ def _get_api_key() -> str | None:
     return os.environ.get("AGENTTREE_MCP_KEY")
 
 
-def _create_authed_app(api_key: str) -> "Starlette":
+def _create_authed_app(api_key: str, host: str = "0.0.0.0", port: int = 8100) -> "Starlette":
     """Wrap the MCP Starlette app with bearer token auth middleware."""
     import secrets
 
@@ -360,8 +360,8 @@ def _create_authed_app(api_key: str) -> "Starlette":
             await self.app(scope, receive, send)
 
     # Get the base Starlette app from MCP
-    mcp.settings.host = "0.0.0.0"
-    mcp.settings.port = 8100
+    mcp.settings.host = host
+    mcp.settings.port = port
     base_app = mcp.streamable_http_app()
 
     # Wrap with auth middleware
@@ -394,7 +394,7 @@ def run_mcp_server(
         if api_key:
             import uvicorn
 
-            app = _create_authed_app(api_key)
+            app = _create_authed_app(api_key, host=host, port=port)
             config = uvicorn.Config(app, host=host, port=port, log_level="info")
             server = uvicorn.Server(config)
 
