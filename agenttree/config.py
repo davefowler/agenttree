@@ -190,6 +190,161 @@ class SecurityConfig(BaseModel):
     """Security configuration for agents."""
 
 
+class SessionConfig(BaseModel):
+    """Configuration for a tmux session.
+
+    Sessions are long-running processes (dev servers, workers, etc.) that run
+    alongside the AI agent. Each session gets its own tmux window.
+    """
+
+    command: str  # The long-running command to execute
+    name_template: str | None = None  # Override default naming: {project}-{session_name}-{issue_id}
+    ports: list[str] = Field(default_factory=list)  # Ports to forward (Jinja templates)
+    pre_start: list[dict] = Field(default_factory=list)  # Hooks before command starts
+    post_stop: list[dict] = Field(default_factory=list)  # Hooks after session is killed
+
+
+class ContainerTypeConfig(BaseModel):
+    """Configuration for a container type.
+
+    Container types are templates for creating container instances. Two types
+    are reserved (manager, issue); all others are user-defined.
+    """
+
+    extends: str | None = None  # Parent container type to inherit from
+    image: str = "agenttree-agent:latest"  # Container image
+    roles: list[str] = Field(default_factory=list)  # Roles that can run in this container
+    sessions: list[str] = Field(default_factory=list)  # Which sessions to start
+    interactive: bool = False  # Attach terminal on creation
+    mounts: list[str] = Field(default_factory=list)  # Additional mounts (host:container:mode)
+    env: dict[str, str] = Field(default_factory=dict)  # Environment variables
+    allow_dangerous: bool = True  # Allow --dangerously-skip-permissions
+
+    # Lifecycle hooks
+    pre_start: list[dict] = Field(default_factory=list)  # Before container starts (host)
+    post_start: list[dict] = Field(default_factory=list)  # After container starts (inside)
+    pre_stop: list[dict] = Field(default_factory=list)  # Before container stops (inside)
+    post_stop: list[dict] = Field(default_factory=list)  # After container stops (host)
+
+
+def resolve_container_type(
+    name: str,
+    containers: dict[str, ContainerTypeConfig],
+) -> ContainerTypeConfig:
+    """Resolve a container type by walking the extends chain.
+
+    Merge semantics:
+    - Scalar values: child wins
+    - Hooks (pre_start, etc.): child replaces entirely
+    - Roles: child replaces entirely
+    - Sessions: child replaces entirely
+    - Mounts: accumulate (child adds to parent)
+    - Env: dict merge (child keys override parent)
+
+    Args:
+        name: Container type name to resolve
+        containers: Dict of all container type configs
+
+    Returns:
+        Fully resolved ContainerTypeConfig
+
+    Raises:
+        ValueError: If container type not found or circular extends
+    """
+    if name not in containers:
+        raise ValueError(f"Unknown container type: {name}")
+
+    # Track visited types to detect cycles
+    visited: set[str] = set()
+    chain: list[ContainerTypeConfig] = []
+
+    current_name: str | None = name
+    while current_name is not None:
+        if current_name in visited:
+            raise ValueError(f"Circular extends detected: {current_name}")
+        if current_name not in containers:
+            raise ValueError(f"Unknown container type in extends chain: {current_name}")
+
+        visited.add(current_name)
+        chain.append(containers[current_name])
+        current_name = containers[current_name].extends
+
+    # Reverse chain so we go from base to derived
+    chain.reverse()
+
+    # Start with base values
+    base = chain[0]
+    result_image = base.image
+    result_roles = list(base.roles)
+    result_sessions = list(base.sessions)
+    result_interactive = base.interactive
+    result_mounts: list[str] = list(base.mounts)  # Accumulate mounts
+    result_env: dict[str, str] = dict(base.env)  # Merge env
+    result_allow_dangerous = base.allow_dangerous
+    result_pre_start = list(base.pre_start)
+    result_post_start = list(base.post_start)
+    result_pre_stop = list(base.pre_stop)
+    result_post_stop = list(base.post_stop)
+
+    # Apply each child in order
+    for cfg in chain[1:]:
+        # Scalars: child wins if explicitly set (we check for non-default)
+        if cfg.image != "agenttree-agent:latest":
+            result_image = cfg.image
+        if cfg.roles:
+            result_roles = list(cfg.roles)
+        if cfg.sessions:
+            result_sessions = list(cfg.sessions)
+        if cfg.interactive:
+            result_interactive = cfg.interactive
+        if not cfg.allow_dangerous:
+            result_allow_dangerous = cfg.allow_dangerous
+
+        # Mounts: accumulate
+        result_mounts.extend(cfg.mounts)
+
+        # Env: merge (child overrides)
+        result_env.update(cfg.env)
+
+        # Hooks: replace if child has any
+        if cfg.pre_start:
+            result_pre_start = list(cfg.pre_start)
+        if cfg.post_start:
+            result_post_start = list(cfg.post_start)
+        if cfg.pre_stop:
+            result_pre_stop = list(cfg.pre_stop)
+        if cfg.post_stop:
+            result_post_stop = list(cfg.post_stop)
+
+    return ContainerTypeConfig(
+        extends=None,  # Resolved config has no extends
+        image=result_image,
+        roles=result_roles,
+        sessions=result_sessions,
+        interactive=result_interactive,
+        mounts=result_mounts,
+        env=result_env,
+        allow_dangerous=result_allow_dangerous,
+        pre_start=result_pre_start,
+        post_start=result_post_start,
+        pre_stop=result_pre_stop,
+        post_stop=result_post_stop,
+    )
+
+
+def render_template(template: str, context: dict[str, object]) -> str:
+    """Render a Jinja template string with the given context.
+
+    Args:
+        template: Template string with {{ variable }} placeholders
+        context: Dict of variables available in the template
+
+    Returns:
+        Rendered string
+    """
+    return Template(template).render(**context)
+
+
 def evaluate_condition(condition: str, context: dict) -> bool:
     """Evaluate a Jinja condition expression."""
     try:
@@ -220,7 +375,7 @@ class Config(BaseModel):
     project: str = "myapp"
     worktrees_dir: Path = Field(default_factory=lambda: Path(".worktrees"))
     scripts_dir: Path = Field(default_factory=lambda: Path("scripts"))
-    port_range: str = "9001-9099"
+    port_range: str = "9000-9100"  # Manager on 9000, issues 9001-9100
     default_tool: str = "claude"
     default_model: str = "opus"
     model_tiers: dict[str, str] = Field(default_factory=dict)
@@ -240,36 +395,49 @@ class Config(BaseModel):
     on: OnConfig | None = None
     rate_limit_fallback: RateLimitFallbackConfig = Field(default_factory=RateLimitFallbackConfig)
     allow_self_approval: bool = False
+    sessions: dict[str, SessionConfig] = Field(default_factory=dict)
+    containers: dict[str, ContainerTypeConfig] = Field(default_factory=dict)
 
     # ── Port / path helpers ──────────────────────────────────────────
 
     @property
     def server_port(self) -> int:
-        """Port for the AgentTree server (one below port_range start, i.e. issue 0)."""
-        start_port = int(self.port_range.split("-")[0])
-        return start_port - 1
+        """Port for the AgentTree server (manager always gets port_min)."""
+        port_min = int(self.port_range.split("-")[0])
+        return port_min
+
+    def get_port_for_issue(self, issue_id: int | str) -> int:
+        """Get port for an issue using modulo wrapping.
+
+        Formula:
+            mod = port_max - port_min  (e.g., 100 for 9000-9100)
+            remainder = issue_id % mod
+            port = port_max if remainder == 0 else port_min + remainder
+
+        This gives 100 issue slots (9001-9100) that wrap for high issue numbers.
+        Manager always gets port_min (9000) via server_port property.
+
+        Examples with port_range 9000-9100:
+            Issue #1   → remainder=1   → 9001
+            Issue #42  → remainder=42  → 9042
+            Issue #99  → remainder=99  → 9099
+            Issue #100 → remainder=0   → 9100 (0 → port_max)
+            Issue #101 → remainder=1   → 9001 (wraps)
+        """
+        from agenttree.ids import parse_issue_id
+        if isinstance(issue_id, str):
+            issue_id = parse_issue_id(issue_id)
+
+        port_min, port_max = map(int, self.port_range.split("-"))
+        mod = port_max - port_min
+        remainder = issue_id % mod
+        if remainder == 0:
+            return port_max
+        return port_min + remainder
 
     def get_port_for_agent(self, agent_num: int) -> int:
-        """Get port number for a specific agent."""
-        start_port, end_port = map(int, self.port_range.split("-"))
-        port = start_port + (agent_num - 1)
-        if port > end_port:
-            raise ValueError(
-                f"Agent number {agent_num} exceeds port range {self.port_range}"
-            )
-        return port
-
-    def get_port_for_issue(self, issue_id: int | str) -> int | None:
-        """Get port number for a specific issue."""
-        from agenttree.ids import parse_issue_id
-        try:
-            if isinstance(issue_id, str):
-                issue_num = parse_issue_id(issue_id)
-            else:
-                issue_num = issue_id
-            return self.get_port_for_agent(issue_num)
-        except (ValueError, TypeError):
-            return None
+        """Get port number for a specific agent (legacy, calls get_port_for_issue)."""
+        return self.get_port_for_issue(agent_num)
 
     def get_worktree_path(self, agent_num: int) -> Path:
         """Get worktree path for a specific agent (legacy numbered agents)."""

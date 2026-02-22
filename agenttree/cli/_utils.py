@@ -1,5 +1,7 @@
 """Shared utilities for CLI modules."""
 
+import os
+
 from rich.console import Console
 
 # Shared Rich console instance for all CLI modules
@@ -16,6 +18,22 @@ def normalize_issue_id(issue_id: str) -> int:
     """Parse issue ID string to int."""
     from agenttree.ids import parse_issue_id
     return parse_issue_id(issue_id)
+
+
+def infer_issue_id() -> int | None:
+    """Infer issue_id from environment, or None if not in an agent context.
+
+    Checks the AGENTTREE_ISSUE_ID environment variable set by containers.
+    Returns None when running on the host with no env var set.
+
+    Important: Does NOT default to 0. Being on the host doesn't mean
+    "I'm the manager." It means "I'm not in any agent's context."
+    """
+    env_id = os.environ.get("AGENTTREE_ISSUE_ID")
+    if env_id:
+        from agenttree.ids import parse_issue_id
+        return parse_issue_id(env_id)
+    return None
 
 
 def format_role_label(role: str) -> str:
@@ -37,4 +55,5 @@ __all__ = [
     "normalize_issue_id",
     "format_role_label",
     "get_manager_session_name",
+    "infer_issue_id",
 ]
