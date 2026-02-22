@@ -1648,8 +1648,7 @@ async def voice_token(
         if resp.status_code != 200:
             logger.error("OpenAI token error: %s %s", resp.status_code, resp.text)
             raise HTTPException(status_code=502, detail="Failed to create voice session")
-        data: dict = resp.json()  # type: ignore[assignment]
-        return data
+        return dict(resp.json())
 
 
 @app.post("/api/voice/tool-call")
@@ -1674,26 +1673,27 @@ async def voice_tool_call(
     )
 
     body = await request.json()
-    fn_name: str = body.get("name", "")
-    fn_args: dict = body.get("arguments", {})  # type: ignore[assignment]
+    fn_name = str(body.get("name", ""))
+    fn_args = dict(body.get("arguments", {}))
 
-    tool_map: dict[str, object] = {
-        "status": lambda args: mcp_status(),
-        "get_issue": lambda args: mcp_get_issue(args["issue_id"]),
-        "get_agent_output": lambda args: mcp_output(args["issue_id"]),
-        "send_message": lambda args: mcp_send(args["issue_id"], args["message"]),
-        "create_issue": lambda args: mcp_create(args["title"], args["description"]),
-        "approve": lambda args: mcp_approve(args["issue_id"]),
-        "start_agent": lambda args: mcp_start(args["issue_id"]),
-        "stop_agent": lambda args: mcp_stop(args["issue_id"]),
-    }
+    def _run_tool(name: str, args: dict[str, object]) -> str:
+        tools: dict[str, Callable[[dict[str, object]], object]] = {
+            "status": lambda a: mcp_status(),
+            "get_issue": lambda a: mcp_get_issue(a["issue_id"]),
+            "get_agent_output": lambda a: mcp_output(a["issue_id"]),
+            "send_message": lambda a: mcp_send(a["issue_id"], a["message"]),
+            "create_issue": lambda a: mcp_create(a["title"], a["description"]),
+            "approve": lambda a: mcp_approve(a["issue_id"]),
+            "start_agent": lambda a: mcp_start(a["issue_id"]),
+            "stop_agent": lambda a: mcp_stop(a["issue_id"]),
+        }
+        fn = tools.get(name)
+        if not fn:
+            return f"Unknown tool: {name}"
+        return str(fn(args))
 
-    fn = tool_map.get(fn_name)
-    if not fn:
-        return {"result": f"Unknown tool: {fn_name}"}
-
-    result: object = await asyncio.to_thread(fn, fn_args)  # type: ignore[arg-type]
-    return {"result": str(result)}
+    result = await asyncio.to_thread(_run_tool, fn_name, fn_args)
+    return {"result": result}
 
 
 # =============================================================================

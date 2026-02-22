@@ -47,10 +47,9 @@ def status() -> str:
     Returns a summary of all active issues, their stages, and whether
     agents are running. Use this to get an overview of what's happening.
     """
-    import subprocess
-
     from agenttree.config import load_config
     from agenttree.issues import list_issues
+    from agenttree.tmux import list_sessions as tmux_list_sessions
 
     config = load_config(_get_repo_path())
     issues = list_issues(sync=False)
@@ -60,12 +59,8 @@ def status() -> str:
 
     # Check which tmux sessions are active
     try:
-        result = subprocess.run(
-            ["tmux", "list-sessions", "-F", "#{session_name}"],
-            capture_output=True, text=True, timeout=2,
-        )
-        active_sessions = set(result.stdout.strip().split("\n")) if result.returncode == 0 else set()
-    except (subprocess.TimeoutExpired, FileNotFoundError):
+        active_sessions = {s.name for s in tmux_list_sessions()}
+    except Exception:
         active_sessions = set()
 
     lines: list[str] = []
