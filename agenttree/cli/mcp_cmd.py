@@ -21,12 +21,7 @@ def mcp_serve(http: bool, host: str, port: int) -> None:
         agenttree mcp --http             # HTTP on port 8100
         agenttree mcp --http --port 9100 # custom port
     """
-    try:
-        from agenttree.mcp_server import run_mcp_server
-    except ImportError:
-        click.echo("Error: MCP dependencies not installed.", err=True)
-        click.echo("Install with: pip install agenttree[mcp]", err=True)
-        raise SystemExit(1)
+    from agenttree.mcp_server import run_mcp_server
 
     if http:
         click.echo(f"Starting AgentTree MCP server (HTTP) on {host}:{port}")
