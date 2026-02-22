@@ -316,15 +316,15 @@ class TestStartAgent:
             result = start_agent(42)
             assert "not found" in result
 
-    def test_already_running(self) -> None:
-        from agenttree.api import AgentAlreadyRunningError
+    def test_start_error(self) -> None:
+        from agenttree.api import AgentStartError
 
         with patch(
             "agenttree.api.start_agent",
-            side_effect=AgentAlreadyRunningError("042"),
+            side_effect=AgentStartError("042", "container failed"),
         ):
             result = start_agent(42)
-            assert "already running" in result
+            assert "Failed to start" in result
 
 
 class TestStopAgent:

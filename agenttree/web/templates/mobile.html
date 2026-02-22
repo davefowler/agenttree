@@ -132,6 +132,7 @@
         {% include 'partials/new_issue_modal.html' %}
     </div>
 
+    <script src="/static/voice.js"></script>
     <script>
         // Tab switching
         function switchTab(tabName) {
@@ -299,185 +300,47 @@
         document.documentElement.setAttribute('data-theme', savedTheme);
 
         // =====================================================================
-        // Voice Overlay (OpenAI Realtime API via WebRTC)
+        // Voice Overlay (uses shared VoiceSession from /static/voice.js)
         // =====================================================================
-        let voicePc = null;
-        let voiceDc = null;
-        let voiceAudioEl = null;
-        let voiceLocalStream = null;
-        let voiceActive = false;
+        var voiceSession = new VoiceSession({
+            onStatus: function(text, state) {
+                var statusEl = document.getElementById('vo-status');
+                var voiceBtn = document.getElementById('voice-tab-btn');
+                var overlay = document.getElementById('voice-overlay');
 
-        function getCurrentIssueId() {
-            const params = new URLSearchParams(window.location.search);
-            const issue = params.get('issue');
-            return issue ? parseInt(issue, 10) : null;
-        }
+                statusEl.textContent = text;
+                statusEl.className = 'voice-overlay-status' + (state === 'active' ? ' active' : state === 'error' ? ' error' : '');
 
-        function voiceLog(msg, cls) {
-            const el = document.getElementById('vo-log');
-            const div = document.createElement('div');
-            div.textContent = msg;
-            if (cls) div.className = cls;
-            el.appendChild(div);
-            el.scrollTop = el.scrollHeight;
-        }
-
-        async function toggleVoiceOverlay() {
-            if (voiceActive) {
-                stopVoiceOverlay();
-            } else {
-                await startVoiceOverlay();
-            }
-        }
-
-        async function startVoiceOverlay() {
-            const overlay = document.getElementById('voice-overlay');
-            const statusEl = document.getElementById('vo-status');
-            const voiceBtn = document.getElementById('voice-tab-btn');
-            document.getElementById('vo-log').innerHTML = '';
-
-            overlay.classList.add('active');
-            voiceBtn.classList.add('active');
-            statusEl.textContent = 'Connecting...';
-            voiceActive = true;
-
-            try {
-                // 1. Get ephemeral token, passing current issue for context
-                const issueId = getCurrentIssueId();
-                const tokenUrl = '/api/voice/token' + (issueId ? '?issue=' + issueId : '');
-                const tokenResp = await fetch(tokenUrl);
-                if (!tokenResp.ok) {
-                    const err = await tokenResp.json();
-                    throw new Error(err.detail || 'Token request failed');
+                if (state === 'connecting') {
+                    overlay.classList.add('active');
+                    voiceBtn.classList.add('active');
+                    document.getElementById('vo-log').innerHTML = '';
+                } else if (state === 'idle') {
+                    overlay.classList.remove('active');
+                    voiceBtn.classList.remove('active');
                 }
-                const tokenData = await tokenResp.json();
-                // OpenAI returns { client_secret: { value: "ek_..." } }
-                const ephemeralKey = tokenData.client_secret && tokenData.client_secret.value;
-                if (!ephemeralKey) throw new Error('No ephemeral key');
+            },
+            onLog: function(text, className) {
+                var el = document.getElementById('vo-log');
+                var div = document.createElement('div');
+                div.textContent = text;
+                if (className) div.className = className;
+                el.appendChild(div);
+                el.scrollTop = el.scrollHeight;
+            },
+            getIssueId: function() {
+                var params = new URLSearchParams(window.location.search);
+                var issue = params.get('issue');
+                return issue ? parseInt(issue, 10) : null;
+            },
+        });
 
-                // 2. Create WebRTC peer connection
-                voicePc = new RTCPeerConnection();
-
-                // 3. Remote audio playback
-                voiceAudioEl = document.createElement('audio');
-                voiceAudioEl.autoplay = true;
-                voicePc.ontrack = function(e) { voiceAudioEl.srcObject = e.streams[0]; };
-
-                // 4. Mic input
-                voiceLocalStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                voicePc.addTrack(voiceLocalStream.getTracks()[0]);
-
-                // 5. Data channel
-                voiceDc = voicePc.createDataChannel('oai-events');
-                voiceDc.onopen = function() {
-                    voiceLog('Connected');
-                    statusEl.textContent = 'Listening...';
-                    statusEl.className = 'voice-overlay-status active';
-                };
-                voiceDc.onmessage = function(e) {
-                    const event = JSON.parse(e.data);
-                    if (event.type === 'response.done' && event.response && event.response.output) {
-                        event.response.output.forEach(function(output) {
-                            if (output.type === 'function_call') {
-                                handleVoiceToolCall(output);
-                            }
-                        });
-                    }
-                };
-
-                // 6. SDP exchange
-                const offer = await voicePc.createOffer();
-                await voicePc.setLocalDescription(offer);
-
-                const sdpResp = await fetch('https://api.openai.com/v1/realtime/calls?model=gpt-realtime', {
-                    method: 'POST',
-                    body: offer.sdp,
-                    headers: {
-                        'Authorization': 'Bearer ' + ephemeralKey,
-                        'Content-Type': 'application/sdp',
-                    },
-                });
-                if (!sdpResp.ok) throw new Error('SDP exchange failed: ' + sdpResp.status);
-
-                const answerSdp = await sdpResp.text();
-                await voicePc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
-
-                voicePc.onconnectionstatechange = function() {
-                    if (voicePc.connectionState === 'connected') {
-                        statusEl.textContent = 'Speak naturally';
-                        statusEl.className = 'voice-overlay-status active';
-                    } else if (voicePc.connectionState === 'failed' || voicePc.connectionState === 'disconnected') {
-                        stopVoiceOverlay();
-                    }
-                };
-
-                if (issueId) {
-                    voiceLog('Context: issue #' + issueId);
-                }
-
-                // Keep screen awake
-                if ('wakeLock' in navigator) {
-                    try { await navigator.wakeLock.request('screen'); } catch(e) {}
-                }
-
-            } catch (err) {
-                statusEl.textContent = err.message;
-                statusEl.className = 'voice-overlay-status error';
-                voiceLog('Error: ' + err.message);
-                // Don't close overlay — let user see the error and close manually
-            }
+        function toggleVoiceOverlay() {
+            voiceSession.toggle();
         }
 
         function stopVoiceOverlay() {
-            if (voiceDc) { try { voiceDc.close(); } catch(e) {} voiceDc = null; }
-            if (voiceLocalStream) {
-                voiceLocalStream.getTracks().forEach(function(t) { t.stop(); });
-                voiceLocalStream = null;
-            }
-            if (voicePc) {
-                voicePc.getSenders().forEach(function(s) { if (s.track) s.track.stop(); });
-                try { voicePc.close(); } catch(e) {}
-                voicePc = null;
-            }
-            if (voiceAudioEl) { voiceAudioEl.srcObject = null; voiceAudioEl = null; }
-
-            document.getElementById('voice-overlay').classList.remove('active');
-            document.getElementById('voice-tab-btn').classList.remove('active');
-            document.getElementById('vo-status').textContent = '';
-            document.getElementById('vo-status').className = 'voice-overlay-status';
-            voiceActive = false;
-        }
-
-        async function handleVoiceToolCall(output) {
-            var fnName = output.name;
-            var fnArgs;
-            try { fnArgs = JSON.parse(output.arguments || '{}'); } catch(e) { fnArgs = {}; }
-            voiceLog('Tool: ' + fnName + '(' + JSON.stringify(fnArgs) + ')', 'tool-call');
-
-            try {
-                var resp = await fetch('/api/voice/tool-call', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name: fnName, arguments: fnArgs }),
-                });
-                var data = await resp.json();
-                var result = data.result || 'No result';
-
-                if (voiceDc && voiceDc.readyState === 'open') {
-                    voiceDc.send(JSON.stringify({
-                        type: 'conversation.item.create',
-                        item: {
-                            type: 'function_call_output',
-                            call_id: output.call_id,
-                            output: result,
-                        },
-                    }));
-                    voiceDc.send(JSON.stringify({ type: 'response.create' }));
-                }
-                voiceLog('Done: ' + (result.length > 80 ? result.substring(0, 80) + '...' : result), 'tool-call');
-            } catch (err) {
-                voiceLog('Tool error: ' + err.message, 'tool-call');
-            }
+            voiceSession.stop();
         }
     </script>
 

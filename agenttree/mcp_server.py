@@ -279,7 +279,6 @@ def start_agent(issue_id: int) -> str:
     from agenttree.api import (
         start_agent as api_start,
         start_controller,
-        AgentAlreadyRunningError,
         AgentStartError,
         IssueNotFoundError,
     )
@@ -292,8 +291,6 @@ def start_agent(issue_id: int) -> str:
         return f"Agent started for issue #{issue_id}."
     except IssueNotFoundError:
         return f"Issue #{issue_id} not found."
-    except AgentAlreadyRunningError:
-        return f"Agent already running for issue #{issue_id}."
     except AgentStartError as e:
         return f"Failed to start agent: {e}"
     except RuntimeError as e:
