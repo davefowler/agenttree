@@ -1628,6 +1628,10 @@ async def voice_token(
          }, "required": ["issue_id"]}},
     ]
 
+    # OpenAI Realtime API GA endpoints (released Dec 2025):
+    #   Token: POST /v1/realtime/client_secrets
+    #   WebRTC SDP: POST /v1/realtime/calls?model=gpt-realtime
+    # These replaced the beta /v1/realtime/sessions endpoint.
     import httpx
     async with httpx.AsyncClient(timeout=10) as client:
         resp = await client.post(

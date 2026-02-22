@@ -66,7 +66,8 @@ class VoiceSession {
             this.dc.onopen = function() { self.onLog('Data channel open'); };
             this.dc.onmessage = function(e) { self._onDataChannelMessage(e); };
 
-            // 6. SDP offer/answer exchange
+            // 6. SDP offer/answer exchange via OpenAI Realtime API GA endpoints
+            //    (Dec 2025 — replaced beta /v1/realtime/sessions)
             var offer = await this.pc.createOffer();
             await this.pc.setLocalDescription(offer);
 

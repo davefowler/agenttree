@@ -17,7 +17,6 @@ dependencies = [
     { name = "filelock" },
     { name = "httpx" },
     { name = "jinja2" },
-    { name = "mcp" },
     { name = "pydantic" },
     { name = "pyyaml" },
     { name = "rich" },
@@ -52,6 +51,9 @@ dev = [
     { name = "pytest-cov" },
     { name = "pytest-mock" },
     { name = "ruff" },
+]
+mcp = [
+    { name = "mcp" },
 ]
 ml = [
     { name = "chromadb" },
@@ -90,7 +92,7 @@ requires-dist = [
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.26.0" },
     { name = "jinja2", specifier = ">=3.1.0" },
     { name = "jinja2", marker = "extra == 'web'", specifier = ">=3.1.0" },
-    { name = "mcp", specifier = ">=1.26.0" },
+    { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.26.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.0.0" },
     { name = "pydantic", specifier = ">=2.0.0" },
     { name = "pylint", marker = "extra == 'dev'", specifier = ">=3.0.0" },
@@ -107,7 +109,7 @@ requires-dist = [
     { name = "uvicorn", extras = ["standard"], marker = "extra == 'web'", specifier = ">=0.27.0" },
     { name = "websockets", marker = "extra == 'web'", specifier = ">=12.0" },
 ]
-provides-extras = ["dev", "web", "ml", "tui", "all"]
+provides-extras = ["dev", "web", "mcp", "ml", "tui", "all"]
 
 [package.metadata.requires-dev]
 dev = [
