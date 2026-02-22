@@ -35,7 +35,7 @@ class TestCreateIssueApiWithAttachments:
 
             response = client.post(
                 "/api/issues",
-                data={"description": "Test description", "title": "Test"},
+                data={"problem": "Test problem description", "title": "Test"},
                 files=[("files", ("test.png", b"fake image data", "image/png"))],
             )
 
@@ -52,7 +52,7 @@ class TestCreateIssueApiWithAttachments:
 
             response = client.post(
                 "/api/issues",
-                data={"description": "Test description", "title": "Test"},
+                data={"problem": "Test problem description", "title": "Test"},
                 files=[("files", ("large.png", large_content, "image/png"))],
             )
 
@@ -66,7 +66,7 @@ class TestCreateIssueApiWithAttachments:
 
             response = client.post(
                 "/api/issues",
-                data={"description": "Test description", "title": "Test"},
+                data={"problem": "Test problem description", "title": "Test"},
                 files=[("files", ("malware.exe", b"fake exe", "application/octet-stream"))],
             )
 

@@ -223,7 +223,7 @@ class TestCreateIssueEndpoint:
     @patch("agenttree.api.start_agent")
     @patch("agenttree.web.app.issue_crud")
     def test_create_issue_success(self, mock_crud, mock_start, client):
-        """Test creating issue with description (title auto-generated)."""
+        """Test creating issue with problem (title auto-generated)."""
         mock_issue = Mock()
         mock_issue.id = "042"
         mock_issue.title = "Auto generated title"
@@ -232,7 +232,7 @@ class TestCreateIssueEndpoint:
         response = client.post(
             "/api/issues",
             data={
-                "description": "This is a problem description that explains what needs to be done."
+                "problem": "This is a problem description that explains what needs to be done."
             }
         )
 
@@ -254,7 +254,7 @@ class TestCreateIssueEndpoint:
             "/api/issues",
             data={
                 "title": "My Custom Title",
-                "description": "This is a problem description."
+                "problem": "This is a problem description."
             }
         )
 
@@ -264,22 +264,22 @@ class TestCreateIssueEndpoint:
 
     @patch("agenttree.web.app.issue_crud")
     def test_create_issue_missing_description(self, mock_crud, client):
-        """Test creating issue without description fails."""
+        """Test creating issue without problem fails."""
         response = client.post(
             "/api/issues",
             data={"title": "Some title"}
         )
 
         assert response.status_code == 400
-        assert "description" in response.json()["detail"].lower()
+        assert "problem" in response.json()["detail"].lower()
 
     @patch("agenttree.web.app.issue_crud")
     def test_create_issue_empty_description(self, mock_crud, client):
-        """Test creating issue with empty description fails."""
+        """Test creating issue with empty problem fails."""
         response = client.post(
             "/api/issues",
-            data={"description": "   "}  # whitespace only
+            data={"problem": "   "}  # whitespace only
         )
 
         assert response.status_code == 400
-        assert "description" in response.json()["detail"].lower()
+        assert "problem" in response.json()["detail"].lower()
