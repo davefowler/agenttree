@@ -82,12 +82,12 @@ def start_agent(
         console.print(f"[yellow]Create it with: agenttree issue create 'title'[/yellow]")
         sys.exit(1)
 
-    # If issue is in backlog, move it to define stage first
+    # If issue is in backlog, move it to explore.define stage first
     if issue.stage == "backlog":
         from agenttree.issues import update_issue_stage
-        console.print(f"[cyan]Moving issue from backlog to define...[/cyan]")
-        update_issue_stage(issue.id, "define")
-        issue.stage = "define"  # Update local reference
+        console.print(f"[cyan]Moving issue from backlog to explore.define...[/cyan]")
+        update_issue_stage(issue.id, "explore.define")
+        issue.stage = "explore.define"  # Update local reference
 
     # Check if issue already has an active agent for this role
     existing_agent = get_active_agent(issue.id, role)

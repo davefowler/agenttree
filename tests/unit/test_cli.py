@@ -321,7 +321,7 @@ class TestIssueCreateCommand:
         mock_issue.id = "42"
         mock_issue.title = "A valid issue title here"
         mock_issue.slug = "a-valid-issue-title-here"
-        mock_issue.stage = "define"
+        mock_issue.stage = "explore.define"
         mock_issue.dependencies = None
 
         problem = "This is a detailed problem statement that is at least 50 characters long for the test."
