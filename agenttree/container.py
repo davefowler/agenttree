@@ -367,7 +367,8 @@ def build_container_command(
             cmd.extend(["-p", f"{port}:{port}"])
 
     # === 8. Image ===
-    cmd.append(container_type.image)
+    image = container_type.image or "agenttree-agent:latest"
+    cmd.append(image)
 
     # === 9. Entry command (from tool config) ===
     # Check if there's a prior session to continue
@@ -377,7 +378,8 @@ def build_container_command(
     # Determine if dangerous mode is allowed
     # Both container type and role must allow it (we assume role allows since
     # that check happens at a higher level)
-    dangerous = container_type.allow_dangerous
+    # Default to True if None (matches pre-Optional behavior)
+    dangerous = container_type.allow_dangerous if container_type.allow_dangerous is not None else True
 
     entry_cmd = tool_config.container_entry_command(
         model=model,

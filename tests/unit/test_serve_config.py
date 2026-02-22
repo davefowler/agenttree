@@ -292,6 +292,81 @@ class TestToolConfigContainerMethods:
         env = tool.container_env()
         assert isinstance(env, dict)
 
+    def test_container_env_passes_oauth_token(self, monkeypatch: "pytest.MonkeyPatch") -> None:
+        """Test that CLAUDE_CODE_OAUTH_TOKEN is passed when set."""
+        from agenttree.config import ToolConfig
+
+        monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-test-token")
+        # Clear API key to isolate test
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+        tool = ToolConfig(command="claude")
+        env = tool.container_env()
+
+        assert "CLAUDE_CODE_OAUTH_TOKEN" in env
+        assert env["CLAUDE_CODE_OAUTH_TOKEN"] == "sk-ant-oat01-test-token"
+
+    def test_container_env_passes_api_key(self, monkeypatch: "pytest.MonkeyPatch") -> None:
+        """Test that ANTHROPIC_API_KEY is passed when set."""
+        from agenttree.config import ToolConfig
+
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-api03-test-key")
+        # Clear OAuth token to isolate test
+        monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+
+        tool = ToolConfig(command="claude")
+        env = tool.container_env()
+
+        assert "ANTHROPIC_API_KEY" in env
+        assert env["ANTHROPIC_API_KEY"] == "sk-ant-api03-test-key"
+
+    def test_container_env_passes_both_credentials(self, monkeypatch: "pytest.MonkeyPatch") -> None:
+        """Test that both credentials are passed when both are set."""
+        from agenttree.config import ToolConfig
+
+        monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-test-token")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-api03-test-key")
+
+        tool = ToolConfig(command="claude")
+        env = tool.container_env()
+
+        # Both should be present for flexible mode switching
+        assert "CLAUDE_CODE_OAUTH_TOKEN" in env
+        assert "ANTHROPIC_API_KEY" in env
+        assert env["CLAUDE_CODE_OAUTH_TOKEN"] == "sk-ant-oat01-test-token"
+        assert env["ANTHROPIC_API_KEY"] == "sk-ant-api03-test-key"
+
+    def test_container_env_force_api_key_skips_oauth(self, monkeypatch: "pytest.MonkeyPatch") -> None:
+        """Test that force_api_key=True skips OAuth token."""
+        from agenttree.config import ToolConfig
+
+        monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-test-token")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-api03-test-key")
+
+        tool = ToolConfig(command="claude")
+        env = tool.container_env(force_api_key=True)
+
+        # OAuth token should be skipped
+        assert "CLAUDE_CODE_OAUTH_TOKEN" not in env
+        # API key should still be present
+        assert "ANTHROPIC_API_KEY" in env
+        assert env["ANTHROPIC_API_KEY"] == "sk-ant-api03-test-key"
+
+    def test_container_env_empty_when_no_credentials(self, monkeypatch: "pytest.MonkeyPatch") -> None:
+        """Test that empty dict is returned when no credentials are set."""
+        from agenttree.config import ToolConfig
+
+        # Clear both credential env vars
+        monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+        tool = ToolConfig(command="claude")
+        env = tool.container_env()
+
+        # Neither credential should be in the result
+        assert "CLAUDE_CODE_OAUTH_TOKEN" not in env
+        assert "ANTHROPIC_API_KEY" not in env
+
     def test_container_mounts_returns_list(self, tmp_path: Path) -> None:
         """Test container_mounts returns a list of tuples."""
         from agenttree.config import ToolConfig
@@ -545,7 +620,10 @@ class TestBuildContainerCommand:
         from agenttree.container import build_container_command
 
         tool = ToolConfig(command="claude")
-        container_type = ContainerTypeConfig(allow_dangerous=False)
+        container_type = ContainerTypeConfig(
+            image="agenttree-agent:latest",
+            allow_dangerous=False,
+        )
 
         cmd = build_container_command(
             runtime="docker",
