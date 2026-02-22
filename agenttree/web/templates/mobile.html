@@ -351,7 +351,8 @@
                     throw new Error(err.detail || 'Token request failed');
                 }
                 const tokenData = await tokenResp.json();
-                const ephemeralKey = tokenData.value || (tokenData.client_secret && tokenData.client_secret.value);
+                // OpenAI returns { client_secret: { value: "ek_..." } }
+                const ephemeralKey = tokenData.client_secret && tokenData.client_secret.value;
                 if (!ephemeralKey) throw new Error('No ephemeral key');
 
                 // 2. Create WebRTC peer connection
@@ -473,7 +474,7 @@
                     }));
                     voiceDc.send(JSON.stringify({ type: 'response.create' }));
                 }
-                voiceLog('Done: ' + result.substring(0, 80), 'tool-call');
+                voiceLog('Done: ' + (result.length > 80 ? result.substring(0, 80) + '...' : result), 'tool-call');
             } catch (err) {
                 voiceLog('Tool error: ' + err.message, 'tool-call');
             }
