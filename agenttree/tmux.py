@@ -387,53 +387,6 @@ class TmuxManager:
         """
         return self.config.get_tmux_session_name(agent_num)
 
-    def start_agent_in_container(
-        self,
-        agent_num: int,
-        worktree_path: Path,
-        tool_name: str,
-        container_runtime: "ContainerRuntime",
-    ) -> None:
-        """Start an agent in a container within a tmux session.
-
-        Args:
-            agent_num: Agent number
-            worktree_path: Path to the agent's worktree
-            tool_name: Name of the AI tool to use
-            container_runtime: Container runtime instance
-        """
-        session_name = self.get_session_name(agent_num)
-
-        # Kill existing session if it exists
-        if session_exists(session_name):
-            kill_session(session_name)
-
-        # Get tool config
-        tool_config = self.config.get_tool_config(tool_name)
-
-        # Ensure container system is running (Apple Container)
-        container_runtime.ensure_system_running()
-
-        # Build container command with model from config
-        # The container runs the AI tool with --dangerously-skip-permissions
-        # since it's already isolated in a container
-        container_cmd = container_runtime.build_run_command(
-            worktree_path=worktree_path,
-            ai_tool=tool_name,
-            dangerous=True,  # Safe because we're in a container
-            model=self.config.default_model,
-        )
-
-        # Join command for shell execution
-        container_cmd_str = " ".join(container_cmd)
-
-        # Create tmux session running the container
-        create_session(session_name, worktree_path, container_cmd_str)
-
-        # Wait for Claude CLI prompt before sending startup message
-        if wait_for_prompt(session_name, prompt_char="❯", timeout=180.0):
-            send_keys(session_name, tool_config.startup_prompt)
-
     def stop_agent(self, agent_num: int) -> None:
         """Stop an agent's tmux session.
 
@@ -525,11 +478,11 @@ class TmuxManager:
         resolved_model = model or self.config.default_model
 
         # Calculate port for dev server if serve command is configured
-        port = None
+        ports: list[int] = []
         if self.config.commands.get("serve"):
             try:
                 issue_num = int(issue_id)
-                port = self.config.get_port_for_agent(issue_num)
+                ports = [self.config.get_port_for_issue(issue_num)]
             except (ValueError, TypeError):
                 pass  # Skip port exposure if issue_id is not a valid number
 
@@ -542,14 +495,23 @@ class TmuxManager:
             from agenttree.container import cleanup_containers_by_prefix
             cleanup_containers_by_prefix(container_runtime.runtime, f"{container_name}-")
 
-        container_cmd = container_runtime.build_run_command(
+        # Build container command using generic builder
+        from agenttree.config import ContainerTypeConfig
+        from agenttree.container import build_container_command
+        container_type = ContainerTypeConfig(
+            image="agenttree-agent:latest",
+            allow_dangerous=True,
+        )
+        container_cmd = build_container_command(
+            runtime=container_runtime.runtime or "docker",
             worktree_path=worktree_path,
-            ai_tool=tool_name,
-            dangerous=True,  # Safe because we're in a container
-            model=resolved_model,
-            role=role,
-            port=port,
+            container_type=container_type,
             container_name=container_name,
+            tool_config=tool_config,
+            role=role,
+            issue_id=issue_id,
+            ports=ports if ports else None,
+            model=resolved_model,
             force_api_key=force_api_key,
         )
 
@@ -561,7 +523,8 @@ class TmuxManager:
 
         # Start serve session if serve command is configured and port is available
         serve_command = self.config.commands.get("serve")
-        if serve_command and port:
+        if serve_command and ports:
+            port = ports[0]
             from agenttree.ids import serve_session_name as get_serve_session_name
             serve_session = get_serve_session_name(self.config.project, int(issue_id))
             try:

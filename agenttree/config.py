@@ -317,10 +317,10 @@ class ContainerTypeConfig(BaseModel):
     """
 
     extends: str | None = None  # Parent container type to inherit from
-    image: str = "agenttree-agent:latest"  # Container image
+    image: str | None = None  # Container image (None means inherit from parent)
     mounts: list[str] = Field(default_factory=list)  # Additional mounts (host:container:mode)
     env: dict[str, str] = Field(default_factory=dict)  # Environment variables
-    allow_dangerous: bool = True  # Allow --dangerously-skip-permissions
+    allow_dangerous: bool | None = None  # Allow --dangerously-skip-permissions (None means inherit)
 
 
 def resolve_container_type(
@@ -374,10 +374,10 @@ def resolve_container_type(
 
     # Apply each child in order
     for cfg in chain[1:]:
-        # Scalars: child wins if explicitly set (we check for non-default)
-        if cfg.image != "agenttree-agent:latest":
+        # Scalars: child wins if explicitly set (None means inherit)
+        if cfg.image is not None:
             result_image = cfg.image
-        if not cfg.allow_dangerous:
+        if cfg.allow_dangerous is not None:
             result_allow_dangerous = cfg.allow_dangerous
 
         # Mounts: accumulate
@@ -386,12 +386,16 @@ def resolve_container_type(
         # Env: merge (child overrides)
         result_env.update(cfg.env)
 
+    # Apply defaults for any values still None
+    final_image = result_image if result_image is not None else "agenttree-agent:latest"
+    final_allow_dangerous = result_allow_dangerous if result_allow_dangerous is not None else True
+
     return ContainerTypeConfig(
         extends=None,  # Resolved config has no extends
-        image=result_image,
+        image=final_image,
         mounts=result_mounts,
         env=result_env,
-        allow_dangerous=result_allow_dangerous,
+        allow_dangerous=final_allow_dangerous,
     )
 
 
@@ -496,10 +500,6 @@ class Config(BaseModel):
         if remainder == 0:
             return port_max
         return port_min + remainder
-
-    def get_port_for_agent(self, agent_num: int) -> int:
-        """Get port number for a specific agent (legacy, calls get_port_for_issue)."""
-        return self.get_port_for_issue(agent_num)
 
     def get_dev_server_url(self, issue_id: int | str, host: str = "localhost") -> str:
         """Get dev server URL for an issue.

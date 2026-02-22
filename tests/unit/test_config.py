@@ -121,12 +121,6 @@ class TestConfig:
         with pytest.raises(ValueError):
             config.get_port_for_issue("")
 
-    def test_get_port_for_agent_delegates_to_get_port_for_issue(self) -> None:
-        """Test that get_port_for_agent delegates to get_port_for_issue."""
-        config = Config(port_range="9000-9100")
-        assert config.get_port_for_agent(1) == config.get_port_for_issue(1)
-        assert config.get_port_for_agent(42) == config.get_port_for_issue(42)
-
     def test_get_worktree_path(self) -> None:
         """Test getting worktree path for an agent."""
         config = Config(project="myapp", worktrees_dir="/tmp/worktrees")

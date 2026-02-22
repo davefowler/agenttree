@@ -4,14 +4,12 @@ Tests for:
 - ContainerTypeConfig model
 - resolve_container_type (extends resolution, mount accumulation, env merge)
 - render_template (Jinja template rendering)
-- infer_issue_id (environment variable inference)
 - ToolConfig container methods
 - build_container_command
 - Session naming
 - Dev server URLs
 """
 
-import os
 from pathlib import Path
 
 import pytest
@@ -28,13 +26,17 @@ class TestContainerTypeConfig:
     """Tests for ContainerTypeConfig model."""
 
     def test_container_type_config_defaults(self) -> None:
-        """Test ContainerTypeConfig default values."""
+        """Test ContainerTypeConfig default values.
+
+        Image and allow_dangerous default to None for proper inheritance.
+        resolve_container_type applies actual defaults after resolution.
+        """
         config = ContainerTypeConfig()
         assert config.extends is None
-        assert config.image == "agenttree-agent:latest"
+        assert config.image is None  # None allows inheritance
         assert config.mounts == []
         assert config.env == {}
-        assert config.allow_dangerous is True
+        assert config.allow_dangerous is None  # None allows inheritance
 
     def test_container_type_config_with_values(self) -> None:
         """Test ContainerTypeConfig with explicit values."""
@@ -221,35 +223,6 @@ class TestRenderTemplate:
         assert result == "npm run dev"
 
 
-class TestInferIssueId:
-    """Tests for infer_issue_id function."""
-
-    def test_infer_issue_id_returns_none_when_not_set(self) -> None:
-        """Test that infer_issue_id returns None when env var not set."""
-        from agenttree.cli._utils import infer_issue_id
-
-        # Clear the env var if set
-        os.environ.pop("AGENTTREE_ISSUE_ID", None)
-        result = infer_issue_id()
-        assert result is None
-
-    def test_infer_issue_id_parses_env_var(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Test that infer_issue_id parses the env var correctly."""
-        from agenttree.cli._utils import infer_issue_id
-
-        monkeypatch.setenv("AGENTTREE_ISSUE_ID", "42")
-        result = infer_issue_id()
-        assert result == 42
-
-    def test_infer_issue_id_parses_padded_id(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Test that infer_issue_id handles zero-padded IDs."""
-        from agenttree.cli._utils import infer_issue_id
-
-        monkeypatch.setenv("AGENTTREE_ISSUE_ID", "007")
-        result = infer_issue_id()
-        assert result == 7
-
-
 class TestConfigWithContainerField:
     """Tests for Config with containers field."""
 
@@ -423,7 +396,10 @@ class TestBuildContainerCommand:
         from agenttree.container import build_container_command
 
         tool = ToolConfig(command="claude")
-        container_type = ContainerTypeConfig()
+        container_type = ContainerTypeConfig(
+            image="agenttree-agent:latest",
+            allow_dangerous=True,
+        )
 
         cmd = build_container_command(
             runtime="docker",
@@ -446,7 +422,10 @@ class TestBuildContainerCommand:
         from agenttree.container import build_container_command
 
         tool = ToolConfig(command="claude")
-        container_type = ContainerTypeConfig()
+        container_type = ContainerTypeConfig(
+            image="agenttree-agent:latest",
+            allow_dangerous=True,
+        )
 
         cmd = build_container_command(
             runtime="docker",
@@ -469,7 +448,9 @@ class TestBuildContainerCommand:
 
         tool = ToolConfig(command="claude")
         container_type = ContainerTypeConfig(
-            mounts=["/host/path:/container/path:ro"]
+            image="agenttree-agent:latest",
+            mounts=["/host/path:/container/path:ro"],
+            allow_dangerous=True,
         )
 
         cmd = build_container_command(
@@ -491,7 +472,9 @@ class TestBuildContainerCommand:
 
         tool = ToolConfig(command="claude")
         container_type = ContainerTypeConfig(
-            env={"NODE_ENV": "development", "DEBUG": "true"}
+            image="agenttree-agent:latest",
+            env={"NODE_ENV": "development", "DEBUG": "true"},
+            allow_dangerous=True,
         )
 
         cmd = build_container_command(

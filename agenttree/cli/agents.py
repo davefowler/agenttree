@@ -1,5 +1,6 @@
 """Agent management commands (start, agents, sandbox, attach, send, output, stop, kill)."""
 
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -13,6 +14,53 @@ from agenttree.container import get_container_runtime
 from agenttree.agents_repo import AgentsRepository
 from agenttree.preflight import run_preflight
 from agenttree.issues import update_issue_metadata, create_session
+
+
+def prepare_git_mounts(
+    runtime_name: str,
+    share_git: bool,
+    staging_dir: Path,
+) -> list[str]:
+    """Prepare mount arguments for sharing git credentials.
+
+    Handles both regular file mounts (Docker) and directory mounts (Apple Container).
+    Apple Container cannot mount individual files, so we stage .gitconfig in a directory.
+
+    Args:
+        runtime_name: Container runtime name ("container", "docker", "podman")
+        share_git: Whether to share git credentials
+        staging_dir: Directory to stage .gitconfig for Apple Container
+
+    Returns:
+        List of mount arguments (without -v prefix, e.g., ["~/.ssh:/home/agent/.ssh:ro"])
+    """
+    if not share_git:
+        return []
+
+    home = Path.home()
+    mounts: list[str] = []
+
+    # SSH directory
+    ssh_dir = home / ".ssh"
+    if ssh_dir.exists():
+        mounts.append(f"{ssh_dir}:/home/agent/.ssh:ro")
+        console.print("[dim]Sharing ~/.ssh (read-only)[/dim]")
+
+    # Git config
+    gitconfig = home / ".gitconfig"
+    if gitconfig.exists():
+        if runtime_name == "container":
+            # Apple Container can only mount directories, not files.
+            # Stage .gitconfig in a directory and mount that.
+            gitconfig_staging = staging_dir / ".apple-container-gitconfig"
+            gitconfig_staging.mkdir(exist_ok=True)
+            shutil.copy2(gitconfig, gitconfig_staging / ".gitconfig")
+            mounts.append(f"{gitconfig_staging}:/home/agent/.gitconfig-host:ro")
+        else:
+            mounts.append(f"{gitconfig}:/home/agent/.gitconfig:ro")
+        console.print("[dim]Sharing ~/.gitconfig (read-only)[/dim]")
+
+    return mounts
 
 
 @click.command(name="start")
@@ -391,37 +439,32 @@ def sandbox(name: str, list_sandboxes: bool, kill: bool, tool: str | None, share
     # Build container command using current directory (main repo)
     repo_path = Path.cwd()
     tool_name = tool or config.default_tool
-    home = Path.home()
 
-    # Build additional args for git credential sharing
-    additional_args: list[str] = []
-    if share_git:
-        ssh_dir = home / ".ssh"
-        gitconfig = home / ".gitconfig"
-        if ssh_dir.exists():
-            additional_args.extend(["-v", f"{ssh_dir}:/home/agent/.ssh:ro"])
-            console.print(f"[dim]Sharing ~/.ssh (read-only)[/dim]")
-        if gitconfig.exists():
-            if runtime.get_runtime_name() == "container":
-                # Apple Container can only mount directories, not files.
-                # Copy .gitconfig into a staging dir and mount that.
-                # The entrypoint or a post-start step copies it into place.
-                import shutil
-                gitconfig_dir = repo_path / ".apple-container-gitconfig"
-                gitconfig_dir.mkdir(exist_ok=True)
-                shutil.copy2(gitconfig, gitconfig_dir / ".gitconfig")
-                additional_args.extend(["-v", f"{gitconfig_dir}:/home/agent/.gitconfig-host:ro"])
-                console.print(f"[dim]Sharing ~/.gitconfig (read-only, via directory mount)[/dim]")
-            else:
-                additional_args.extend(["-v", f"{gitconfig}:/home/agent/.gitconfig:ro"])
-                console.print(f"[dim]Sharing ~/.gitconfig (read-only)[/dim]")
+    # Get git mounts using shared helper
+    git_mounts = prepare_git_mounts(
+        runtime_name=runtime.get_runtime_name(),
+        share_git=share_git,
+        staging_dir=repo_path,
+    )
 
-    container_cmd = runtime.build_run_command(
+    # Build container type config with git mounts
+    from agenttree.config import ContainerTypeConfig
+    from agenttree.container import build_container_command
+    container_type = ContainerTypeConfig(
+        image="agenttree-agent:latest",
+        mounts=git_mounts,
+        allow_dangerous=True,
+    )
+
+    tool_config = config.get_tool_config(tool_name)
+    container_cmd = build_container_command(
+        runtime=runtime.runtime or "docker",
         worktree_path=repo_path,
-        ai_tool=tool_name,
-        dangerous=True,
+        container_type=container_type,
+        container_name=f"agenttree-{config.project}-sandbox-{name}",
+        tool_config=tool_config,
+        role="sandbox",
         model=config.default_model,
-        additional_args=additional_args if additional_args else None,
     )
     container_cmd_str = " ".join(container_cmd)
 
@@ -813,44 +856,27 @@ def new_container(
         if container_type != "sandbox":
             console.print(f"[yellow]Warning: Unknown container type '{container_type}', using defaults[/yellow]")
 
-    # Add user mounts for git sharing
-    if share_git:
-        home = Path.home()
-        ssh_dir = home / ".ssh"
-        gitconfig = home / ".gitconfig"
-        extra_mounts: list[str] = []
+    # Build container command
+    repo_path = Path.cwd()
 
-        if ssh_dir.exists():
-            extra_mounts.append(f"{ssh_dir}:/home/agent/.ssh:ro")
-            console.print("[dim]Sharing ~/.ssh (read-only)[/dim]")
+    # Add user mounts for git sharing using shared helper
+    git_mounts = prepare_git_mounts(
+        runtime_name=runtime.get_runtime_name(),
+        share_git=share_git,
+        staging_dir=repo_path,
+    )
 
-        if gitconfig.exists():
-            if runtime.get_runtime_name() == "container":
-                # Apple Container needs directory mounts, not file mounts
-                import shutil
-                repo_path = Path.cwd()
-                gitconfig_dir = repo_path / ".apple-container-gitconfig"
-                gitconfig_dir.mkdir(exist_ok=True)
-                shutil.copy2(gitconfig, gitconfig_dir / ".gitconfig")
-                extra_mounts.append(f"{gitconfig_dir}:/home/agent/.gitconfig-host:ro")
-            else:
-                extra_mounts.append(f"{gitconfig}:/home/agent/.gitconfig:ro")
-            console.print("[dim]Sharing ~/.gitconfig (read-only)[/dim]")
-
-        if extra_mounts:
-            resolved_type = ContainerTypeConfig(
-                image=resolved_type.image,
-                mounts=list(resolved_type.mounts) + extra_mounts,
-                env=dict(resolved_type.env),
-                allow_dangerous=resolved_type.allow_dangerous,
-            )
+    if git_mounts:
+        resolved_type = ContainerTypeConfig(
+            image=resolved_type.image,
+            mounts=list(resolved_type.mounts) + git_mounts,
+            env=dict(resolved_type.env),
+            allow_dangerous=resolved_type.allow_dangerous,
+        )
 
     # Get tool config
     tool_name = tool or config.default_tool
     tool_config = config.get_tool_config(tool_name)
-
-    # Build container command
-    repo_path = Path.cwd()
     container_name_str = f"agenttree-{config.project}-{container_type}-{name}"
 
     cmd = build_container_command(

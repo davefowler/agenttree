@@ -1,95 +1,11 @@
 """Tests for container runtime support."""
 
-import os
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
 from agenttree.container import ContainerRuntime, get_git_worktree_info
-
-
-class TestBuildRunCommand:
-    """Tests for ContainerRuntime.build_run_command credential handling."""
-
-    @pytest.fixture
-    def runtime(self):
-        """Create a ContainerRuntime with mocked docker detection."""
-        with patch.object(ContainerRuntime, 'detect_runtime', return_value='docker'):
-            return ContainerRuntime()
-
-    @pytest.fixture
-    def tmp_worktree(self, tmp_path: Path) -> Path:
-        """Create a temporary worktree directory."""
-        worktree = tmp_path / "test-worktree"
-        worktree.mkdir()
-        return worktree
-
-    def test_passes_anthropic_api_key_for_fallback(
-        self, runtime: ContainerRuntime, tmp_worktree: Path
-    ) -> None:
-        """Test that ANTHROPIC_API_KEY IS passed to containers for rate limit fallback.
-
-        Both ANTHROPIC_API_KEY and CLAUDE_CODE_OAUTH_TOKEN are passed when available,
-        allowing agents to switch between subscription and API key modes without
-        restarting the container.
-        """
-        with patch.dict(os.environ, {
-            'ANTHROPIC_API_KEY': 'sk-ant-api03-test-key',
-            'CLAUDE_CODE_OAUTH_TOKEN': 'sk-ant-oat01-test-token',
-        }, clear=False):
-            with patch.object(Path, 'home', return_value=tmp_worktree.parent):
-                cmd = runtime.build_run_command(tmp_worktree)
-
-        # Convert to string for easier searching
-        cmd_str = ' '.join(cmd)
-
-        # Both auth methods should be passed for flexible mode switching
-        assert 'ANTHROPIC_API_KEY=sk-ant-api03-test-key' in cmd_str
-        assert 'CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-test-token' in cmd_str
-
-    def test_passes_oauth_token_when_set(
-        self, runtime: ContainerRuntime, tmp_worktree: Path
-    ) -> None:
-        """Test that CLAUDE_CODE_OAUTH_TOKEN is passed to containers when set."""
-        with patch.dict(os.environ, {
-            'CLAUDE_CODE_OAUTH_TOKEN': 'sk-ant-oat01-test-token',
-        }, clear=False):
-            # Clear ANTHROPIC_API_KEY if set
-            env = os.environ.copy()
-            env.pop('ANTHROPIC_API_KEY', None)
-            with patch.dict(os.environ, env, clear=True):
-                with patch.object(Path, 'home', return_value=tmp_worktree.parent):
-                    cmd = runtime.build_run_command(tmp_worktree)
-
-        # Find the OAuth token in the command
-        assert '-e' in cmd
-        oauth_found = False
-        for i, arg in enumerate(cmd):
-            if arg == '-e' and i + 1 < len(cmd):
-                if 'CLAUDE_CODE_OAUTH_TOKEN=sk-ant-oat01-test-token' in cmd[i + 1]:
-                    oauth_found = True
-                    break
-
-        assert oauth_found, "CLAUDE_CODE_OAUTH_TOKEN should be passed to container"
-
-    def test_no_credentials_when_none_set(
-        self, runtime: ContainerRuntime, tmp_worktree: Path
-    ) -> None:
-        """Test that no credential env vars are added when nothing is set."""
-        # Create empty environment without credentials
-        clean_env = {k: v for k, v in os.environ.items()
-                     if k not in ('ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN')}
-
-        with patch.dict(os.environ, clean_env, clear=True):
-            with patch.object(Path, 'home', return_value=tmp_worktree.parent):
-                cmd = runtime.build_run_command(tmp_worktree)
-
-        cmd_str = ' '.join(cmd)
-
-        # Neither credential should be in the command
-        assert 'ANTHROPIC_API_KEY' not in cmd_str
-        assert 'CLAUDE_CODE_OAUTH_TOKEN' not in cmd_str
 
 
 class TestGetGitWorktreeInfo:
@@ -130,45 +46,6 @@ class TestGetGitWorktreeInfo:
         main_dir, worktree_dir = get_git_worktree_info(worktree)
         assert main_dir == main_git
         assert worktree_dir == worktrees_dir
-
-
-class TestPortExposure:
-    """Tests for port exposure in container commands."""
-
-    @pytest.fixture
-    def runtime(self):
-        """Create a ContainerRuntime with mocked docker detection."""
-        with patch.object(ContainerRuntime, 'detect_runtime', return_value='docker'):
-            return ContainerRuntime()
-
-    @pytest.fixture
-    def tmp_worktree(self, tmp_path: Path) -> Path:
-        """Create a temporary worktree directory."""
-        worktree = tmp_path / "test-worktree"
-        worktree.mkdir()
-        return worktree
-
-    def test_port_exposure_adds_p_flag(
-        self, runtime: ContainerRuntime, tmp_worktree: Path
-    ) -> None:
-        """Test that port parameter adds -p flag for port mapping."""
-        with patch.object(Path, 'home', return_value=tmp_worktree.parent):
-            cmd = runtime.build_run_command(tmp_worktree, port=9001)
-
-        # Check that -p flag is present with correct port mapping
-        assert '-p' in cmd
-        port_idx = cmd.index('-p')
-        assert cmd[port_idx + 1] == '9001:9001'
-
-    def test_no_port_exposure_without_port_param(
-        self, runtime: ContainerRuntime, tmp_worktree: Path
-    ) -> None:
-        """Test that -p flag is not added when port is None."""
-        with patch.object(Path, 'home', return_value=tmp_worktree.parent):
-            cmd = runtime.build_run_command(tmp_worktree, port=None)
-
-        # Check that -p flag is not present
-        assert '-p' not in cmd
 
 
 class TestContainerRuntimeDetection:

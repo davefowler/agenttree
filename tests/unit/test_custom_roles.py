@@ -436,24 +436,29 @@ class TestCheckCustomAgentStages:
 class TestContainerAgentHost:
     """Tests for container runtime setting AGENTTREE_ROLE."""
 
-    def test_build_run_command_includes_role(self):
-        """Test that build_run_command includes AGENTTREE_ROLE env var."""
-        from agenttree.container import ContainerRuntime
-
-        runtime = ContainerRuntime()
-        # Skip if no runtime available
-        if not runtime.is_available():
-            pytest.skip("No container runtime available")
+    def test_build_container_command_includes_role(self):
+        """Test that build_container_command includes AGENTTREE_ROLE env var."""
+        from agenttree.container import build_container_command
+        from agenttree.config import ContainerTypeConfig, ToolConfig
 
         with tempfile.TemporaryDirectory() as tmp:
             worktree = Path(tmp)
             # Create minimal git structure
             (worktree / ".git").write_text("gitdir: /some/path")
 
-            cmd = runtime.build_run_command(
+            tool_config = ToolConfig(command="claude")
+            container_type = ContainerTypeConfig(
+                image="agenttree-agent:latest",
+                allow_dangerous=True,
+            )
+
+            cmd = build_container_command(
+                runtime="docker",
                 worktree_path=worktree,
-                ai_tool="claude",
-                role="reviewer"
+                container_type=container_type,
+                container_name="test-container",
+                tool_config=tool_config,
+                role="reviewer",
             )
 
             # Check that AGENTTREE_ROLE is set
@@ -468,25 +473,31 @@ class TestContainerAgentHost:
             assert host_index is not None, "AGENTTREE_ROLE not found in command"
             assert cmd[host_index] == "AGENTTREE_ROLE=reviewer"
 
-    def test_build_run_command_default_role(self):
-        """Test that default role is 'developer'."""
-        from agenttree.container import ContainerRuntime
-
-        runtime = ContainerRuntime()
-        if not runtime.is_available():
-            pytest.skip("No container runtime available")
+    def test_build_container_command_default_role(self):
+        """Test that role is correctly set when passed."""
+        from agenttree.container import build_container_command
+        from agenttree.config import ContainerTypeConfig, ToolConfig
 
         with tempfile.TemporaryDirectory() as tmp:
             worktree = Path(tmp)
             (worktree / ".git").write_text("gitdir: /some/path")
 
-            cmd = runtime.build_run_command(
-                worktree_path=worktree,
-                ai_tool="claude"
-                # role defaults to "developer"
+            tool_config = ToolConfig(command="claude")
+            container_type = ContainerTypeConfig(
+                image="agenttree-agent:latest",
+                allow_dangerous=True,
             )
 
-            # Check default value
+            cmd = build_container_command(
+                runtime="docker",
+                worktree_path=worktree,
+                container_type=container_type,
+                container_name="test-container",
+                tool_config=tool_config,
+                role="developer",
+            )
+
+            # Check role value
             for i, arg in enumerate(cmd):
                 if arg == "-e" and i + 1 < len(cmd):
                     if cmd[i + 1].startswith("AGENTTREE_ROLE="):
