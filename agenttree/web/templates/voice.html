@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AgentTree Voice</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --bg: #1a1a1a;
+            --surface: #252525;
+            --text: #e0e0e0;
+            --text-dim: #888;
+            --accent: #4a9eff;
+            --accent-glow: rgba(74, 158, 255, 0.3);
+            --danger: #ff4a4a;
+            --success: #4aff7a;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            height: 100dvh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+
+        /* Header */
+        .voice-header {
+            padding: 12px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid #333;
+        }
+        .voice-header h1 {
+            font-size: 16px;
+            font-weight: 600;
+        }
+        .voice-header a {
+            color: var(--accent);
+            text-decoration: none;
+            font-size: 14px;
+        }
+
+        /* Chat area */
+        .chat-area {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            -webkit-overflow-scrolling: touch;
+        }
+        .msg {
+            max-width: 85%;
+            padding: 10px 14px;
+            border-radius: 16px;
+            font-size: 15px;
+            line-height: 1.4;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .msg-user {
+            align-self: flex-end;
+            background: var(--accent);
+            color: #fff;
+            border-bottom-right-radius: 4px;
+        }
+        .msg-assistant {
+            align-self: flex-start;
+            background: var(--surface);
+            border-bottom-left-radius: 4px;
+        }
+        .msg-system {
+            align-self: center;
+            color: var(--text-dim);
+            font-size: 13px;
+            font-style: italic;
+        }
+        .msg-thinking {
+            align-self: flex-start;
+            color: var(--text-dim);
+            font-size: 14px;
+        }
+        .msg-thinking::after {
+            content: '';
+            animation: dots 1.5s steps(4, end) infinite;
+        }
+        @keyframes dots {
+            0% { content: ''; }
+            25% { content: '.'; }
+            50% { content: '..'; }
+            75% { content: '...'; }
+        }
+
+        /* Controls */
+        .controls {
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+            border-top: 1px solid #333;
+            background: var(--bg);
+        }
+
+        .mic-btn {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            border: 3px solid var(--accent);
+            background: transparent;
+            color: var(--accent);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .mic-btn:active, .mic-btn.listening {
+            background: var(--accent);
+            color: #fff;
+            box-shadow: 0 0 30px var(--accent-glow);
+            transform: scale(1.05);
+        }
+        .mic-btn.listening {
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+        .mic-btn svg {
+            width: 32px;
+            height: 32px;
+        }
+        @keyframes pulse {
+            0%, 100% { box-shadow: 0 0 20px var(--accent-glow); }
+            50% { box-shadow: 0 0 40px var(--accent-glow); }
+        }
+
+        .mic-label {
+            font-size: 13px;
+            color: var(--text-dim);
+        }
+
+        /* Text input fallback */
+        .text-input-row {
+            width: 100%;
+            display: flex;
+            gap: 8px;
+        }
+        .text-input-row input {
+            flex: 1;
+            padding: 10px 14px;
+            border-radius: 20px;
+            border: 1px solid #444;
+            background: var(--surface);
+            color: var(--text);
+            font-size: 15px;
+            outline: none;
+        }
+        .text-input-row input:focus {
+            border-color: var(--accent);
+        }
+        .text-input-row button {
+            padding: 10px 16px;
+            border-radius: 20px;
+            border: none;
+            background: var(--accent);
+            color: #fff;
+            font-size: 14px;
+            cursor: pointer;
+        }
+
+        /* TTS toggle */
+        .tts-toggle {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            color: var(--text-dim);
+        }
+        .tts-toggle input[type="checkbox"] {
+            accent-color: var(--accent);
+        }
+    </style>
+</head>
+<body>
+    <div class="voice-header">
+        <h1>AgentTree Voice</h1>
+        <a href="/mobile">Back</a>
+    </div>
+
+    <div class="chat-area" id="chat-area">
+        <div class="msg msg-system">Tap the mic or type below. Voice requires HTTPS.</div>
+    </div>
+
+    <div class="controls">
+        <div class="tts-toggle">
+            <input type="checkbox" id="tts-enabled" checked>
+            <label for="tts-enabled">Read responses aloud</label>
+        </div>
+
+        <button class="mic-btn" id="mic-btn" onclick="toggleListening()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                <line x1="12" y1="19" x2="12" y2="23"/>
+                <line x1="8" y1="23" x2="16" y2="23"/>
+            </svg>
+        </button>
+        <div class="mic-label" id="mic-label">Tap to speak</div>
+
+        <div class="text-input-row">
+            <input type="text" id="text-input" placeholder="Or type a message..."
+                   onkeydown="if(event.key==='Enter')sendText()">
+            <button onclick="sendText()">Send</button>
+        </div>
+    </div>
+
+    <script>
+        const chatArea = document.getElementById('chat-area');
+        const micBtn = document.getElementById('mic-btn');
+        const micLabel = document.getElementById('mic-label');
+        const textInput = document.getElementById('text-input');
+        const ttsCheckbox = document.getElementById('tts-enabled');
+
+        let recognition = null;
+        let isListening = false;
+        let conversationHistory = [];
+
+        // -- Speech Recognition --
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (SpeechRecognition) {
+            recognition = new SpeechRecognition();
+            recognition.continuous = false;
+            recognition.interimResults = true;
+            recognition.lang = 'en-US';
+
+            recognition.onresult = (event) => {
+                let transcript = '';
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    transcript += event.results[i][0].transcript;
+                }
+                // Show interim results
+                const existing = document.querySelector('.msg-interim');
+                if (existing) existing.remove();
+
+                if (!event.results[event.results.length - 1].isFinal) {
+                    addMessage(transcript, 'interim');
+                } else {
+                    sendMessage(transcript);
+                }
+            };
+
+            recognition.onend = () => {
+                isListening = false;
+                micBtn.classList.remove('listening');
+                micLabel.textContent = 'Tap to speak';
+            };
+
+            recognition.onerror = (event) => {
+                isListening = false;
+                micBtn.classList.remove('listening');
+                if (event.error === 'not-allowed') {
+                    micLabel.textContent = 'Mic access denied';
+                } else {
+                    micLabel.textContent = `Error: ${event.error}`;
+                }
+            };
+        } else {
+            micBtn.style.opacity = '0.3';
+            micLabel.textContent = 'Speech not supported';
+        }
+
+        function toggleListening() {
+            if (!recognition) return;
+            if (isListening) {
+                recognition.stop();
+            } else {
+                // Cancel any ongoing TTS
+                window.speechSynthesis.cancel();
+                recognition.start();
+                isListening = true;
+                micBtn.classList.add('listening');
+                micLabel.textContent = 'Listening...';
+            }
+        }
+
+        function sendText() {
+            const text = textInput.value.trim();
+            if (!text) return;
+            textInput.value = '';
+            sendMessage(text);
+        }
+
+        function addMessage(text, type) {
+            const div = document.createElement('div');
+            div.className = `msg msg-${type}`;
+            if (type === 'interim') div.className = 'msg msg-user msg-interim';
+            div.textContent = text;
+            chatArea.appendChild(div);
+            chatArea.scrollTop = chatArea.scrollHeight;
+            return div;
+        }
+
+        async function sendMessage(text) {
+            // Remove interim message
+            const interim = document.querySelector('.msg-interim');
+            if (interim) interim.remove();
+
+            addMessage(text, 'user');
+
+            // Add to conversation history
+            conversationHistory.push({ role: 'user', content: text });
+
+            // Show thinking indicator
+            const thinking = addMessage('Thinking', 'thinking');
+
+            try {
+                const response = await fetch('/api/voice/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        message: text,
+                        history: conversationHistory.slice(-10)  // Last 10 messages for context
+                    })
+                });
+
+                thinking.remove();
+
+                if (!response.ok) {
+                    addMessage('Error: ' + response.statusText, 'system');
+                    return;
+                }
+
+                const data = await response.json();
+                const reply = data.response;
+
+                addMessage(reply, 'assistant');
+                conversationHistory.push({ role: 'assistant', content: reply });
+
+                // TTS
+                if (ttsCheckbox.checked && window.speechSynthesis) {
+                    const utterance = new SpeechSynthesisUtterance(reply);
+                    utterance.rate = 1.1;
+                    utterance.pitch = 1.0;
+                    window.speechSynthesis.speak(utterance);
+                }
+            } catch (err) {
+                thinking.remove();
+                addMessage('Connection error: ' + err.message, 'system');
+            }
+        }
+
+        // Keep screen awake (useful on walks)
+        let wakeLock = null;
+        async function requestWakeLock() {
+            try {
+                if ('wakeLock' in navigator) {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                }
+            } catch (e) { /* ignore */ }
+        }
+        requestWakeLock();
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') requestWakeLock();
+        });
+    </script>
+</body>
+</html>
