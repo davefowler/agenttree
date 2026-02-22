@@ -51,6 +51,9 @@ web = [
     "jinja2>=3.1.0",
     "python-multipart>=0.0.6",
 ]
+mcp = [
+    "mcp>=1.26.0",
+]
 ml = [
     # Phase 6: ML-based learning system
     "chromadb>=0.4.0",

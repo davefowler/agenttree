@@ -23,6 +23,7 @@ from agenttree.cli.cli_hooks import hooks_group
 from agenttree.cli.dev import test, lint, sync_command
 from agenttree.cli.misc import auto_merge, context_init, cleanup_command, tui_command
 from agenttree.cli.server import run, stop_all, stalls
+from agenttree.cli.mcp_cmd import mcp_serve
 from agenttree.cli.issues import issue
 from agenttree.cli.setup import init, upgrade, setup as setup_cmd, preflight, migrate_docs
 from agenttree.cli.workflow import (
@@ -70,6 +71,7 @@ main.add_command(tui_command)
 main.add_command(run)
 main.add_command(stop_all)
 main.add_command(stalls)
+main.add_command(mcp_serve)
 main.add_command(stage_status)
 main.add_command(stage_next)
 main.add_command(approve_issue)
