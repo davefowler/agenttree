@@ -47,7 +47,7 @@ class TestStartAgent:
         """Create a mock active agent."""
         agent = MagicMock()
         agent.issue_id = "042"
-        agent.host = "agent"
+        agent.host = "developer"
         agent.tmux_session = "testproj-issue-042"
         agent.worktree_path = Path("/tmp/worktrees/042-test-issue")
         agent.port = 8042
@@ -254,7 +254,7 @@ class TestSendMessage:
         """Create a mock active agent."""
         agent = MagicMock()
         agent.issue_id = "042"
-        agent.host = "agent"
+        agent.host = "developer"
         agent.tmux_session = "testproj-issue-042"
         return agent
 

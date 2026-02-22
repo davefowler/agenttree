@@ -38,14 +38,14 @@ roles:
     description: "Human-driven manager"
     process: "agenttree run"
 
-  agent:
+  developer:
     description: "Default AI agent"
     container:
       image: agenttree-agent:latest
     tool: claude
     model: opus
 
-  review:
+  reviewer:
     description: "Independent code reviewer using Claude"
     container:
       image: agenttree-agent:latest
@@ -196,7 +196,7 @@ flows:
 
           # Independent code review by a specialized review agent
           independent_review:
-            role: review
+            role: reviewer
             output: independent_review.md
             skill: independent_review.md
             pre_completion:
