@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AgentTree Voice</title>
+    <link rel="stylesheet" href="/static/styles.css?v=10">
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #1a1a1a;
+            color: #e0e0e0;
+            height: 100dvh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            margin: 0;
+        }
+        .voice-header {
+            padding: 12px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid #333;
+        }
+        .voice-header h1 { font-size: 16px; font-weight: 600; }
+        .voice-header a { color: #4a9eff; text-decoration: none; font-size: 14px; }
+
+        .voice-main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 24px;
+            padding: 24px;
+        }
+        .voice-status {
+            font-size: 15px;
+            color: #888;
+            text-align: center;
+            min-height: 40px;
+        }
+        .voice-status.active { color: #4aff7a; }
+        .voice-status.error { color: #ff4a4a; }
+
+        .voice-btn {
+            width: 120px; height: 120px;
+            border-radius: 50%;
+            border: 3px solid #4a9eff;
+            background: transparent;
+            color: #4a9eff;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .voice-btn svg { width: 48px; height: 48px; }
+        .voice-btn.connected {
+            background: #4a9eff;
+            color: #fff;
+            animation: pulse 2s ease-in-out infinite;
+            box-shadow: 0 0 40px rgba(74, 158, 255, 0.4);
+        }
+        .voice-btn.connecting {
+            border-color: #888;
+            color: #888;
+            animation: pulse 1s ease-in-out infinite;
+        }
+        .voice-btn:disabled { opacity: 0.3; cursor: default; }
+        @keyframes pulse {
+            0%, 100% { box-shadow: 0 0 20px rgba(74, 158, 255, 0.2); }
+            50% { box-shadow: 0 0 50px rgba(74, 158, 255, 0.5); }
+        }
+
+        .voice-log {
+            width: 100%;
+            max-height: 200px;
+            overflow-y: auto;
+            font-size: 13px;
+            color: #666;
+            text-align: center;
+        }
+        .voice-log .tool-call { color: #4a9eff; }
+
+        .no-key-msg {
+            text-align: center;
+            padding: 40px 20px;
+            color: #888;
+            font-size: 15px;
+            line-height: 1.6;
+        }
+        .no-key-msg code {
+            background: #333;
+            padding: 2px 8px;
+            border-radius: 4px;
+            color: #e0e0e0;
+        }
+    </style>
+</head>
+<body>
+    <div class="voice-header">
+        <h1>AgentTree Voice</h1>
+        <a href="/mobile">Back to Mobile</a>
+    </div>
+
+    {% if not has_openai_key %}
+    <div class="no-key-msg">
+        <p>Voice requires an OpenAI API key.</p>
+        <p>Set <code>OPENAI_API_KEY</code> in your environment and restart the server.</p>
+    </div>
+    {% else %}
+    <div class="voice-main">
+        <div class="voice-status" id="voice-status">Tap to start a voice session</div>
+
+        <button class="voice-btn" id="voice-btn" onclick="voiceSession.toggle()">
+            <svg id="mic-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                <line x1="12" y1="19" x2="12" y2="23"/>
+                <line x1="8" y1="23" x2="16" y2="23"/>
+            </svg>
+            <svg id="stop-icon" viewBox="0 0 24 24" fill="currentColor" style="display:none">
+                <rect x="6" y="6" width="12" height="12" rx="2"/>
+            </svg>
+        </button>
+
+        <div class="voice-log" id="voice-log"></div>
+    </div>
+    {% endif %}
+
+    <script src="/static/voice.js"></script>
+    <script>
+    {% if has_openai_key %}
+    var statusEl = document.getElementById('voice-status');
+    var btn = document.getElementById('voice-btn');
+    var micIcon = document.getElementById('mic-icon');
+    var stopIcon = document.getElementById('stop-icon');
+    var logEl = document.getElementById('voice-log');
+
+    var voiceSession = new VoiceSession({
+        onStatus: function(text, state) {
+            statusEl.textContent = text;
+            statusEl.className = 'voice-status' + (state === 'active' ? ' active' : state === 'error' ? ' error' : '');
+            if (state === 'active') {
+                btn.className = 'voice-btn connected';
+                micIcon.style.display = 'none';
+                stopIcon.style.display = 'block';
+            } else if (state === 'connecting') {
+                btn.className = 'voice-btn connecting';
+            } else {
+                btn.className = 'voice-btn';
+                micIcon.style.display = 'block';
+                stopIcon.style.display = 'none';
+            }
+        },
+        onLog: function(text, className) {
+            var div = document.createElement('div');
+            div.textContent = text;
+            if (className) div.className = className;
+            logEl.appendChild(div);
+            logEl.scrollTop = logEl.scrollHeight;
+        },
+        getIssueId: function() {
+            var params = new URLSearchParams(window.location.search);
+            var issue = params.get('issue');
+            return issue ? parseInt(issue, 10) : null;
+        },
+    });
+    {% endif %}
+    </script>
+</body>
+</html>

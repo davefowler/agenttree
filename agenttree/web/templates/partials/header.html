@@ -5,6 +5,7 @@
             <a href="/kanban" class="tab {{ 'active' if active_page == 'kanban' else '' }}">Kanban</a>
             <a href="/flow" class="tab {{ 'active' if active_page == 'flow' else '' }}">Flow</a>
             <a href="/mobile" class="tab {{ 'active' if active_page == 'mobile' else '' }}">Mobile</a>
+            <a href="/voice" class="tab {{ 'active' if active_page == 'voice' else '' }}">Voice</a>
         </nav>
         {% if active_page == 'kanban' %}
         <select class="header-select" onchange="setStageView(this.value)" id="stage-view-select">
