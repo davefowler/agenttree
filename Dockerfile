@@ -72,6 +72,11 @@ if [ -f /home/agent/.claude-host/settings.json ]; then
     cp /home/agent/.claude-host/settings.json /home/agent/.claude/settings.json
 fi
 
+# Copy .gitconfig from host directory mount (Apple Container can't mount files)
+if [ -f /home/agent/.gitconfig-host/.gitconfig ]; then
+    cp /home/agent/.gitconfig-host/.gitconfig /home/agent/.gitconfig
+fi
+
 # Set up agenttree - use symlink approach for instant startup when dogfooding
 AGENTTREE_PATH=""
 if [ -f /workspace/pyproject.toml ] && grep -q 'name = "agenttree"' /workspace/pyproject.toml; then

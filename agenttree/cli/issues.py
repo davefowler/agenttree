@@ -43,9 +43,9 @@ def issue() -> None:
 )
 @click.option(
     "--stage", "-s",
-    type=click.Choice(["backlog", "define", "research", "implement"]),
-    default="define",
-    help="Starting stage for the issue (default: define)"
+    type=click.Choice(["backlog", "explore.define", "explore.research", "implement.code"]),
+    default="explore.define",
+    help="Starting stage for the issue (default: explore.define)"
 )
 @click.option(
     "--flow", "-f",

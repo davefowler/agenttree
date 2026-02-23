@@ -30,8 +30,8 @@ class TestDynamicState:
         result = _parse_tmux_session_name("agenttree-developer-042", "agenttree")
         assert result == (42, "developer")
 
-        result = _parse_tmux_session_name("agenttree-review-123", "agenttree")
-        assert result == (123, "review")
+        result = _parse_tmux_session_name("agenttree-reviewer-123", "agenttree")
+        assert result == (123, "reviewer")
 
         result = _parse_tmux_session_name("myproject-developer-001", "myproject")
         assert result == (1, "developer")

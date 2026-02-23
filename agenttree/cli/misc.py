@@ -94,7 +94,7 @@ def context_init(agent_num: int | None, port: int | None) -> None:
     # Calculate port if not provided
     if port is None:
         config = load_config()
-        port = config.get_port_for_agent(agent_num)
+        port = config.get_port_for_issue(agent_num)
 
     # Check if _agenttree already exists
     agenttrees_path = cwd / "_agenttree"

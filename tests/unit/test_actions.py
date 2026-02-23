@@ -437,15 +437,15 @@ class TestCheckStalledAgents:
     ) -> None:
         """Uses config.role_for() to determine correct session to check."""
         cfg = self._make_config()
-        cfg.role_for.return_value = "review"
+        cfg.role_for.return_value = "reviewer"
         mock_load_config.return_value = cfg
         mock_list.return_value = [self._make_issue(stage="implement.independent_review", minutes_ago=15)]
         mock_exists.side_effect = lambda name: name == "mgr"
 
         check_stalled_agents(tmp_path, threshold_min=10)
 
-        # Should have checked session for "review" role
-        cfg.get_issue_tmux_session.assert_called_with("042", "review")
+        # Should have checked session for "reviewer" role
+        cfg.get_issue_tmux_session.assert_called_with("042", "reviewer")
 
     @patch("agenttree.tmux.send_message", return_value="sent")
     @patch("agenttree.tmux.session_exists", return_value=True)

@@ -117,7 +117,7 @@ async def heartbeat_loop(interval: int = 10) -> None:
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """FastAPI lifespan context - starts heartbeat and manager.
     
-    Note: The startup event is fired by 'agenttree run' before starting the server.
+    Note: The startup event is fired by 'agenttree start' before starting the server.
     This lifespan only handles the heartbeat loop and manager startup fallback.
     """
     global _heartbeat_task

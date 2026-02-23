@@ -425,7 +425,7 @@ def setup(agent_numbers: tuple) -> None:
         try:
             console.print(f"[bold]Setting up agent-{agent_num}...[/bold]")
             worktree_path = manager.setup_agent(agent_num)
-            port = config.get_port_for_agent(agent_num)
+            port = config.get_port_for_issue(agent_num)
 
             # Run custom setup script if it exists
             if has_custom_setup:

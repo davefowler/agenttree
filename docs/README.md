@@ -9,6 +9,10 @@ Welcome to the AgentTree documentation! This directory contains comprehensive gu
 - [Installation Guide](../README.md#installation) - How to install
 - [Roadmap](ROADMAP.md) - **Current status and future plans**
 
+### Configuration
+- [Commands & Serving](commands-and-serving.md) - **Custom commands, serve config, and environment variables**
+- [Container Setup](container-setup.md) - Container runtimes, Dockerfile, troubleshooting
+
 ### Architecture
 - [Agents Repository](architecture/agents-repository.md) - **How the documentation system works**
   - Repository structure

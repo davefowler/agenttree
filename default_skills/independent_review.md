@@ -51,7 +51,7 @@ Create `independent_review.md` with the following structure:
 # Independent Code Review
 
 **Issue:** #{{ issue_id }} - {{ issue_title }}
-**Reviewer:** Review Agent
+**Reviewer:** Reviewer Agent
 **Date:** [Current Date]
 
 ## Review Summary

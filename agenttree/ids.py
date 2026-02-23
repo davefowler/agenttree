@@ -63,6 +63,45 @@ def container_name(project: str, issue_id: int) -> str:
     return f"agenttree-{project}-{format_issue_id(issue_id)}"
 
 
+def session_name(
+    project: str,
+    session_type: str,
+    issue_id: int,
+    template: str = "{project}-{session_type}-{issue_id}",
+) -> str:
+    """Generate a tmux session name from a template.
+
+    This is the ONE place that generates session names. All naming is
+    template-based, allowing users to override the format.
+
+    Args:
+        project: Project name from config
+        session_type: Session type (role name like "developer" or session
+                      name like "serve")
+        issue_id: Integer issue ID
+        template: Name template with placeholders:
+                  - {project}: project name
+                  - {session_type}: session type
+                  - {issue_id}: formatted issue ID
+
+    Returns:
+        Session name (e.g., "myproject-developer-042")
+
+    Examples:
+        >>> session_name("myapp", "developer", 42)
+        'myapp-developer-042'
+        >>> session_name("myapp", "serve", 42)
+        'myapp-serve-042'
+        >>> session_name("myapp", "manager", 0)
+        'myapp-manager-000'
+    """
+    return template.format(
+        project=project,
+        session_type=session_type,
+        issue_id=format_issue_id(issue_id),
+    )
+
+
 def tmux_session_name(project: str, issue_id: int, role: str = "developer") -> str:
     """Get tmux session name for an issue-bound agent.
 
@@ -74,7 +113,7 @@ def tmux_session_name(project: str, issue_id: int, role: str = "developer") -> s
     Returns:
         Session name (e.g., "myproject-developer-042")
     """
-    return f"{project}-{role}-{format_issue_id(issue_id)}"
+    return session_name(project, role, issue_id)
 
 
 def manager_session_name(project: str) -> str:
@@ -86,7 +125,40 @@ def manager_session_name(project: str) -> str:
     Returns:
         Session name (e.g., "myproject-manager-000")
     """
-    return f"{project}-manager-000"
+    return session_name(project, "manager", 0)
+
+
+def serve_session_name(project: str, issue_id: int) -> str:
+    """Get tmux session name for an issue's serve session.
+
+    Args:
+        project: Project name from config
+        issue_id: Integer issue ID
+
+    Returns:
+        Session name (e.g., "myproject-serve-042")
+    """
+    return session_name(project, "serve", issue_id)
+
+
+def container_type_session_name(
+    project: str,
+    container_type: str,
+    name: str,
+) -> str:
+    """Get tmux session name for a user-defined container type.
+
+    Used for containers created via `agenttree new {type} {name}`.
+
+    Args:
+        project: Project name from config
+        container_type: Container type (e.g., "sandbox", "reviewer")
+        name: Instance name (e.g., "my-sandbox")
+
+    Returns:
+        Session name (e.g., "myproject-sandbox-my-sandbox")
+    """
+    return f"{project}-{container_type}-{name}"
 
 
 def worktree_dir_name(issue_id: int) -> str:

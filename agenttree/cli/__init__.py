@@ -1,11 +1,11 @@
 """CLI for AgentTree.
 
 This package contains the CLI commands organized into submodules:
-- agents: Agent management (start, stop, attach, send, output, sandbox)
+- agents: Agent management (start, stop, attach, send, output, new)
 - issues: Issue management (create, list, show, doc)
 - workflow: Workflow commands (status, next, approve, defer, shutdown, rollback)
 - notes: Notes management (show, search, archive)
-- server: Server commands (run, stop-all)
+- server: Server commands (start, server, run, stop-all)
 - remote: Remote agent management (list, start)
 - setup: Setup commands (init, upgrade, setup, preflight)
 - dev: Development commands (test, lint, sync)
@@ -22,7 +22,7 @@ from agenttree.cli.remote import remote
 from agenttree.cli.cli_hooks import hooks_group
 from agenttree.cli.dev import test, lint, sync_command
 from agenttree.cli.misc import auto_merge, context_init, cleanup_command, tui_command
-from agenttree.cli.server import run, stop_all, stalls
+from agenttree.cli.server import start_all, server, run_command, stop_all, stalls
 from agenttree.cli.mcp_cmd import mcp_serve
 from agenttree.cli.issues import issue
 from agenttree.cli.setup import init, upgrade, setup as setup_cmd, preflight, migrate_docs
@@ -37,21 +37,24 @@ from agenttree.cli.workflow import (
 from agenttree.cli.agents import (
     start_agent,
     agents_status,
-    sandbox,
     attach,
     output,
     send,
     stop,
+    new_container,
 )
 
 # Register all commands with main group
+main.add_command(start_all)
 main.add_command(start_agent)
+main.add_command(server)
+main.add_command(run_command)
 main.add_command(agents_status)
-main.add_command(sandbox)
 main.add_command(attach)
 main.add_command(output)
 main.add_command(send)
 main.add_command(stop)
+main.add_command(new_container)
 main.add_command(issue)
 main.add_command(init)
 main.add_command(upgrade)
@@ -68,7 +71,6 @@ main.add_command(auto_merge)
 main.add_command(context_init)
 main.add_command(cleanup_command)
 main.add_command(tui_command)
-main.add_command(run)
 main.add_command(stop_all)
 main.add_command(stalls)
 main.add_command(mcp_serve)

@@ -4,7 +4,7 @@
 
 default_tool: claude
 default_model: opus
-port_range: 9001-9099
+port_range: 9000-9100
 project: "{{PROJECT_NAME}}"
 worktrees_dir: .worktrees
 
@@ -32,16 +32,16 @@ tools:
 roles:
   manager:
     description: "Human-driven manager"
-    process: "agenttree run"
+    process: "agenttree start"
 
-  agent:
+  developer:
     description: "Default AI agent"
     container:
       image: agenttree-agent:latest
     tool: claude
     model: opus
 
-  review:
+  reviewer:
     description: "Independent code reviewer using Claude"
     container:
       image: agenttree-agent:latest
@@ -191,7 +191,7 @@ flows:
                   expect: empty
 
           independent_review:
-            role: review
+            role: reviewer
             output: independent_review.md
             skill: independent_review.md
             pre_completion:

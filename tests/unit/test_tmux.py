@@ -536,9 +536,13 @@ class TestServeSession:
         config.project = "myproject"
         config.default_model = "claude-sonnet"
         config.commands = {"serve": "uv run uvicorn app:app --port $PORT"}
-        config.get_port_for_agent.return_value = 9135
+        config.get_port_for_issue.return_value = 9135
+        config.get_issue_container_name.return_value = "myproject-issue-135"
         tool_config = MagicMock()
         tool_config.command = "claude"
+        tool_config.container_entry_command.return_value = ["claude", "--dangerously-skip-permissions"]
+        tool_config.container_env.return_value = {}
+        tool_config.container_mounts.return_value = []
         config.get_tool_config.return_value = tool_config
         return config
 
@@ -546,8 +550,7 @@ class TestServeSession:
     def mock_container_runtime(self):
         """Create a mock container runtime."""
         runtime = MagicMock()
-        runtime.build_run_command.return_value = ["docker", "run", "image"]
-        runtime.runtime = None  # No real runtime, skip cleanup_container
+        runtime.runtime = "docker"  # Required by build_container_command
         return runtime
 
     def test_serve_session_naming(self, mock_config, mock_container_runtime, tmp_path):
@@ -557,16 +560,18 @@ class TestServeSession:
         manager = TmuxManager(mock_config)
 
         with patch("agenttree.tmux.session_exists", return_value=False):
-            with patch("agenttree.tmux.kill_session") as mock_kill:
+            with patch("agenttree.tmux.kill_session"):
                 with patch("agenttree.tmux.create_session") as mock_create:
                     with patch("agenttree.tmux.wait_for_prompt", return_value=False):
-                        manager.start_issue_agent_in_container(
-                            issue_id="135",
-                            session_name="myproject-issue-135",
-                            worktree_path=tmp_path,
-                            tool_name="claude",
-                            container_runtime=mock_container_runtime,
-                        )
+                        with patch("agenttree.container.build_container_command", return_value=["docker", "run", "image"]):
+                            with patch("agenttree.container.cleanup_containers_by_prefix"):
+                                manager.start_issue_agent_in_container(
+                                    issue_id=135,
+                                    session_name="myproject-issue-135",
+                                    worktree_path=tmp_path,
+                                    tool_name="claude",
+                                    container_runtime=mock_container_runtime,
+                                )
 
         # Verify serve session was created with correct name
         # Filter by session name containing "-serve-"
@@ -587,13 +592,15 @@ class TestServeSession:
             with patch("agenttree.tmux.kill_session"):
                 with patch("agenttree.tmux.create_session") as mock_create:
                     with patch("agenttree.tmux.wait_for_prompt", return_value=False):
-                        manager.start_issue_agent_in_container(
-                            issue_id="135",
-                            session_name="myproject-issue-135",
-                            worktree_path=tmp_path,
-                            tool_name="claude",
-                            container_runtime=mock_container_runtime,
-                        )
+                        with patch("agenttree.container.build_container_command", return_value=["docker", "run", "image"]):
+                            with patch("agenttree.container.cleanup_containers_by_prefix"):
+                                manager.start_issue_agent_in_container(
+                                    issue_id=135,
+                                    session_name="myproject-issue-135",
+                                    worktree_path=tmp_path,
+                                    tool_name="claude",
+                                    container_runtime=mock_container_runtime,
+                                )
 
         # Find the serve session create call
         serve_calls = [
@@ -619,13 +626,15 @@ class TestServeSession:
             with patch("agenttree.tmux.kill_session"):
                 with patch("agenttree.tmux.create_session") as mock_create:
                     with patch("agenttree.tmux.wait_for_prompt", return_value=False):
-                        manager.start_issue_agent_in_container(
-                            issue_id="135",
-                            session_name="myproject-issue-135",
-                            worktree_path=tmp_path,
-                            tool_name="claude",
-                            container_runtime=mock_container_runtime,
-                        )
+                        with patch("agenttree.container.build_container_command", return_value=["docker", "run", "image"]):
+                            with patch("agenttree.container.cleanup_containers_by_prefix"):
+                                manager.start_issue_agent_in_container(
+                                    issue_id=135,
+                                    session_name="myproject-issue-135",
+                                    worktree_path=tmp_path,
+                                    tool_name="claude",
+                                    container_runtime=mock_container_runtime,
+                                )
 
         # Should only have one create_session call (for agent, not serve)
         assert mock_create.call_count == 1
@@ -646,13 +655,15 @@ class TestServeSession:
             with patch("agenttree.tmux.kill_session") as mock_kill:
                 with patch("agenttree.tmux.create_session"):
                     with patch("agenttree.tmux.wait_for_prompt", return_value=False):
-                        manager.start_issue_agent_in_container(
-                            issue_id="135",
-                            session_name="myproject-issue-135",
-                            worktree_path=tmp_path,
-                            tool_name="claude",
-                            container_runtime=mock_container_runtime,
-                        )
+                        with patch("agenttree.container.build_container_command", return_value=["docker", "run", "image"]):
+                            with patch("agenttree.container.cleanup_containers_by_prefix"):
+                                manager.start_issue_agent_in_container(
+                                    issue_id=135,
+                                    session_name="myproject-issue-135",
+                                    worktree_path=tmp_path,
+                                    tool_name="claude",
+                                    container_runtime=mock_container_runtime,
+                                )
 
         # Verify serve session was killed
         serve_kill_calls = [
@@ -682,14 +693,16 @@ class TestServeSession:
             with patch("agenttree.tmux.kill_session"):
                 with patch("agenttree.tmux.create_session", side_effect=create_session_side_effect):
                     with patch("agenttree.tmux.wait_for_prompt", return_value=False):
-                        # Should not raise even if serve session fails
-                        manager.start_issue_agent_in_container(
-                            issue_id="135",
-                            session_name="myproject-issue-135",
-                            worktree_path=tmp_path,
-                            tool_name="claude",
-                            container_runtime=mock_container_runtime,
-                        )
+                        with patch("agenttree.container.build_container_command", return_value=["docker", "run", "image"]):
+                            with patch("agenttree.container.cleanup_containers_by_prefix"):
+                                # Should not raise even if serve session fails
+                                manager.start_issue_agent_in_container(
+                                    issue_id=135,
+                                    session_name="myproject-issue-135",
+                                    worktree_path=tmp_path,
+                                    tool_name="claude",
+                                    container_runtime=mock_container_runtime,
+                                )
 
         # Agent session should have been created
         assert call_count[0] >= 1

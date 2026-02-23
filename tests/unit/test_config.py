@@ -24,7 +24,7 @@ class TestConfig:
         config = Config()
         assert config.project == "myapp"
         assert config.worktrees_dir == Path(".worktrees")
-        assert config.port_range == "9001-9099"
+        assert config.port_range == "9000-9100"
         assert config.default_tool == "claude"
 
     def test_config_from_dict(self) -> None:
@@ -62,55 +62,64 @@ class TestConfig:
         assert config.tools["claude"].command == "claude"
         assert config.tools["aider"].startup_prompt == "/read TASK.md"
 
-    def test_get_port_for_agent(self) -> None:
-        """Test getting port number for an agent."""
-        config = Config(port_range="8001-8009")
-        assert config.get_port_for_agent(1) == 8001
-        assert config.get_port_for_agent(5) == 8005
-        assert config.get_port_for_agent(9) == 8009
+    def test_server_port_returns_port_min(self) -> None:
+        """Test that server_port returns port_min (manager's port)."""
+        config = Config(port_range="9000-9100")
+        assert config.server_port == 9000
 
-    def test_get_port_for_agent_raises_when_exceeding_range(self) -> None:
-        """Test get_port_for_agent raises ValueError when agent num exceeds range."""
-        config = Config(port_range="8001-8009")
-        # Range is 9 ports (8001-8009). Agent 10 exceeds the range.
-        with pytest.raises(ValueError, match="Agent number 10 exceeds port range"):
-            config.get_port_for_agent(10)
-        with pytest.raises(ValueError, match="exceeds port range"):
-            config.get_port_for_agent(19)
+        config2 = Config(port_range="8000-8050")
+        assert config2.server_port == 8000
 
-    def test_get_port_for_issue(self) -> None:
-        """Test getting port number for an issue ID."""
-        config = Config(port_range="9001-9099")
+    def test_get_port_for_issue_modulo_wrapping(self) -> None:
+        """Test port allocation uses modulo wrapping.
+
+        Formula: mod = port_max - port_min
+                 remainder = issue_id % mod
+                 port = port_max if remainder == 0 else port_min + remainder
+        """
+        # With port_range 9000-9100, mod = 100
+        config = Config(port_range="9000-9100")
+
+        # Issue #1 → remainder=1 → 9000 + 1 = 9001
+        assert config.get_port_for_issue(1) == 9001
+        # Issue #42 → remainder=42 → 9000 + 42 = 9042
+        assert config.get_port_for_issue(42) == 9042
+        # Issue #99 → remainder=99 → 9000 + 99 = 9099
+        assert config.get_port_for_issue(99) == 9099
+        # Issue #100 → remainder=0 → 9100 (port_max)
+        assert config.get_port_for_issue(100) == 9100
+        # Issue #101 → remainder=1 → 9001 (wraps)
+        assert config.get_port_for_issue(101) == 9001
+
+    def test_get_port_for_issue_string_parsing(self) -> None:
+        """Test that get_port_for_issue accepts string issue IDs."""
+        config = Config(port_range="9000-9100")
         assert config.get_port_for_issue("001") == 9001
         assert config.get_port_for_issue("042") == 9042
         assert config.get_port_for_issue("99") == 9099
 
     def test_get_port_for_issue_custom_range(self) -> None:
-        """Test port for issue uses configured port_range."""
-        config = Config(port_range="8001-8009")
+        """Test port for issue uses configured port_range with modulo."""
+        # port_range 8000-8010, mod = 10
+        config = Config(port_range="8000-8010")
+        # Issue #1 → remainder=1 → 8001
         assert config.get_port_for_issue("1") == 8001
+        # Issue #5 → remainder=5 → 8005
         assert config.get_port_for_issue("5") == 8005
-
-    def test_get_port_for_issue_returns_none_when_exceeding_range(self) -> None:
-        """Test get_port_for_issue returns None when issue num exceeds port range."""
-        config = Config(port_range="9001-9099")
-        # Range is 99 ports. Issue 100 exceeds (port 9100 > 9099).
-        assert config.get_port_for_issue("100") is None
-        assert config.get_port_for_issue("999") is None
-
-    def test_get_port_for_issue_returns_port_for_valid_id_in_range(self) -> None:
-        """Test that valid numeric issue IDs in range get a port."""
-        config = Config(port_range="9001-9009")
-        # IDs 1-9 map to ports 9001-9009
-        assert config.get_port_for_issue("1") == 9001
-        assert config.get_port_for_issue("9") == 9009
+        # Issue #10 → remainder=0 → 8010 (port_max)
+        assert config.get_port_for_issue("10") == 8010
+        # Issue #11 → remainder=1 → 8001 (wraps)
+        assert config.get_port_for_issue("11") == 8001
 
     def test_get_port_for_issue_invalid_id(self) -> None:
-        """Test returns None for non-numeric issue IDs."""
-        config = Config(port_range="9001-9099")
-        assert config.get_port_for_issue("invalid") is None
-        assert config.get_port_for_issue("abc") is None
-        assert config.get_port_for_issue("") is None
+        """Test raises ValueError for non-numeric issue IDs."""
+        config = Config(port_range="9000-9100")
+        with pytest.raises(ValueError):
+            config.get_port_for_issue("invalid")
+        with pytest.raises(ValueError):
+            config.get_port_for_issue("abc")
+        with pytest.raises(ValueError):
+            config.get_port_for_issue("")
 
     def test_get_worktree_path(self) -> None:
         """Test getting worktree path for an agent."""

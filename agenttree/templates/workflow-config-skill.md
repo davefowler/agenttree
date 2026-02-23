@@ -76,7 +76,7 @@ stages:
 
   - name: security_review
     output: security_review.md          # What this stage produces
-    role: review                         # Which role runs it (optional)
+    role: reviewer                         # Which role runs it (optional)
     skill: security_review.md           # Skill file path (optional, convention: skills/{name}.md)
     post_start:
       - create_file:
@@ -103,7 +103,7 @@ flows:
         substages:
           # ... existing substages ...
           security_review:       # ← Add it where it belongs
-            role: review
+            role: reviewer
             output: security_review.md
           # ... remaining substages (independent_review, ci_wait, review) ...
       accepted:
@@ -435,7 +435,7 @@ Three components: a review stage, an address stage, and a loop check.
 
 ```yaml
 - name: security_review
-  role: review
+  role: reviewer
   output: security_review.md
   pre_completion:
     - checkbox_checked:

@@ -28,7 +28,7 @@ class TestRoleConfig:
     def test_role_config_with_container(self):
         """Test RoleConfig with container settings."""
         config = RoleConfig(
-            name="review",
+            name="reviewer",
             description="Code reviewer",
             container=ContainerConfig(
                 enabled=True,
@@ -36,9 +36,9 @@ class TestRoleConfig:
             ),
             tool="codex",
             model="gpt-5.2",
-            skill="agents/review.md"
+            skill="agents/reviewer.md"
         )
-        assert config.name == "review"
+        assert config.name == "reviewer"
         assert config.is_containerized() is True
         assert config.is_agent() is True
         assert config.container.image == "custom-image:latest"
@@ -85,8 +85,8 @@ class TestConfigWithRoles:
         """Test that custom roles are merged with defaults."""
         config = Config(
             roles={
-                "review": RoleConfig(
-                    name="review",
+                "reviewer": RoleConfig(
+                    name="reviewer",
                     container=ContainerConfig(enabled=True),
                     tool="codex",
                     model="gpt-5.2"
@@ -98,7 +98,7 @@ class TestConfigWithRoles:
         # Should have defaults plus custom
         assert "manager" in all_roles
         assert "developer" in all_roles
-        assert "review" in all_roles
+        assert "reviewer" in all_roles
 
     def test_get_role_returns_builtin(self):
         """Test get_role returns built-in roles."""
@@ -116,16 +116,16 @@ class TestConfigWithRoles:
         """Test role_is_containerized method."""
         config = Config(
             roles={
-                "review": RoleConfig(
-                    name="review",
+                "reviewer": RoleConfig(
+                    name="reviewer",
                     container=ContainerConfig(enabled=True)
                 )
             }
         )
 
         assert config.role_is_containerized("manager") is False
-        assert config.role_is_containerized("agent") is True
-        assert config.role_is_containerized("review") is True
+        assert config.role_is_containerized("developer") is True
+        assert config.role_is_containerized("reviewer") is True
 
 
 class TestConfigWithCustomRoles:
@@ -135,12 +135,12 @@ class TestConfigWithCustomRoles:
         """Test Config creation with custom roles."""
         config = Config(
             roles={
-                "review": RoleConfig(
-                    name="review",
+                "reviewer": RoleConfig(
+                    name="reviewer",
                     container=ContainerConfig(enabled=True),
                     tool="codex",
                     model="gpt-5.2",
-                    skill="agents/review.md"
+                    skill="agents/reviewer.md"
                 ),
                 "security": RoleConfig(
                     name="security",
@@ -152,63 +152,63 @@ class TestConfigWithCustomRoles:
             }
         )
         assert len(config.roles) == 2
-        assert "review" in config.roles
+        assert "reviewer" in config.roles
         assert "security" in config.roles
 
     def test_get_role(self):
         """Test get_role method."""
         config = Config(
             roles={
-                "review": RoleConfig(
-                    name="review",
+                "reviewer": RoleConfig(
+                    name="reviewer",
                     container=ContainerConfig(enabled=True),
                     tool="codex",
                     model="gpt-5.2",
-                    skill="agents/review.md"
+                    skill="agents/reviewer.md"
                 )
             }
         )
-        agent = config.get_role("review")
-        assert agent is not None
-        assert agent.name == "review"
-        assert agent.tool == "codex"
+        role = config.get_role("reviewer")
+        assert role is not None
+        assert role.name == "reviewer"
+        assert role.tool == "codex"
 
-        # Non-existent agent
+        # Non-existent role
         assert config.get_role("nonexistent") is None
 
     def test_is_custom_role(self):
         """Test is_custom_role method."""
         config = Config(
             roles={
-                "review": RoleConfig(
-                    name="review",
+                "reviewer": RoleConfig(
+                    name="reviewer",
                     container=ContainerConfig(enabled=True),
                     tool="codex",
                     model="gpt-5.2",
-                    skill="agents/review.md"
+                    skill="agents/reviewer.md"
                 )
             }
         )
-        assert config.is_custom_role("review") is True
+        assert config.is_custom_role("reviewer") is True
         assert config.is_custom_role("security") is False
-        assert config.is_custom_role("agent") is False
+        assert config.is_custom_role("developer") is False
         assert config.is_custom_role("manager") is False
 
     def test_get_custom_role_stages(self):
         """Test get_custom_role_stages method."""
         config = Config(
             roles={
-                "review": RoleConfig(
-                    name="review",
+                "reviewer": RoleConfig(
+                    name="reviewer",
                     container=ContainerConfig(enabled=True),
                     tool="codex",
                     model="gpt-5.2",
-                    skill="agents/review.md"
+                    skill="agents/reviewer.md"
                 )
             },
             stages={
                 "implement.code": StageConfig(name="implement.code", role="developer"),
-                "implement.independent_review": StageConfig(name="implement.independent_review", role="review"),
+                "implement.independent_review": StageConfig(name="implement.independent_review", role="reviewer"),
                 "implement.review": StageConfig(name="implement.review", role="manager"),
                 "accepted": StageConfig(name="accepted", role="manager"),
             }
@@ -222,17 +222,17 @@ class TestConfigWithCustomRoles:
         """Test get_non_developer_stages method."""
         config = Config(
             roles={
-                "review": RoleConfig(
-                    name="review",
+                "reviewer": RoleConfig(
+                    name="reviewer",
                     container=ContainerConfig(enabled=True),
                     tool="codex",
                     model="gpt-5.2",
-                    skill="agents/review.md"
+                    skill="agents/reviewer.md"
                 )
             },
             stages={
                 "implement.code": StageConfig(name="implement.code", role="developer"),
-                "implement.independent_review": StageConfig(name="implement.independent_review", role="review"),
+                "implement.independent_review": StageConfig(name="implement.independent_review", role="reviewer"),
                 "implement.review": StageConfig(name="implement.review", role="manager"),
             }
         )
@@ -249,11 +249,11 @@ class TestLoadConfigWithRoles:
         """Test loading config with roles from YAML file."""
         config_content = """
 roles:
-  review:
+  reviewer:
     container: true
     tool: codex
     model: gpt-5.2
-    skill: agents/review.md
+    skill: agents/reviewer.md
     description: Code reviewer
   security:
     container: true
@@ -265,7 +265,7 @@ stages:
   - name: implement
     role: developer
   - name: independent_code_review
-    role: review
+    role: reviewer
   - name: implementation_review
     role: manager
 """
@@ -276,10 +276,10 @@ stages:
             config = load_config()
 
         assert len(config.roles) == 2
-        assert "review" in config.roles
-        assert config.roles["review"].name == "review"
-        assert config.roles["review"].tool == "codex"
-        assert config.roles["review"].model == "gpt-5.2"
+        assert "reviewer" in config.roles
+        assert config.roles["reviewer"].name == "reviewer"
+        assert config.roles["reviewer"].tool == "codex"
+        assert config.roles["reviewer"].model == "gpt-5.2"
 
 
 class TestGetCurrentAgentHost:
@@ -287,11 +287,11 @@ class TestGetCurrentAgentHost:
 
     def test_explicit_role_env(self):
         """Test with explicit AGENTTREE_ROLE env var."""
-        with patch.dict(os.environ, {"AGENTTREE_ROLE": "review"}):
-            assert get_current_role() == "review"
+        with patch.dict(os.environ, {"AGENTTREE_ROLE": "reviewer"}):
+            assert get_current_role() == "reviewer"
 
     def test_default_in_container(self):
-        """Test default is 'agent' when in container."""
+        """Test default is 'developer' when in container."""
         with patch.dict(os.environ, {"AGENTTREE_CONTAINER": "1"}, clear=True):
             # Clear AGENTTREE_ROLE to test default
             os.environ.pop("AGENTTREE_ROLE", None)
@@ -314,22 +314,22 @@ class TestCanAgentOperateInStage:
     def test_manager_can_operate_anywhere(self):
         """Manager (human) can operate in any stage."""
         with patch("agenttree.hooks.get_current_role", return_value="manager"):
-            assert can_agent_operate_in_stage("agent") is True
+            assert can_agent_operate_in_stage("developer") is True
             assert can_agent_operate_in_stage("manager") is True
-            assert can_agent_operate_in_stage("review") is True
+            assert can_agent_operate_in_stage("reviewer") is True
 
     def test_agent_can_only_operate_in_agent_stages(self):
         """Default agent can only operate in role='developer' stages."""
-        with patch("agenttree.hooks.get_current_role", return_value="agent"):
-            assert can_agent_operate_in_stage("agent") is True
+        with patch("agenttree.hooks.get_current_role", return_value="developer"):
+            assert can_agent_operate_in_stage("developer") is True
             assert can_agent_operate_in_stage("manager") is False
-            assert can_agent_operate_in_stage("review") is False
+            assert can_agent_operate_in_stage("reviewer") is False
 
     def test_custom_agent_can_only_operate_in_own_stages(self):
         """Custom agents can only operate in their own role stages."""
-        with patch("agenttree.hooks.get_current_role", return_value="review"):
-            assert can_agent_operate_in_stage("review") is True
-            assert can_agent_operate_in_stage("agent") is False
+        with patch("agenttree.hooks.get_current_role", return_value="reviewer"):
+            assert can_agent_operate_in_stage("reviewer") is True
+            assert can_agent_operate_in_stage("developer") is False
             assert can_agent_operate_in_stage("manager") is False
 
 
@@ -383,7 +383,7 @@ class TestCheckCustomAgentStages:
         mock_config = MagicMock()
         mock_config.project = "testproj"
         mock_config.get_custom_role_stages.return_value = ["implement.independent_review"]
-        mock_config.role_for.return_value = "review"
+        mock_config.role_for.return_value = "reviewer"
         mock_agent_config = MagicMock()
         mock_config.get_custom_role.return_value = mock_agent_config
 
@@ -417,7 +417,7 @@ class TestCheckCustomAgentStages:
         mock_config = MagicMock()
         mock_config.project = "testproj"
         mock_config.get_custom_role_stages.return_value = ["implement.independent_review"]
-        mock_config.role_for.return_value = "review"
+        mock_config.role_for.return_value = "reviewer"
         mock_agent_config = MagicMock()
         mock_config.get_custom_role.return_value = mock_agent_config
 
@@ -429,31 +429,36 @@ class TestCheckCustomAgentStages:
                             result = check_custom_agent_stages(tmp_path)
                             assert result == 1
                             mock_start.assert_called_once_with(
-                                170, host="review", skip_preflight=True, quiet=True, force=False
+                                170, host="reviewer", skip_preflight=True, quiet=True, force=False
                             )
 
 
 class TestContainerAgentHost:
     """Tests for container runtime setting AGENTTREE_ROLE."""
 
-    def test_build_run_command_includes_role(self):
-        """Test that build_run_command includes AGENTTREE_ROLE env var."""
-        from agenttree.container import ContainerRuntime
-
-        runtime = ContainerRuntime()
-        # Skip if no runtime available
-        if not runtime.is_available():
-            pytest.skip("No container runtime available")
+    def test_build_container_command_includes_role(self):
+        """Test that build_container_command includes AGENTTREE_ROLE env var."""
+        from agenttree.container import build_container_command
+        from agenttree.config import ContainerTypeConfig, ToolConfig
 
         with tempfile.TemporaryDirectory() as tmp:
             worktree = Path(tmp)
             # Create minimal git structure
             (worktree / ".git").write_text("gitdir: /some/path")
 
-            cmd = runtime.build_run_command(
+            tool_config = ToolConfig(command="claude")
+            container_type = ContainerTypeConfig(
+                image="agenttree-agent:latest",
+                allow_dangerous=True,
+            )
+
+            cmd = build_container_command(
+                runtime="docker",
                 worktree_path=worktree,
-                ai_tool="claude",
-                role="review"
+                container_type=container_type,
+                container_name="test-container",
+                tool_config=tool_config,
+                role="reviewer",
             )
 
             # Check that AGENTTREE_ROLE is set
@@ -466,27 +471,33 @@ class TestContainerAgentHost:
                         break
 
             assert host_index is not None, "AGENTTREE_ROLE not found in command"
-            assert cmd[host_index] == "AGENTTREE_ROLE=review"
+            assert cmd[host_index] == "AGENTTREE_ROLE=reviewer"
 
-    def test_build_run_command_default_role(self):
-        """Test that default role is 'developer'."""
-        from agenttree.container import ContainerRuntime
-
-        runtime = ContainerRuntime()
-        if not runtime.is_available():
-            pytest.skip("No container runtime available")
+    def test_build_container_command_default_role(self):
+        """Test that role is correctly set when passed."""
+        from agenttree.container import build_container_command
+        from agenttree.config import ContainerTypeConfig, ToolConfig
 
         with tempfile.TemporaryDirectory() as tmp:
             worktree = Path(tmp)
             (worktree / ".git").write_text("gitdir: /some/path")
 
-            cmd = runtime.build_run_command(
-                worktree_path=worktree,
-                ai_tool="claude"
-                # role defaults to "developer"
+            tool_config = ToolConfig(command="claude")
+            container_type = ContainerTypeConfig(
+                image="agenttree-agent:latest",
+                allow_dangerous=True,
             )
 
-            # Check default value
+            cmd = build_container_command(
+                runtime="docker",
+                worktree_path=worktree,
+                container_type=container_type,
+                container_name="test-container",
+                tool_config=tool_config,
+                role="developer",
+            )
+
+            # Check role value
             for i, arg in enumerate(cmd):
                 if arg == "-e" and i + 1 < len(cmd):
                     if cmd[i + 1].startswith("AGENTTREE_ROLE="):

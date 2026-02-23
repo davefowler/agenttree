@@ -1,4 +1,4 @@
-"""Server commands (run, stop-all, stalls)."""
+"""Server commands (start, server, run, stop-all, stalls)."""
 
 import subprocess
 import sys
@@ -114,27 +114,47 @@ def _start_agents_background(config: "Config", repo_path: Path) -> None:
         console.print(f"[dim]Manager agent already running[/dim]")
 
 
-@click.command()
+@click.command(name="start")
+@click.argument("issue_id", required=False, default=None, type=str)
 @click.option("--host", default="127.0.0.1", help="Host to bind to")
 @click.option("--port", default=None, type=int, help="Port to bind to (default: from port_range config)")
-@click.option("--skip-agents", is_flag=True, help="Don't auto-start agents")
-def run(host: str, port: int | None, skip_agents: bool) -> None:
-    """Start AgentTree: server + agents for all active issues.
+@click.option("--tool", help="AI tool to use (default: from config)")
+@click.option("--role", default="developer", help="Agent role (default: developer)")
+@click.option("--force", is_flag=True, help="Force start even if already running")
+@click.option("--skip-preflight", is_flag=True, help="Skip preflight environment checks")
+def start_all(
+    issue_id: str | None,
+    host: str,
+    port: int | None,
+    tool: str | None,
+    role: str,
+    force: bool,
+    skip_preflight: bool,
+) -> None:
+    """Start AgentTree or a specific agent.
 
-    This is the main entry point that:
-    1. Starts the web server with sync/heartbeat
-    2. Starts agents for all issues (in parallel) in a background thread
-    3. Starts the manager agent (agent 0)
-
-    Use 'agenttree shutdown' to stop everything.
+    With no arguments, starts everything: server + agents + manager.
+    With an ISSUE_ID, starts a single agent for that issue.
 
     Examples:
-        agenttree run                  # Start everything
-        agenttree run --skip-agents    # Just start the server
-        agenttree run --port 9000      # Use custom port
+        agenttree start                # Start everything
+        agenttree start 42             # Start agent for issue #42
+        agenttree start --port 9000    # Use custom port for server
     """
-    import threading
+    if issue_id is not None:
+        from agenttree.cli.agents import start_agent
+        ctx = click.get_current_context()
+        ctx.invoke(
+            start_agent,
+            issue_id=issue_id,
+            tool=tool,
+            role=role,
+            force=force,
+            skip_preflight=skip_preflight,
+        )
+        return
 
+    import threading
     from agenttree.web.app import run_server
 
     repo_path = Path.cwd()
@@ -143,13 +163,12 @@ def run(host: str, port: int | None, skip_agents: bool) -> None:
     if port is None:
         port = config.server_port
 
-    if not skip_agents:
-        thread = threading.Thread(
-            target=_start_agents_background,
-            args=(config, repo_path),
-            daemon=True,
-        )
-        thread.start()
+    thread = threading.Thread(
+        target=_start_agents_background,
+        args=(config, repo_path),
+        daemon=True,
+    )
+    thread.start()
 
     console.print(f"[cyan]Starting AgentTree server at http://{host}:{port}[/cyan]")
     console.print("[dim]Press Ctrl+C to stop[/dim]\n")
@@ -157,15 +176,84 @@ def run(host: str, port: int | None, skip_agents: bool) -> None:
     run_server(host=host, port=port)
 
 
+@click.command()
+@click.option("--host", default="127.0.0.1", help="Host to bind to")
+@click.option("--port", default=None, type=int, help="Port to bind to (default: from port_range config)")
+def server(host: str, port: int | None) -> None:
+    """Start just the AgentTree web server (no agents).
+
+    Use this in serve configs to avoid recursive agent startup.
+
+    Examples:
+        agenttree server               # Start web server only
+        agenttree server --port 9042   # On a specific port
+    """
+    from agenttree.web.app import run_server
+
+    config = load_config()
+
+    if port is None:
+        port = config.server_port
+
+    console.print(f"[cyan]Starting AgentTree server at http://{host}:{port}[/cyan]")
+    console.print("[dim]Press Ctrl+C to stop[/dim]\n")
+
+    run_server(host=host, port=port)
+
+
+@click.command(name="run")
+@click.argument("cmd_name", type=str)
+@click.option("--issue-id", default=None, type=int, help="Issue ID (default: from env AGENTTREE_ISSUE_ID)")
+def run_command(cmd_name: str, issue_id: int | None) -> None:
+    """Run a configured command from .agenttree.yaml.
+
+    CMD_NAME is the command key from the 'commands:' section of your config.
+
+    Environment variables PORT, AGENTTREE_ISSUE_ID, AGENTTREE_ROLE are
+    injected automatically when inside a container.
+
+    Examples:
+        agenttree run serve            # Run the serve command
+        agenttree run test             # Run the test command
+        agenttree run lint             # Run the lint command
+    """
+    import os
+
+    config = load_config()
+
+    if cmd_name not in config.commands:
+        console.print(f"[red]Error: Unknown command '{cmd_name}'[/red]")
+        console.print("[dim]Available commands:[/dim]")
+        for name in sorted(config.commands):
+            console.print(f"  {name}: {config.commands[name]}")
+        sys.exit(1)
+
+    command_str = config.commands[cmd_name]
+    if isinstance(command_str, list):
+        command_str = " && ".join(command_str)
+
+    env = os.environ.copy()
+    if issue_id is None:
+        issue_id_str = os.environ.get("AGENTTREE_ISSUE_ID")
+        if issue_id_str:
+            issue_id = int(issue_id_str)
+
+    if issue_id is not None:
+        env["PORT"] = str(config.get_port_for_issue(issue_id))
+        env["AGENTTREE_ISSUE_ID"] = str(issue_id)
+
+    console.print(f"[cyan]Running: {command_str}[/cyan]")
+    result = subprocess.run(command_str, shell=True, env=env)
+    sys.exit(result.returncode)
+
+
 @click.command("stop-all")
 def stop_all() -> None:
-    """Stop all agents (opposite of 'agenttree run').
+    """Stop all agents.
 
     This stops:
     1. All running issue agents
     2. The manager agent (agent 0)
-
-    Use 'agenttree run' to start everything again.
 
     Examples:
         agenttree stop-all            # Stop all agents
