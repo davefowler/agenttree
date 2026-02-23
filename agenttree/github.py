@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import List, Optional, Union
 from dataclasses import dataclass
 
+from agenttree.dependencies import GH_CLI_INSTALL_INSTRUCTIONS
+
 
 @dataclass
 class Issue:
@@ -64,11 +66,7 @@ def ensure_gh_cli() -> None:
     """
     if not shutil.which("gh"):
         raise RuntimeError(
-            "GitHub CLI (gh) not found.\n\n"
-            "Install: https://cli.github.com/\n"
-            "  macOS:   brew install gh\n"
-            "  Linux:   See https://github.com/cli/cli#installation\n"
-            "  Windows: See https://github.com/cli/cli#installation\n"
+            f"GitHub CLI (gh) not found.\n\n{GH_CLI_INSTALL_INSTRUCTIONS}\n"
         )
 
     # Check if authenticated

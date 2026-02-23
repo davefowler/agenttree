@@ -15,6 +15,7 @@ import yaml
 from pydantic import BaseModel, Field, PrivateAttr, field_validator
 
 from agenttree.agents_repo import sync_agents_repo
+from agenttree.ids import slugify
 
 log = logging.getLogger("agenttree.issues")
 
@@ -262,20 +263,6 @@ class Issue(BaseModel):
         return get_issue(issue_id, sync=sync)
 
 
-def slugify(text: str) -> str:
-    """Convert text to a URL-friendly slug."""
-    # Lowercase and replace spaces with hyphens
-    slug = text.lower().strip()
-    # Remove special characters
-    slug = re.sub(r'[^\w\s-]', '', slug)
-    # Replace whitespace with hyphens
-    slug = re.sub(r'[\s_]+', '-', slug)
-    # Remove leading/trailing hyphens
-    slug = slug.strip('-')
-    # Limit length
-    return slug[:50]
-
-
 def get_agenttree_path() -> Path:
     """Get the path to _agenttree directory.
 
@@ -410,7 +397,7 @@ def create_issue(
 
     # Generate ID
     issue_id = get_next_issue_number()
-    slug = slugify(title)
+    slug = slugify(title, max_length=50)
     dir_name = format_issue_id(issue_id)
 
     # Create issue directory
