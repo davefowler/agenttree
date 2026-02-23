@@ -186,11 +186,25 @@ rm -rf .worktrees/
 
 ## Environment Variables
 
+Agenttree sets these env vars in every container automatically:
+
+| Variable | Example | Description |
+|----------|---------|-------------|
+| `PORT` | `9042` | Assigned port for this agent's dev server |
+| `AGENTTREE_CONTAINER` | `1` | Always `1` — indicates running in a container |
+| `AGENTTREE_ISSUE_ID` | `42` | Issue number this agent is working on |
+| `AGENTTREE_ROLE` | `developer` | Agent role (developer, reviewer, etc.) |
+
+These are passed through from the host if configured:
+
 | Variable | Description |
 |----------|-------------|
 | `GITHUB_TOKEN` | For GitHub API access (PRs, issues) |
 | `CLAUDE_CODE_OAUTH_TOKEN` | OAuth token for Claude CLI (from `claude setup-token`) |
-| `AGENT_PORT` | Allocated port for dev server |
+| `ANTHROPIC_API_KEY` | Anthropic API key (for rate limit fallback) |
+
+See [commands-and-serving.md](commands-and-serving.md) for how to use these
+in custom commands and the `serve` config.
 
 ## See Also
 
