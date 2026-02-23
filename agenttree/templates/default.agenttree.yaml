@@ -4,7 +4,7 @@
 
 default_tool: claude
 default_model: opus
-port_range: 9001-9099
+port_range: 9000-9100
 project: "{{PROJECT_NAME}}"
 worktrees_dir: .worktrees
 
@@ -32,7 +32,7 @@ tools:
 roles:
   manager:
     description: "Human-driven manager"
-    process: "agenttree run"
+    process: "agenttree start"
 
   developer:
     description: "Default AI agent"

@@ -451,7 +451,7 @@ class TmuxManager:
         """Start an issue-bound agent in a container within a tmux session.
 
         Args:
-            issue_id: Issue ID (e.g., "023")
+            issue_id: Integer issue ID (e.g., 23)
             session_name: Tmux session name
             worktree_path: Path to the issue's worktree
             tool_name: Name of the AI tool to use

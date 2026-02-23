@@ -2,7 +2,7 @@
 
 The `commands` section of `.agenttree.yaml` lets you define custom shell commands
 that agenttree runs at various points in the workflow. **Every command you define
-is automatically runnable via `agenttree run <name>`.**
+is automatically runnable via `agenttree cmd <name>`.**
 
 ## The `commands` Section
 
@@ -23,14 +23,14 @@ commands:
 Any command in the `commands:` section can be run directly:
 
 ```bash
-agenttree run serve           # Start dev server
-agenttree run test            # Run tests
-agenttree run lint            # Run linting
-agenttree run duplicates      # Check for duplicate code
-agenttree run my_custom_cmd   # Whatever you defined
+agenttree cmd serve           # Start dev server
+agenttree cmd test            # Run tests
+agenttree cmd lint            # Run linting
+agenttree cmd duplicates      # Check for duplicate code
+agenttree cmd my_custom_cmd   # Whatever you defined
 ```
 
-`agenttree run <cmd>` automatically injects environment variables (`PORT`,
+`agenttree cmd <name>` automatically injects environment variables (`PORT`,
 `AGENTTREE_ISSUE_ID`, etc.) before executing the command.
 
 ### Built-in Command Keys
@@ -182,10 +182,10 @@ You can access it directly via tmux:
 
 ```bash
 # View serve output for issue #42
-tmux capture-pane -t myapp-serve-042 -p
+agenttree output 42
 
-# Attach to the serve tmux session (interactive)
-tmux attach -t myapp-serve-042
+# Attach to the serve tmux session for issue #42
+agenttree attach 42
 ```
 
 ## CLI Quick Reference
@@ -195,9 +195,9 @@ tmux attach -t myapp-serve-042
 | `agenttree start` | Start everything (server + agents + manager) |
 | `agenttree start 42` | Start agent for issue #42 |
 | `agenttree server` | Start just the web server (no agents) |
-| `agenttree run serve` | Run the serve command from config |
-| `agenttree run test` | Run the test command from config |
-| `agenttree run <cmd>` | Run any command from the `commands:` config |
+| `agenttree cmd serve` | Run the serve command from config |
+| `agenttree cmd test` | Run the test command from config |
+| `agenttree cmd <name>` | Run any command from the `commands:` config |
 
 ## Dev Server URL in the Dashboard
 

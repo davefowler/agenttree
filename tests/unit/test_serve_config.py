@@ -407,7 +407,7 @@ class TestSessionNaming:
 
         result = session_name(
             "myapp", "serve", 42,
-            template="{project}_{session_name}_{issue_id}"
+            template="{project}_{session_type}_{issue_id}"
         )
         assert result == "myapp_serve_042"
 

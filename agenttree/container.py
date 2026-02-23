@@ -351,7 +351,7 @@ def build_container_command(
     # Build context for Jinja rendering
     context: dict[str, object] = {
         "role": role,
-        "port": ports[0] if ports else 9000,
+        "port": ports[0] if ports else 0,
     }
     if issue_id is not None:
         context["issue_id"] = issue_id

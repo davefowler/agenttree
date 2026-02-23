@@ -67,7 +67,7 @@ def session_name(
     project: str,
     session_type: str,
     issue_id: int,
-    template: str = "{project}-{session_name}-{issue_id}",
+    template: str = "{project}-{session_type}-{issue_id}",
 ) -> str:
     """Generate a tmux session name from a template.
 
@@ -81,7 +81,7 @@ def session_name(
         issue_id: Integer issue ID
         template: Name template with placeholders:
                   - {project}: project name
-                  - {session_name}: session type
+                  - {session_type}: session type
                   - {issue_id}: formatted issue ID
 
     Returns:
@@ -97,7 +97,7 @@ def session_name(
     """
     return template.format(
         project=project,
-        session_name=session_type,
+        session_type=session_type,
         issue_id=format_issue_id(issue_id),
     )
 
