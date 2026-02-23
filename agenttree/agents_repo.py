@@ -362,13 +362,14 @@ def ensure_review_branches(agents_dir: Path) -> int:
                                 f"then run `agenttree next` to advance.",
                             )
                             console.print(f"[dim]Notified developer for issue #{issue_id} to rebase[/dim]")
-                    except Exception:
-                        pass  # Best-effort notification
+                    except Exception as e:
+                        log.debug("Best-effort notification failed: %s", e)
                 processed += 1
-            except Exception:
-                pass  # Network/timeout - skip, retry next sync
+            except Exception as e:
+                log.debug("Network/timeout during sync: %s", e)
 
-        except Exception:
+        except Exception as e:
+            log.debug("Issue processing skipped: %s", e)
             continue
 
     return processed

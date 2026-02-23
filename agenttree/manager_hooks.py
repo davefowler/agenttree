@@ -22,11 +22,14 @@ DEPRECATION NOTICE:
 This module delegates to the event system.
 """
 
+import logging
 import warnings
 from pathlib import Path
 from typing import Any
 
 from rich.console import Console
+
+log = logging.getLogger("agenttree.manager_hooks")
 
 # Import shared hook infrastructure from hooks.py (delegates to events.py)
 from agenttree.hooks import (
@@ -98,7 +101,8 @@ def run_post_manager_hooks(agents_dir: Path, verbose: bool = False) -> None:
                 "[yellow]Warning: manager_hooks.post_sync is deprecated. "
                 "Migrate to on.heartbeat.actions for better control.[/yellow]"
             )
-    except Exception:
+    except Exception as e:
+        log.debug("Failed to load manager hooks config: %s", e)
         hooks = None
 
     if hooks is None:
