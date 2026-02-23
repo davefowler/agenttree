@@ -201,7 +201,7 @@ def server(host: str, port: int | None) -> None:
     run_server(host=host, port=port)
 
 
-@click.command(name="cmd")
+@click.command(name="run")
 @click.argument("cmd_name", type=str)
 @click.option("--issue-id", default=None, type=int, help="Issue ID (default: from env AGENTTREE_ISSUE_ID)")
 def run_command(cmd_name: str, issue_id: int | None) -> None:
@@ -213,9 +213,9 @@ def run_command(cmd_name: str, issue_id: int | None) -> None:
     injected automatically when inside a container.
 
     Examples:
-        agenttree cmd serve            # Run the serve command
-        agenttree cmd test             # Run the test command
-        agenttree cmd lint             # Run the lint command
+        agenttree run serve            # Run the serve command
+        agenttree run test             # Run the test command
+        agenttree run lint             # Run the lint command
     """
     import os
 

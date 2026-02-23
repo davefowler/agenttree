@@ -2,7 +2,7 @@
 
 The `commands` section of `.agenttree.yaml` lets you define custom shell commands
 that agenttree runs at various points in the workflow. **Every command you define
-is automatically runnable via `agenttree cmd <name>`.**
+is automatically runnable via `agenttree run <name>`.**
 
 ## The `commands` Section
 
@@ -23,14 +23,14 @@ commands:
 Any command in the `commands:` section can be run directly:
 
 ```bash
-agenttree cmd serve           # Start dev server
-agenttree cmd test            # Run tests
-agenttree cmd lint            # Run linting
-agenttree cmd duplicates      # Check for duplicate code
-agenttree cmd my_custom_cmd   # Whatever you defined
+agenttree run serve           # Start dev server
+agenttree run test            # Run tests
+agenttree run lint            # Run linting
+agenttree run duplicates      # Check for duplicate code
+agenttree run my_custom_cmd   # Whatever you defined
 ```
 
-`agenttree cmd <name>` automatically injects environment variables (`PORT`,
+`agenttree run <name>` automatically injects environment variables (`PORT`,
 `AGENTTREE_ISSUE_ID`, etc.) before executing the command.
 
 ### Built-in Command Keys
@@ -195,9 +195,9 @@ agenttree attach 42
 | `agenttree start` | Start everything (server + agents + manager) |
 | `agenttree start 42` | Start agent for issue #42 |
 | `agenttree server` | Start just the web server (no agents) |
-| `agenttree cmd serve` | Run the serve command from config |
-| `agenttree cmd test` | Run the test command from config |
-| `agenttree cmd <name>` | Run any command from the `commands:` config |
+| `agenttree run serve` | Run the serve command from config |
+| `agenttree run test` | Run the test command from config |
+| `agenttree run <name>` | Run any command from the `commands:` config |
 
 ## Dev Server URL in the Dashboard
 
