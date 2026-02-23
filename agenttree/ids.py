@@ -7,7 +7,47 @@ All issue IDs are integers internally. This module handles:
 - Parsing user input strings to int
 - Formatting int IDs to padded strings for external names
 - Generating consistent names for containers, sessions, directories
+- Converting text to URL-friendly slugs
 """
+
+import re
+
+
+def slugify(text: str, max_length: int | None = None) -> str:
+    """Convert text to a URL-friendly slug.
+
+    Args:
+        text: Text to slugify
+        max_length: Optional maximum length for the slug (default: no limit)
+
+    Returns:
+        Slugified text (lowercase, hyphens instead of spaces/underscores,
+        no special characters)
+
+    Examples:
+        >>> slugify("Hello World")
+        'hello-world'
+        >>> slugify("Test: 123!")
+        'test-123'
+        >>> slugify("foo_bar")
+        'foo-bar'
+        >>> slugify("  padded  ")
+        'padded'
+        >>> slugify("very long title here", max_length=10)
+        'very-long-'
+    """
+    # Lowercase and strip leading/trailing whitespace
+    slug = text.lower().strip()
+    # Remove special characters (keep word chars, whitespace, hyphens)
+    slug = re.sub(r'[^\w\s-]', '', slug)
+    # Replace whitespace and underscores with hyphens
+    slug = re.sub(r'[\s_]+', '-', slug)
+    # Remove leading/trailing hyphens
+    slug = slug.strip('-')
+    # Apply length limit if specified
+    if max_length is not None:
+        slug = slug[:max_length]
+    return slug
 
 
 def parse_issue_id(s: str) -> int:

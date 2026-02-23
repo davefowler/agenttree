@@ -8,7 +8,7 @@ from pathlib import Path
 import click
 from rich.table import Table
 
-from agenttree.cli._utils import console, load_config, get_issue_func, normalize_issue_id, format_role_label, get_manager_session_name
+from agenttree.cli._utils import console, load_config, get_issue_func, normalize_issue_id, format_role_label, get_manager_session_name, require_manager_running, get_manager_session_if_running
 from agenttree.tmux import TmuxManager
 from agenttree.container import get_container_runtime
 from agenttree.agents_repo import AgentsRepository
@@ -363,11 +363,7 @@ def attach(issue_id: str, role: str) -> None:
 
     # Special handling for manager (agent 0)
     if issue_id_normalized == 0:
-        session_name = get_manager_session_name(config)
-        if not session_exists(session_name):
-            console.print("[red]Error: Manager not running[/red]")
-            console.print("[yellow]Start it with: agenttree start 0[/yellow]")
-            sys.exit(1)
+        session_name = require_manager_running(config)
         console.print("Attaching to manager (Ctrl+B, D to detach)...")
         attach_session(session_name)
         return
@@ -420,10 +416,7 @@ def output(issue_id: str, role: str, lines: int) -> None:
 
     # Special handling for manager (agent 0)
     if issue_id_normalized == 0:
-        session_name = get_manager_session_name(config)
-        if not session_exists(session_name):
-            console.print("[red]Error: Manager not running[/red]")
-            sys.exit(1)
+        session_name = require_manager_running(config, hint=False)
         output_text = capture_pane(session_name, lines=lines)
         console.print(output_text)
         return
@@ -474,11 +467,7 @@ def send(issue_id: str, message: str, role: str, interrupt: bool) -> None:
 
     # Special handling for manager (agent 0)
     if issue_id_normalized == 0:
-        session_name = get_manager_session_name(config)
-        if not session_exists(session_name):
-            console.print("[red]Error: Manager not running[/red]")
-            console.print("[yellow]Start it with: agenttree start 0[/yellow]")
-            sys.exit(1)
+        session_name = require_manager_running(config)
         result = send_message(session_name, message, interrupt=interrupt)
         if result != "sent":
             console.print(f"[red]Error: Failed to send to manager ({result})[/red]")
@@ -579,8 +568,8 @@ def stop(issue_id: str, role: str, all_roles: bool) -> None:
 
     # Special handling for manager (agent 0)
     if issue_id_normalized == 0:
-        session_name = get_manager_session_name(config)
-        if not session_exists(session_name):
+        session_name = get_manager_session_if_running(config)
+        if not session_name:
             console.print("[yellow]Manager not running[/yellow]")
             return
         kill_session(session_name)

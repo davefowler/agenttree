@@ -24,26 +24,13 @@ if TYPE_CHECKING:
 # Global lock file handle (kept open during sync)
 _sync_lock_fd = None
 
+from agenttree.dependencies import GH_CLI_INSTALL_INSTRUCTIONS
 from agenttree.frontmatter import (
     create_frontmatter,
     get_git_context,
     utc_now,
 )
-
-
-def slugify(text: str) -> str:
-    """Convert text to a slug.
-
-    Args:
-        text: Text to slugify
-
-    Returns:
-        Slugified text
-    """
-    text = text.lower()
-    text = re.sub(r'[^\w\s-]', '', text)
-    text = re.sub(r'[-\s]+', '-', text)
-    return text.strip('-')
+from agenttree.ids import slugify
 
 
 def sync_agents_repo(
@@ -1079,11 +1066,7 @@ class AgentsRepository:
         """Check gh CLI is installed and authenticated."""
         if not shutil.which("gh"):
             raise RuntimeError(
-                "GitHub CLI (gh) not found.\n\n"
-                "Install: https://cli.github.com/\n"
-                "  macOS:   brew install gh\n"
-                "  Linux:   See https://github.com/cli/cli#installation\n"
-                "  Windows: See https://github.com/cli/cli#installation\n"
+                f"GitHub CLI (gh) not found.\n\n{GH_CLI_INSTALL_INSTRUCTIONS}\n"
             )
 
         # Check auth status
