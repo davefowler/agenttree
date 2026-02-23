@@ -63,7 +63,7 @@ def prepare_git_mounts(
     return mounts
 
 
-@click.command(name="start")
+@click.command(name="start-agent", hidden=True)
 @click.argument("issue_id", type=str)
 @click.option("--tool", help="AI tool to use (default: from config)")
 @click.option("--role", default="developer", help="Agent role (default: developer)")
@@ -613,7 +613,7 @@ def stop(issue_id: str, role: str, all_roles: bool) -> None:
 @click.argument("container_type", type=str)
 @click.argument("name", type=str)
 @click.option("--tool", help="AI tool to use (default: from config)")
-@click.option("--share-git", is_flag=True, default=True, help="Share ~/.ssh and ~/.gitconfig (default: true)")
+@click.option("--share-git/--no-share-git", default=True, help="Share ~/.ssh and ~/.gitconfig (default: true)")
 @click.option("--kill", is_flag=True, help="Kill the container instead of starting")
 @click.option("--list", "list_containers", is_flag=True, help="List all containers of this type")
 def new_container(

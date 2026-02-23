@@ -163,44 +163,29 @@ exec python manage.py runserver 0.0.0.0:$PORT
 ### Dogfooding: AgentTree on AgentTree
 
 When using agenttree to develop agenttree itself, the serve command needs to
-start the agenttree web server without recursively starting agents. Use the
-`agenttree server` command, which starts just the web server (no orchestration):
+start the agenttree web server without recursively starting agents. Use
+`agenttree server`, which starts just the web server:
 
 ```yaml
 commands:
   serve: "uv run agenttree server --port $PORT"
 ```
 
-`agenttree server` is a thin command that runs the web UI. It doesn't start
-agents or the manager — that's what `agenttree start` does. Using `server` in
-the serve config avoids the recursion that would happen if each container tried
-to start more containers.
-
-You can also use the `AGENTTREE_ISSUE_ID` env var for conditional logic:
-
-```yaml
-commands:
-  serve: |
-    if [ -n "$AGENTTREE_ISSUE_ID" ]; then
-      uv run agenttree server --port $PORT
-    else
-      uv run agenttree start --port $PORT
-    fi
-```
+`agenttree server` starts the web UI without launching any agents or the
+manager. This avoids the recursion that would happen if each container
+tried to start more containers.
 
 ## Accessing Serve Logs
 
-View or attach to an agent's serve session:
+The serve session runs in a tmux session named `{project}-serve-{issue_id}`.
+You can access it directly via tmux:
 
 ```bash
 # View serve output for issue #42
-agenttree output 42 --serve
+tmux capture-pane -t myapp-serve-042 -p
 
 # Attach to the serve tmux session (interactive)
-agenttree attach 42 --serve
-
-# View the manager's server logs
-agenttree output 0 --serve
+tmux attach -t myapp-serve-042
 ```
 
 ## CLI Quick Reference
@@ -209,10 +194,10 @@ agenttree output 0 --serve
 |---------|---------|
 | `agenttree start` | Start everything (server + agents + manager) |
 | `agenttree start 42` | Start agent for issue #42 |
+| `agenttree server` | Start just the web server (no agents) |
 | `agenttree run serve` | Run the serve command from config |
 | `agenttree run test` | Run the test command from config |
 | `agenttree run <cmd>` | Run any command from the `commands:` config |
-| `agenttree server` | Start just the web server (for serve configs) |
 
 ## Dev Server URL in the Dashboard
 
@@ -242,46 +227,19 @@ roles:
     skill: independent_review.md
 ```
 
-**Sessions** are any tmux process. They have a `command`. When an agent starts,
-all configured sessions start alongside the AI tool. Sessions are defined in
-the `sessions:` config:
-
-```yaml
-sessions:
-  serve:
-    command: "npm run dev --port {{ port }}"
-  worker:
-    command: "python manage.py celery_worker"
-```
-
-A role implicitly creates a session (the AI tool runs in a tmux session). But
-sessions don't need a role — they're just shell commands in tmux.
+**Sessions** are any tmux process alongside the AI tool. Currently, the `serve`
+command is the built-in session type — it starts automatically when an agent
+starts if the `serve` command is configured.
 
 ### Session Naming
 
-All sessions (both role-based and custom) use the same naming template:
+Sessions use the naming pattern `{project}-{type}-{issue_id}`:
 
-```yaml
-default_session_name_template: "{project}-{session_name}-{issue_id}"
-```
-
-For issue #42 in project `myapp`:
-
-| Source | session_name | Tmux session |
-|--------|-------------|--------------|
-| Role: developer | `developer` | `myapp-developer-042` |
-| Role: reviewer | `reviewer` | `myapp-reviewer-042` |
-| Session: serve | `serve` | `myapp-serve-042` |
-| Session: worker | `worker` | `myapp-worker-042` |
-
-Individual sessions can override the template:
-
-```yaml
-sessions:
-  serve:
-    command: "npm run dev --port {{ port }}"
-    name_template: "{project}-web-{issue_id}"  # myapp-web-042
-```
+| Source | Tmux session |
+|--------|--------------|
+| Role: developer | `myapp-developer-042` |
+| Role: reviewer | `myapp-reviewer-042` |
+| Serve session | `myapp-serve-042` |
 
 ## No `serve` Command? No Problem
 

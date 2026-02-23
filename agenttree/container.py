@@ -200,7 +200,7 @@ def is_container_running(container_name: str) -> bool:
         return False
 
 
-def get_git_worktree_info(worktree_path: Path) -> Tuple[Optional[Path], Optional[Path]]:
+def get_git_worktree_info(worktree_path: Path) -> tuple[Path | None, Path | None]:
     """Get git directory info for a worktree.
 
     Git worktrees have a .git FILE (not directory) that points to the main
@@ -211,7 +211,7 @@ def get_git_worktree_info(worktree_path: Path) -> Tuple[Optional[Path], Optional
         worktree_path: Path to the worktree
 
     Returns:
-        Tuple of (main_git_dir, worktree_git_dir) or (None, None) if not a worktree
+        tuple of (main_git_dir, worktree_git_dir) or (None, None) if not a worktree
     """
     git_path = worktree_path / ".git"
 
@@ -399,7 +399,7 @@ class ContainerRuntime:
         self.runtime = self.detect_runtime()
 
     @staticmethod
-    def detect_runtime() -> Optional[str]:
+    def detect_runtime() -> str | None:
         """Detect available container runtime.
 
         Returns:
@@ -687,7 +687,7 @@ class ContainerRuntime:
 
 
 # Global container runtime instance
-_runtime: Optional[ContainerRuntime] = None
+_runtime: ContainerRuntime | None = None
 
 
 def get_container_runtime() -> ContainerRuntime:
@@ -702,7 +702,7 @@ def get_container_runtime() -> ContainerRuntime:
     return _runtime
 
 
-def find_container_by_worktree(worktree_path: Path) -> Optional[str]:
+def find_container_by_worktree(worktree_path: Path) -> str | None:
     """Find a running container's UUID by its worktree mount path.
 
     Apple Containers use UUIDs, not names. This function inspects running
@@ -748,7 +748,7 @@ def find_container_by_worktree(worktree_path: Path) -> Optional[str]:
             if container.get("status") != "running":
                 continue
 
-            container_id: Optional[str] = container.get("id")
+            container_id: str | None = container.get("id")
             if not container_id:
                 continue
 

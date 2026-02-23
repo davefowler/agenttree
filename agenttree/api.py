@@ -647,8 +647,8 @@ def stop_agent(issue_id: int, role: str = "developer", quiet: bool = False) -> b
             stopped_something = True
             if not quiet:
                 console.print(f"[dim]  Stopped serve session: {serve_session}[/dim]")
-    except subprocess.CalledProcessError:
-        pass
+    except subprocess.CalledProcessError as e:
+        log.warning("Could not stop serve session for issue %s: %s", issue_id, e)
 
     # 2. Kill tmux session if it exists
     try:

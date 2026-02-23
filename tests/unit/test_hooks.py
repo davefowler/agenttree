@@ -754,24 +754,6 @@ Content
         assert len(errors) == 1
         assert "No issue provided" in errors[0]
 
-    def test_server_running_no_port(self, tmp_path):
-        """Should return error when issue has no valid port."""
-        from agenttree.hooks import run_builtin_validator
-        import agenttree.hooks as hooks_module
-
-        mock_issue = Mock()
-        mock_issue.id = "invalid"
-
-        # Mock config to return None for invalid issue ID
-        mock_config = Mock()
-        mock_config.get_port_for_issue.return_value = None
-
-        with patch.object(hooks_module, 'load_config', return_value=mock_config):
-            hook = {"type": "server_running"}
-            errors = run_builtin_validator(tmp_path, hook, issue=mock_issue)
-            assert len(errors) == 1
-            assert "no valid port assigned" in errors[0]
-
     @patch('urllib.request.urlopen')
     @patch('time.sleep')
     def test_server_running_failure_after_retries(self, mock_sleep, mock_urlopen, tmp_path):

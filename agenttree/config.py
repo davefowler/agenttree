@@ -2,7 +2,6 @@
 
 import logging
 from pathlib import Path
-from typing import Optional, Union
 import yaml
 from jinja2 import Template, UndefinedError
 from pydantic import BaseModel, ConfigDict, Field
@@ -449,7 +448,7 @@ class Config(BaseModel):
     refresh_interval: int = 10
     tools: dict[str, ToolConfig] = Field(default_factory=dict)
     roles: dict[str, RoleConfig] = Field(default_factory=dict)
-    commands: dict[str, Union[str, list[str]]] = Field(default_factory=dict)
+    commands: dict[str, str | list[str]] = Field(default_factory=dict)
     stages: dict[str, StageConfig] = Field(default_factory=dict)  # Stage name -> config
     flows: dict[str, FlowConfig] = Field(default_factory=dict)
     default_flow: str = "default"
