@@ -469,7 +469,7 @@ def defer_issue(issue_id: str) -> None:
 
     console.print(f"[green]✓ Issue #{issue.id} moved to backlog[/green]")
     console.print(f"\n[dim]Stop the agent if running:[/dim]")
-    console.print(f"  agenttree kill {issue.id}")
+    console.print(f"  agenttree stop {issue.id}")
 
 
 @click.command("shutdown")

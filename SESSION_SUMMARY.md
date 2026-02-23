@@ -13,7 +13,7 @@
 Major architectural shift from GitHub-centric to custom kanban workflow:
 
 **Key Decisions:**
-- ✅ Separate `agents/` repository as source of truth (not GitHub Issues)
+- ✅ Separate `_agenttree/` repository as source of truth (not GitHub Issues)
 - ✅ 9 kanban stages: Backlog → Problem → Problem Review → Research/Plan → Plan Review → Implement → Implementation Review → Accepted → Not Doing
 - ✅ **One agent per task** (no task switching - major simplification)
 - ✅ Local CI enforcement (quick_ci.sh, ci.sh, extensive_ci.sh)
@@ -23,7 +23,7 @@ Major architectural shift from GitHub-centric to custom kanban workflow:
 
 **Architecture:**
 ```
-agents/                      # Separate git repo
+_agenttree/                      # Separate git repo
 ├── issues/                  # One dir per issue
 │   ├── 001-login-bug/
 │   │   ├── issue.yaml       # Metadata (stage, agent, dates)
@@ -140,17 +140,17 @@ Dashboard | Kanban | Flow
 
 ### **What's Still Needed:**
 
-#### **Phase 1: agents/ Repository Setup**
-- [ ] Create agents/ git repository structure
+#### **Phase 1: _agenttree/ Repository Setup**
+- [ ] Create _agenttree/ git repository structure
 - [ ] Implement helper scripts (new-issue.sh, move-stage.sh, edit-issue.sh)
 - [ ] Write stage templates (problem.md, plan.md, review.md)
 - [ ] Create stage-specific skills
 
 #### **Phase 2: Backend Integration**
-- [ ] Replace GitHub API with agents/ repo reading
+- [ ] Replace GitHub API with _agenttree/ repo reading
 - [ ] Implement `/api/issues/{id}/move` to update issue.yaml
 - [ ] Add pull → update → commit → push logic
-- [ ] Load issues from `agents/issues/*/issue.yaml` files
+- [ ] Load issues from `_agenttree/issues/*/issue.yaml` files
 
 #### **Phase 3: CI Scripts**
 - [ ] Create quick_ci.sh template
@@ -204,7 +204,7 @@ for label in issue.labels:
         stage = StageEnum(stage_name)
 ```
 
-**TODO:** Replace with `agents/issues/*/issue.yaml` reading:
+**TODO:** Replace with `_agenttree/issues/*/issue.yaml` reading:
 ```yaml
 number: 42
 stage: implement
@@ -271,13 +271,13 @@ We're building a TDD workflow where:
 1. Each issue goes through well-defined stages
 2. One agent works on one issue exclusively
 3. Stage transitions have specific requirements (CI, reviews, etc.)
-4. All state is tracked in `agents/` repo
+4. All state is tracked in `_agenttree/` repo
 5. Web UI provides both overview (kanban) and focused (flow) views
 
 ### **Priority Next Steps:**
-1. **Create agents/ repo structure** - Foundation for everything
+1. **Create _agenttree/ repo structure** - Foundation for everything
 2. **Implement helper scripts** - new-issue.sh, move-stage.sh
-3. **Connect backend to agents/ repo** - Stop using GitHub API
+3. **Connect backend to _agenttree/ repo** - Stop using GitHub API
 4. **CI script templates** - quick_ci.sh, ci.sh, extensive_ci.sh
 
 ### **User Preferences:**
@@ -297,7 +297,7 @@ We're building a TDD workflow where:
 **Recent Commits:**
 ```
 8620c54 Add Kanban view alongside Flow view with shared detail template
-f893d84 Add comprehensive plan for kanban workflow with agents/ repo
+f893d84 Add comprehensive plan for kanban workflow with _agenttree/ repo
 e04da64 Add Flow tab to web UI with inbox-style task management
 672b11e Implement Phases 2-3: CLI tools and task re-engagement
 c20b383 Implement Phase 1: Frontmatter and context summary pre-creation
@@ -308,7 +308,7 @@ c20b383 Implement Phase 1: Frontmatter and context summary pre-creation
 ## Questions to Address Next Session
 
 1. **Do we want sub-stages visible in UI?** (e.g., "5c: Implementing" vs just "Implement")
-2. **Should we create a new branch for agents/ repo work?** Or continue on same branch?
+2. **Should we create a new branch for _agenttree/ repo work?** Or continue on same branch?
 3. **CI script defaults** - What should quick_ci.sh check? (ruff, mypy, etc.)
 4. **Stage skill format** - Markdown files with instructions? Or something else?
 
@@ -319,7 +319,7 @@ c20b383 Implement Phase 1: Frontmatter and context summary pre-creation
 - Session expired before we could continue
 - All work is saved and pushed
 - Ready to pick up from here
-- UI is functional but needs backend connection to agents/ repo
+- UI is functional but needs backend connection to _agenttree/ repo
 - Plan document is comprehensive and ready for implementation
 
 **Next agent should read:**

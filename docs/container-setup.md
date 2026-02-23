@@ -175,7 +175,7 @@ Containers are automatically cleaned up when issues move to `accepted`. For manu
 
 ```bash
 # Stop agent for an issue
-agenttree kill 23
+agenttree stop 23
 
 # Remove all agenttree containers
 docker rm -f $(docker ps -aq --filter "name=agenttree-")

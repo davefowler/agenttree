@@ -17,7 +17,7 @@ AgentTree lets you run **multiple AI coding agents in parallel** on the same cod
 │  ~/Projects/myapp/             │  ~/Projects/worktrees/         │
 │  ├── src/                      │  ├── agent-1/ (Claude Code)    │
 │  ├── tests/                    │  ├── agent-2/ (Aider)          │
-│  └── agents/  ←── shared ───→  │  └── agent-3/ (Claude Code)    │
+│  └── _agenttree/  ←── shared ───→  │  └── agent-3/ (Claude Code)    │
 │      ├── specs/                │                                 │
 │      └── notes/                │  Each has own venv, DB, PORT   │
 └─────────────────────────────────────────────────────────────────┘
@@ -25,7 +25,7 @@ AgentTree lets you run **multiple AI coding agents in parallel** on the same cod
 
 **Workflow:**
 1. You file a GitHub issue (or write a spec)
-2. Run: `agenttree dispatch 1 42` (send issue #42 to agent-1)
+2. Run: `agenttree start 1 42` (send issue #42 to agent-1)
 3. Agent-1's worktree resets to latest main
 4. Claude Code starts in a tmux session
 5. Agent works on the issue, creates PR
@@ -83,13 +83,13 @@ Each agent runs in a named tmux session. You can:
 ### 3. Task Dispatch
 ```bash
 # From GitHub issue
-agenttree dispatch 1 42
+agenttree start 1 42
 
 # Ad-hoc task  
-agenttree dispatch 2 --task "Fix the login bug"
+agenttree start 2 --task "Fix the login bug"
 
 # With specific tool
-agenttree dispatch 3 42 --tool aider
+agenttree start 3 42 --tool aider
 ```
 
 ### 4. Agent Status
@@ -631,14 +631,14 @@ echo "⏰ CI still running - check: gh pr checks $PR_NUM"
 
 ---
 
-## agents/ Directory: Shared AI Context
+## _agenttree/ Directory: Shared AI Context
 
 A separate git repo inside your project for all AI-generated content.
 
 ```
 project/
 ├── .git/                      # Main project repo
-├── agents/                    # Separate git repo
+├── _agenttree/                    # Separate git repo
 │   ├── .git/
 │   ├── specs/                 # Feature specifications
 │   │   └── issue-42-login-fix.md
@@ -652,25 +652,25 @@ project/
 
 ### Auto-sync on git pull
 
-Add a post-merge hook to sync agents/ when pulling main repo:
+Add a post-merge hook to sync _agenttree/ when pulling main repo:
 
 ```bash
 # .git/hooks/post-merge
 #!/bin/bash
-if [ -d "agents/.git" ]; then
-    echo "Syncing agents/..."
+if [ -d "_agenttree/.git" ]; then
+    echo "Syncing _agenttree/..."
     cd agents && git pull origin main
 fi
 ```
 
 ### Spec-Driven Workflow
 
-Instead of TASK.md, write specs in agents/:
+Instead of TASK.md, write specs in _agenttree/:
 
-1. Create `agents/specs/issue-42-login-fix.md`
-2. Commit & push to agents/ repo
-3. Dispatch: `agenttree dispatch 1 42 --spec`
-4. Agent pulls agents/, finds their spec
+1. Create `_agenttree/specs/issue-42-login-fix.md`
+2. Commit & push to _agenttree/ repo
+3. Dispatch: `agenttree start 1 42 --spec`
+4. Agent pulls _agenttree/, finds their spec
 5. Agent updates spec with implementation notes
 6. Spec becomes permanent documentation
 
@@ -711,7 +711,7 @@ agents:
 
 Dispatch to remote:
 ```bash
-agenttree dispatch remote-1 42
+agenttree start remote-1 42
 # SSHs to remote machine and runs dispatch there
 ```
 
@@ -930,10 +930,10 @@ WORKDIR /workspace
 
 ```bash
 # Normal mode (interactive, with approvals)
-agenttree dispatch 1 42
+agenttree start 1 42
 
 # Autonomous mode in container (dangerous but isolated)
-agenttree dispatch 1 42 --container --dangerous
+agenttree start 1 42 --container --dangerous
 
 # Or set as default in config
 # .agenttree.yaml
@@ -1000,12 +1000,12 @@ tools:
 
 ```
 agenttree/
-├── cli.py              # CLI (agenttree dispatch, status, etc.)
+├── cli.py              # CLI (agenttree start, status, etc.)
 ├── config.py           # Configuration loading
 ├── worktree.py         # Git worktree management
 ├── tmux.py             # Tmux session management
 ├── github.py           # GitHub API (issues, PRs, CI)
-├── agents/
+├── _agenttree/
 │   ├── base.py         # BaseAgent interface
 │   ├── claude.py       # Claude Code adapter
 │   ├── aider.py        # Aider adapter
@@ -1030,15 +1030,15 @@ agenttree init
 agenttree setup 1 2 3
 
 # Dispatch
-agenttree dispatch 1 42
-agenttree dispatch 2 --task "Fix bug"
-agenttree dispatch remote-1 42
+agenttree start 1 42
+agenttree start 2 --task "Fix bug"
+agenttree start remote-1 42
 
 # Management
 agenttree status
 agenttree attach 1
 agenttree send 1 "focus on tests"
-agenttree kill 1
+agenttree stop 1
 agenttree logs 1
 
 # Server
@@ -1060,8 +1060,8 @@ agenttree serve
 - [ ] Claude Code, Aider, Codex adapters
 - [ ] Custom command support
 
-### Phase 3: agents/ Repo (Week 4)
-- [ ] Init command creates agents/ git repo
+### Phase 3: _agenttree/ Repo (Week 4)
+- [ ] Init command creates _agenttree/ git repo
 - [ ] Post-merge hook setup
 - [ ] Spec-driven dispatch
 
@@ -1122,7 +1122,7 @@ agenttree serve
 ```
 TASK.md
 .agent-config
-agents/  # If using separate repo (or don't ignore if keeping in main)
+_agenttree/  # If using separate repo (or don't ignore if keeping in main)
 ```
 
 ---
@@ -1156,7 +1156,7 @@ See @.cursorrules for coding guidelines.
 ## Questions for Development
 
 1. **Package name**: `agenttree` or something else?
-2. **agents/ repo location**: Inside project or separate?
+2. **_agenttree/ repo location**: Inside project or separate?
 3. **Default tool**: Claude Code, Aider, or configurable?
 4. **Namespace scheme**: `{project}-agent-{n}` or simpler?
 
