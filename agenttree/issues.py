@@ -111,13 +111,9 @@ class HistoryEntry(BaseModel):
 
 class Issue(BaseModel):
     """An issue in the agenttree workflow."""
-<<<<<<< HEAD
-    id: str
-=======
     _yaml_path: Path | None = PrivateAttr(default=None)
 
     id: int
->>>>>>> origin/main
     slug: str = ""
     title: str = ""
     created: str = ""
@@ -157,8 +153,6 @@ class Issue(BaseModel):
     # Guard for manager hook re-entry (e.g., "implement.review", "implement.review:running")
     manager_hooks_executed: Optional[str] = None
 
-<<<<<<< HEAD
-=======
     @field_validator("id", mode="before")
     @classmethod
     def _coerce_id_to_int(cls, v: Any) -> int:
@@ -208,7 +202,6 @@ class Issue(BaseModel):
         from agenttree.ids import format_issue_id
         return format_issue_id(self.id)
 
->>>>>>> origin/main
     @classmethod
     def from_yaml(cls, path: Path | str) -> "Issue":
         """Load an Issue from a YAML file.
@@ -217,22 +210,12 @@ class Issue(BaseModel):
             path: Path to issue.yaml file
 
         Returns:
-<<<<<<< HEAD
-            Issue object
-=======
             Issue object with _yaml_path set
->>>>>>> origin/main
 
         Raises:
             FileNotFoundError: If file doesn't exist
             pydantic.ValidationError: If data is invalid
         """
-<<<<<<< HEAD
-        return cls(**safe_yaml_load(Path(path)))
-
-    @classmethod
-    def get(cls, issue_id: str, sync: bool = True) -> Optional["Issue"]:
-=======
         p = Path(path)
         data = safe_yaml_load(p)
         issue = cls(**data)
@@ -264,7 +247,6 @@ class Issue(BaseModel):
 
     @classmethod
     def get(cls, issue_id: int | str, sync: bool = True) -> Optional["Issue"]:
->>>>>>> origin/main
         """Get an issue by ID.
 
         Convenience wrapper around get_issue(). Looks up the issue directory
@@ -972,15 +954,8 @@ def update_issue_stage(
     if not yaml_path.exists():
         return None
 
-<<<<<<< HEAD
-    data = safe_yaml_load(yaml_path)
-    old_stage = data.get("stage")
-
-    issue = Issue(**data)
-=======
     issue = Issue.from_yaml(yaml_path)
     old_stage = issue.stage
->>>>>>> origin/main
 
     # Update stage
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -992,32 +967,14 @@ def update_issue_stage(
         issue.ci_escalated = False
 
     # Clear ci_notified when entering ci_wait so new CI runs get detected
-<<<<<<< HEAD
-    # (must pop from data dict since _write_issue_yaml uses exclude_none=True,
-    #  so setting to None on the model won't remove from YAML)
-    if stage == "implement.ci_wait":
-        data.pop("ci_notified", None)
-        issue.ci_notified = None
-
-    # Pop legacy substage field
-    data.pop("substage", None)
-
-=======
     # (save() uses exclude_none=True, so setting to None omits the field)
     if stage == "implement.ci_wait":
         issue.ci_notified = None
 
->>>>>>> origin/main
     # Explicit overrides from caller
     if ci_escalated is not None:
         issue.ci_escalated = ci_escalated
     if clear_pr:
-<<<<<<< HEAD
-        # Must pop from data dict since exclude_none=True skips None values
-        data.pop("pr_number", None)
-        data.pop("pr_url", None)
-=======
->>>>>>> origin/main
         issue.pr_number = None
         issue.pr_url = None
 

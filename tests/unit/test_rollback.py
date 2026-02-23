@@ -331,11 +331,7 @@ class TestRollbackUpdatesState:
 
         assert result.exit_code == 0
         mock_rb.assert_called_once_with(
-<<<<<<< HEAD
-            issue_id="42",
-=======
             issue_id=42,
->>>>>>> origin/main
             target_stage="plan.draft",
             yes=True,
             reset_worktree=False,
@@ -426,11 +422,7 @@ class TestRollbackWorktreeReset:
 
         assert result.exit_code == 0
         mock_rb.assert_called_once_with(
-<<<<<<< HEAD
-            issue_id="42",
-=======
             issue_id=42,
->>>>>>> origin/main
             target_stage="explore.research",
             yes=True,
             reset_worktree=True,
@@ -460,11 +452,7 @@ class TestRollbackWorktreeReset:
 
         assert result.exit_code == 0
         mock_rb.assert_called_once_with(
-<<<<<<< HEAD
-            issue_id="42",
-=======
             issue_id=42,
->>>>>>> origin/main
             target_stage="plan.draft",
             yes=True,
             reset_worktree=False,

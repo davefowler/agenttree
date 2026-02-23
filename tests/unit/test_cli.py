@@ -931,11 +931,7 @@ class TestRollbackCommand:
 
         # Verify execute_rollback was called with correct args
         mock_rollback.assert_called_once_with(
-<<<<<<< HEAD
-            issue_id="42",
-=======
             issue_id=42,
->>>>>>> origin/main
             target_stage="explore.research",
             yes=True,
             reset_worktree=False,

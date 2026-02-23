@@ -44,13 +44,6 @@ def execute_rollback(
     from agenttree.state import get_active_agent, unregister_agent
     from agenttree.config import load_config
     from agenttree.issues import Issue, get_issue_dir, delete_session
-<<<<<<< HEAD
-    import shutil
-
-    # Normalize issue ID
-    issue_id_normalized = issue_id.lstrip("0") or "0"
-    issue = Issue.get(issue_id_normalized)
-=======
     from agenttree.ids import parse_issue_id
     import shutil
 
@@ -60,7 +53,6 @@ def execute_rollback(
 
     # Get issue
     issue = Issue.get(issue_id)
->>>>>>> origin/main
     if not issue:
         console.print(f"[red]Issue {issue_id} not found[/red]")
         return False
@@ -148,11 +140,7 @@ def execute_rollback(
     # Update issue stage with rollback history entry
     from agenttree.issues import update_issue_stage
     update_issue_stage(
-<<<<<<< HEAD
-        issue_id_normalized,
-=======
         issue.id,
->>>>>>> origin/main
         target_stage,
         skip_sync=skip_sync,
         history_type="rollback",
