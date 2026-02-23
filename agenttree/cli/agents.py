@@ -14,6 +14,7 @@ from agenttree.container import get_container_runtime
 from agenttree.agents_repo import AgentsRepository
 from agenttree.preflight import run_preflight
 from agenttree.issues import update_issue_metadata, create_session
+from agenttree.stages import Stage, TerminalStage
 
 
 def prepare_git_mounts(
@@ -131,11 +132,11 @@ def start_agent(
         sys.exit(1)
 
     # If issue is in backlog, move it to explore.define stage first
-    if issue.stage == "backlog":
+    if issue.stage == TerminalStage.BACKLOG:
         from agenttree.issues import update_issue_stage
         console.print(f"[cyan]Moving issue from backlog to explore.define...[/cyan]")
-        update_issue_stage(issue.id, "explore.define")
-        issue.stage = "explore.define"  # Update local reference
+        update_issue_stage(issue.id, Stage.EXPLORE_DEFINE)
+        issue.stage = Stage.EXPLORE_DEFINE  # Update local reference
 
     # Check if issue already has an active agent for this role
     existing_agent = get_active_agent(issue.id, role)

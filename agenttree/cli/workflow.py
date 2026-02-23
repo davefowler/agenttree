@@ -33,6 +33,7 @@ from agenttree.issues import (
     update_session_stage,
     delete_session,
 )
+from agenttree.stages import Stage, TerminalStage
 
 
 def _format_duration(minutes: int) -> str:
@@ -84,7 +85,7 @@ def stage_status(issue_id: str | None, active_only: bool) -> None:
         # Show all non-backlog, non-accepted issues
         active_issues = [
             i for i in list_issues_func()
-            if i.stage not in ("backlog", "accepted", "not_doing")
+            if i.stage not in (TerminalStage.BACKLOG, TerminalStage.ACCEPTED, TerminalStage.NOT_DOING)
         ]
 
         if active_only:
@@ -134,7 +135,7 @@ def stage_status(issue_id: str | None, active_only: bool) -> None:
             console.print(f"\n[yellow]⏳ Waiting for human review[/yellow]")
         else:
             console.print(f"\n[yellow]⏳ Waiting for '{status_stage_config.role}' agent[/yellow]")
-    elif issue.stage == "accepted":
+    elif issue.stage == TerminalStage.ACCEPTED:
         console.print(f"\n[green]✓ Issue completed[/green]")
 
 
@@ -165,11 +166,11 @@ def stage_next(issue_id: str | None, reassess: bool) -> None:
         console.print(f"[red]Issue {issue_id} not found[/red]")
         sys.exit(1)
 
-    if issue.stage == "accepted":
+    if issue.stage == TerminalStage.ACCEPTED:
         console.print(f"[yellow]Issue is already accepted[/yellow]")
         return
 
-    if issue.stage == "not_doing":
+    if issue.stage == TerminalStage.NOT_DOING:
         console.print(f"[yellow]Issue is marked as not doing[/yellow]")
         return
 
@@ -218,7 +219,7 @@ def stage_next(issue_id: str | None, reassess: bool) -> None:
             console.print(f"[dim]Note: Could not check git status: {e}[/dim]")
 
         # Determine if this is a takeover (not starting from beginning)
-        is_takeover = issue.stage not in ("backlog", "explore.define")
+        is_takeover = issue.stage not in (TerminalStage.BACKLOG, Stage.EXPLORE_DEFINE)
 
         # Load and display persona for context
         persona = load_persona(
@@ -268,10 +269,10 @@ def stage_next(issue_id: str | None, reassess: bool) -> None:
 
     # Handle --reassess flag for plan revision cycling
     if reassess:
-        if issue.stage != "plan.revise":
+        if issue.stage != Stage.PLAN_REVISE:
             console.print(f"[red]--reassess only works from plan.revise stage[/red]")
             sys.exit(1)
-        next_stage = "plan.assess"
+        next_stage: str = Stage.PLAN_ASSESS
         is_human_review = False
     else:
         # Calculate next stage (pass issue context for condition evaluation)
@@ -335,7 +336,7 @@ def stage_next(issue_id: str | None, reassess: bool) -> None:
             return
 
     # Determine if this is first agent entry (should include AGENTS.md system prompt)
-    is_first_stage = next_stage == "explore.define" and from_stage == "backlog"
+    is_first_stage = next_stage == Stage.EXPLORE_DEFINE and from_stage == TerminalStage.BACKLOG
 
     # Load and display skill for next stage with Jinja rendering
     skill = load_skill(next_stage, issue=updated, include_system=is_first_stage)
@@ -450,16 +451,16 @@ def defer_issue(issue_id: str) -> None:
         console.print(f"[red]Issue {issue_id} not found[/red]")
         sys.exit(1)
 
-    if issue.stage == "backlog":
+    if issue.stage == TerminalStage.BACKLOG:
         console.print(f"[yellow]Issue is already in backlog[/yellow]")
         return
 
-    if issue.stage == "accepted":
+    if issue.stage == TerminalStage.ACCEPTED:
         console.print(f"[yellow]Issue is already accepted, cannot defer[/yellow]")
         return
 
     # Move to backlog
-    updated = update_issue_stage(issue_id_normalized, "backlog")
+    updated = update_issue_stage(issue_id_normalized, TerminalStage.BACKLOG)
     if not updated:
         console.print(f"[red]Failed to update issue[/red]")
         sys.exit(1)
@@ -547,18 +548,18 @@ def shutdown_issue(
 
     # Set defaults based on stage
     if changes is None:
-        if stage == "backlog":
+        if stage == TerminalStage.BACKLOG:
             changes = "stash"
-        elif stage == "not_doing":
+        elif stage == TerminalStage.NOT_DOING:
             changes = "discard"
         else:  # accepted
             changes = "error"
 
     if keep_worktree is None:
-        keep_worktree = stage == "backlog"
+        keep_worktree = stage == TerminalStage.BACKLOG
 
     if keep_branch is None:
-        keep_branch = stage != "not_doing"
+        keep_branch = stage != TerminalStage.NOT_DOING
 
     config = load_config()
     repo_path = Path.cwd()

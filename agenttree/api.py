@@ -21,6 +21,7 @@ import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from agenttree.stages import Stage, TerminalStage
 from agenttree.ids import serve_session_name as get_serve_session_name
 
 if TYPE_CHECKING:
@@ -179,11 +180,11 @@ def start_agent(
         raise IssueNotFoundError(issue_id)
 
     # If issue is in backlog, move it to first real stage
-    if issue.stage == "backlog":
+    if issue.stage == TerminalStage.BACKLOG:
         if not quiet:
             console.print(f"[cyan]Moving issue from backlog to explore.define...[/cyan]")
-        update_issue_stage(issue.id, "explore.define")
-        issue.stage = "explore.define"
+        update_issue_stage(issue.id, Stage.EXPLORE_DEFINE)
+        issue.stage = Stage.EXPLORE_DEFINE
 
     # Check if agent already running (tmux session check)
     existing_agent = get_active_agent(issue.id, host)
@@ -690,6 +691,10 @@ def stop_agent(issue_id: int, role: str = "developer", quiet: bool = False) -> b
 def stop_all_agents_for_issue(issue_id: int, quiet: bool = False) -> int:
     """Stop all agents for an issue (across all roles).
 
+    Stops agents found via tmux sessions, then always attempts to stop the
+    container by name — even if no tmux sessions exist. This prevents orphaned
+    containers from continuing to modify issue state after archiving.
+
     Args:
         issue_id: Issue ID
         quiet: If True, suppress output messages
@@ -697,13 +702,20 @@ def stop_all_agents_for_issue(issue_id: int, quiet: bool = False) -> int:
     Returns:
         Number of agents stopped
     """
-    # Use lazy import to avoid circular dependency
     from agenttree.state import get_active_agents_for_issue
 
     agents = get_active_agents_for_issue(issue_id)
+    roles_stopped: set[str] = set()
     count = 0
     for agent in agents:
         if stop_agent(issue_id, agent.role, quiet):
+            count += 1
+        roles_stopped.add(agent.role)
+
+    # Always try to stop the container directly — tmux session may be gone
+    # while the container is still running and modifying issue state.
+    if "developer" not in roles_stopped:
+        if stop_agent(issue_id, "developer", quiet):
             count += 1
     return count
 

@@ -5,6 +5,8 @@ from enum import Enum
 from typing import Optional
 from pydantic import BaseModel, Field
 
+from agenttree.stages import TerminalStage
+
 
 class IssueStatus(str, Enum):
     """Issue status."""
@@ -26,7 +28,7 @@ class IssueBase(BaseModel):
 class Issue(IssueBase):
     """Full issue model."""
 
-    stage: str = "backlog"  # Dot path (e.g., "explore.define", "implement.code")
+    stage: str = TerminalStage.BACKLOG  # Dot path (e.g., "explore.define", "implement.code")
     status: IssueStatus = IssueStatus.OPEN
     priority: str = "medium"
     url: str | None = None
