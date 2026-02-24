@@ -166,46 +166,6 @@ def get_git_diff_stats() -> dict[str, int]:
     return stats
 
 
-def push_branch_to_remote(branch: str) -> None:
-    """Push branch to remote, creating remote branch with same name.
-
-    IMPORTANT: This explicitly pushes local branch to origin/{branch},
-    NOT to whatever upstream the branch might be tracking. This ensures
-    feature branches don't accidentally push to main.
-
-    Args:
-        branch: Branch name to push
-
-    Raises:
-        subprocess.CalledProcessError: If push fails
-    """
-    # Explicitly specify source:destination to avoid pushing to tracked branch
-    # e.g., "git push -u origin mybranch:mybranch" ensures we create/update
-    # origin/mybranch, not whatever origin/main the branch might be tracking
-    subprocess.run(
-        ["git", "push", "-u", "origin", f"{branch}:{branch}"],
-        check=True,
-        capture_output=True,
-        text=True,
-    )
-
-
-def get_commits_behind_main(worktree_dir: str | None) -> int:
-    """Get the number of commits the worktree is behind local main.
-
-    Compares to local main branch (not origin/main) for fast lookups (~10ms).
-    Local main is kept up to date by separate pull operations.
-
-    Args:
-        worktree_dir: Path to the worktree directory
-
-    Returns:
-        Number of commits behind main, or 0 if unable to determine
-    """
-    _, behind = get_commits_ahead_behind_main(worktree_dir)
-    return behind
-
-
 def get_commits_ahead_behind_main(worktree_dir: str | None) -> tuple[int, int]:
     """Get the number of commits ahead and behind local main.
 
@@ -320,45 +280,3 @@ def rebase_issue_branch(issue_id: int | str) -> tuple[bool, str]:
         return False, "Rebase timed out"
     except Exception as e:
         return False, f"Rebase error: {e}"
-
-
-def get_repo_remote_name() -> str:
-    """Get the repository name from git remote.
-
-    Parses owner/repo from URLs like:
-    - git@github.com:owner/repo.git
-    - https://github.com/owner/repo.git
-    - https://github.com/owner/repo
-
-    Returns:
-        Repository name in format "owner/repo"
-
-    Raises:
-        subprocess.CalledProcessError: If git command fails
-        ValueError: If URL format is unrecognized
-    """
-    result = subprocess.run(
-        ["git", "remote", "get-url", "origin"],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    url = result.stdout.strip()
-
-    # Remove .git suffix if present
-    if url.endswith(".git"):
-        url = url[:-4]
-
-    # Parse SSH URL: git@github.com:owner/repo
-    if url.startswith("git@"):
-        match = re.search(r"git@[^:]+:(.+)", url)
-        if match:
-            return match.group(1)
-
-    # Parse HTTPS URL: https://github.com/owner/repo
-    if url.startswith("https://") or url.startswith("http://"):
-        match = re.search(r"github\.com/(.+)", url)
-        if match:
-            return match.group(1)
-
-    raise ValueError(f"Unrecognized remote URL format: {url}")
