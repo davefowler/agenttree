@@ -28,8 +28,8 @@ def review_loop_config() -> dict:
         "worktrees_dir": ".worktrees",
         "roles": {
             "manager": {"description": "Human manager"},
-            "agent": {"description": "Default agent"},
-            "review": {"description": "Review agent", "skill": "agents/review.md"},
+            "developer": {"description": "Default agent"},
+            "reviewer": {"description": "Review agent", "skill": "agents/reviewer.md"},
         },
         "flows": {
             "default": {
@@ -42,7 +42,7 @@ def review_loop_config() -> dict:
                         },
                     },
                     "independent_code_review": {
-                        "role": "review",
+                        "role": "reviewer",
                         "output": "independent_review.md",
                         "pre_completion": [
                             {"file_exists": "independent_review.md"},
@@ -52,7 +52,7 @@ def review_loop_config() -> dict:
                     },
                     "address_independent_review": {
                         "redirect_only": True,
-                        "role": "agent",
+                        "role": "developer",
                         "output": "independent_review_response.md",
                         "pre_completion": [
                             {"section_check": {"file": "independent_review_response.md", "section": "Changes Made", "expect": "not_empty"}},

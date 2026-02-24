@@ -4,7 +4,7 @@ This module provides an event dispatcher that fires events and executes
 configured actions. Events are configured in .agenttree.yaml under the `on:` key.
 
 Events:
-    - startup: Fires once when `agenttree run` starts
+    - startup: Fires once when `agenttree start` starts
     - shutdown: Fires when `agenttree shutdown` is called
     - heartbeat: Fires periodically (configurable interval)
     - stage_enter/stage_exit: Stage-specific, configured per-stage (unchanged)

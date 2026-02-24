@@ -1,12 +1,17 @@
 """Container runtime support for AgentTree."""
 
+from __future__ import annotations
+
 import os
 import platform
 import re
 import shutil
 import subprocess
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from agenttree.config import ContainerTypeConfig, ToolConfig
 
 
 # =============================================================================
@@ -195,7 +200,7 @@ def is_container_running(container_name: str) -> bool:
         return False
 
 
-def get_git_worktree_info(worktree_path: Path) -> Tuple[Optional[Path], Optional[Path]]:
+def get_git_worktree_info(worktree_path: Path) -> tuple[Path | None, Path | None]:
     """Get git directory info for a worktree.
 
     Git worktrees have a .git FILE (not directory) that points to the main
@@ -206,7 +211,7 @@ def get_git_worktree_info(worktree_path: Path) -> Tuple[Optional[Path], Optional
         worktree_path: Path to the worktree
 
     Returns:
-        Tuple of (main_git_dir, worktree_git_dir) or (None, None) if not a worktree
+        tuple of (main_git_dir, worktree_git_dir) or (None, None) if not a worktree
     """
     git_path = worktree_path / ".git"
 
@@ -236,6 +241,156 @@ def get_git_worktree_info(worktree_path: Path) -> Tuple[Optional[Path], Optional
     return None, None
 
 
+def build_container_command(
+    runtime: str,
+    worktree_path: Path,
+    container_type: ContainerTypeConfig,
+    container_name: str,
+    tool_config: ToolConfig,
+    role: str,
+    issue_id: int | None = None,
+    ports: list[int] | None = None,
+    model: str | None = None,
+    force_api_key: bool = False,
+    interactive: bool = True,
+) -> list[str]:
+    """Build a generic container run command.
+
+    This function has ZERO type-specific conditionals. All behavior differences
+    come from the ContainerTypeConfig. There is no "if manager" or "if issue" -
+    just config-driven command building.
+
+    Layering order:
+    1. Implicit system mounts (worktree, .git, _agenttree)
+    2. Tool mounts (Claude config, session storage)
+    3. User mounts (from container_type.mounts)
+    4. System env vars (AGENTTREE_CONTAINER, AGENTTREE_ROLE, etc.)
+    5. Tool env vars (auth tokens, API keys)
+    6. User env vars (from container_type.env)
+    7. Port forwarding (from collected session ports)
+    8. Image and entry command
+
+    Args:
+        runtime: Container runtime command (docker, container, podman)
+        worktree_path: Path to mount as /workspace
+        container_type: Resolved ContainerTypeConfig (extends already resolved)
+        container_name: Name for the container
+        tool_config: Tool config for mounts/env/entry command
+        role: Agent role (developer, reviewer, manager, etc.)
+        issue_id: Issue ID if applicable (None for sandboxes/manager)
+        ports: List of ports to forward
+        model: Model for the AI tool
+        force_api_key: Force API key mode (skip OAuth)
+        interactive: Whether to use -it flags
+
+    Returns:
+        Complete container command as list of strings
+    """
+    from agenttree.config import render_template
+
+    abs_path = worktree_path.resolve()
+    home = Path.home()
+
+    cmd = [runtime, "run"]
+
+    if interactive:
+        cmd.append("-it")
+
+    # Container name
+    cmd.extend(["--name", container_name])
+
+    # === 1. Implicit system mounts (always present) ===
+
+    # Mount worktree as /workspace
+    cmd.extend(["-v", f"{abs_path}:/workspace"])
+    cmd.extend(["-w", "/workspace"])
+
+    # Mount git directory for worktrees so git operations work
+    main_git_dir, _ = get_git_worktree_info(abs_path)
+    if main_git_dir and main_git_dir.exists():
+        cmd.extend(["-v", f"{main_git_dir}:{main_git_dir}"])
+
+        # Mount _agenttree directory
+        main_repo_dir = main_git_dir.parent
+        agenttrees_dir = main_repo_dir / "_agenttree"
+        if agenttrees_dir.exists():
+            cmd.extend(["-v", f"{agenttrees_dir}:/workspace/_agenttree"])
+
+    # === 2. Tool mounts ===
+    for host_path, container_path, mode in tool_config.container_mounts(abs_path, role, home):
+        mount_str = f"{host_path}:{container_path}"
+        if mode and mode != "rw":
+            mount_str += f":{mode}"
+        cmd.extend(["-v", mount_str])
+
+    # === 3. User mounts (from container_type config) ===
+    for mount in container_type.mounts:
+        # Expand ~ in mount paths
+        if mount.startswith("~"):
+            parts = mount.split(":", 2)
+            parts[0] = str(Path(parts[0]).expanduser())
+            mount = ":".join(parts)
+        cmd.extend(["-v", mount])
+
+    # === 4. System env vars ===
+    cmd.extend(["-e", "AGENTTREE_CONTAINER=1"])
+    cmd.extend(["-e", f"AGENTTREE_ROLE={role}"])
+
+    if issue_id is not None:
+        cmd.extend(["-e", f"AGENTTREE_ISSUE_ID={issue_id}"])
+
+    # Set PORT env var if ports are configured
+    if ports:
+        cmd.extend(["-e", f"PORT={ports[0]}"])
+
+    # === 5. Tool env vars ===
+    for key, value in tool_config.container_env(home, force_api_key).items():
+        cmd.extend(["-e", f"{key}={value}"])
+
+    # === 6. User env vars (from container_type config) ===
+    # Build context for Jinja rendering
+    context: dict[str, object] = {
+        "role": role,
+        "port": ports[0] if ports else 0,
+    }
+    if issue_id is not None:
+        context["issue_id"] = issue_id
+
+    for key, value in container_type.env.items():
+        # Render Jinja templates in env values
+        rendered_value = render_template(str(value), context)
+        cmd.extend(["-e", f"{key}={rendered_value}"])
+
+    # === 7. Port forwarding ===
+    if ports:
+        for port in ports:
+            cmd.extend(["-p", f"{port}:{port}"])
+
+    # === 8. Image ===
+    image = container_type.image or "agenttree-agent:latest"
+    cmd.append(image)
+
+    # === 9. Entry command (from tool config) ===
+    # Check if there's a prior session to continue
+    sessions_dir = abs_path / f".claude-sessions-{role}"
+    has_prior_session = sessions_dir.exists() and any(sessions_dir.glob("*.jsonl"))
+
+    # Determine if dangerous mode is allowed
+    # Both container type and role must allow it (we assume role allows since
+    # that check happens at a higher level)
+    # Default to True if None (matches pre-Optional behavior)
+    dangerous = container_type.allow_dangerous if container_type.allow_dangerous is not None else True
+
+    entry_cmd = tool_config.container_entry_command(
+        model=model,
+        dangerous=dangerous,
+        continue_session=has_prior_session,
+    )
+    cmd.extend(entry_cmd)
+
+    return cmd
+
+
 class ContainerRuntime:
     """Container runtime manager."""
 
@@ -244,7 +399,7 @@ class ContainerRuntime:
         self.runtime = self.detect_runtime()
 
     @staticmethod
-    def detect_runtime() -> Optional[str]:
+    def detect_runtime() -> str | None:
         """Detect available container runtime.
 
         Returns:
@@ -356,187 +511,6 @@ class ContainerRuntime:
         except Exception as e:
             print(f"Warning: Could not check Docker status: {e}")
             return False
-
-    def build_run_command(
-        self,
-        worktree_path: Path,
-        ai_tool: str = "claude",
-        dangerous: bool = False,
-        image: str = "agenttree-agent:latest",
-        additional_args: Optional[List[str]] = None,
-        agent_num: Optional[int] = None,
-        model: Optional[str] = None,
-        role: str = "developer",
-        port: Optional[int] = None,
-        container_name: Optional[str] = None,
-        force_api_key: bool = False,
-    ) -> List[str]:
-        """Build the container run command.
-
-        Args:
-            worktree_path: Path to the worktree to mount
-            ai_tool: AI tool to run
-            dangerous: Whether to run in dangerous mode (skip permissions)
-            image: Container image to use
-            additional_args: Additional arguments for the container
-            agent_num: Agent number for container naming (deprecated, use container_name)
-            model: Model to use (e.g., "opus", "sonnet"). Defaults to CLI default.
-            role: Agent role (e.g., "developer", "reviewer"). Defaults to "developer".
-            port: Dev server port to expose (e.g., 9001). If provided, adds -p port:port mapping.
-            container_name: Explicit container name (e.g., "agenttree-issue-123-developer")
-            force_api_key: Force API key mode (skip OAuth subscription)
-
-        Returns:
-            Command list
-
-        Raises:
-            RuntimeError: If no container runtime available
-        """
-        if not self.runtime:
-            raise RuntimeError(
-                "No container runtime available. "
-                "Install Docker or upgrade to macOS 26+ for Apple Container."
-            )
-
-        # Apple Container requires absolute paths for volume mounts
-        abs_path = worktree_path.resolve()
-        home = Path.home()
-
-        cmd = [
-            self.runtime,
-            "run",
-            "-it",
-            "-v",
-            f"{abs_path}:/workspace",
-            "-w",
-            "/workspace",
-        ]
-
-        # Name container for easier cleanup and tracking
-        # Prefer explicit container_name, fall back to agent_num-based name
-        if container_name:
-            cmd.extend(["--name", container_name])
-        elif agent_num is not None:
-            cmd.extend(["--name", f"agenttree-agent-{agent_num}"])
-
-        # Expose dev server port if configured
-        if port is not None:
-            cmd.extend(["-p", f"{port}:{port}"])
-
-        # Mount git directory for worktrees so git operations work in container
-        # Worktrees have a .git file pointing to /path/to/repo/.git/worktrees/name
-        # We mount the main .git dir at the same path so the reference resolves
-        main_git_dir, worktree_git_dir = get_git_worktree_info(abs_path)
-        if main_git_dir and main_git_dir.exists():
-            # Mount main .git directory at the same absolute path inside container
-            cmd.extend(["-v", f"{main_git_dir}:{main_git_dir}"])
-
-            # Also mount _agenttree directory so agent can access issue files and state
-            # The _agenttree dir is in the main repo, not the worktree
-            # Mount it at /workspace/_agenttree so it's accessible from the working directory
-            main_repo_dir = main_git_dir.parent
-            agenttrees_dir = main_repo_dir / "_agenttree"
-            if agenttrees_dir.exists():
-                cmd.extend(["-v", f"{agenttrees_dir}:/workspace/_agenttree"])
-
-        # Mount ~/.claude directory (contains settings, but skip if it would cause issues)
-        # Note: ~/.claude.json is the main config but Apple Container can't mount files, only dirs
-        # The entrypoint copies ~/.claude.json from a mounted config dir if available
-        claude_config_dir = home / ".claude"
-        if claude_config_dir.exists():
-            cmd.extend(["-v", f"{claude_config_dir}:/home/agent/.claude-host:ro"])
-
-        # Mount session storage for conversation persistence across restarts
-        # Each role gets its own session directory to keep conversations separate
-        # This allows using `claude -c` to continue previous conversations
-        # and prevents reviewer from continuing developer's session
-        sessions_dir = abs_path / f".claude-sessions-{role}"
-        sessions_dir.mkdir(exist_ok=True)
-        cmd.extend(["-v", f"{sessions_dir}:/home/agent/.claude/projects/-workspace"])
-
-        # Check if there are existing sessions to continue
-        has_prior_session = any(sessions_dir.glob("*.jsonl"))
-
-        # Pass through auth credentials
-        # Helper to get credential from env or file
-        def get_credential(env_var: str, file_key: str) -> Optional[str]:
-            # Check environment first
-            if os.environ.get(env_var):
-                return os.environ[env_var]
-            # Fall back to credentials file
-            creds_file = home / ".config" / "agenttree" / "credentials"
-            if creds_file.exists():
-                for line in creds_file.read_text().splitlines():
-                    if line.startswith(f"{file_key}="):
-                        return line.split("=", 1)[1].strip()
-            return None
-
-        # OAuth token for subscription auth (from `claude setup-token`)
-        # Skip OAuth when force_api_key is True to use API key instead
-        if not force_api_key:
-            oauth_token = get_credential("CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN")
-            if oauth_token:
-                cmd.extend(["-e", f"CLAUDE_CODE_OAUTH_TOKEN={oauth_token}"])
-
-        # Always pass API key into container if available (for rate limit fallback)
-        # This allows switching to API key mode without restarting container
-        api_key = get_credential("ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY")
-        if api_key:
-            cmd.extend(["-e", f"ANTHROPIC_API_KEY={api_key}"])
-
-        # Set container indicator env var for reliable container detection
-        cmd.extend(["-e", "AGENTTREE_CONTAINER=1"])
-
-        # Set agent role for permission checking
-        cmd.extend(["-e", f"AGENTTREE_ROLE={role}"])
-
-        if additional_args:
-            cmd.extend(additional_args)
-
-        cmd.append(image)
-        cmd.append(ai_tool)
-
-        # Use -c to continue previous session if one exists
-        # Only add -c when there's a prior session (Claude exits if no session to continue)
-        if has_prior_session:
-            cmd.append("-c")
-
-        if model:
-            cmd.extend(["--model", model])
-
-        if dangerous:
-            cmd.append("--dangerously-skip-permissions")
-
-        return cmd
-
-    def run_in_container(
-        self,
-        worktree_path: Path,
-        ai_tool: str = "claude",
-        dangerous: bool = False,
-        image: str = "agenttree-agent:latest",
-        additional_args: Optional[List[str]] = None,
-    ) -> subprocess.Popen:
-        """Run AI tool in a container.
-
-        Args:
-            worktree_path: Path to the worktree
-            ai_tool: AI tool to run
-            dangerous: Whether to run in dangerous mode
-            image: Container image to use
-            additional_args: Additional container arguments
-
-        Returns:
-            Process handle
-
-        Raises:
-            RuntimeError: If no container runtime available
-        """
-        cmd = self.build_run_command(
-            worktree_path, ai_tool, dangerous, image, additional_args
-        )
-
-        return subprocess.Popen(cmd)
 
     def get_runtime_name(self) -> str:
         """Get the name of the detected runtime.
@@ -713,7 +687,7 @@ class ContainerRuntime:
 
 
 # Global container runtime instance
-_runtime: Optional[ContainerRuntime] = None
+_runtime: ContainerRuntime | None = None
 
 
 def get_container_runtime() -> ContainerRuntime:
@@ -728,7 +702,7 @@ def get_container_runtime() -> ContainerRuntime:
     return _runtime
 
 
-def find_container_by_worktree(worktree_path: Path) -> Optional[str]:
+def find_container_by_worktree(worktree_path: Path) -> str | None:
     """Find a running container's UUID by its worktree mount path.
 
     Apple Containers use UUIDs, not names. This function inspects running
@@ -774,7 +748,7 @@ def find_container_by_worktree(worktree_path: Path) -> Optional[str]:
             if container.get("status") != "running":
                 continue
 
-            container_id: Optional[str] = container.get("id")
+            container_id: str | None = container.get("id")
             if not container_id:
                 continue
 

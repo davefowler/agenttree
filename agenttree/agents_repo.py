@@ -758,6 +758,7 @@ def check_ci_status(agents_dir: Path) -> int:
     from agenttree.issues import Issue
 
     console = Console()
+    config = load_config()
     issues_notified = 0
 
     for issue_dir in issues_dir.iterdir():
@@ -869,7 +870,7 @@ def check_ci_status(agents_dir: Path) -> int:
                 and i > 0 and issue.history[i - 1].stage in ci_stages
             )
 
-            max_ci_bounces = 3
+            max_ci_bounces = config.manager.max_ci_bounces
             if ci_bounce_count >= max_ci_bounces:
                 # Circuit breaker: stop looping, escalate to human review
                 # Generate a structured escalation report for human review
@@ -912,7 +913,6 @@ def check_ci_status(agents_dir: Path) -> int:
             console.print(f"[yellow]Issue #{issue_id} moved back to implement.debug stage for CI fix[/yellow]")
 
             # Ensure agent is running and notify it
-            config = load_config()
             tmux_manager = TmuxManager(config)
             agent = get_active_agent(issue_id)
 

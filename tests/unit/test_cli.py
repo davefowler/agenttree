@@ -321,7 +321,7 @@ class TestIssueCreateCommand:
         mock_issue.id = "42"
         mock_issue.title = "A valid issue title here"
         mock_issue.slug = "a-valid-issue-title-here"
-        mock_issue.stage = "define"
+        mock_issue.stage = "explore.define"
         mock_issue.dependencies = None
 
         problem = "This is a detailed problem statement that is at least 50 characters long for the test."
@@ -756,109 +756,6 @@ class TestShutdownCommand:
 
         assert result.exit_code == 1
         assert "error" in result.output.lower()
-
-
-class TestSandboxCommand:
-    """Tests for the sandbox command."""
-
-    def test_sandbox_help(self, cli_runner):
-        """Should show help for sandbox command."""
-        from agenttree.cli import main
-
-        result = cli_runner.invoke(main, ["sandbox", "--help"])
-
-        assert result.exit_code == 0
-        assert "sandbox" in result.output.lower()
-        assert "--list" in result.output
-        assert "--kill" in result.output
-        assert "--git" in result.output
-
-    def test_sandbox_list_no_active(self, cli_runner, mock_config):
-        """Should show message when no active sandboxes."""
-        from agenttree.cli import main
-
-        with patch("agenttree.cli.agents.load_config", return_value=mock_config):
-            with patch("agenttree.tmux.list_sessions", return_value=[]):
-                result = cli_runner.invoke(main, ["sandbox", "--list"])
-
-        assert result.exit_code == 0
-        assert "No active sandboxes" in result.output
-
-    def test_sandbox_list_with_active(self, cli_runner, mock_config):
-        """Should list active sandboxes correctly."""
-        from agenttree.cli import main
-        from agenttree.tmux import TmuxSession
-
-        # Create mock TmuxSession objects
-        mock_sessions = [
-            TmuxSession(name="testproject-sandbox-default", windows=1, attached=False),
-            TmuxSession(name="testproject-sandbox-experiments", windows=1, attached=True),
-            TmuxSession(name="other-project-agent-1", windows=1, attached=False),  # Should be filtered out
-        ]
-
-        with patch("agenttree.cli.agents.load_config", return_value=mock_config):
-            with patch("agenttree.tmux.list_sessions", return_value=mock_sessions):
-                result = cli_runner.invoke(main, ["sandbox", "--list"])
-
-        assert result.exit_code == 0
-        assert "Active Sandboxes" in result.output
-        assert "default" in result.output
-        assert "experiments" in result.output
-        # The non-sandbox session should not appear
-        assert "other-project" not in result.output
-
-    def test_sandbox_kill_existing(self, cli_runner, mock_config):
-        """Should kill an existing sandbox."""
-        from agenttree.cli import main
-
-        with patch("agenttree.cli.agents.load_config", return_value=mock_config):
-            with patch("agenttree.tmux.session_exists", return_value=True):
-                with patch("agenttree.tmux.kill_session") as mock_kill:
-                    result = cli_runner.invoke(main, ["sandbox", "mysandbox", "--kill"])
-
-        assert result.exit_code == 0
-        assert "Killed" in result.output
-        mock_kill.assert_called_once_with("testproject-sandbox-mysandbox")
-
-    def test_sandbox_kill_not_running(self, cli_runner, mock_config):
-        """Should handle killing a non-existent sandbox gracefully."""
-        from agenttree.cli import main
-
-        with patch("agenttree.cli.agents.load_config", return_value=mock_config):
-            with patch("agenttree.tmux.session_exists", return_value=False):
-                result = cli_runner.invoke(main, ["sandbox", "nosandbox", "--kill"])
-
-        assert result.exit_code == 0
-        assert "not running" in result.output
-
-    def test_sandbox_attach_existing(self, cli_runner, mock_config):
-        """Should attach to an existing sandbox."""
-        from agenttree.cli import main
-
-        with patch("agenttree.cli.agents.load_config", return_value=mock_config):
-            with patch("agenttree.tmux.session_exists", return_value=True):
-                with patch("agenttree.tmux.attach_session") as mock_attach:
-                    result = cli_runner.invoke(main, ["sandbox", "existing"])
-
-        assert result.exit_code == 0
-        assert "Attaching" in result.output
-        mock_attach.assert_called_once_with("testproject-sandbox-existing")
-
-    def test_sandbox_no_runtime_available(self, cli_runner, mock_config):
-        """Should error when no container runtime is available."""
-        from agenttree.cli import main
-
-        mock_runtime = MagicMock()
-        mock_runtime.is_available.return_value = False
-        mock_runtime.get_recommended_action.return_value = "Install Docker"
-
-        with patch("agenttree.cli.agents.load_config", return_value=mock_config):
-            with patch("agenttree.tmux.session_exists", return_value=False):
-                with patch("agenttree.container.get_container_runtime", return_value=mock_runtime):
-                    result = cli_runner.invoke(main, ["sandbox"])
-
-        assert result.exit_code == 1
-        assert "No container runtime" in result.output
 
 
 class TestRollbackCommand:

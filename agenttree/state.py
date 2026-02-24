@@ -123,7 +123,7 @@ def _build_agent_from_session(
 
     # Port is deterministic from issue ID
     config = load_config()
-    port = config.get_port_for_issue(issue_id) or 9000 + (issue_id % 1000)
+    port = config.get_port_for_issue(issue_id)
 
     # Convert unix timestamp to ISO format
     try:
