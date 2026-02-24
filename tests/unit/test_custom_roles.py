@@ -15,7 +15,7 @@ from agenttree.config import (
     StageConfig,
     load_config,
 )
-from agenttree.hooks import (
+from agenttree.environment import (
     get_current_role,
     can_agent_operate_in_stage,
     is_running_in_container,
@@ -341,7 +341,7 @@ class TestCheckCustomAgentStages:
         from agenttree.agents_repo import check_custom_agent_stages
 
         # is_running_in_container is imported from hooks inside the function
-        with patch("agenttree.hooks.is_running_in_container", return_value=True):
+        with patch("agenttree.environment.is_running_in_container", return_value=True):
             result = check_custom_agent_stages(tmp_path)
             assert result == 0
 
@@ -355,7 +355,7 @@ class TestCheckCustomAgentStages:
         mock_config = MagicMock()
         mock_config.get_custom_role_stages.return_value = []
 
-        with patch("agenttree.hooks.is_running_in_container", return_value=False):
+        with patch("agenttree.environment.is_running_in_container", return_value=False):
             with patch("agenttree.config.load_config", return_value=mock_config):
                 result = check_custom_agent_stages(tmp_path)
                 assert result == 0
@@ -387,7 +387,7 @@ class TestCheckCustomAgentStages:
         mock_agent_config = MagicMock()
         mock_config.get_custom_role.return_value = mock_agent_config
 
-        with patch("agenttree.hooks.is_running_in_container", return_value=False):
+        with patch("agenttree.environment.is_running_in_container", return_value=False):
             with patch("agenttree.config.load_config", return_value=mock_config):
                 with patch("agenttree.tmux.session_exists", return_value=True):
                     with patch("agenttree.tmux.is_claude_running", return_value=True):
@@ -421,7 +421,7 @@ class TestCheckCustomAgentStages:
         mock_agent_config = MagicMock()
         mock_config.get_custom_role.return_value = mock_agent_config
 
-        with patch("agenttree.hooks.is_running_in_container", return_value=False):
+        with patch("agenttree.environment.is_running_in_container", return_value=False):
             with patch("agenttree.config.load_config", return_value=mock_config):
                 with patch("agenttree.tmux.session_exists", return_value=False):
                     with patch("agenttree.container.is_container_running", return_value=False):

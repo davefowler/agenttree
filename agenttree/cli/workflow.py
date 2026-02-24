@@ -9,13 +9,12 @@ from rich.table import Table
 
 from agenttree.cli._utils import console, load_config, get_issue_func, get_issue_dir, normalize_issue_id
 from agenttree.tmux import TmuxManager, save_tmux_history_to_file
+from agenttree.environment import is_running_in_container, get_current_role
 from agenttree.hooks import (
     execute_exit_hooks,
     execute_enter_hooks,
     ValidationError,
     StageRedirect,
-    is_running_in_container,
-    get_current_role,
 )
 from agenttree.issues import (
     Issue,

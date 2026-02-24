@@ -1262,7 +1262,7 @@ def load_skill(
 
     # Inject command outputs for referenced commands
     from agenttree.commands import get_referenced_commands, get_command_output
-    from agenttree.hooks import get_code_directory
+    from agenttree.environment import get_code_directory
 
     issue_dir = get_issue_dir(issue.id)
     if config.commands:

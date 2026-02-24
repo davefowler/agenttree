@@ -249,7 +249,7 @@ def sync(agents_dir: Path, pull_only: bool = True, **kwargs: Any) -> None:
         agents_dir: Path to _agenttree directory
         pull_only: If True, only pull changes (default)
     """
-    from agenttree.hooks import is_running_in_container
+    from agenttree.environment import is_running_in_container
     import subprocess
     
     if is_running_in_container():

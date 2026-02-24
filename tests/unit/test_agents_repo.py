@@ -477,11 +477,11 @@ class TestCheckCiStatus:
         """Verify hook bails early when running in container."""
         from agenttree.agents_repo import check_ci_status
 
-        with patch("agenttree.hooks.is_running_in_container", return_value=True):
+        with patch("agenttree.environment.is_running_in_container", return_value=True):
             result = check_ci_status(agents_dir)
             assert result == 0
 
-    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    @patch("agenttree.environment.is_running_in_container", return_value=False)
     def test_check_ci_status_skips_non_implementation_review_issues(self, mock_container, agents_dir):
         """Verify hook only processes issues at implementation_review stage."""
         import yaml
@@ -506,7 +506,7 @@ class TestCheckCiStatus:
             mock_get_checks.assert_not_called()
             assert result == 0
 
-    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    @patch("agenttree.environment.is_running_in_container", return_value=False)
     def test_check_ci_status_skips_issues_without_pr(self, mock_container, agents_dir):
         """Verify hook skips issues without pr_number."""
         import yaml
@@ -531,7 +531,7 @@ class TestCheckCiStatus:
             mock_get_checks.assert_not_called()
             assert result == 0
 
-    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    @patch("agenttree.environment.is_running_in_container", return_value=False)
     def test_check_ci_status_on_ci_success_does_nothing(self, mock_container, agents_dir, issue_at_implementation_review):
         """Verify hook is a no-op when CI passes."""
         from agenttree.agents_repo import check_ci_status
@@ -550,7 +550,7 @@ class TestCheckCiStatus:
             assert not (issue_dir / "ci_feedback.md").exists()
             assert result == 0
 
-    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    @patch("agenttree.environment.is_running_in_container", return_value=False)
     def test_check_ci_status_ci_wait_advances_on_success(self, mock_container, agents_dir):
         """CI passing at ci_wait should advance to implement.review and notify agent."""
         import yaml
@@ -588,7 +588,7 @@ class TestCheckCiStatus:
 
             assert result == 1
 
-    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    @patch("agenttree.environment.is_running_in_container", return_value=False)
     def test_check_ci_status_on_ci_pending_does_nothing(self, mock_container, agents_dir, issue_at_implementation_review):
         """Verify hook waits for CI to complete (no action on pending)."""
         from agenttree.agents_repo import check_ci_status
@@ -606,7 +606,7 @@ class TestCheckCiStatus:
             assert not (issue_dir / "ci_feedback.md").exists()
             assert result == 0
 
-    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    @patch("agenttree.environment.is_running_in_container", return_value=False)
     def test_check_ci_status_on_ci_failure_writes_feedback(self, mock_container, agents_dir, issue_at_implementation_review):
         """Verify ci_feedback.md is created with failure details."""
         from agenttree.agents_repo import check_ci_status
@@ -632,7 +632,7 @@ class TestCheckCiStatus:
             assert "FAILED" in content or "fail" in content.lower()
             assert result == 1
 
-    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    @patch("agenttree.environment.is_running_in_container", return_value=False)
     def test_check_ci_status_on_ci_failure_transitions_to_implement(self, mock_container, agents_dir, issue_at_implementation_review):
         """Verify issue is moved back to implement stage."""
         import yaml
@@ -655,7 +655,7 @@ class TestCheckCiStatus:
                 data = yaml.safe_load(f)
             assert data["stage"] == "implement.debug"
 
-    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    @patch("agenttree.environment.is_running_in_container", return_value=False)
     def test_check_ci_status_on_ci_failure_sends_tmux_message(self, mock_container, agents_dir, issue_at_implementation_review):
         """Verify agent is notified via tmux."""
         from agenttree.agents_repo import check_ci_status
@@ -684,7 +684,7 @@ class TestCheckCiStatus:
                     assert "agent-42" in call_args[0]
                     assert "CI" in call_args[1] or "failed" in call_args[1].lower()
 
-    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    @patch("agenttree.environment.is_running_in_container", return_value=False)
     def test_check_ci_status_skips_already_notified(self, mock_container, agents_dir):
         """Verify duplicate notifications are prevented using ci_notified flag."""
         import yaml
@@ -718,7 +718,7 @@ class TestCheckCiStatus:
                 new_data = yaml.safe_load(f)
             assert new_data["stage"] == "implement.review"
 
-    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    @patch("agenttree.environment.is_running_in_container", return_value=False)
     def test_check_ci_status_sets_ci_notified_flag(self, mock_container, agents_dir, issue_at_implementation_review):
         """Verify ci_notified flag is set after notification."""
         import yaml
@@ -740,7 +740,7 @@ class TestCheckCiStatus:
             # But let's verify the feedback file was created
             assert (issue_dir / "ci_feedback.md").exists()
 
-    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    @patch("agenttree.environment.is_running_in_container", return_value=False)
     def test_check_ci_status_handles_no_active_agent_gracefully(self, mock_container, agents_dir, issue_at_implementation_review):
         """Verify graceful degradation when agent's tmux session isn't running."""
         from agenttree.agents_repo import check_ci_status
@@ -798,7 +798,7 @@ class TestCheckMergedPrs:
 
         return issue_dir, issue_data
 
-    @patch("agenttree.hooks.is_running_in_container", return_value=True)
+    @patch("agenttree.environment.is_running_in_container", return_value=True)
     def test_check_merged_prs_skips_in_container(self, mock_container, agents_dir):
         """Verify check_merged_prs skips when running in container."""
         from agenttree.agents_repo import check_merged_prs
@@ -807,7 +807,7 @@ class TestCheckMergedPrs:
         assert result == 0
 
     @patch("agenttree.config.load_config")
-    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    @patch("agenttree.environment.is_running_in_container", return_value=False)
     def test_check_merged_prs_skips_parking_lot_stages(self, mock_container, mock_config, agents_dir):
         """Verify issues in parking-lot stages (accepted, not_doing) are skipped."""
         import yaml
@@ -834,7 +834,7 @@ class TestCheckMergedPrs:
         assert result == 0
 
     @patch("agenttree.config.load_config")
-    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    @patch("agenttree.environment.is_running_in_container", return_value=False)
     def test_check_merged_prs_skips_issues_without_pr(self, mock_container, mock_config, agents_dir):
         """Verify issues without PR number are skipped."""
         import yaml
@@ -862,7 +862,7 @@ class TestCheckMergedPrs:
     @patch("subprocess.run")
     @patch("agenttree.hooks.cleanup_issue_agent")
     @patch("agenttree.config.load_config")
-    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    @patch("agenttree.environment.is_running_in_container", return_value=False)
     def test_check_merged_prs_advances_merged_pr_to_accepted(
         self, mock_container, mock_config, mock_cleanup, mock_run, agents_dir, issue_at_implementation_review_with_pr
     ):
@@ -900,7 +900,7 @@ class TestCheckMergedPrs:
     @patch("subprocess.run")
     @patch("agenttree.hooks.cleanup_issue_agent")
     @patch("agenttree.config.load_config")
-    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    @patch("agenttree.environment.is_running_in_container", return_value=False)
     def test_check_merged_prs_advances_closed_pr_to_not_doing(
         self, mock_container, mock_config, mock_cleanup, mock_run, agents_dir, issue_at_implementation_review_with_pr
     ):
@@ -937,7 +937,7 @@ class TestCheckMergedPrs:
 
     @patch("subprocess.run")
     @patch("agenttree.config.load_config")
-    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    @patch("agenttree.environment.is_running_in_container", return_value=False)
     def test_check_merged_prs_ignores_open_pr(
         self, mock_container, mock_config, mock_run, agents_dir, issue_at_implementation_review_with_pr
     ):
@@ -971,7 +971,7 @@ class TestCheckMergedPrs:
 
     @patch("subprocess.run")
     @patch("agenttree.config.load_config")
-    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    @patch("agenttree.environment.is_running_in_container", return_value=False)
     def test_check_merged_prs_handles_gh_failure(
         self, mock_container, mock_config, mock_run, agents_dir, issue_at_implementation_review_with_pr
     ):
@@ -1001,7 +1001,7 @@ class TestCheckMergedPrs:
 
     @patch("subprocess.run")
     @patch("agenttree.config.load_config")
-    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    @patch("agenttree.environment.is_running_in_container", return_value=False)
     def test_check_merged_prs_handles_timeout(
         self, mock_container, mock_config, mock_run, agents_dir, issue_at_implementation_review_with_pr
     ):
@@ -1027,7 +1027,7 @@ class TestCheckMergedPrs:
     @patch("subprocess.run")
     @patch("agenttree.hooks.cleanup_issue_agent")
     @patch("agenttree.config.load_config")
-    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    @patch("agenttree.environment.is_running_in_container", return_value=False)
     def test_check_merged_prs_catches_merged_pr_at_implement_stage(
         self, mock_container, mock_config, mock_cleanup, mock_run, agents_dir
     ):
@@ -1109,7 +1109,7 @@ class TestPushPendingBranches:
 
         return issue_dir, issue_data, worktree_dir
 
-    @patch("agenttree.hooks.is_running_in_container", return_value=True)
+    @patch("agenttree.environment.is_running_in_container", return_value=True)
     def test_push_pending_branches_skips_in_container(self, mock_container, agents_dir):
         """Verify push_pending_branches skips when running in container."""
         from agenttree.agents_repo import push_pending_branches
@@ -1117,7 +1117,7 @@ class TestPushPendingBranches:
         result = push_pending_branches(agents_dir)
         assert result == 0
 
-    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    @patch("agenttree.environment.is_running_in_container", return_value=False)
     def test_push_pending_branches_skips_issues_without_branch(self, mock_container, agents_dir):
         """Verify issues without branch are skipped."""
         import yaml
@@ -1137,7 +1137,7 @@ class TestPushPendingBranches:
         assert result == 0
 
     @patch("subprocess.run")
-    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    @patch("agenttree.environment.is_running_in_container", return_value=False)
     def test_push_pending_branches_skips_no_unpushed_commits(
         self, mock_container, mock_run, agents_dir, issue_with_worktree
     ):
@@ -1154,7 +1154,7 @@ class TestPushPendingBranches:
         assert mock_run.call_count == 1
 
     @patch("subprocess.run")
-    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    @patch("agenttree.environment.is_running_in_container", return_value=False)
     def test_push_pending_branches_pushes_with_commits(
         self, mock_container, mock_run, agents_dir, issue_with_worktree
     ):
@@ -1177,7 +1177,7 @@ class TestPushPendingBranches:
         assert result == 1
 
     @patch("subprocess.run")
-    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    @patch("agenttree.environment.is_running_in_container", return_value=False)
     def test_push_pending_branches_force_push_on_diverged(
         self, mock_container, mock_run, agents_dir, issue_with_worktree
     ):
@@ -1208,7 +1208,7 @@ class TestPushPendingBranches:
         assert call_count[0] == 3
 
     @patch("subprocess.run")
-    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    @patch("agenttree.environment.is_running_in_container", return_value=False)
     def test_push_pending_branches_handles_push_failure(
         self, mock_container, mock_run, agents_dir, issue_with_worktree
     ):
@@ -1229,7 +1229,7 @@ class TestPushPendingBranches:
         assert result == 0
 
     @patch("subprocess.run")
-    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    @patch("agenttree.environment.is_running_in_container", return_value=False)
     def test_push_pending_branches_handles_timeout(
         self, mock_container, mock_run, agents_dir, issue_with_worktree
     ):
@@ -1295,7 +1295,7 @@ class TestCiEscalationReport:
             yaml.dump(data, f)
         return issue_dir, data
 
-    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    @patch("agenttree.environment.is_running_in_container", return_value=False)
     def test_escalation_report_has_executive_summary(
         self, mock_container, agents_dir, issue_with_ci_history
     ):
@@ -1321,7 +1321,7 @@ class TestCiEscalationReport:
         assert "## Summary" in content
         assert "5" in content  # 5 failures (default max_ci_bounces)
 
-    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    @patch("agenttree.environment.is_running_in_container", return_value=False)
     def test_escalation_report_includes_recommendations(
         self, mock_container, agents_dir, issue_with_ci_history
     ):
@@ -1345,7 +1345,7 @@ class TestCiEscalationReport:
         # Should have Recommendations section
         assert "## Recommendations" in content
 
-    @patch("agenttree.hooks.is_running_in_container", return_value=False)
+    @patch("agenttree.environment.is_running_in_container", return_value=False)
     def test_escalation_report_preserves_logs(
         self, mock_container, agents_dir, issue_with_ci_history
     ):

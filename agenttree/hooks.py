@@ -429,44 +429,9 @@ from agenttree.events import (
     save_event_state as save_hook_state,
 )
 
-# =============================================================================
-# Re-exports from split modules (backward compatibility)
-# =============================================================================
-#
-# These functions were extracted to focused modules but are re-exported here
-# to maintain backward compatibility with existing imports.
-
-from agenttree.git_utils import (
-    get_current_branch,
-    has_uncommitted_changes,
-    get_default_branch,
-    has_commits_to_push,
-    get_git_diff_stats,
-    push_branch_to_remote,
-    get_commits_behind_main,
-    get_commits_ahead_behind_main,
-    rebase_issue_branch,
-    get_repo_remote_name,
-)
-
-from agenttree.environment import (
-    is_running_in_container,
-    get_code_directory,
-    get_current_role,
-    can_agent_operate_in_stage,
-)
-
-from agenttree.pr_actions import (
-    _action_create_pr,
-    _try_update_pr_branch,
-    _action_merge_pr,
-    get_pr_approval_status,
-    ensure_pr_for_issue,
-    generate_pr_body,
-    generate_commit_message,
-    auto_commit_changes,
-)
-
+from agenttree.environment import is_running_in_container, get_code_directory
+from agenttree.git_utils import has_commits_to_push, get_git_diff_stats, rebase_issue_branch
+from agenttree.pr_actions import get_pr_approval_status, _action_create_pr, _action_merge_pr
 
 # =============================================================================
 # Hook Parsing
