@@ -63,15 +63,16 @@ def mock_issue_no_worktree():
 class TestGetDiffEndpoint:
     """Tests for /api/issues/{issue_id}/diff endpoint."""
 
-    @patch("agenttree.web.app.Path.exists")
+    @patch("agenttree.web.utils.Path.exists", return_value=True)
     @patch("subprocess.run")
-    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.utils.issue_crud")
+    @patch("agenttree.web.routes.issues.issue_crud")
     def test_get_diff_returns_diff_output(
-        self, mock_crud, mock_run, mock_exists, client, mock_issue_with_worktree
+        self, mock_route_crud, mock_crud, mock_run, mock_exists, client, mock_issue_with_worktree
     ):
         """Test endpoint returns git diff output for valid issue with worktree."""
+        mock_route_crud.get_issue.return_value = mock_issue_with_worktree
         mock_crud.get_issue.return_value = mock_issue_with_worktree
-        mock_exists.return_value = True
 
         # Mock git diff output
         diff_output = """diff --git a/file.py b/file.py
@@ -98,11 +99,13 @@ index 1234567..abcdefg 100644
         assert data["has_changes"] is True
         assert "file.py" in data["diff"]
 
-    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.utils.issue_crud")
+    @patch("agenttree.web.routes.issues.issue_crud")
     def test_get_diff_no_worktree_returns_empty(
-        self, mock_crud, client, mock_issue_no_worktree
+        self, mock_route_crud, mock_crud, client, mock_issue_no_worktree
     ):
         """Test endpoint returns empty/message when issue has no worktree."""
+        mock_route_crud.get_issue.return_value = mock_issue_no_worktree
         mock_crud.get_issue.return_value = mock_issue_no_worktree
 
         response = client.get("/api/issues/002/diff")
@@ -113,7 +116,7 @@ index 1234567..abcdefg 100644
         assert data["diff"] == ""
         assert "no worktree" in data.get("error", "").lower() or data["diff"] == ""
 
-    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.routes.issues.issue_crud")
     def test_get_diff_invalid_issue_returns_404(self, mock_crud, client):
         """Test endpoint returns 404 for non-existent issue."""
         mock_crud.get_issue.return_value = None
@@ -122,15 +125,16 @@ index 1234567..abcdefg 100644
 
         assert response.status_code == 404
 
-    @patch("agenttree.web.app.Path.exists")
+    @patch("agenttree.web.utils.Path.exists", return_value=True)
     @patch("subprocess.run")
-    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.utils.issue_crud")
+    @patch("agenttree.web.routes.issues.issue_crud")
     def test_get_diff_no_changes_returns_empty(
-        self, mock_crud, mock_run, mock_exists, client, mock_issue_with_worktree
+        self, mock_route_crud, mock_crud, mock_run, mock_exists, client, mock_issue_with_worktree
     ):
         """Test endpoint handles case where branch has no changes from main."""
+        mock_route_crud.get_issue.return_value = mock_issue_with_worktree
         mock_crud.get_issue.return_value = mock_issue_with_worktree
-        mock_exists.return_value = True
 
         # Empty diff output means no changes
         mock_run.side_effect = [
@@ -145,17 +149,18 @@ index 1234567..abcdefg 100644
         assert data["has_changes"] is False
         assert data["diff"] == ""
 
-    @patch("agenttree.web.app.Path.exists")
+    @patch("agenttree.web.utils.Path.exists", return_value=True)
     @patch("subprocess.run")
-    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.utils.issue_crud")
+    @patch("agenttree.web.routes.issues.issue_crud")
     def test_get_diff_timeout_handling(
-        self, mock_crud, mock_run, mock_exists, client, mock_issue_with_worktree
+        self, mock_route_crud, mock_crud, mock_run, mock_exists, client, mock_issue_with_worktree
     ):
         """Test endpoint handles git command timeout gracefully."""
         import subprocess
 
+        mock_route_crud.get_issue.return_value = mock_issue_with_worktree
         mock_crud.get_issue.return_value = mock_issue_with_worktree
-        mock_exists.return_value = True
         mock_run.side_effect = subprocess.TimeoutExpired(cmd="git", timeout=5)
 
         response = client.get("/api/issues/001/diff")
@@ -165,15 +170,16 @@ index 1234567..abcdefg 100644
         assert "error" in data
         assert "timed out" in data["error"].lower()
 
-    @patch("agenttree.web.app.Path.exists")
+    @patch("agenttree.web.utils.Path.exists", return_value=True)
     @patch("subprocess.run")
-    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.utils.issue_crud")
+    @patch("agenttree.web.routes.issues.issue_crud")
     def test_get_diff_large_output_truncated(
-        self, mock_crud, mock_run, mock_exists, client, mock_issue_with_worktree
+        self, mock_route_crud, mock_crud, mock_run, mock_exists, client, mock_issue_with_worktree
     ):
         """Test diff output is truncated at 200KB with warning."""
+        mock_route_crud.get_issue.return_value = mock_issue_with_worktree
         mock_crud.get_issue.return_value = mock_issue_with_worktree
-        mock_exists.return_value = True
 
         # Create output larger than 200KB
         large_diff = "+" + "x" * 250_000  # 250KB of content
@@ -190,14 +196,15 @@ index 1234567..abcdefg 100644
         assert data["truncated"] is True
         assert len(data["diff"]) <= 204_800  # 200KB limit
 
-    @patch("agenttree.web.app.Path.exists")
-    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.utils.Path.exists", return_value=False)
+    @patch("agenttree.web.utils.issue_crud")
+    @patch("agenttree.web.routes.issues.issue_crud")
     def test_get_diff_deleted_worktree_handles_gracefully(
-        self, mock_crud, mock_exists, client, mock_issue_with_worktree
+        self, mock_route_crud, mock_crud, mock_exists, client, mock_issue_with_worktree
     ):
         """Test graceful handling when worktree path doesn't exist."""
+        mock_route_crud.get_issue.return_value = mock_issue_with_worktree
         mock_crud.get_issue.return_value = mock_issue_with_worktree
-        mock_exists.return_value = False  # Worktree doesn't exist
 
         response = client.get("/api/issues/001/diff")
 

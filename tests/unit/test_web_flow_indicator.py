@@ -8,7 +8,7 @@ from datetime import datetime
 pytest.importorskip("fastapi")
 
 from agenttree.web.models import Issue as WebIssue
-from agenttree.web.app import convert_issue_to_web
+from agenttree.web.utils import convert_issue_to_web
 from agenttree.issues import Priority
 
 
@@ -61,8 +61,8 @@ class TestConvertIssueToWebFlow:
         mock.history = []
         return mock
 
-    @patch("agenttree.web.app.agent_manager")
-    @patch("agenttree.web.app._config")
+    @patch("agenttree.web.utils.agent_manager")
+    @patch("agenttree.web.utils._config")
     def test_convert_issue_copies_default_flow(
         self, mock_config, mock_agent_mgr, mock_core_issue
     ):
@@ -74,8 +74,8 @@ class TestConvertIssueToWebFlow:
 
         assert web_issue.flow == "default"
 
-    @patch("agenttree.web.app.agent_manager")
-    @patch("agenttree.web.app._config")
+    @patch("agenttree.web.utils.agent_manager")
+    @patch("agenttree.web.utils._config")
     def test_convert_issue_copies_quick_flow(
         self, mock_config, mock_agent_mgr, mock_core_issue
     ):
