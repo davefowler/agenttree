@@ -1456,7 +1456,7 @@ class TestGitUtilities:
         # Should only call git status, not git add or commit
         assert mock_run.call_count == 1
 
-    @patch('agenttree.hooks.has_uncommitted_changes')
+    @patch('agenttree.pr_actions.has_uncommitted_changes')
     @patch('subprocess.run')
     def test_auto_commit_changes_with_changes(self, mock_run, mock_has_changes):
         """Should commit changes when they exist."""
@@ -1497,7 +1497,7 @@ class TestGitUtilities:
 
     # Tests for get_git_diff_stats()
 
-    @patch('agenttree.hooks.get_default_branch')
+    @patch('agenttree.git_utils.get_default_branch')
     @patch('subprocess.run')
     def test_get_git_diff_stats_parses_shortstat_output(self, mock_run, mock_default_branch):
         """Should parse typical shortstat output correctly."""
@@ -1520,7 +1520,7 @@ class TestGitUtilities:
         assert "--shortstat" in call_args
         assert "main...HEAD" in call_args
 
-    @patch('agenttree.hooks.get_default_branch')
+    @patch('agenttree.git_utils.get_default_branch')
     @patch('subprocess.run')
     def test_get_git_diff_stats_handles_only_insertions(self, mock_run, mock_default_branch):
         """Should handle output with only insertions (no deletions)."""
@@ -1536,7 +1536,7 @@ class TestGitUtilities:
 
         assert result == {'files_changed': 3, 'lines_added': 50, 'lines_removed': 0}
 
-    @patch('agenttree.hooks.get_default_branch')
+    @patch('agenttree.git_utils.get_default_branch')
     @patch('subprocess.run')
     def test_get_git_diff_stats_handles_only_deletions(self, mock_run, mock_default_branch):
         """Should handle output with only deletions (no insertions)."""
@@ -1552,7 +1552,7 @@ class TestGitUtilities:
 
         assert result == {'files_changed': 2, 'lines_added': 0, 'lines_removed': 30}
 
-    @patch('agenttree.hooks.get_default_branch')
+    @patch('agenttree.git_utils.get_default_branch')
     @patch('subprocess.run')
     def test_get_git_diff_stats_handles_single_file(self, mock_run, mock_default_branch):
         """Should handle singular 'file' in output."""
@@ -1568,7 +1568,7 @@ class TestGitUtilities:
 
         assert result == {'files_changed': 1, 'lines_added': 10, 'lines_removed': 0}
 
-    @patch('agenttree.hooks.get_default_branch')
+    @patch('agenttree.git_utils.get_default_branch')
     @patch('subprocess.run')
     def test_get_git_diff_stats_handles_empty_output(self, mock_run, mock_default_branch):
         """Should return zeros when there are no changes."""
@@ -1584,7 +1584,7 @@ class TestGitUtilities:
 
         assert result == {'files_changed': 0, 'lines_added': 0, 'lines_removed': 0}
 
-    @patch('agenttree.hooks.get_default_branch')
+    @patch('agenttree.git_utils.get_default_branch')
     @patch('subprocess.run')
     def test_get_git_diff_stats_handles_git_failure(self, mock_run, mock_default_branch):
         """Should return zeros gracefully when git command fails."""
@@ -1601,7 +1601,7 @@ class TestGitUtilities:
 
         assert result == {'files_changed': 0, 'lines_added': 0, 'lines_removed': 0}
 
-    @patch('agenttree.hooks.get_default_branch')
+    @patch('agenttree.git_utils.get_default_branch')
     @patch('subprocess.run')
     def test_get_git_diff_stats_uses_default_branch(self, mock_run, mock_default_branch):
         """Should use get_default_branch() to determine base branch."""
@@ -1946,7 +1946,7 @@ class TestHostOnlyOption:
 class TestMergeStrategyUsage:
     """Tests for configurable merge strategy."""
 
-    @patch('agenttree.hooks.is_running_in_container', return_value=False)
+    @patch('agenttree.pr_actions.is_running_in_container', return_value=False)
     @patch('agenttree.github.merge_pr')
     @patch('agenttree.config.load_config')
     def test_merge_uses_config_strategy(self, mock_load_config, mock_merge_pr, mock_container):
@@ -1962,7 +1962,7 @@ class TestMergeStrategyUsage:
 
         mock_merge_pr.assert_called_once_with(123, method="rebase")
 
-    @patch('agenttree.hooks.is_running_in_container', return_value=False)
+    @patch('agenttree.pr_actions.is_running_in_container', return_value=False)
     @patch('agenttree.github.merge_pr')
     @patch('agenttree.config.load_config')
     def test_merge_default_squash(self, mock_load_config, mock_merge_pr, mock_container):
@@ -2039,7 +2039,7 @@ class TestHostActionHooks:
         assert call_args[0][0] == hooks_config.post_pr_create
 
     @patch('agenttree.hooks.run_host_hooks')
-    @patch('agenttree.hooks.is_running_in_container', return_value=False)
+    @patch('agenttree.pr_actions.is_running_in_container', return_value=False)
     @patch('agenttree.github.merge_pr')
     @patch('agenttree.config.load_config')
     def test_post_merge_hooks_called(
@@ -2170,7 +2170,7 @@ class TestCreatePrRaisesOnFailure:
         with pytest.raises(RuntimeError, match="no issue_id"):
             _action_create_pr(Path("/tmp"), issue_id="")
 
-    @patch('agenttree.hooks.ensure_pr_for_issue', return_value=False)
+    @patch('agenttree.pr_actions.ensure_pr_for_issue', return_value=False)
     def test_raises_when_ensure_pr_fails(self, mock_ensure):
         """Should raise RuntimeError when ensure_pr_for_issue returns False."""
         from agenttree.hooks import _action_create_pr
@@ -2178,7 +2178,7 @@ class TestCreatePrRaisesOnFailure:
         with pytest.raises(RuntimeError, match="Failed to create PR"):
             _action_create_pr(Path("/tmp"), issue_id="042")
 
-    @patch('agenttree.hooks.ensure_pr_for_issue', return_value=True)
+    @patch('agenttree.pr_actions.ensure_pr_for_issue', return_value=True)
     def test_no_error_when_pr_created(self, mock_ensure):
         """Should not raise when ensure_pr_for_issue succeeds."""
         from agenttree.hooks import _action_create_pr
@@ -2996,7 +2996,7 @@ class TestRollbackHook:
 class TestGetCodeDirectory:
     """Tests for get_code_directory() helper function."""
 
-    @patch('agenttree.hooks.is_running_in_container', return_value=True)
+    @patch('agenttree.environment.is_running_in_container', return_value=True)
     def test_returns_workspace_in_container(self, mock_in_container, tmp_path):
         """Should return /workspace when running in container."""
         from agenttree.hooks import get_code_directory
@@ -3015,7 +3015,7 @@ class TestGetCodeDirectory:
 
         assert result == Path("/workspace")
 
-    @patch('agenttree.hooks.is_running_in_container', return_value=False)
+    @patch('agenttree.environment.is_running_in_container', return_value=False)
     def test_returns_worktree_dir_on_host_when_set(self, mock_in_container, tmp_path):
         """Should return worktree_dir on host when it's set."""
         from agenttree.hooks import get_code_directory
@@ -3034,7 +3034,7 @@ class TestGetCodeDirectory:
 
         assert result == Path(".worktrees/issue-123-test")
 
-    @patch('agenttree.hooks.is_running_in_container', return_value=False)
+    @patch('agenttree.environment.is_running_in_container', return_value=False)
     def test_returns_issue_dir_on_host_when_worktree_none(self, mock_in_container, tmp_path):
         """Should return issue_dir on host when worktree_dir is None."""
         from agenttree.hooks import get_code_directory
@@ -3053,7 +3053,7 @@ class TestGetCodeDirectory:
 
         assert result == issue_dir
 
-    @patch('agenttree.hooks.is_running_in_container', return_value=False)
+    @patch('agenttree.environment.is_running_in_container', return_value=False)
     def test_returns_issue_dir_when_issue_none_on_host(self, mock_in_container, tmp_path):
         """Should return issue_dir when issue is None on host."""
         from agenttree.hooks import get_code_directory
@@ -3064,7 +3064,7 @@ class TestGetCodeDirectory:
 
         assert result == issue_dir
 
-    @patch('agenttree.hooks.is_running_in_container', return_value=True)
+    @patch('agenttree.environment.is_running_in_container', return_value=True)
     def test_returns_workspace_when_issue_none_in_container(self, mock_in_container, tmp_path):
         """Should return /workspace when issue is None in container."""
         from agenttree.hooks import get_code_directory
