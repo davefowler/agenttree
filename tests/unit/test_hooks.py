@@ -448,7 +448,8 @@ This is the approach section with content.
         # Mock load_config to return commands and is_running_in_container to avoid /workspace
         mock_config = Config(commands={"git_branch": "echo 'feature-branch'"})
         with patch('agenttree.hooks.load_config', return_value=mock_config):
-            with patch('agenttree.hooks.is_running_in_container', return_value=False):
+            # Patch at environment module level since get_code_directory calls it from there
+            with patch('agenttree.environment.is_running_in_container', return_value=False):
                 with patch('agenttree.issues.get_issue_dir', return_value=issue_dir):
                     hook = {"type": "create_file", "template": "stats.md", "dest": "output.md"}
                     errors = run_builtin_validator(issue_dir, hook, issue=test_issue)
@@ -2143,7 +2144,7 @@ class TestRunHostHooks:
 class TestCursorReviewRemoved:
     """Tests verifying hardcoded Cursor review is removed."""
 
-    @patch('agenttree.hooks.ensure_pr_for_issue', return_value=True)
+    @patch('agenttree.pr_actions.ensure_pr_for_issue', return_value=True)
     @patch('subprocess.run')
     def test_no_hardcoded_cursor_comment(
         self, mock_subprocess, mock_ensure_pr
