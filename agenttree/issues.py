@@ -32,12 +32,8 @@ def resolve_conflict_markers(content: str) -> tuple[str, bool]:
     """Resolve git merge conflict markers in content by keeping local (ours) changes.
 
     Handles conflict blocks like:
-        <<<<<<< Updated upstream
-        remote content
-        =======
-        local content
-        >>>>>>> Stashed changes
-
+                remote content
+        
     Args:
         content: File content that may contain conflict markers
 
