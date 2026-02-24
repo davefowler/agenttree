@@ -62,14 +62,14 @@ agenttree init
 agenttree setup 1 2 3
 
 # Assign work
-agenttree start 1 42              # Send GitHub issue #42 to agent-1
-agenttree start 2 --task "Fix login bug"  # Ad-hoc task to agent-2
+agenttree start 42                # Start agent for issue #42
+agenttree issue create "Fix login bug"  # Create new issue
 
 # Monitor agents
-agenttree status                   # View all agents (CLI)
+agenttree status                   # View all issues and agents (CLI)
 agenttree start                    # Launch server + agents + web dashboard
-agenttree attach 1                 # Attach to agent-1 (Ctrl+B, D to detach)
-agenttree send 1 "focus on tests" # Send message to agent-1
+agenttree attach 42                # Attach to issue #42's agent (Ctrl+B, D to detach)
+agenttree send 42 "focus on tests" # Send message to issue #42's agent
 
 # Auto-merge PRs when CI passes
 agenttree auto-merge 123           # Merge PR #123 if ready
@@ -211,7 +211,7 @@ Tomorrow:  Problem validated → Plan validated → CI enforced → Auto-merge �
 
 **Workflow:**
 1. GitHub issue created or ad-hoc task defined
-2. `agenttree start 1 42` — Agent-1's worktree resets to latest main
+2. `agenttree start 42` — Issue #42's worktree resets to latest main
 3. Claude Code (or your tool of choice) starts in a tmux session inside a container
 4. Agent works on the issue independently. No interference. No shared state. Blissful isolation.
 5. Agent creates PR when done
@@ -354,33 +354,30 @@ This creates:
 ### Start Agents
 
 ```bash
-# From GitHub issue
-agenttree start 1 42
-
-# Ad-hoc task
-agenttree start 2 --task "Fix the login bug"
+# Start agent for issue #42
+agenttree start 42
 
 # With specific tool
-agenttree start 3 42 --tool aider
+agenttree start 42 --tool aider
 
-# Force (override busy agent)
-agenttree start 1 43 --force
+# Force restart (kills existing agent)
+agenttree start 42 --force
 ```
 
 ### Monitor Agents
 
 ```bash
-# View all agents
+# View all issues and agents
 agenttree status
 
-# Attach to agent session
-agenttree attach 1                # Ctrl+B, D to detach
+# Attach to agent session for issue #42
+agenttree attach 42               # Ctrl+B, D to detach
 
 # Send message to agent
-agenttree send 1 "focus on tests"
+agenttree send 42 "focus on tests"
 
-# Kill agent session
-agenttree kill 1
+# Stop agent for issue #42
+agenttree stop 42
 ```
 
 ### Manage Notes
@@ -484,28 +481,30 @@ uv run agenttree serve
 ### Example 1: Parallel Feature Development
 
 ```bash
-# Set up 3 agents
-agenttree setup 1 2 3
-
-# Assign different features
-agenttree start 1 101  # Issue #101: Add dark mode
-agenttree start 2 102  # Issue #102: Add search
-agenttree start 3 103  # Issue #103: Add export
+# Start agents for multiple issues in parallel
+agenttree start 101  # Issue #101: Add dark mode
+agenttree start 102  # Issue #102: Add search
+agenttree start 103  # Issue #103: Add export
 
 # Monitor progress
 agenttree status
 
-# Check on agent-1
-agenttree attach 1
+# Check on issue #101's agent
+agenttree attach 101
 ```
 
 ### Example 2: Bug Fixing Sprint
 
 ```bash
-# Assign multiple bugs
-agenttree start 1 --task "Fix login timeout"
-agenttree start 2 --task "Fix cart calculation"
-agenttree start 3 --task "Fix image upload"
+# Create issues for bugs
+agenttree issue create "Fix login timeout"
+agenttree issue create "Fix cart calculation"
+agenttree issue create "Fix image upload"
+
+# Start agents for each (issues get IDs like 104, 105, 106)
+agenttree start 104
+agenttree start 105
+agenttree start 106
 
 # All agents work in parallel
 ```
@@ -521,7 +520,7 @@ tools:
 ```
 
 ```bash
-agenttree start 1 42 --tool my_custom_tool
+agenttree start 42 --tool my_custom_tool
 ```
 
 ## Comparison with Other Tools
