@@ -3,7 +3,6 @@
 import subprocess
 
 from agenttree.config import load_config
-from agenttree.worktree import WorktreeManager
 
 # Load config at module level
 _config = load_config()
@@ -12,8 +11,7 @@ _config = load_config()
 class AgentManager:
     """Manages agent tmux session checks."""
 
-    def __init__(self, worktree_manager: WorktreeManager | None = None):
-        self.worktree_manager = worktree_manager
+    def __init__(self) -> None:
         self._active_sessions: set[str] | None = None
 
     def _get_active_sessions(self) -> set[str]:

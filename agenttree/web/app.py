@@ -21,7 +21,6 @@ from agenttree.config import load_config
 from agenttree.web.agent_manager import AgentManager, agent_manager
 from agenttree.web.deps import BASE_DIR
 from agenttree.web.routes import agents, issues, pages, rate_limit, settings, voice
-from agenttree.worktree import WorktreeManager
 
 # Background heartbeat task handle
 _heartbeat_task: asyncio.Task | None = None
@@ -163,9 +162,8 @@ def run_server(
         repo_path = Path.cwd()
         # Set env so uvicorn workers (which may have different cwd) can find config
         os.environ["AGENTTREE_REPO_PATH"] = str(repo_path)
-        worktree_manager = WorktreeManager(repo_path, config)
-        # Update the global agent_manager with worktree_manager
-        am_module.agent_manager = AgentManager(worktree_manager)
+        # Reinitialize agent_manager to clear any cached state from previous run
+        am_module.agent_manager = AgentManager()
         print(f"✓ Loaded config for project: {config.project}")
     except Exception as e:
         print(f"⚠ Could not load config: {e}")
