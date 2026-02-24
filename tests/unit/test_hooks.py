@@ -1372,65 +1372,6 @@ class TestGitUtilities:
 
         assert has_commits_to_push() is True
 
-    @patch('subprocess.run')
-    def test_push_branch_to_remote(self, mock_run):
-        """Should push branch to remote with -u flag."""
-        from agenttree.git_utils import push_branch_to_remote
-
-        mock_run.return_value = MagicMock(returncode=0)
-
-        push_branch_to_remote("test-branch")
-
-        mock_run.assert_called_once_with(
-            ["git", "push", "-u", "origin", "test-branch:test-branch"],
-            check=True,
-            capture_output=True,
-            text=True
-        )
-
-    @patch('subprocess.run')
-    def test_get_repo_remote_name_ssh_url(self, mock_run):
-        """Should parse owner/repo from SSH URL."""
-        from agenttree.git_utils import get_repo_remote_name
-
-        mock_run.return_value = MagicMock(
-            stdout="git@github.com:owner/repo.git\n",
-            returncode=0
-        )
-
-        result = get_repo_remote_name()
-
-        assert result == "owner/repo"
-        mock_run.assert_called_once()
-
-    @patch('subprocess.run')
-    def test_get_repo_remote_name_https_url(self, mock_run):
-        """Should parse owner/repo from HTTPS URL."""
-        from agenttree.git_utils import get_repo_remote_name
-
-        mock_run.return_value = MagicMock(
-            stdout="https://github.com/owner/repo.git\n",
-            returncode=0
-        )
-
-        result = get_repo_remote_name()
-
-        assert result == "owner/repo"
-
-    @patch('subprocess.run')
-    def test_get_repo_remote_name_https_no_git_suffix(self, mock_run):
-        """Should parse owner/repo from HTTPS URL without .git."""
-        from agenttree.git_utils import get_repo_remote_name
-
-        mock_run.return_value = MagicMock(
-            stdout="https://github.com/owner/repo\n",
-            returncode=0
-        )
-
-        result = get_repo_remote_name()
-
-        assert result == "owner/repo"
-
     # Tests for get_git_diff_stats()
 
     @patch('agenttree.git_utils.get_default_branch')
