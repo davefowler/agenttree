@@ -4,6 +4,7 @@ These tests verify that silent exception handlers now log appropriately
 rather than silently swallowing errors.
 """
 
+from pathlib import Path
 from unittest.mock import patch, MagicMock
 import pytest
 
@@ -119,7 +120,7 @@ class TestManagerHooksLogging:
     @patch("agenttree.manager_hooks.log")
     @patch("agenttree.config.load_config")
     def test_hooks_loading_logs_on_failure(
-        self, mock_load_config: MagicMock, mock_log: MagicMock, tmp_path: pytest.TempPathFactory
+        self, mock_load_config: MagicMock, mock_log: MagicMock, tmp_path: Path
     ) -> None:
         """Test that hook loading logs on exception."""
         from agenttree.manager_hooks import run_post_manager_hooks
@@ -128,7 +129,7 @@ class TestManagerHooksLogging:
         mock_load_config.side_effect = RuntimeError("Config not found")
 
         # Should not raise, should use defaults
-        agents_dir = tmp_path  # type: ignore
+        agents_dir = tmp_path
         run_post_manager_hooks(agents_dir)
 
         # Should log debug message
