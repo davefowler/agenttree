@@ -597,7 +597,7 @@ class TestRebaseIssueEndpoint:
 
     @patch("agenttree.tmux.session_exists")
     @patch("agenttree.tmux.send_message")
-    @patch("agenttree.hooks.rebase_issue_branch")
+    @patch("agenttree.git_utils.rebase_issue_branch")
     @patch("agenttree.web.app.issue_crud")
     def test_rebase_issue_success(self, mock_crud, mock_rebase, mock_send, mock_session_exists, client, mock_review_issue):
         """Test rebase issue succeeds."""
@@ -610,7 +610,7 @@ class TestRebaseIssueEndpoint:
         assert response.status_code == 200
         assert response.json()["ok"] is True
 
-    @patch("agenttree.hooks.rebase_issue_branch")
+    @patch("agenttree.git_utils.rebase_issue_branch")
     @patch("agenttree.web.app.issue_crud")
     def test_rebase_issue_fails(self, mock_crud, mock_rebase, client, mock_review_issue):
         """Test rebase issue when rebase fails."""
