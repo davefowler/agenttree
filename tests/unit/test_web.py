@@ -1083,13 +1083,17 @@ class TestKanbanBoardPartialEndpoint:
         assert response.status_code == 200
         assert "text/html" in response.headers["content-type"]
 
-    @patch("agenttree.web.routes.pages.issue_crud")
+    @patch("agenttree.web.utils.issue_crud")
+    @patch("agenttree.web.utils.agent_manager")
     @patch("agenttree.web.routes.pages.agent_manager")
-    def test_kanban_board_contains_issues(self, mock_agent_mgr, mock_crud, client, mock_issue):
+    def test_kanban_board_contains_issues(
+        self, mock_page_agent_mgr, mock_utils_agent_mgr, mock_crud, client, mock_issue
+    ):
         """Test /kanban/board includes issue items."""
         mock_crud.list_issues.return_value = [mock_issue]
-        mock_agent_mgr.clear_session_cache = Mock()
-        mock_agent_mgr._check_issue_tmux_session = Mock(return_value=False)
+        mock_page_agent_mgr.clear_session_cache = Mock()
+        mock_utils_agent_mgr._check_issue_tmux_session = Mock(return_value=False)
+        mock_utils_agent_mgr._get_active_sessions = Mock(return_value=set())
 
         response = client.get("/kanban/board")
 
