@@ -37,6 +37,7 @@ class TestEndToEndWorkflow:
 
         This tests the agent-driven portion of the workflow before human review.
         """
+        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue, get_issue, get_next_stage, update_issue_stage
         from agenttree.hooks import execute_exit_hooks, execute_enter_hooks, ValidationError
 
@@ -46,7 +47,7 @@ class TestEndToEndWorkflow:
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
                 # Step 1: Create issue (starts at explore.define)
                 issue = create_issue(title="E2E Test Issue")
-                issue_dir = agenttree_path / "issues" / issue.dir_name
+                issue_dir = agenttree_path / "issues" / format_issue_id(issue.id)
 
                 assert issue.stage == "explore.define"
 
@@ -74,9 +75,9 @@ class TestEndToEndWorkflow:
                     # Create content needed for current stage
                     if current_stage.startswith("explore.research"):
                         create_valid_research_md(issue_dir)
-                    elif current_stage == "plan.draft":
+                    elif current_stage in ["plan.draft", "plan.revise"]:
                         create_valid_spec_md(issue_dir)
-                    elif current_stage == "plan.selfcheck":
+                    elif current_stage == "plan.assess":
                         create_valid_spec_review_md(issue_dir)
 
                     # Execute exit hooks (validates stage completion)
@@ -105,7 +106,8 @@ class TestEndToEndWorkflow:
                 assert "explore.define" in visited_stages
                 assert "explore.research" in visited_stages
                 assert "plan.draft" in visited_stages
-                assert "plan.selfcheck" in visited_stages
+                assert "plan.assess" in visited_stages
+                assert "plan.revise" in visited_stages
                 assert "plan.review" in visited_stages
 
     def test_full_workflow_implement_to_implementation_review(self, workflow_repo: Path, mock_sync: MagicMock):
@@ -113,6 +115,7 @@ class TestEndToEndWorkflow:
 
         This tests the implementation portion after plan approval.
         """
+        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue, get_issue, get_next_stage, update_issue_stage
         from agenttree.hooks import execute_exit_hooks, execute_enter_hooks, ValidationError
 
@@ -122,7 +125,7 @@ class TestEndToEndWorkflow:
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
                 # Create issue and advance to implement stage
                 issue = create_issue(title="E2E Implement Test")
-                issue_dir = agenttree_path / "issues" / issue.dir_name
+                issue_dir = agenttree_path / "issues" / format_issue_id(issue.id)
 
                 # Create all prior content
                 create_valid_problem_md(issue_dir)
@@ -187,6 +190,7 @@ class TestEndToEndWorkflow:
         This is the full end-to-end test, including human review gates
         (simulated by skipping the human_review check).
         """
+        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue, get_issue, get_next_stage, update_issue_stage
         from agenttree.hooks import execute_exit_hooks, execute_enter_hooks, ValidationError
 
@@ -196,7 +200,7 @@ class TestEndToEndWorkflow:
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
                 # Create issue
                 issue = create_issue(title="Full E2E Test")
-                issue_dir = agenttree_path / "issues" / issue.dir_name
+                issue_dir = agenttree_path / "issues" / format_issue_id(issue.id)
 
                 all_stages_visited = []
                 max_iterations = 30
@@ -256,6 +260,7 @@ class TestEndToEndWorkflow:
 
     def test_validation_blocks_invalid_content(self, workflow_repo: Path, mock_sync: MagicMock):
         """Test that validation actually blocks progression with invalid content."""
+        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue, get_issue
         from agenttree.hooks import execute_exit_hooks, ValidationError
 
@@ -264,7 +269,7 @@ class TestEndToEndWorkflow:
         with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
                 issue = create_issue(title="Validation Test")
-                issue_dir = agenttree_path / "issues" / issue.dir_name
+                issue_dir = agenttree_path / "issues" / format_issue_id(issue.id)
 
                 # Create invalid problem.md (missing Context section)
                 (issue_dir / "problem.md").write_text("""# Problem
@@ -296,7 +301,7 @@ Just a brief problem description without required sections.
 
             # Test plan substages
             next_stage, _ = get_next_stage("plan.draft")
-            assert next_stage == "plan.selfcheck"
+            assert next_stage == "plan.assess"
 
             # Test implement substages (code -> code_review -> address_review -> wrapup -> feedback)
             next_stage, _ = get_next_stage("implement.code")
@@ -327,7 +332,7 @@ Just a brief problem description without required sections.
                 # Make some transitions
                 update_issue_stage(issue.id, "explore.research")
                 update_issue_stage(issue.id, "plan.draft")
-                update_issue_stage(issue.id, "plan.selfcheck")
+                update_issue_stage(issue.id, "plan.assess")
 
                 # Check history
                 issue = get_issue(issue.id)
@@ -351,6 +356,7 @@ class TestWorkflowEdgeCases:
         Note: Stage-level pre_completion hooks only run when exiting the LAST
         substage of a stage (e.g., plan.draft has its own hooks).
         """
+        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue, get_issue, update_issue_stage
         from agenttree.hooks import execute_exit_hooks, execute_enter_hooks, ValidationError
 
@@ -359,7 +365,7 @@ class TestWorkflowEdgeCases:
         with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
                 issue = create_issue(title="Skip Test")
-                issue_dir = agenttree_path / "issues" / issue.dir_name
+                issue_dir = agenttree_path / "issues" / format_issue_id(issue.id)
 
                 # Create problem.md and skip to plan.draft (has pre_completion hooks)
                 create_valid_problem_md(issue_dir)
