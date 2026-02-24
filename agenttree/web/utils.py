@@ -194,10 +194,6 @@ def get_kanban_board(search: str | None = None) -> KanbanBoard:
     Args:
         search: Optional search query to filter issues
     """
-    import logging
-
-    logger = logging.getLogger("agenttree.web")
-
     dot_paths = _config.get_all_dot_paths()
     stages: dict[str, list[WebIssue]] = {path: [] for path in dot_paths}
 

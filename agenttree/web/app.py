@@ -18,7 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from agenttree.config import load_config
-from agenttree.web.agent_manager import AgentManager, agent_manager
+from agenttree.web.agent_manager import AgentManager
 from agenttree.web.deps import BASE_DIR
 from agenttree.web.routes import agents, issues, pages, rate_limit, settings, voice
 

@@ -1,6 +1,7 @@
 """Page routes for the web application."""
 
 import asyncio
+import os
 from datetime import datetime
 from pathlib import Path
 
@@ -15,7 +16,6 @@ from agenttree.web.deps import BASE_DIR, get_current_user, templates
 from agenttree.web.utils import (
     _get_flow_issues,
     convert_issue_to_web,
-    filter_issues,
     get_default_doc,
     get_issue_files,
     get_kanban_board,
@@ -59,8 +59,6 @@ async def kanban(
     user: str | None = Depends(get_current_user),
 ) -> HTMLResponse:
     """Kanban board page."""
-    import os
-
     agent_manager.clear_session_cache()  # Fresh session data per request
     board = await asyncio.to_thread(get_kanban_board, search)
 
