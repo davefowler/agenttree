@@ -13,7 +13,6 @@ from typing import Any
 from rich.console import Console
 
 from agenttree.environment import is_running_in_container
-from agenttree.git_utils import has_uncommitted_changes
 from agenttree.issues import Issue
 
 console = Console()
