@@ -3,7 +3,6 @@
 import asyncio
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
@@ -53,11 +52,11 @@ async def root() -> RedirectResponse:
 @router.get("/kanban", response_class=HTMLResponse)
 async def kanban(
     request: Request,
-    issue: Optional[str] = None,
-    chat: Optional[str] = None,
-    search: Optional[str] = None,
-    view: Optional[str] = None,
-    user: Optional[str] = Depends(get_current_user),
+    issue: str | None = None,
+    chat: str | None = None,
+    search: str | None = None,
+    view: str | None = None,
+    user: str | None = Depends(get_current_user),
 ) -> HTMLResponse:
     """Kanban board page."""
     import os
@@ -169,12 +168,12 @@ async def kanban_board(
 @router.get("/flow", response_class=HTMLResponse)
 async def flow(
     request: Request,
-    issue: Optional[str] = None,
-    chat: Optional[str] = None,
-    search: Optional[str] = None,
-    sort: Optional[str] = None,
-    filter: Optional[str] = None,
-    user: Optional[str] = Depends(get_current_user),
+    issue: str | None = None,
+    chat: str | None = None,
+    search: str | None = None,
+    sort: str | None = None,
+    filter: str | None = None,
+    user: str | None = Depends(get_current_user),
 ) -> HTMLResponse:
     """Flow view page."""
     # Load and convert issues in thread pool to avoid blocking event loop

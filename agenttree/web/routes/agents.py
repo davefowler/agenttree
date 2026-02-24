@@ -3,7 +3,6 @@
 import asyncio
 import logging
 from datetime import datetime
-from typing import Optional
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, Response
@@ -20,7 +19,7 @@ logger = logging.getLogger("agenttree.web")
 async def agent_tmux(
     request: Request,
     agent_num: str,
-    user: Optional[str] = Depends(get_current_user),
+    user: str | None = Depends(get_current_user),
 ) -> Response:
     """Get tmux output for an issue's agent (HTMX endpoint).
 
@@ -78,7 +77,7 @@ async def send_to_agent(
     request: Request,
     agent_num: str,
     message: str = Form(...),
-    user: Optional[str] = Depends(get_current_user),
+    user: str | None = Depends(get_current_user),
 ) -> HTMLResponse:
     """Send a message to an issue's agent via tmux.
 

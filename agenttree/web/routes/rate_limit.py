@@ -4,7 +4,6 @@ import os
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -17,7 +16,7 @@ router = APIRouter(prefix="/api", tags=["rate-limit"])
 
 @router.get("/rate-limit-status")
 async def get_rate_limit_status(
-    user: Optional[str] = Depends(get_current_user),
+    user: str | None = Depends(get_current_user),
 ) -> dict:
     """Get current rate limit status.
 
@@ -58,7 +57,7 @@ async def get_rate_limit_status(
 
 @router.post("/rate-limit/switch-to-api")
 async def switch_to_api_key_mode(
-    user: Optional[str] = Depends(get_current_user),
+    user: str | None = Depends(get_current_user),
 ) -> dict:
     """Switch all rate-limited agents to API key mode.
 
@@ -127,7 +126,7 @@ async def switch_to_api_key_mode(
 
 @router.post("/rate-limit/dismiss")
 async def dismiss_rate_limit(
-    user: Optional[str] = Depends(get_current_user),
+    user: str | None = Depends(get_current_user),
 ) -> dict:
     """Dismiss the rate limit warning without switching modes.
 

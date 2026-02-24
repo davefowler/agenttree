@@ -30,7 +30,7 @@ class TestCreateIssueApiWithAttachments:
 
     def test_accepts_files(self, client, mock_issue):
         """Verify endpoint accepts multipart form with files."""
-        with patch("agenttree.web.app.issue_crud.create_issue", return_value=mock_issue), \
+        with patch("agenttree.web.routes.issues.issue_crud.create_issue", return_value=mock_issue), \
              patch("agenttree.api.start_agent"):
 
             response = client.post(
@@ -47,7 +47,7 @@ class TestCreateIssueApiWithAttachments:
         # Create a file larger than 10MB
         large_content = b"x" * (11 * 1024 * 1024)  # 11MB
 
-        with patch("agenttree.web.app.issue_crud.create_issue", return_value=mock_issue), \
+        with patch("agenttree.web.routes.issues.issue_crud.create_issue", return_value=mock_issue), \
              patch("agenttree.api.start_agent"):
 
             response = client.post(
@@ -61,7 +61,7 @@ class TestCreateIssueApiWithAttachments:
 
     def test_rejects_invalid_file_type(self, client, mock_issue):
         """Verify 400 error for executable files."""
-        with patch("agenttree.web.app.issue_crud.create_issue", return_value=mock_issue), \
+        with patch("agenttree.web.routes.issues.issue_crud.create_issue", return_value=mock_issue), \
              patch("agenttree.api.start_agent"):
 
             response = client.post(

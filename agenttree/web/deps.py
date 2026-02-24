@@ -3,7 +3,6 @@
 from pathlib import Path
 import os
 import secrets
-from typing import Optional
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
@@ -40,8 +39,8 @@ AUTH_PASSWORD = os.getenv("AGENTTREE_WEB_PASSWORD", "changeme")
 
 
 def verify_credentials(
-    credentials: Optional[HTTPBasicCredentials] = Depends(security),
-) -> Optional[str]:
+    credentials: HTTPBasicCredentials | None = Depends(security),
+) -> str | None:
     """Verify HTTP Basic Auth credentials.
 
     This dependency is optional - only enforces auth if AUTH_ENABLED=true.
@@ -76,7 +75,7 @@ def verify_credentials(
 
 
 def get_current_user(
-    username: Optional[str] = Depends(verify_credentials),
-) -> Optional[str]:
+    username: str | None = Depends(verify_credentials),
+) -> str | None:
     """Get current authenticated user (or None if auth disabled)."""
     return username

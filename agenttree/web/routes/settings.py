@@ -1,7 +1,6 @@
 """Settings page routes."""
 
 from pathlib import Path
-from typing import Optional
 
 import yaml
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -51,8 +50,8 @@ SIMPLE_SETTINGS: dict[str, dict[str, str]] = {
 @router.get("/settings", response_class=HTMLResponse)
 async def settings_page(
     request: Request,
-    saved: Optional[str] = None,
-    user: Optional[str] = Depends(get_current_user),
+    saved: str | None = None,
+    user: str | None = Depends(get_current_user),
 ) -> HTMLResponse:
     """Settings page - display current config values."""
     config = load_config()
@@ -84,7 +83,7 @@ async def settings_page(
 @router.post("/settings", response_class=HTMLResponse)
 async def save_settings(
     request: Request,
-    user: Optional[str] = Depends(get_current_user),
+    user: str | None = Depends(get_current_user),
 ) -> Response:
     """Save settings - update .agenttree.yaml with new values."""
     form_data = await request.form()

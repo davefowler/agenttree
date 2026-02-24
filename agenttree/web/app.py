@@ -10,7 +10,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import AsyncIterator, Awaitable, Callable, Optional
+from typing import AsyncIterator, Awaitable, Callable
 
 from fastapi import FastAPI, Request
 from fastapi.responses import Response
@@ -23,25 +23,8 @@ from agenttree.web.deps import BASE_DIR
 from agenttree.web.routes import agents, issues, pages, rate_limit, settings, voice
 from agenttree.worktree import WorktreeManager
 
-# Re-export for backward compatibility with tests that patch these
-from agenttree import issues as issue_crud  # noqa: F401
-from agenttree.web.utils import (  # noqa: F401
-    FILE_TO_STAGE,
-    STAGE_FILE_ORDER,
-    _config,
-    _filter_flow_issues,
-    _sort_flow_issues,
-    convert_issue_to_web,
-    filter_issues,
-    format_duration,
-    get_default_doc,
-    get_issue_diff,
-    get_issue_files,
-    get_kanban_board,
-)
-
 # Background heartbeat task handle
-_heartbeat_task: Optional[asyncio.Task] = None
+_heartbeat_task: asyncio.Task | None = None
 _heartbeat_count: int = 0
 
 # Dedicated executor for heartbeat so it never competes with request handlers.
@@ -162,7 +145,7 @@ app.include_router(voice.router)
 def run_server(
     host: str = "0.0.0.0",
     port: int = 8080,
-    config_path: Optional[Path] = None,
+    config_path: Path | None = None,
 ) -> None:
     """Run the FastAPI server.
 

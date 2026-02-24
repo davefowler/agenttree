@@ -4,7 +4,6 @@ import asyncio
 import logging
 import os
 from pathlib import Path
-from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
@@ -46,7 +45,7 @@ async def create_issue_api(
     description: str = Form(""),
     title: str = Form(""),
     files: list[UploadFile] = File(default=[]),
-    user: Optional[str] = Depends(get_current_user),
+    user: str | None = Depends(get_current_user),
 ) -> dict:
     """Create a new issue via the web UI.
 
@@ -114,7 +113,7 @@ async def create_issue_api(
 
 @router.post("/{issue_id}/start")
 async def start_issue(
-    issue_id: str, user: Optional[str] = Depends(get_current_user)
+    issue_id: str, user: str | None = Depends(get_current_user)
 ) -> dict:
     """Start an agent to work on an issue."""
     from agenttree.api import AgentStartError, IssueNotFoundError, start_agent
@@ -133,7 +132,7 @@ async def start_issue(
 
 @router.post("/{issue_id}/stop")
 async def stop_issue(
-    issue_id: str, user: Optional[str] = Depends(get_current_user)
+    issue_id: str, user: str | None = Depends(get_current_user)
 ) -> dict:
     """Stop an agent working on an issue (kills tmux, stops container, cleans up state)."""
     from agenttree.api import stop_all_agents_for_issue
@@ -156,7 +155,7 @@ async def stop_issue(
 
 @router.get("/{issue_id}/agent-status")
 async def get_agent_status(
-    issue_id: str, user: Optional[str] = Depends(get_current_user)
+    issue_id: str, user: str | None = Depends(get_current_user)
 ) -> dict:
     """Check if an agent's tmux session is running for an issue."""
     from agenttree.ids import parse_issue_id
@@ -186,7 +185,7 @@ async def get_agent_status(
 
 @router.get("/{issue_id}/diff")
 async def get_diff(
-    issue_id: str, user: Optional[str] = Depends(get_current_user)
+    issue_id: str, user: str | None = Depends(get_current_user)
 ) -> dict:
     """Get git diff for an issue's worktree.
 
@@ -209,7 +208,7 @@ async def get_diff(
 async def move_issue(
     issue_id: str,
     move_request: IssueMoveRequest,
-    user: Optional[str] = Depends(get_current_user),
+    user: str | None = Depends(get_current_user),
 ) -> dict:
     """Move an issue to a new stage.
 
@@ -253,7 +252,7 @@ async def move_issue(
 
 @router.post("/{issue_id}/approve")
 async def approve_issue(
-    issue_id: str, user: Optional[str] = Depends(get_current_user)
+    issue_id: str, user: str | None = Depends(get_current_user)
 ) -> dict:
     """Approve an issue at a human review stage.
 
@@ -375,7 +374,7 @@ async def get_attachment(
 
 @router.delete("/{issue_id}/dependencies/{dep_id}")
 async def remove_dependency(
-    issue_id: str, dep_id: str, user: Optional[str] = Depends(get_current_user)
+    issue_id: str, dep_id: str, user: str | None = Depends(get_current_user)
 ) -> dict:
     """Remove a dependency from an issue."""
     from agenttree.issues import remove_dependency as remove_dep
@@ -393,7 +392,7 @@ async def remove_dependency(
 async def update_issue_priority(
     issue_id: str,
     request: PriorityUpdateRequest,
-    user: Optional[str] = Depends(get_current_user),
+    user: str | None = Depends(get_current_user),
 ) -> dict:
     """Update an issue's priority."""
     from agenttree.issues import Priority
@@ -421,7 +420,7 @@ async def update_issue_priority(
 
 @router.post("/{issue_id}/rebase")
 async def rebase_issue(
-    issue_id: str, user: Optional[str] = Depends(get_current_user)
+    issue_id: str, user: str | None = Depends(get_current_user)
 ) -> dict:
     """Rebase an issue's branch onto the latest main.
 

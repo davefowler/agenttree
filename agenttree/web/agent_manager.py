@@ -1,7 +1,6 @@
 """Agent manager for tracking tmux sessions."""
 
 import subprocess
-from typing import Optional
 
 from agenttree.config import load_config
 from agenttree.worktree import WorktreeManager
@@ -13,9 +12,9 @@ _config = load_config()
 class AgentManager:
     """Manages agent tmux session checks."""
 
-    def __init__(self, worktree_manager: Optional[WorktreeManager] = None):
+    def __init__(self, worktree_manager: WorktreeManager | None = None):
         self.worktree_manager = worktree_manager
-        self._active_sessions: Optional[set[str]] = None
+        self._active_sessions: set[str] | None = None
 
     def _get_active_sessions(self) -> set[str]:
         """Get all active tmux session names in one call."""

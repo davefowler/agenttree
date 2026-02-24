@@ -5,7 +5,6 @@ import re
 import subprocess
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from agenttree import issues as issue_crud
 from agenttree.config import load_config
@@ -156,7 +155,7 @@ def convert_issue_to_web(
     )
 
 
-def filter_issues(issues: list[WebIssue], search: Optional[str]) -> list[WebIssue]:
+def filter_issues(issues: list[WebIssue], search: str | None) -> list[WebIssue]:
     """Filter issues by search query.
 
     Matches against issue number, title, and labels (case-insensitive).
@@ -183,7 +182,7 @@ def filter_issues(issues: list[WebIssue], search: Optional[str]) -> list[WebIssu
     return filtered
 
 
-def get_kanban_board(search: Optional[str] = None) -> KanbanBoard:
+def get_kanban_board(search: str | None = None) -> KanbanBoard:
     """Build a kanban board from issues.
 
     Each column is a dot-path substage (e.g., "explore.define", "implement.code").
@@ -453,7 +452,7 @@ def get_issue_diff(issue_id: int) -> dict:
 
 
 def _sort_flow_issues(
-    issues: list[WebIssue], sort_by: Optional[str] = None
+    issues: list[WebIssue], sort_by: str | None = None
 ) -> list[WebIssue]:
     """Sort issues for flow view based on sort parameter.
 
@@ -489,7 +488,7 @@ def _sort_flow_issues(
 
 
 def _filter_flow_issues(
-    issues: list[WebIssue], filter_by: Optional[str] = None
+    issues: list[WebIssue], filter_by: str | None = None
 ) -> list[WebIssue]:
     """Filter issues for flow view based on filter parameter.
 
