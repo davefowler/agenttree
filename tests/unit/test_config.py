@@ -1027,3 +1027,47 @@ model_tiers:
             }
         )
         assert config.model_for("implement.code_review") == "sonnet"
+
+
+class TestExampleConfig:
+    """Tests for the example config file."""
+
+    def test_example_config_parses_as_valid_yaml(self) -> None:
+        """The example config file should be valid YAML."""
+        example_path = Path(__file__).parent.parent.parent / ".agenttree.yaml.example"
+        assert example_path.exists(), f"Example config not found at {example_path}"
+
+        with open(example_path) as f:
+            data = yaml.safe_load(f)
+
+        assert data is not None
+        assert "project" in data
+        assert "flows" in data
+        assert "default" in data["flows"]
+
+    def test_example_config_has_required_structure(self) -> None:
+        """The example config should have all key structural elements."""
+        example_path = Path(__file__).parent.parent.parent / ".agenttree.yaml.example"
+
+        with open(example_path) as f:
+            data = yaml.safe_load(f)
+
+        # Top-level config options
+        assert data.get("project") == "myapp"
+        assert data.get("default_tool") == "claude"
+        assert data.get("default_model") == "opus"
+        assert "port_range" in data
+
+        # Tools section
+        assert "tools" in data
+        assert "claude" in data["tools"]
+        assert "command" in data["tools"]["claude"]
+
+        # Flows section with stages
+        assert "flows" in data
+        assert "default" in data["flows"]
+        assert "stages" in data["flows"]["default"]
+
+        # Quick flow reference
+        assert "quick" in data["flows"]
+        assert isinstance(data["flows"]["quick"]["stages"], list)

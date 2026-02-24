@@ -163,6 +163,7 @@ class TestPRCreationBoundary:
     def test_host_sync_creates_pr_for_container_issues(self, workflow_repo: Path, host_environment, mock_sync: MagicMock):
         """Test that host sync creates PRs for issues at implement.review."""
         from agenttree.hooks import ensure_pr_for_issue
+        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue, update_issue_stage
 
         agenttree_path = workflow_repo / "_agenttree"
@@ -171,7 +172,7 @@ class TestPRCreationBoundary:
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
                 with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
                     issue = create_issue(title="Test PR Creation")
-                    issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
+                    issue_dir = agenttree_path / "issues" / format_issue_id(issue.id)
 
                     # Create necessary content
                     create_valid_spec_md(issue_dir)
@@ -223,6 +224,7 @@ class TestHookContextAwareness:
     def test_section_check_works_in_both_contexts(self, workflow_repo: Path, mock_sync: MagicMock):
         """Section check validators should work in both contexts."""
         from agenttree.hooks import run_builtin_validator
+        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue
 
         agenttree_path = workflow_repo / "_agenttree"
@@ -230,7 +232,7 @@ class TestHookContextAwareness:
         with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
                 issue = create_issue(title="Test Section Check")
-                issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
+                issue_dir = agenttree_path / "issues" / format_issue_id(issue.id)
 
                 create_valid_problem_md(issue_dir)
 
@@ -294,6 +296,7 @@ class TestApprovalBoundary:
 
     def test_host_can_approve_plan_review(self, workflow_repo: Path, host_environment, mock_sync: MagicMock):
         """Host should be able to advance past plan.review via approve command."""
+        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue, get_next_stage
         from agenttree.hooks import execute_hooks
         from agenttree.config import load_config
@@ -304,7 +307,7 @@ class TestApprovalBoundary:
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
                 with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
                     issue = create_issue(title="Test Host Approval")
-                    issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
+                    issue_dir = agenttree_path / "issues" / format_issue_id(issue.id)
 
                     # Create valid content for plan.review
                     create_valid_spec_md(issue_dir)
@@ -340,6 +343,7 @@ class TestApprovalBoundary:
 
         Without the fix, step 3 would skip implement entirely.
         """
+        from agenttree.ids import format_issue_id
         from agenttree.issues import (
             create_issue, update_issue_stage, get_next_stage,
             create_session, get_session, is_restart, mark_session_oriented,
@@ -351,7 +355,7 @@ class TestApprovalBoundary:
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
                 # Create issue and simulate agent reaching plan.review
                 issue = create_issue(title="Test Agent Reorient After Approval")
-                issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
+                issue_dir = agenttree_path / "issues" / format_issue_id(issue.id)
 
                 # Agent creates session and works through to plan.review
                 session = create_session(issue.id)
@@ -457,6 +461,7 @@ class TestStartBlockedIssuesBoundary:
     @pytest.mark.skip(reason="check_and_start_blocked_issues not yet implemented")
     def test_blocked_issues_started_after_dependency_accepted(self, workflow_repo: Path, host_environment, mock_sync: MagicMock):
         """Issues blocked by an accepted issue should be auto-started on host."""
+        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue, update_issue_stage, check_dependencies_met, get_issue
         from agenttree.agents_repo import check_and_start_blocked_issues
 
@@ -472,7 +477,7 @@ class TestStartBlockedIssuesBoundary:
 
                 # Add dependency (manually for test)
                 import yaml
-                yaml_path = agenttree_path / "issues" / f"{blocked_issue.id}-{blocked_issue.slug}" / "issue.yaml"
+                yaml_path = agenttree_path / "issues" / format_issue_id(blocked_issue.id) / "issue.yaml"
                 with open(yaml_path) as f:
                     data = yaml.safe_load(f)
                 data["dependencies"] = [dep_issue.id]

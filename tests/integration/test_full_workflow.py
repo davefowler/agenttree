@@ -27,6 +27,7 @@ class TestStageTransitions:
 
     def test_define_to_research(self, workflow_repo: Path, mock_sync: MagicMock):
         """Test transition from explore.define to explore.research."""
+        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue, get_next_stage
         from agenttree.hooks import execute_hooks
         from agenttree.config import load_config
@@ -38,7 +39,7 @@ class TestStageTransitions:
                 with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
                     # Create issue
                     issue = create_issue(title="Test Define to Research")
-                    issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
+                    issue_dir = agenttree_path / "issues" / format_issue_id(issue.id)
 
                     # Issue starts at explore.define
                     assert issue.stage == "explore.define"
@@ -69,6 +70,7 @@ class TestStageTransitions:
 
     def test_research_to_plan(self, workflow_repo: Path, mock_sync: MagicMock):
         """Test transition from explore.research to plan.draft."""
+        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue, get_next_stage
         from agenttree.hooks import execute_hooks
         from agenttree.config import load_config
@@ -79,7 +81,7 @@ class TestStageTransitions:
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
                 with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
                     issue = create_issue(title="Test Research to Plan")
-                    issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
+                    issue_dir = agenttree_path / "issues" / format_issue_id(issue.id)
 
                     # Create valid research content
                     create_valid_problem_md(issue_dir)
@@ -102,6 +104,7 @@ class TestStageTransitions:
 
     def test_plan_to_plan_assess(self, workflow_repo: Path, mock_sync: MagicMock):
         """Test transition from plan.draft to plan.assess."""
+        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue, get_next_stage
         from agenttree.hooks import execute_hooks
         from agenttree.config import load_config
@@ -112,7 +115,7 @@ class TestStageTransitions:
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
                 with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
                     issue = create_issue(title="Test Plan to Plan Assess")
-                    issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
+                    issue_dir = agenttree_path / "issues" / format_issue_id(issue.id)
 
                     # Create valid content
                     create_valid_problem_md(issue_dir)
@@ -193,6 +196,7 @@ class TestImplementSubstages:
 
     def test_code_review_requires_checklist(self, workflow_repo: Path, mock_sync: MagicMock):
         """Test that code_review exit requires all checklist items checked."""
+        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue
         from agenttree.hooks import execute_hooks
         from agenttree.config import load_config
@@ -204,7 +208,7 @@ class TestImplementSubstages:
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
                 with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
                     issue = create_issue(title="Test Code Review Checklist")
-                    issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
+                    issue_dir = agenttree_path / "issues" / format_issue_id(issue.id)
 
                     # Create review.md with unchecked items
                     create_failing_review_md(issue_dir, reason="unchecked")
@@ -225,6 +229,7 @@ class TestImplementSubstages:
 
     def test_wrapup_requires_score_7(self, workflow_repo: Path, mock_sync: MagicMock):
         """Test that wrapup exit requires average score >= 7."""
+        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue
         from agenttree.hooks import execute_hooks
         from agenttree.config import load_config
@@ -236,7 +241,7 @@ class TestImplementSubstages:
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
                 with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
                     issue = create_issue(title="Test Wrapup Score")
-                    issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
+                    issue_dir = agenttree_path / "issues" / format_issue_id(issue.id)
 
                     # Create review.md with low score
                     create_failing_review_md(issue_dir, reason="low_score")
@@ -257,6 +262,7 @@ class TestImplementSubstages:
 
     def test_feedback_requires_commits(self, workflow_repo: Path, mock_sync: MagicMock):
         """Test that feedback exit requires unpushed commits."""
+        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue
         from agenttree.hooks import execute_hooks
         from agenttree.config import load_config
@@ -268,7 +274,7 @@ class TestImplementSubstages:
                 with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
                     with patch("agenttree.hooks.has_commits_to_push", return_value=False):
                         issue = create_issue(title="Test Feedback Commits")
-                        issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
+                        issue_dir = agenttree_path / "issues" / format_issue_id(issue.id)
 
                         # Create valid review.md
                         create_valid_review_md(issue_dir)
@@ -289,6 +295,7 @@ class TestImplementSubstages:
 
     def test_feedback_blocks_with_critical_issues(self, workflow_repo: Path, mock_sync: MagicMock):
         """Test that feedback exit blocks if Critical Issues section is not empty."""
+        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue
         from agenttree.hooks import execute_hooks
         from agenttree.config import load_config
@@ -301,7 +308,7 @@ class TestImplementSubstages:
                 with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
                     with patch("agenttree.hooks.has_commits_to_push", return_value=True):
                         issue = create_issue(title="Test Critical Issues Block")
-                        issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
+                        issue_dir = agenttree_path / "issues" / format_issue_id(issue.id)
 
                         # Create review.md with critical issues
                         create_failing_review_md(issue_dir, reason="critical_issues")
@@ -350,6 +357,7 @@ class TestFullWorkflowHappyPath:
 
     def test_full_workflow_creates_all_files(self, workflow_repo: Path, mock_sync: MagicMock):
         """Test that advancing through workflow creates expected files."""
+        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue
         from agenttree.hooks import execute_hooks
         from agenttree.config import load_config
@@ -360,7 +368,7 @@ class TestFullWorkflowHappyPath:
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
                 with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
                     issue = create_issue(title="Full Workflow Test")
-                    issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
+                    issue_dir = agenttree_path / "issues" / format_issue_id(issue.id)
 
                     config = load_config()
 
