@@ -641,6 +641,64 @@ Some notes here.
         assert len(errors) == 1
         assert "Section 'Missing' not found" in errors[0]
 
+    def test_has_list_items_numbered_list(self, tmp_path):
+        """Should recognize numbered list items (1., 2., etc)."""
+        from agenttree.hooks import run_builtin_validator
+
+        content = """# Document
+
+## Steps
+1. First step
+2. Second step
+3. Third step
+
+## Notes
+"""
+        (tmp_path / "plan.md").write_text(content)
+
+        hook = {"type": "has_list_items", "file": "plan.md", "section": "Steps", "min": 3}
+        errors = run_builtin_validator(tmp_path, hook)
+        assert errors == []
+
+    def test_has_list_items_mixed_list(self, tmp_path):
+        """Should recognize mixed bullet and numbered list items."""
+        from agenttree.hooks import run_builtin_validator
+
+        content = """# Document
+
+## Tasks
+- First bullet task
+1. Numbered step
+* Asterisk item
+2. Another numbered step
+
+## Notes
+"""
+        (tmp_path / "plan.md").write_text(content)
+
+        hook = {"type": "has_list_items", "file": "plan.md", "section": "Tasks", "min": 4}
+        errors = run_builtin_validator(tmp_path, hook)
+        assert errors == []
+
+    def test_has_list_items_two_digit_numbers(self, tmp_path):
+        """Should recognize two-digit numbered list items (10., 11., etc)."""
+        from agenttree.hooks import run_builtin_validator
+
+        content = """# Document
+
+## Steps
+10. Step ten
+11. Step eleven
+12. Step twelve
+
+## Notes
+"""
+        (tmp_path / "plan.md").write_text(content)
+
+        hook = {"type": "has_list_items", "file": "plan.md", "section": "Steps", "min": 3}
+        errors = run_builtin_validator(tmp_path, hook)
+        assert errors == []
+
     # contains tests
     def test_contains_success(self, tmp_path):
         """Should pass when section contains one of the values."""

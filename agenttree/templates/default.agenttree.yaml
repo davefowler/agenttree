@@ -115,8 +115,9 @@ flows:
                   section: Test Plan
                   expect: not_empty
 
-          assess:
+          selfcheck:
             output: spec_review.md
+            skill: plan/selfcheck.md
             post_start:
               - create_file:
                   template: spec_review.md
@@ -126,9 +127,6 @@ flows:
                   file: spec_review.md
                   section: Assessment Summary
                   expect: not_empty
-
-          revise:
-            output: spec.md
 
           review:
             human_review: true
@@ -147,6 +145,7 @@ flows:
           setup: {}
           code: {}
           debug:
+            condition: "{{ ci_feedback_exists }}"
             skill: implement/debug.md
           code_review:
             output: review.md
@@ -282,6 +281,15 @@ flows:
   not_doing:
     stages:
       - not_doing
+
+  # Investigation flow for research/audit tasks with no code changes
+  # Skips planning and implementation - goes straight from research to accepted
+  investigation:
+    stages:
+      - backlog
+      - explore.define
+      - explore.research
+      - accepted
 
 default_flow: default
 

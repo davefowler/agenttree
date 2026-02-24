@@ -558,7 +558,7 @@ FILE_TO_STAGE: dict[str, str] = {
     "problem.md": "explore.define",
     "research.md": "explore.research",
     "spec.md": "plan.draft",
-    "spec_review.md": "plan.assess",
+    "spec_review.md": "plan.selfcheck",
     "review.md": "implement.code_review",
     "independent_review.md": "implement.independent_review",
     "feedback.md": "implement.feedback",

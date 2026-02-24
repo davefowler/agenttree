@@ -38,7 +38,11 @@ class TestStageTransitions:
                 with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
                     # Create issue
                     issue = create_issue(title="Test Define to Research")
+<<<<<<< HEAD
+                    issue_dir = agenttree_path / "issues" / issue.dir_name
+=======
                     issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
+>>>>>>> origin/main
 
                     # Issue starts at explore.define
                     assert issue.stage == "explore.define"
@@ -79,7 +83,11 @@ class TestStageTransitions:
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
                 with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
                     issue = create_issue(title="Test Research to Plan")
+<<<<<<< HEAD
+                    issue_dir = agenttree_path / "issues" / issue.dir_name
+=======
                     issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
+>>>>>>> origin/main
 
                     # Create valid research content
                     create_valid_problem_md(issue_dir)
@@ -100,8 +108,8 @@ class TestStageTransitions:
                     next_stage, _ = get_next_stage("explore.research")
                     assert next_stage == "plan.draft"
 
-    def test_plan_to_plan_assess(self, workflow_repo: Path, mock_sync: MagicMock):
-        """Test transition from plan.draft to plan.assess."""
+    def test_plan_to_plan_selfcheck(self, workflow_repo: Path, mock_sync: MagicMock):
+        """Test transition from plan.draft to plan.selfcheck."""
         from agenttree.issues import create_issue, get_next_stage
         from agenttree.hooks import execute_hooks
         from agenttree.config import load_config
@@ -111,8 +119,13 @@ class TestStageTransitions:
         with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
                 with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
+<<<<<<< HEAD
+                    issue = create_issue(title="Test Plan to Plan Selfcheck")
+                    issue_dir = agenttree_path / "issues" / issue.dir_name
+=======
                     issue = create_issue(title="Test Plan to Plan Assess")
                     issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
+>>>>>>> origin/main
 
                     # Create valid content
                     create_valid_problem_md(issue_dir)
@@ -132,14 +145,14 @@ class TestStageTransitions:
                     assert errors == [], f"Hooks failed: {errors}"
 
                     next_stage, _ = get_next_stage("plan.draft")
-                    assert next_stage == "plan.assess"
+                    assert next_stage == "plan.selfcheck"
 
-    def test_plan_revise_to_plan_review(self, workflow_repo: Path, mock_sync: MagicMock):
-        """Test transition from plan.revise to plan.review (human gate)."""
+    def test_plan_selfcheck_to_plan_review(self, workflow_repo: Path, mock_sync: MagicMock):
+        """Test transition from plan.selfcheck to plan.review (human gate)."""
         from agenttree.issues import get_next_stage
 
         with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
-            next_stage, is_human_review = get_next_stage("plan.revise")
+            next_stage, is_human_review = get_next_stage("plan.selfcheck")
 
             assert next_stage == "plan.review"
             assert is_human_review is True  # Human review gate!
@@ -204,7 +217,11 @@ class TestImplementSubstages:
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
                 with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
                     issue = create_issue(title="Test Code Review Checklist")
+<<<<<<< HEAD
+                    issue_dir = agenttree_path / "issues" / issue.dir_name
+=======
                     issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
+>>>>>>> origin/main
 
                     # Create review.md with unchecked items
                     create_failing_review_md(issue_dir, reason="unchecked")
@@ -236,7 +253,11 @@ class TestImplementSubstages:
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
                 with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
                     issue = create_issue(title="Test Wrapup Score")
+<<<<<<< HEAD
+                    issue_dir = agenttree_path / "issues" / issue.dir_name
+=======
                     issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
+>>>>>>> origin/main
 
                     # Create review.md with low score
                     create_failing_review_md(issue_dir, reason="low_score")
@@ -268,7 +289,11 @@ class TestImplementSubstages:
                 with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
                     with patch("agenttree.hooks.has_commits_to_push", return_value=False):
                         issue = create_issue(title="Test Feedback Commits")
+<<<<<<< HEAD
+                        issue_dir = agenttree_path / "issues" / issue.dir_name
+=======
                         issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
+>>>>>>> origin/main
 
                         # Create valid review.md
                         create_valid_review_md(issue_dir)
@@ -301,7 +326,11 @@ class TestImplementSubstages:
                 with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
                     with patch("agenttree.hooks.has_commits_to_push", return_value=True):
                         issue = create_issue(title="Test Critical Issues Block")
+<<<<<<< HEAD
+                        issue_dir = agenttree_path / "issues" / issue.dir_name
+=======
                         issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
+>>>>>>> origin/main
 
                         # Create review.md with critical issues
                         create_failing_review_md(issue_dir, reason="critical_issues")
@@ -360,7 +389,11 @@ class TestFullWorkflowHappyPath:
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
                 with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
                     issue = create_issue(title="Full Workflow Test")
+<<<<<<< HEAD
+                    issue_dir = agenttree_path / "issues" / issue.dir_name
+=======
                     issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
+>>>>>>> origin/main
 
                     config = load_config()
 
@@ -395,10 +428,10 @@ class TestFullWorkflowHappyPath:
                     errors = execute_hooks(issue_dir, "plan.draft", sub_config, "pre_completion")
                     assert errors == [], f"Plan hooks failed: {errors}"
 
-                    # Plan assess stage (plan.assess)
-                    _, sub_config = config.resolve_stage("plan.assess")
-                    errors = execute_hooks(issue_dir, "plan.assess", sub_config, "pre_completion")
-                    assert errors == [], f"Plan assess hooks failed: {errors}"
+                    # Plan selfcheck stage (plan.selfcheck)
+                    _, sub_config = config.resolve_stage("plan.selfcheck")
+                    errors = execute_hooks(issue_dir, "plan.selfcheck", sub_config, "pre_completion")
+                    assert errors == [], f"Plan selfcheck hooks failed: {errors}"
 
                     # Plan review stage (plan.review)
                     _, sub_config = config.resolve_stage("plan.review")

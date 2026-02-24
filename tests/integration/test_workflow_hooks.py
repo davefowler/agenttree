@@ -33,7 +33,11 @@ class TestDefineStageValidation:
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
                 with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
                     issue = create_issue(title="Test Empty Context")
+<<<<<<< HEAD
+                    issue_dir = agenttree_path / "issues" / issue.dir_name
+=======
                     issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
+>>>>>>> origin/main
 
                     # Create problem.md with empty Context
                     content = """# Problem
@@ -68,7 +72,11 @@ class TestDefineStageValidation:
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
                 with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
                     issue = create_issue(title="Test Valid Context")
+<<<<<<< HEAD
+                    issue_dir = agenttree_path / "issues" / issue.dir_name
+=======
                     issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
+>>>>>>> origin/main
 
                     create_valid_problem_md(issue_dir)
 
@@ -95,7 +103,11 @@ class TestResearchStageValidation:
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
                 with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
                     issue = create_issue(title="Test Empty Relevant Files")
+<<<<<<< HEAD
+                    issue_dir = agenttree_path / "issues" / issue.dir_name
+=======
                     issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
+>>>>>>> origin/main
 
                     # Create research.md with empty Relevant Files
                     content = """# Research
@@ -129,7 +141,11 @@ Some patterns here.
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
                 with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
                     issue = create_issue(title="Test Valid Research")
+<<<<<<< HEAD
+                    issue_dir = agenttree_path / "issues" / issue.dir_name
+=======
                     issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
+>>>>>>> origin/main
 
                     create_valid_research_md(issue_dir)
 
@@ -156,7 +172,11 @@ class TestPlanStageValidation:
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
                 with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
                     issue = create_issue(title="Test Empty Approach")
+<<<<<<< HEAD
+                    issue_dir = agenttree_path / "issues" / issue.dir_name
+=======
                     issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
+>>>>>>> origin/main
 
                     # Create spec.md with empty Approach
                     content = """# Specification
@@ -199,7 +219,11 @@ Test here.
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
                 with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
                     issue = create_issue(title="Test Valid Spec")
+<<<<<<< HEAD
+                    issue_dir = agenttree_path / "issues" / issue.dir_name
+=======
                     issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
+>>>>>>> origin/main
 
                     create_valid_spec_md(issue_dir)
 
@@ -226,7 +250,11 @@ class TestPlanReviewValidation:
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
                 with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
                     issue = create_issue(title="Test Missing Spec")
+<<<<<<< HEAD
+                    issue_dir = agenttree_path / "issues" / issue.dir_name
+=======
                     issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
+>>>>>>> origin/main
 
                     # Don't create spec.md
 
@@ -254,7 +282,11 @@ class TestImplementCodeReviewValidation:
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
                 with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
                     issue = create_issue(title="Test Unchecked Items")
+<<<<<<< HEAD
+                    issue_dir = agenttree_path / "issues" / issue.dir_name
+=======
                     issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
+>>>>>>> origin/main
 
                     create_failing_review_md(issue_dir, reason="unchecked")
 
@@ -277,7 +309,11 @@ class TestImplementCodeReviewValidation:
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
                 with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
                     issue = create_issue(title="Test All Checked")
+<<<<<<< HEAD
+                    issue_dir = agenttree_path / "issues" / issue.dir_name
+=======
                     issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
+>>>>>>> origin/main
 
                     create_valid_review_md(issue_dir)
 
@@ -304,7 +340,11 @@ class TestImplementWrapupValidation:
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
                 with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
                     issue = create_issue(title="Test Low Score")
+<<<<<<< HEAD
+                    issue_dir = agenttree_path / "issues" / issue.dir_name
+=======
                     issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
+>>>>>>> origin/main
 
                     create_failing_review_md(issue_dir, reason="low_score")
 
@@ -328,7 +368,11 @@ class TestImplementWrapupValidation:
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
                 with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
                     issue = create_issue(title="Test Score 7")
+<<<<<<< HEAD
+                    issue_dir = agenttree_path / "issues" / issue.dir_name
+=======
                     issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
+>>>>>>> origin/main
 
                     create_valid_review_md(issue_dir, average=7.0)
 
@@ -351,7 +395,11 @@ class TestImplementWrapupValidation:
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
                 with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
                     issue = create_issue(title="Test Score 9")
+<<<<<<< HEAD
+                    issue_dir = agenttree_path / "issues" / issue.dir_name
+=======
                     issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
+>>>>>>> origin/main
 
                     create_valid_review_md(issue_dir, average=9.0)
 
@@ -379,7 +427,11 @@ class TestImplementFeedbackValidation:
                 with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
                     with patch("agenttree.hooks.has_commits_to_push", return_value=False):
                         issue = create_issue(title="Test No Commits")
+<<<<<<< HEAD
+                        issue_dir = agenttree_path / "issues" / issue.dir_name
+=======
                         issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
+>>>>>>> origin/main
 
                         create_valid_review_md(issue_dir)
 
@@ -404,7 +456,11 @@ class TestImplementFeedbackValidation:
                 with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
                     with patch("agenttree.hooks.has_commits_to_push", return_value=True):
                         issue = create_issue(title="Test Critical Issues")
+<<<<<<< HEAD
+                        issue_dir = agenttree_path / "issues" / issue.dir_name
+=======
                         issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
+>>>>>>> origin/main
 
                         create_failing_review_md(issue_dir, reason="critical_issues")
 
@@ -428,7 +484,11 @@ class TestImplementFeedbackValidation:
                 with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
                     with patch("agenttree.hooks.has_commits_to_push", return_value=True):
                         issue = create_issue(title="Test Valid Feedback")
+<<<<<<< HEAD
+                        issue_dir = agenttree_path / "issues" / issue.dir_name
+=======
                         issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
+>>>>>>> origin/main
 
                         create_valid_review_md(issue_dir)
 
@@ -455,7 +515,11 @@ class TestSectionCheckVariants:
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
                 with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
                     issue = create_issue(title="Test H2 Headers")
+<<<<<<< HEAD
+                    issue_dir = agenttree_path / "issues" / issue.dir_name
+=======
                     issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
+>>>>>>> origin/main
 
                     # Create problem.md with ## Context
                     content = """# Problem
@@ -489,7 +553,11 @@ This is the context section with content.
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
                 with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
                     issue = create_issue(title="Test H3 Headers")
+<<<<<<< HEAD
+                    issue_dir = agenttree_path / "issues" / issue.dir_name
+=======
                     issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
+>>>>>>> origin/main
 
                     # Create problem.md with ## sections (section_check looks for h2 headers)
                     content = """# Problem
@@ -531,7 +599,11 @@ class TestMultipleHookErrors:
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
                 with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
                     issue = create_issue(title="Test Multiple Errors")
+<<<<<<< HEAD
+                    issue_dir = agenttree_path / "issues" / issue.dir_name
+=======
                     issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
+>>>>>>> origin/main
 
                     # Create spec.md with multiple empty sections
                     content = """# Specification

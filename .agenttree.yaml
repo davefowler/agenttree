@@ -119,8 +119,9 @@ flows:
                   section: Test Plan
                   expect: not_empty
 
-          assess:
+          selfcheck:
             output: spec_review.md
+            skill: plan/selfcheck.md
             post_start:
               - create_file:
                   template: spec_review.md
@@ -130,9 +131,6 @@ flows:
                   file: spec_review.md
                   section: Assessment Summary
                   expect: not_empty
-
-          revise:
-            output: spec.md
 
           review:
             human_review: true

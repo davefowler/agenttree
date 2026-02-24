@@ -171,7 +171,11 @@ class TestPRCreationBoundary:
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
                 with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
                     issue = create_issue(title="Test PR Creation")
+<<<<<<< HEAD
+                    issue_dir = agenttree_path / "issues" / issue.dir_name
+=======
                     issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
+>>>>>>> origin/main
 
                     # Create necessary content
                     create_valid_spec_md(issue_dir)
@@ -230,7 +234,11 @@ class TestHookContextAwareness:
         with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
                 issue = create_issue(title="Test Section Check")
+<<<<<<< HEAD
+                issue_dir = agenttree_path / "issues" / issue.dir_name
+=======
                 issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
+>>>>>>> origin/main
 
                 create_valid_problem_md(issue_dir)
 
@@ -304,7 +312,11 @@ class TestApprovalBoundary:
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
                 with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
                     issue = create_issue(title="Test Host Approval")
+<<<<<<< HEAD
+                    issue_dir = agenttree_path / "issues" / issue.dir_name
+=======
                     issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
+>>>>>>> origin/main
 
                     # Create valid content for plan.review
                     create_valid_spec_md(issue_dir)
@@ -351,7 +363,11 @@ class TestApprovalBoundary:
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
                 # Create issue and simulate agent reaching plan.review
                 issue = create_issue(title="Test Agent Reorient After Approval")
+<<<<<<< HEAD
+                issue_dir = agenttree_path / "issues" / issue.dir_name
+=======
                 issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
+>>>>>>> origin/main
 
                 # Agent creates session and works through to plan.review
                 session = create_session(issue.id)
@@ -472,7 +488,7 @@ class TestStartBlockedIssuesBoundary:
 
                 # Add dependency (manually for test)
                 import yaml
-                yaml_path = agenttree_path / "issues" / f"{blocked_issue.id}-{blocked_issue.slug}" / "issue.yaml"
+                yaml_path = agenttree_path / "issues" / blocked_issue.dir_name / "issue.yaml"
                 with open(yaml_path) as f:
                     data = yaml.safe_load(f)
                 data["dependencies"] = [dep_issue.id]

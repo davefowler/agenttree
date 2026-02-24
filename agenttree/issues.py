@@ -1609,4 +1609,10 @@ def get_issue_context(issue: Issue, include_docs: bool = True) -> dict:
             else:
                 context[var_name] = ""
 
+    # Add ci_feedback_exists flag for debug stage condition
+    if issue_dir:
+        context["ci_feedback_exists"] = (issue_dir / "ci_feedback.md").exists()
+    else:
+        context["ci_feedback_exists"] = False
+
     return context

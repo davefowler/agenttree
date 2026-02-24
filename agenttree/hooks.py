@@ -800,8 +800,8 @@ def run_builtin_validator(
             if not found:
                 errors.append(f"Section '{section}' not found in {params['file']}")
             else:
-                # Count list items (lines starting with - or *)
-                list_items = re.findall(r'^\s*[-*]\s+\S', section_content, re.MULTILINE)
+                # Count list items (lines starting with -, *, or numbered like 1., 2.)
+                list_items = re.findall(r'^\s*(?:[-*]|\d+\.)\s+\S', section_content, re.MULTILINE)
                 if len(list_items) < min_items:
                     errors.append(
                         f"Section '{section}' has {len(list_items)} list items, minimum is {min_items}"
@@ -1253,7 +1253,7 @@ def run_builtin_validator(
 def run_command_hook(
     issue_dir: Path,
     hook: Dict[str, Any],
-    issue_id: str = "",
+    issue_id: int | str = "",
     issue_title: str = "",
     branch: str = "",
     stage: str = "",
@@ -1281,7 +1281,11 @@ def run_command_hook(
 
     command = hook["command"]
 
+<<<<<<< HEAD
+    # Replace template variables (ensure issue_id is str for replace)
+=======
     # Replace template variables
+>>>>>>> origin/main
     command = command.replace("{{issue_id}}", str(issue_id))
     command = command.replace("{{issue_title}}", issue_title)
     command = command.replace("{{branch}}", branch)
