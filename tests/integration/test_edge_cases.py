@@ -14,6 +14,7 @@ from unittest.mock import patch, MagicMock
 import pytest
 import yaml
 
+from agenttree.ids import format_issue_id
 from tests.integration.helpers import (
     create_valid_problem_md,
     create_valid_review_md,
@@ -253,7 +254,11 @@ class TestDependencyEdgeCases:
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
                 issue = create_issue(title="Test Missing Dependency")
 
+<<<<<<< HEAD
+                yaml_path = agenttree_path / "issues" / format_issue_id(issue.id) / "issue.yaml"
+=======
                 yaml_path = agenttree_path / "issues" / f"{issue.id:03d}" / "issue.yaml"
+>>>>>>> origin/main
                 with open(yaml_path) as f:
                     data = yaml.safe_load(f)
                 data["dependencies"] = [999]
@@ -279,7 +284,11 @@ class TestDependencyEdgeCases:
 
                 main_issue = create_issue(title="Main Issue")
 
+<<<<<<< HEAD
+                yaml_path = agenttree_path / "issues" / format_issue_id(main_issue.id) / "issue.yaml"
+=======
                 yaml_path = agenttree_path / "issues" / f"{main_issue.id:03d}" / "issue.yaml"
+>>>>>>> origin/main
                 with open(yaml_path) as f:
                     data = yaml.safe_load(f)
                 data["dependencies"] = [dep_issue.id]

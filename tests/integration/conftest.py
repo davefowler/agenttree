@@ -14,6 +14,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 import yaml
 
+from agenttree.ids import format_issue_id
+
 
 @pytest.fixture
 def git_repo(tmp_path: Path) -> Generator[Path, None, None]:
@@ -392,7 +394,11 @@ def workflow_issue(workflow_repo: Path, mock_sync: MagicMock) -> dict[str, Any]:
                 description="This is a test issue for integration testing."
             )
 
+<<<<<<< HEAD
+            issue_dir = workflow_repo / "_agenttree" / "issues" / format_issue_id(issue.id)
+=======
             issue_dir = workflow_repo / "_agenttree" / "issues" / f"{issue.id:03d}"
+>>>>>>> origin/main
 
             return {
                 "id": issue.id,
