@@ -96,7 +96,6 @@ async def kanban(
         )
 
     # Check rate limit status for warning banner
-    config = load_config()
     agents_dir = Path("_agenttree")
     rate_limit_state = load_rate_limit_state(agents_dir)
     rate_limit_warning = None
@@ -118,7 +117,7 @@ async def kanban(
             "reset_time": reset_display,
             "mode": rate_limit_state.get("mode", "subscription"),
             "agent_count": len(rate_limit_state.get("affected_agents", [])),
-            "can_switch": bool(os.environ.get(config.rate_limit_fallback.api_key_env)),
+            "can_switch": bool(os.environ.get(_config.rate_limit_fallback.api_key_env)),
         }
 
     return templates.TemplateResponse(

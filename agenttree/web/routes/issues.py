@@ -104,7 +104,7 @@ async def create_issue_api(
             await asyncio.to_thread(start_agent, issue.id, quiet=True)
         except Exception as e:
             # Log but don't fail - issue was created, agent start is optional
-            print(f"Warning: Could not auto-start agent for issue #{issue.id}: {e}")
+            logger.warning("Could not auto-start agent for issue #%s: %s", issue.id, e)
 
         return {"ok": True, "issue_id": issue.id, "title": issue.title}
     except Exception as e:

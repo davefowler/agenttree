@@ -1,10 +1,13 @@
 """Helper functions for web routes."""
 
 import hashlib
+import logging
 import re
 import subprocess
 from datetime import datetime
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 from agenttree import issues as issue_crud
 from agenttree.config import load_config
@@ -288,6 +291,7 @@ def get_issue_files(
             try:
                 file_info["content"] = f.read_text()
             except Exception:
+                logger.debug("Could not read %s", f, exc_info=True)
                 file_info["content"] = ""
         files.append(file_info)
 
@@ -309,6 +313,7 @@ def get_issue_files(
                 try:
                     file_info["content"] = issue_yaml.read_text()
                 except Exception:
+                    logger.debug("Could not read %s", issue_yaml, exc_info=True)
                     file_info["content"] = ""
             files.append(file_info)
 
