@@ -7,7 +7,6 @@ All functions use subprocess to call git directly.
 import re
 import subprocess
 from pathlib import Path
-from typing import Optional
 
 
 def get_current_branch() -> str:
@@ -78,7 +77,7 @@ def get_default_branch() -> str:
     return "master"
 
 
-def has_commits_to_push(branch: Optional[str] = None) -> bool:
+def has_commits_to_push(branch: str | None = None) -> bool:
     """Check if there are unpushed commits.
 
     Args:
@@ -191,7 +190,7 @@ def push_branch_to_remote(branch: str) -> None:
     )
 
 
-def get_commits_behind_main(worktree_dir: Optional[str]) -> int:
+def get_commits_behind_main(worktree_dir: str | None) -> int:
     """Get the number of commits the worktree is behind local main.
 
     Compares to local main branch (not origin/main) for fast lookups (~10ms).
@@ -207,7 +206,7 @@ def get_commits_behind_main(worktree_dir: Optional[str]) -> int:
     return behind
 
 
-def get_commits_ahead_behind_main(worktree_dir: Optional[str]) -> tuple[int, int]:
+def get_commits_ahead_behind_main(worktree_dir: str | None) -> tuple[int, int]:
     """Get the number of commits ahead and behind local main.
 
     Args:

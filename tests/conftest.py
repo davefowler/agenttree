@@ -43,4 +43,4 @@ def host_environment(monkeypatch):
     """
     monkeypatch.delenv("AGENTTREE_CONTAINER", raising=False)
     # Also patch the function directly for environments where /.dockerenv exists
-    monkeypatch.setattr("agenttree.hooks.is_running_in_container", lambda: False)
+    monkeypatch.setattr("agenttree.environment.is_running_in_container", lambda: False)

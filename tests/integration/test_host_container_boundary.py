@@ -21,7 +21,7 @@ class TestContainerEnvironment:
 
     def test_container_env_detected(self, monkeypatch):
         """Test that container environment is properly detected."""
-        from agenttree.hooks import is_running_in_container
+        from agenttree.environment import is_running_in_container
 
         monkeypatch.setenv("AGENTTREE_CONTAINER", "1")
         assert is_running_in_container() is True
@@ -98,7 +98,7 @@ class TestHostEnvironment:
 
     def test_host_env_detected(self, host_environment):
         """Test that host environment is properly detected."""
-        from agenttree.hooks import is_running_in_container
+        from agenttree.environment import is_running_in_container
 
         assert is_running_in_container() is False
 
@@ -130,7 +130,7 @@ class TestHostEnvironment:
     @pytest.mark.skip(reason="rebase_issue_branch signature changed - takes Path not issue_id")
     def test_rebase_runs_on_host(self, workflow_repo: Path, host_environment, mock_sync: MagicMock):
         """Test that rebase hook runs on host."""
-        from agenttree.hooks import rebase_issue_branch
+        from agenttree.git_utils import rebase_issue_branch
 
         with patch("agenttree.hooks.subprocess.run") as mock_run:
             mock_result = MagicMock()
@@ -162,7 +162,7 @@ class TestPRCreationBoundary:
     @pytest.mark.skip(reason="ensure_pr_for_issue/create_pull_request not yet implemented")
     def test_host_sync_creates_pr_for_container_issues(self, workflow_repo: Path, host_environment, mock_sync: MagicMock):
         """Test that host sync creates PRs for issues at implement.review."""
-        from agenttree.hooks import ensure_pr_for_issue
+        from agenttree.pr_actions import ensure_pr_for_issue
         from agenttree.issues import create_issue, update_issue_stage
 
         agenttree_path = workflow_repo / "_agenttree"

@@ -49,7 +49,7 @@ def get_code_directory(issue: "Issue | None", issue_dir: Path) -> Path:
     if is_running_in_container():
         return Path("/workspace")
 
-    if issue and hasattr(issue, 'worktree_dir') and issue.worktree_dir:
+    if issue and issue.worktree_dir:
         return Path(issue.worktree_dir)
 
     return issue_dir
