@@ -156,7 +156,7 @@ class IssueTable(DataTable):  # type: ignore[type-arg]
                 issue.title[:40] + "..." if len(issue.title) > 40 else issue.title,
                 issue.stage,
                 issue.priority.value,
-                key=issue.id,
+                key=str(issue.id),
             )
 
     def apply_filter(self, filter_text: str) -> None:
