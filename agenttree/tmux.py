@@ -4,18 +4,17 @@ from __future__ import annotations
 
 import logging
 import subprocess
-import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 from dataclasses import dataclass
 
 from agenttree.config import Config
-
-log = logging.getLogger("agenttree.tmux")
 from agenttree.ids import serve_session_name as get_serve_session_name
 
 if TYPE_CHECKING:
     from agenttree.container import ContainerRuntime
+
+log = logging.getLogger("agenttree.tmux")
 
 
 @dataclass

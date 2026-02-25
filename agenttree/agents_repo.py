@@ -305,7 +305,6 @@ def ensure_review_branches(agents_dir: Path) -> int:
     if not issues_dir.exists():
         return 0
 
-    console = Console()
     processed = 0
 
     for issue_dir in issues_dir.iterdir():
@@ -409,9 +408,7 @@ def check_custom_agent_stages(agents_dir: Path) -> int:
     if not custom_agent_stages:
         return 0
 
-    from rich.console import Console
     from agenttree.tmux import session_exists
-    console = Console()
 
     spawned = 0
 
@@ -537,7 +534,6 @@ def check_merged_prs(agents_dir: Path) -> int:
     from agenttree.config import load_config
     from agenttree.issues import Issue
 
-    console = Console()
     config = load_config()
 
     # Stages where the issue is already done - no need to check PR
@@ -759,7 +755,6 @@ def check_ci_status(agents_dir: Path) -> int:
     from agenttree.tmux import TmuxManager
     from agenttree.issues import Issue
 
-    console = Console()
     config = load_config()
     issues_notified = 0
 
@@ -975,9 +970,7 @@ def push_pending_branches(agents_dir: Path) -> int:
     if not issues_dir.exists():
         return 0
 
-    from rich.console import Console
     from agenttree.issues import Issue
-    console = Console()
 
     branches_pushed = 0
 

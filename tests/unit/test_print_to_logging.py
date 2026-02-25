@@ -131,47 +131,28 @@ class TestModulesHaveProperOutputMechanisms:
 class TestNoRemainingRawPrintsInConvertedFiles:
     """Verify that converted files no longer have raw print() calls (except intentional ones)."""
 
-    def test_agents_repo_no_raw_prints(self) -> None:
-        """agents_repo.py should not have raw print() calls."""
+    @pytest.mark.parametrize("module_name", ["agents_repo", "issues", "tmux"])
+    def test_no_raw_prints(self, module_name: str) -> None:
+        """Converted modules should not have raw print() calls."""
         import inspect
-        from agenttree import agents_repo
-
-        source = inspect.getsource(agents_repo)
-        # Count print( occurrences - should be 0 in this file
-        # We look for print( at line start or after whitespace
+        import importlib
         import re
+
+        module = importlib.import_module(f"agenttree.{module_name}")
+        source = inspect.getsource(module)
+        # Match standalone print( at start of line (not console.print)
         prints = re.findall(r'^\s*print\(', source, re.MULTILINE)
-        assert len(prints) == 0, f"Found {len(prints)} raw print() calls in agents_repo.py"
+        assert len(prints) == 0, f"Found {len(prints)} raw print() calls in {module_name}.py"
 
     def test_container_only_health_check_print(self) -> None:
         """container.py should only have the health check print('OK')."""
         import inspect
+        import re
         from agenttree import container
 
         source = inspect.getsource(container)
-        import re
         # Match standalone print( at start of line (not console.print)
         prints = re.findall(r'^\s*print\(', source, re.MULTILINE)
         # Should only find print("OK") in the health check script
         assert len(prints) == 1, f"Expected 1 print (health check), found {len(prints)}"
         assert 'print("OK")' in source
-
-    def test_issues_no_raw_prints(self) -> None:
-        """issues.py should not have raw print() calls."""
-        import inspect
-        from agenttree import issues
-
-        source = inspect.getsource(issues)
-        import re
-        prints = re.findall(r'^\s*print\(', source, re.MULTILINE)
-        assert len(prints) == 0, f"Found {len(prints)} raw print() calls in issues.py"
-
-    def test_tmux_no_raw_prints(self) -> None:
-        """tmux.py should not have raw print() calls."""
-        import inspect
-        from agenttree import tmux
-
-        source = inspect.getsource(tmux)
-        import re
-        prints = re.findall(r'^\s*print\(', source, re.MULTILINE)
-        assert len(prints) == 0, f"Found {len(prints)} raw print() calls in tmux.py"
