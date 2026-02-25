@@ -1281,7 +1281,7 @@ def run_command_hook(
 
     command = hook["command"]
 
-    # Replace template variables (ensure issue_id is str for replace)
+    # Replace template variables (issue_id is converted to str for replace())
     command = command.replace("{{issue_id}}", str(issue_id))
     command = command.replace("{{issue_title}}", issue_title)
     command = command.replace("{{branch}}", branch)
