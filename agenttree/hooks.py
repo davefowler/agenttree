@@ -1512,7 +1512,7 @@ def execute_exit_hooks(issue: "Issue", dot_path: str, **extra_kwargs: Any) -> No
 
     errors: List[str] = []
     hook_kwargs = {
-        "issue_id": str(issue.id),
+        "issue_id": issue.id,
         "issue_title": issue.title,
         "branch": issue.branch or "",
         "issue": issue,  # Pass issue for worktree_dir access in run hooks
@@ -1591,7 +1591,7 @@ def execute_enter_hooks(issue: "Issue", dot_path: str) -> None:
 
     errors: List[str] = []
     hook_kwargs = {
-        "issue_id": str(issue.id),
+        "issue_id": issue.id,
         "issue_title": issue.title,
         "branch": issue.branch or "",
         "issue": issue,  # Pass issue object for cleanup_agent and start_blocked_issues hooks
@@ -2380,7 +2380,7 @@ def ensure_pr_for_issue(issue_id: int | str) -> bool:
         config = load_config()
         if config.hooks.post_pr_create:
             run_host_hooks(config.hooks.post_pr_create, {
-                "issue_id": str(issue.id),
+                "issue_id": issue.id,
                 "issue_title": issue.title,
                 "pr_number": pr.number,
                 "pr_url": pr.url,
@@ -2444,7 +2444,7 @@ def check_and_start_blocked_issues(issue: Issue) -> None:
     config = load_config()
     if config.hooks.post_accepted:
         run_host_hooks(config.hooks.post_accepted, {
-            "issue_id": str(issue.id),
+            "issue_id": issue.id,
         })
 
     blocked = get_blocked_issues(issue.id)

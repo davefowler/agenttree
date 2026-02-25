@@ -549,7 +549,6 @@ async def kanban(
         {
             "request": request,
             "board": board,
-            "stages": _config.get_all_dot_paths(),
             "parking_lot_stages": [p for p in _config.get_all_dot_paths() if _config.is_parking_lot(p)],
             "human_review_stages": _config.get_human_review_stages(),
             "active_page": "kanban",
@@ -581,7 +580,6 @@ async def kanban_board(
         {
             "request": request,
             "board": board,
-            "stages": _config.get_all_dot_paths(),
         }
     )
 

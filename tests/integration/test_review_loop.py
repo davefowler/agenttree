@@ -14,7 +14,6 @@ import pytest
 import yaml
 
 from agenttree.hooks import execute_hooks, StageRedirect, ValidationError
-from agenttree.ids import format_issue_id
 from agenttree.config import load_config
 
 
@@ -181,7 +180,7 @@ class TestCheckboxApprovalFlow:
         with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
             with patch("agenttree.config.find_config_file", return_value=review_loop_repo / ".agenttree.yaml"):
                 issue = create_issue(title="Test Approved Review")
-                issue_dir = agenttree_path / "issues" / format_issue_id(issue.id)
+                issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
 
                 create_approved_review(issue_dir)
 
@@ -201,7 +200,7 @@ class TestCheckboxApprovalFlow:
         with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
             with patch("agenttree.config.find_config_file", return_value=review_loop_repo / ".agenttree.yaml"):
                 issue = create_issue(title="Test Rejected Review")
-                issue_dir = agenttree_path / "issues" / format_issue_id(issue.id)
+                issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
 
                 create_rejected_review(issue_dir)
 
@@ -244,7 +243,7 @@ class TestFullReviewLoop:
         with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
             with patch("agenttree.config.find_config_file", return_value=review_loop_repo / ".agenttree.yaml"):
                 issue = create_issue(title="Test Full Loop")
-                issue_dir = agenttree_path / "issues" / format_issue_id(issue.id)
+                issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
                 config = load_config()
 
                 # Step 1: Reviewer rejects
