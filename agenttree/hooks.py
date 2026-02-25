@@ -376,7 +376,7 @@ HOOK_TYPES = {
     "checkbox_checked",  # Review loop: check if checkbox is marked
     # Actions (perform side effects)
     "create_file", "create_pr", "merge_pr", "run", "rebase",
-    "cleanup_agent", "start_blocked_issues", "cleanup_resources",
+    "cleanup_agent", "start_blocked_issues", "cleanup_resources", "trigger_cleanup",
     "rollback",  # Review loop: programmatic rollback to earlier stage (with optional max_rollbacks limit)
     # Manager hooks (run on post-sync)
     "push_pending_branches", "check_manager_stages", "ensure_review_branches",
@@ -1074,6 +1074,15 @@ def run_builtin_validator(
             for err in cleanup_result["errors"]:
                 errors.append(f"Cleanup error: {err}")
 
+    elif hook_type == "trigger_cleanup":
+        # Create cleanup issue after N accepted issues
+        # Dispatches to the trigger_cleanup action in actions.py
+        from agenttree.actions import trigger_cleanup as trigger_cleanup_action
+        agents_dir = kwargs.get("agents_dir")
+        threshold = params.get("threshold", 10)
+        if agents_dir:
+            trigger_cleanup_action(agents_dir=agents_dir, threshold=threshold)
+
     # === Review loop hooks ===
 
     elif hook_type == "checkbox_checked":
@@ -1512,7 +1521,7 @@ def execute_exit_hooks(issue: "Issue", dot_path: str, **extra_kwargs: Any) -> No
 
     errors: List[str] = []
     hook_kwargs = {
-        "issue_id": issue.id,
+        "issue_id": str(issue.id),
         "issue_title": issue.title,
         "branch": issue.branch or "",
         "issue": issue,  # Pass issue for worktree_dir access in run hooks
@@ -1591,7 +1600,7 @@ def execute_enter_hooks(issue: "Issue", dot_path: str) -> None:
 
     errors: List[str] = []
     hook_kwargs = {
-        "issue_id": issue.id,
+        "issue_id": str(issue.id),
         "issue_title": issue.title,
         "branch": issue.branch or "",
         "issue": issue,  # Pass issue object for cleanup_agent and start_blocked_issues hooks
@@ -2380,7 +2389,7 @@ def ensure_pr_for_issue(issue_id: int | str) -> bool:
         config = load_config()
         if config.hooks.post_pr_create:
             run_host_hooks(config.hooks.post_pr_create, {
-                "issue_id": issue.id,
+                "issue_id": str(issue.id),
                 "issue_title": issue.title,
                 "pr_number": pr.number,
                 "pr_url": pr.url,
@@ -2444,7 +2453,7 @@ def check_and_start_blocked_issues(issue: Issue) -> None:
     config = load_config()
     if config.hooks.post_accepted:
         run_host_hooks(config.hooks.post_accepted, {
-            "issue_id": issue.id,
+            "issue_id": str(issue.id),
         })
 
     blocked = get_blocked_issues(issue.id)
