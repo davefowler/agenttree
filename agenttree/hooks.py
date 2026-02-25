@@ -1078,8 +1078,10 @@ def run_builtin_validator(
         # Create cleanup issue after N accepted issues
         # Dispatches to the trigger_cleanup action in actions.py
         from agenttree.actions import trigger_cleanup as trigger_cleanup_action
+        agents_dir = kwargs.get("agents_dir")
         threshold = params.get("threshold", 10)
-        trigger_cleanup_action(agents_dir=agents_dir, threshold=threshold)
+        if agents_dir:
+            trigger_cleanup_action(agents_dir=agents_dir, threshold=threshold)
 
     # === Review loop hooks ===
 
