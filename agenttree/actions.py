@@ -537,6 +537,103 @@ def cleanup_resources(
             f.write(f"{datetime.now().isoformat()}: cleanup_resources executed\n")
 
 
+@register_action("trigger_cleanup")
+def trigger_cleanup(
+    agents_dir: Path,
+    threshold: int = 10,
+    **kwargs: Any
+) -> None:
+    """Create a cleanup issue when N issues have been accepted since last cleanup.
+
+    Tracks accepted issue count in state file. When count reaches threshold,
+    creates a cleanup issue with flow="cleanup" to review recent code reviews
+    for deferred items and consolidation opportunities.
+
+    Args:
+        agents_dir: Path to _agenttree directory
+        threshold: Number of accepted issues before triggering cleanup (default: 10)
+    """
+    from agenttree.events import load_event_state, save_event_state
+    from agenttree.issues import list_issues, create_issue, Priority
+
+    # Load state
+    state = load_event_state(agents_dir)
+    cleanup_state = state.get("cleanup_trigger", {})
+    last_batch_end = cleanup_state.get("last_batch_end", 0)
+
+    # Get all issues
+    all_issues = list_issues(sync=False)
+
+    # Check if there's already a cleanup issue in progress (not accepted)
+    for issue in all_issues:
+        flow = getattr(issue, "flow", "default")
+        if flow == "cleanup" and issue.stage != "accepted":
+            # Cleanup in progress, skip
+            return
+
+    # Count accepted issues with id > last_batch_end
+    accepted_issues = [
+        i for i in all_issues
+        if i.stage == "accepted" and i.id > last_batch_end
+    ]
+
+    if len(accepted_issues) < threshold:
+        # Not enough accepted issues yet
+        return
+
+    # Find the highest accepted issue ID in this batch
+    new_batch_end = max(i.id for i in accepted_issues)
+
+    # Build the issue range for the problem statement
+    issue_ids = sorted(i.id for i in accepted_issues if i.id > last_batch_end)
+    first_id = min(issue_ids)
+    last_id = max(issue_ids)
+
+    # Create problem statement
+    problem = f"""# Cleanup Batch: Issues #{first_id} - #{last_id}
+
+This is an automated cleanup issue created after {len(issue_ids)} issues were accepted.
+
+## Your Task
+
+1. **Research Phase**: Read the `review.md` and `independent_review.md` files for issues #{first_id} through #{last_id}
+2. **Look for**:
+   - "Should Fix" items that were deferred
+   - "Proposed Next Steps > Code Improvements" suggestions
+   - Patterns indicating consolidation/DRY opportunities
+3. **Plan and Implement**: Address the most impactful items found
+
+## Issues to Review
+
+"""
+    for issue_id in issue_ids:
+        problem += f"- Issue #{issue_id}\n"
+
+    problem += """
+## Notes
+
+- If no actionable items are found, document this in your research and skip to accepted
+- Focus on high-impact improvements over minor cleanups
+- Group related changes together for cleaner PRs
+"""
+
+    # Create the cleanup issue
+    create_issue(
+        title=f"Cleanup batch #{first_id}-#{last_id}",
+        flow="cleanup",
+        priority=Priority.LOW,
+        problem=problem,
+        stage="explore.research",
+    )
+
+    console.print(f"[green]Created cleanup issue for batch #{first_id}-#{last_id}[/green]")
+
+    # Update state
+    cleanup_state["last_batch_end"] = new_batch_end
+    state["cleanup_trigger"] = cleanup_state
+    save_event_state(agents_dir, state)
+
+
 # =============================================================================
 # Rate Limit Fallback
 # =============================================================================

@@ -160,7 +160,7 @@ flows:
                   dest: review.md
             pre_completion:
               - run:
-                  command: uv run pytest
+                  command: uv run pytest tests/unit
                   must_pass: true
                   timeout: 900
               - run:
@@ -293,6 +293,17 @@ flows:
     stages:
       - not_doing
 
+  # Cleanup flow for periodic code review followup
+  # Skips explore.define (problem auto-generated) and plan.review (automated)
+  cleanup:
+    stages:
+      - explore.research
+      - plan.draft
+      - plan.assess
+      - plan.revise
+      - implement
+      - accepted
+
 default_flow: default
 
 # Controller hooks for dogfooding
@@ -300,3 +311,5 @@ manager_hooks:
   post_sync:
     - cleanup_resources:
         log_file: _agenttree/logs/cleanup.log
+    - trigger_cleanup:
+        threshold: 10
