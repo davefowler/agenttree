@@ -566,8 +566,7 @@ def trigger_cleanup(
 
     # Check if there's already a cleanup issue in progress (not accepted)
     for issue in all_issues:
-        flow = getattr(issue, "flow", "default")
-        if flow == "cleanup" and issue.stage != "accepted":
+        if issue.flow == "cleanup" and issue.stage != "accepted":
             # Cleanup in progress, skip
             return
 
@@ -585,18 +584,17 @@ def trigger_cleanup(
     new_batch_end = max(i.id for i in accepted_issues)
 
     # Build the issue range for the problem statement
-    issue_ids = sorted(i.id for i in accepted_issues if i.id > last_batch_end)
+    issue_ids = sorted(i.id for i in accepted_issues)
     first_id = min(issue_ids)
-    last_id = max(issue_ids)
 
     # Create problem statement
-    problem = f"""# Cleanup Batch: Issues #{first_id} - #{last_id}
+    problem = f"""# Cleanup Batch: Issues #{first_id} - #{new_batch_end}
 
 This is an automated cleanup issue created after {len(issue_ids)} issues were accepted.
 
 ## Your Task
 
-1. **Research Phase**: Read the `review.md` and `independent_review.md` files for issues #{first_id} through #{last_id}
+1. **Research Phase**: Read the `review.md` and `independent_review.md` files for issues #{first_id} through #{new_batch_end}
 2. **Look for**:
    - "Should Fix" items that were deferred
    - "Proposed Next Steps > Code Improvements" suggestions
@@ -619,14 +617,14 @@ This is an automated cleanup issue created after {len(issue_ids)} issues were ac
 
     # Create the cleanup issue
     create_issue(
-        title=f"Cleanup batch #{first_id}-#{last_id}",
+        title=f"Cleanup batch #{first_id}-#{new_batch_end}",
         flow="cleanup",
         priority=Priority.LOW,
         problem=problem,
         stage="explore.research",
     )
 
-    console.print(f"[green]Created cleanup issue for batch #{first_id}-#{last_id}[/green]")
+    console.print(f"[green]Created cleanup issue for batch #{first_id}-#{new_batch_end}[/green]")
 
     # Update state
     cleanup_state["last_batch_end"] = new_batch_end
