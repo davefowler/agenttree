@@ -1,5 +1,6 @@
 """Remote agent execution via SSH and Tailscale."""
 
+import json
 import subprocess
 import shutil
 from typing import Optional, List
@@ -43,7 +44,6 @@ def get_tailscale_hosts() -> List[str]:
             check=True,
         )
 
-        import json
         data = json.loads(result.stdout)
 
         hosts = []

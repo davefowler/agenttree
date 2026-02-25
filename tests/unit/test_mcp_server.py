@@ -5,6 +5,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+pytest.importorskip("mcp")
+
 from agenttree.mcp_server import (
     status,
     get_issue,
