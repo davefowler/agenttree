@@ -13,8 +13,10 @@ from pathlib import Path
 from datetime import datetime
 from typing import Any, Optional, TYPE_CHECKING
 import re
+from rich.console import Console
 
 log = logging.getLogger("agenttree.agents_repo")
+console = Console()
 
 if TYPE_CHECKING:
     from agenttree.issues import Issue
@@ -126,8 +128,8 @@ def sync_agents_repo(
                 # Offline mode - continue without syncing
                 return False
             elif "conflict" in result.stderr.lower():
-                # Merge conflict - print error and fail
-                print(f"Warning: Merge conflict in _agenttree repo: {result.stderr}")
+                # Merge conflict - log error and fail
+                log.warning("Merge conflict in _agenttree repo: %s", result.stderr)
                 return False
             elif "local changes" in result.stderr.lower() or "overwritten" in result.stderr.lower():
                 # Shouldn't happen after auto-commit, but try stash as fallback
@@ -137,8 +139,8 @@ def sync_agents_repo(
                 if retry.returncode != 0:
                     return False
             else:
-                # Other error - print warning but continue
-                print(f"Warning: Failed to pull _agenttree repo: {result.stderr}")
+                # Other error - log warning but continue
+                log.warning("Failed to pull _agenttree repo: %s", result.stderr)
                 return False
 
         # If pull-only, we're done (hooks run separately by caller)
@@ -156,18 +158,18 @@ def sync_agents_repo(
         if push_result.returncode != 0:
             # Push failed - could be offline or permission issue
             if "Could not resolve host" in push_result.stderr:
-                print("Warning: Offline - changes committed locally but not pushed")
+                log.warning("Offline - changes committed locally but not pushed")
             else:
-                print(f"Warning: Failed to push changes: {push_result.stderr}")
+                log.warning("Failed to push changes: %s", push_result.stderr)
             return False
 
         return True
 
     except subprocess.TimeoutExpired:
-        print("Warning: Git operation timed out")
+        log.warning("Git operation timed out")
         return False
     except Exception as e:
-        print(f"Warning: Error syncing _agenttree repo: {e}")
+        log.warning("Error syncing _agenttree repo: %s", e)
         return False
     finally:
         # Always release the lock and reset the global
@@ -1120,11 +1122,11 @@ class AgentsRepository:
 
         if result.returncode == 0:
             # Repo exists
-            print(f"GitHub repo {repo_name} already exists")
+            console.print(f"[dim]GitHub repo {repo_name} already exists[/dim]")
             return
 
         # Create new private repo FROM TEMPLATE
-        print(f"Creating GitHub repo: {repo_name} (from agenttree-template)")
+        console.print(f"[cyan]Creating GitHub repo: {repo_name} (from agenttree-template)[/cyan]")
         subprocess.run(
             [
                 "gh",
@@ -1153,7 +1155,7 @@ class AgentsRepository:
         )
         username = result.stdout.strip()
 
-        print(f"Cloning {repo_name} to _agenttree/")
+        console.print(f"[cyan]Cloning {repo_name} to _agenttree/[/cyan]")
 
         # Clone
         subprocess.run(
@@ -1162,7 +1164,7 @@ class AgentsRepository:
         )
 
         # Add upstream remote pointing to template repo (for upgrades)
-        print("Setting up upstream remote for upgrades...")
+        console.print("[dim]Setting up upstream remote for upgrades...[/dim]")
         subprocess.run(
             ["git", "-C", str(self.agents_path), "remote", "add", "upstream", 
              "https://github.com/davefowler/agenttree-template.git"],
@@ -1175,12 +1177,12 @@ class AgentsRepository:
             capture_output=True,
         )
 
-        print("✓ _agenttree/ repository initialized from template")
-        print("  Run 'agenttree upgrade' later to pull template updates")
+        console.print("[green]✓ _agenttree/ repository initialized from template[/green]")
+        console.print("[dim]  Run 'agenttree upgrade' later to pull template updates[/dim]")
 
     def _initialize_structure(self) -> None:
         """Create initial folder structure and templates."""
-        print("Initializing _agenttree/ structure...")
+        console.print("[cyan]Initializing _agenttree/ structure...[/cyan]")
 
         # Create directories
         (self.agents_path / "templates").mkdir(exist_ok=True)
@@ -1216,7 +1218,7 @@ class AgentsRepository:
         )
         subprocess.run(["git", "push"], cwd=self.agents_path, check=True)
 
-        print("✓ _agenttree/ repository initialized")
+        console.print("[green]✓ _agenttree/ repository initialized[/green]")
 
     def _create_readme(self) -> None:
         """Create main README."""
@@ -1622,7 +1624,7 @@ See [README.md](README.md) for structure overview.
             entries_to_add = ["_agenttree/", ".worktrees/"]
 
         if entries_to_add:
-            print(f"✓ Added {', '.join(entries_to_add)} to .gitignore")
+            console.print(f"[green]✓ Added {', '.join(entries_to_add)} to .gitignore[/green]")
 
     def create_task_file(
         self, agent_num: int, issue_num: int, issue_title: str, issue_body: str, issue_url: str
