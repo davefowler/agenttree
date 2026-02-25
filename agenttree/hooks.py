@@ -376,7 +376,7 @@ HOOK_TYPES = {
     "checkbox_checked",  # Review loop: check if checkbox is marked
     # Actions (perform side effects)
     "create_file", "create_pr", "merge_pr", "run", "rebase",
-    "cleanup_agent", "start_blocked_issues", "cleanup_resources",
+    "cleanup_agent", "start_blocked_issues", "cleanup_resources", "trigger_cleanup",
     "rollback",  # Review loop: programmatic rollback to earlier stage (with optional max_rollbacks limit)
     # Manager hooks (run on post-sync)
     "push_pending_branches", "check_manager_stages", "ensure_review_branches",
@@ -1073,6 +1073,13 @@ def run_builtin_validator(
         if cleanup_result.get("errors"):
             for err in cleanup_result["errors"]:
                 errors.append(f"Cleanup error: {err}")
+
+    elif hook_type == "trigger_cleanup":
+        # Create cleanup issue after N accepted issues
+        # Dispatches to the trigger_cleanup action in actions.py
+        from agenttree.actions import trigger_cleanup as trigger_cleanup_action
+        threshold = params.get("threshold", 10)
+        trigger_cleanup_action(agents_dir=agents_dir, threshold=threshold)
 
     # === Review loop hooks ===
 
