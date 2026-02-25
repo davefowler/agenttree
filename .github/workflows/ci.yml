@@ -22,11 +22,10 @@ jobs:
         run: uv python install 3.12
 
       - name: Install dependencies
-        run: uv sync --all-extras
+        run: uv sync --all-extras --group dev
 
       - name: Run tests
         run: uv run pytest tests/unit -v --tb=short -m "not local_only"
 
       - name: Type check
-        run: uv run mypy agenttree --ignore-missing-imports
-        continue-on-error: true  # Don't fail on type errors for now
+        run: uv run python -m mypy agenttree --ignore-missing-imports
