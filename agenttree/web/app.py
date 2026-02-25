@@ -32,7 +32,7 @@ from agenttree.worktree import WorktreeManager
 _config: Config = load_config()
 from agenttree import issues as issue_crud
 from agenttree.agents_repo import sync_agents_repo
-from agenttree.web.models import KanbanBoard, Issue as WebIssue, IssueMoveRequest, PriorityUpdateRequest
+from agenttree.web.models import KanbanBoard, FlowKanbanRow, Issue as WebIssue, IssueMoveRequest, PriorityUpdateRequest
 
 # Module-level logger for web app
 logger = logging.getLogger("agenttree.web")
@@ -410,8 +410,6 @@ def get_kanban_board(search: str | None = None) -> KanbanBoard:
     Args:
         search: Optional search query to filter issues
     """
-    from agenttree.web.models import FlowKanbanRow
-
     # Get parking lot stages
     parking_lot_names = _config.get_parking_lot_stages()
     parking_lot_stages = [s for s in _config.get_all_dot_paths() if s in parking_lot_names]

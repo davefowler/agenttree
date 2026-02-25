@@ -71,6 +71,7 @@ def mock_issue_default_flow():
     mock.processing = None
     mock.ci_escalated = False
     mock.flow = "default"
+    mock.history = [Mock(timestamp="2024-01-01T00:00:00Z")]
     return mock
 
 
@@ -93,6 +94,7 @@ def mock_issue_quick_flow():
     mock.processing = None
     mock.ci_escalated = False
     mock.flow = "quick"
+    mock.history = [Mock(timestamp="2024-01-02T00:00:00Z")]
     return mock
 
 
@@ -115,6 +117,7 @@ def mock_issue_backlog():
     mock.processing = None
     mock.ci_escalated = False
     mock.flow = "default"
+    mock.history = [Mock(timestamp="2024-01-03T00:00:00Z")]
     return mock
 
 
