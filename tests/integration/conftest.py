@@ -310,7 +310,7 @@ def mock_container() -> Generator[MagicMock, None, None]:
     mock.running_agents = {}
     mock.sent_messages = []
 
-    def start_agent(issue_id: str, worktree_path: Path) -> int:
+    def start_agent(issue_id: int, worktree_path: Path) -> int:
         agent_num = len(mock.running_agents) + 1
         mock.running_agents[agent_num] = {
             "issue_id": issue_id,

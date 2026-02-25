@@ -69,6 +69,18 @@ def _compute_etag(content: str) -> str:
     return f'"{content_hash}"'
 
 
+def format_duration(minutes: int) -> str:
+    """Format minutes as '0m', '2h', or '3d'."""
+    if minutes < 60:
+        return f"{minutes}m"
+    elif minutes < 1440:  # Less than 24 hours
+        hours = minutes // 60
+        return f"{hours}h"
+    else:
+        days = minutes // 1440
+        return f"{days}d"
+
+
 # Get the directory where this file is located
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -329,6 +341,15 @@ def convert_issue_to_web(issue: issue_crud.Issue, load_dependents: bool = False)
         dependent_issues = issue_crud.get_dependent_issues(issue.id)
         dependents = [d.id for d in dependent_issues]
 
+    # Calculate time in current stage from history
+    time_in_stage = "0m"
+    if issue.history:
+        last_entry = issue.history[-1]
+        stage_entered = datetime.fromisoformat(last_entry.timestamp.replace("Z", "+00:00"))
+        now = datetime.now(timezone.utc)
+        minutes_elapsed = int((now - stage_entered).total_seconds() / 60)
+        time_in_stage = format_duration(max(0, minutes_elapsed))
+
     return WebIssue(
         number=issue.id,
         title=issue.title,
@@ -349,6 +370,7 @@ def convert_issue_to_web(issue: issue_crud.Issue, load_dependents: bool = False)
         processing=issue.processing,
         ci_escalated=issue.ci_escalated,
         flow=issue.flow,
+        time_in_stage=time_in_stage,
     )
 
 

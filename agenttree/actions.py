@@ -328,8 +328,11 @@ def check_stalled_agents(
     issues = list_issues(sync=False)
     needs_attention: list[str] = []
 
-    # Load heartbeat state for stall notification tracking
-    state = load_event_state(agents_dir)
+    # Use dispatcher's state if available to avoid write-after-write race;
+    # the dispatcher loads state, calls us, then saves — if we load/save
+    # independently, the dispatcher's final save overwrites our changes.
+    shared_state: dict[str, Any] | None = kwargs.get("_event_state")
+    state: dict[str, Any] = shared_state if shared_state is not None else load_event_state(agents_dir)
     stall_state: dict[int | str, Any] = state.get("stall_notifications", {})
     now = datetime.now(timezone.utc)
 
@@ -402,9 +405,9 @@ def check_stalled_agents(
             f"  #{issue.id}: {issue.title[:40]} — {status} at {issue.stage} ({elapsed_min}min)"
         )
 
-    # Save updated stall state
     state["stall_notifications"] = stall_state
-    save_event_state(agents_dir, state)
+    if shared_state is None:
+        save_event_state(agents_dir, state)
 
     if not needs_attention:
         return

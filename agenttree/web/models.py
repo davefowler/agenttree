@@ -44,6 +44,7 @@ class Issue(IssueBase):
     processing: str | None = None  # "exit", "enter", or None
     ci_escalated: bool = False
     flow: str = "default"  # Workflow flow: "default" or "quick"
+    time_in_stage: str = "0m"  # Formatted duration in current stage (e.g., "23m", "2h", "3d")
 
     @property
     def is_review(self) -> bool:
