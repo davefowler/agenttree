@@ -14,6 +14,14 @@ from rich.console import Console
 
 from agenttree.container import ContainerRuntime
 
+# Shared installation instructions for GitHub CLI
+GH_CLI_INSTALL_INSTRUCTIONS = (
+    "Install from https://cli.github.com/\n"
+    "  macOS:   brew install gh\n"
+    "  Linux:   See https://github.com/cli/cli#installation\n"
+    "  Windows: See https://github.com/cli/cli#installation"
+)
+
 
 @dataclass
 class DependencyResult:
@@ -79,12 +87,7 @@ def check_gh_installed() -> DependencyResult:
             name="gh_installed",
             passed=False,
             description="GitHub CLI not installed",
-            fix_instructions=(
-                "Install from https://cli.github.com/\n"
-                "  macOS:   brew install gh\n"
-                "  Linux:   See https://github.com/cli/cli#installation\n"
-                "  Windows: See https://github.com/cli/cli#installation"
-            ),
+            fix_instructions=GH_CLI_INSTALL_INSTRUCTIONS,
         )
 
 
