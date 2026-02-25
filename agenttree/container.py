@@ -166,13 +166,16 @@ def cleanup_containers_by_prefix(runtime: str, prefix: str) -> int:
 
 
 def is_container_running(container_name: str) -> bool:
-    """Check if a container with the given name is currently running.
+    """Check if a container matching the given name prefix is running.
+
+    Matches both exact names and suffixed variants (e.g., name-abc123)
+    since container names include random suffixes to avoid mDNS collisions.
 
     Args:
-        container_name: Container name to check
+        container_name: Container name or prefix to check
 
     Returns:
-        True if a running container with that name exists
+        True if a running container matching the prefix exists
     """
     import json
 
@@ -183,19 +186,22 @@ def is_container_running(container_name: str) -> bool:
     try:
         if runtime.runtime == "container":
             result = subprocess.run(
-                ["container", "inspect", container_name],
+                ["container", "list", "--format", "json"],
                 capture_output=True, text=True, timeout=10,
             )
             if result.returncode != 0:
                 return False
-            data = json.loads(result.stdout) if result.stdout.strip() else []
-            return any(c.get("status") == "running" for c in data)
+            containers = json.loads(result.stdout) if result.stdout.strip() else []
+            return any(
+                c.get("name", "").startswith(container_name) and c.get("status") == "running"
+                for c in containers
+            )
         else:
             result = subprocess.run(
-                [runtime.runtime, "inspect", "-f", "{{.State.Running}}", container_name],
+                [runtime.runtime, "ps", "--filter", f"name={container_name}", "--format", "{{.Names}}"],
                 capture_output=True, text=True, timeout=10,
             )
-            return result.returncode == 0 and "true" in result.stdout.lower()
+            return bool(result.stdout.strip())
     except (subprocess.TimeoutExpired, subprocess.SubprocessError, json.JSONDecodeError):
         return False
 
@@ -371,9 +377,10 @@ def build_container_command(
     cmd.append(image)
 
     # === 9. Entry command (from tool config) ===
-    # Check if there's a prior session to continue
-    sessions_dir = abs_path / f".claude-sessions-{role}"
-    has_prior_session = sessions_dir.exists() and any(sessions_dir.glob("*.jsonl"))
+    # Don't use -c (continue session) — Claude CLI exits with "No conversation
+    # found to continue" when sessions are stale or incompatible, which kills
+    # the container and blocks agent startup. The startup prompt already tells
+    # agents to run 'agenttree next', so continuation isn't needed.
 
     # Determine if dangerous mode is allowed
     # Both container type and role must allow it (we assume role allows since
@@ -384,7 +391,7 @@ def build_container_command(
     entry_cmd = tool_config.container_entry_command(
         model=model,
         dangerous=dangerous,
-        continue_session=has_prior_session,
+        continue_session=False,
     )
     cmd.extend(entry_cmd)
 
