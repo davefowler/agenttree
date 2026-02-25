@@ -12,7 +12,6 @@ import subprocess
 from pathlib import Path
 from datetime import datetime
 from typing import Any, Optional, TYPE_CHECKING
-import re
 
 log = logging.getLogger("agenttree.agents_repo")
 

@@ -5,7 +5,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
 import pytest
 
-from agenttree.agents_repo import AgentsRepository, slugify, sync_agents_repo
+from agenttree.agents_repo import AgentsRepository, sync_agents_repo
 
 
 @pytest.fixture
@@ -183,13 +183,6 @@ class TestAgentsRepository:
 
         # Should not raise error
         agents_repo.archive_task(agent_num=1)
-
-    def test_slugify(self):
-        """Test slugify helper function."""
-        assert slugify("Add Dark Mode") == "add-dark-mode"
-        assert slugify("Fix: Login Bug!") == "fix-login-bug"
-        assert slugify("Update API v2.0") == "update-api-v20"
-        assert slugify("Add   Multiple   Spaces") == "add-multiple-spaces"
 
     def test_add_to_gitignore_adds_agenttrees(self, agents_repo, tmp_path):
         """Test _add_to_gitignore adds _agenttree/ to parent .gitignore."""
