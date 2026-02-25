@@ -317,19 +317,20 @@ class TestSyncAgentsRepo:
         assert result is False
 
     @patch("agenttree.agents_repo.subprocess.run")
-    def test_sync_pull_only_conflict(self, mock_run, git_repo, capsys):
+    def test_sync_pull_only_conflict(self, mock_run, git_repo, caplog):
         """Test sync returns False on merge conflict."""
+        import logging
         # Mock responses for: status --porcelain (no changes), pull (conflict)
         mock_run.side_effect = [
             Mock(returncode=0, stdout=""),  # status --porcelain (empty = no changes)
             Mock(returncode=1, stderr="CONFLICT (content): Merge conflict in file.txt"),  # pull
         ]
 
-        result = sync_agents_repo(git_repo, pull_only=True)
+        with caplog.at_level(logging.WARNING):
+            result = sync_agents_repo(git_repo, pull_only=True)
 
         assert result is False
-        captured = capsys.readouterr()
-        assert "Merge conflict" in captured.out
+        assert any("conflict" in record.message.lower() for record in caplog.records)
 
     @patch("agenttree.agents_repo.check_merged_prs")
     @patch("agenttree.agents_repo.check_manager_stages")
@@ -379,8 +380,9 @@ class TestSyncAgentsRepo:
         assert mock_run.call_count == 3  # status, pull, push (no commit since no changes)
 
     @patch("agenttree.agents_repo.subprocess.run")
-    def test_sync_write_push_offline(self, mock_run, git_repo, capsys):
+    def test_sync_write_push_offline(self, mock_run, git_repo, caplog):
         """Test sync handles offline push gracefully."""
+        import logging
         mock_run.side_effect = [
             Mock(returncode=0),  # add -A
             Mock(returncode=1),  # diff (has changes)
@@ -389,22 +391,23 @@ class TestSyncAgentsRepo:
             Mock(returncode=1, stderr="Could not resolve host"),  # push fails
         ]
 
-        result = sync_agents_repo(git_repo, pull_only=False)
+        with caplog.at_level(logging.WARNING):
+            result = sync_agents_repo(git_repo, pull_only=False)
 
         assert result is False
-        captured = capsys.readouterr()
-        assert "Offline" in captured.out
+        assert any("offline" in record.message.lower() for record in caplog.records)
 
     @patch("agenttree.agents_repo.subprocess.run")
-    def test_sync_timeout(self, mock_run, git_repo, capsys):
+    def test_sync_timeout(self, mock_run, git_repo, caplog):
         """Test sync handles timeout gracefully."""
+        import logging
         mock_run.side_effect = subprocess.TimeoutExpired(cmd="git", timeout=30)
 
-        result = sync_agents_repo(git_repo, pull_only=True)
+        with caplog.at_level(logging.WARNING):
+            result = sync_agents_repo(git_repo, pull_only=True)
 
         assert result is False
-        captured = capsys.readouterr()
-        assert "timed out" in captured.out
+        assert any("timed out" in record.message.lower() for record in caplog.records)
 
     @patch("agenttree.agents_repo.subprocess.run")
     def test_sync_uses_default_commit_message(self, mock_run, git_repo):

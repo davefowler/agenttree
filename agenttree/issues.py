@@ -1417,14 +1417,14 @@ def save_session(session: AgentSession) -> None:
     """Save session state."""
     session_path = get_session_path(session.issue_id)
     if not session_path:
-        print(f"Warning: Could not find issue directory for {session.issue_id}, session not saved")
+        log.warning("Could not find issue directory for %s, session not saved", session.issue_id)
         return
 
     try:
         with open(session_path, "w") as f:
             yaml.dump(session.model_dump(mode="json"), f, default_flow_style=False, sort_keys=False)
     except Exception as e:
-        print(f"Warning: Failed to save session for {session.issue_id}: {e}")
+        log.warning("Failed to save session for %s: %s", session.issue_id, e)
 
 
 def update_session_stage(issue_id: str, stage: str) -> None:
@@ -1558,7 +1558,7 @@ def archive_issue_files(issue_id: str, files: list[str]) -> list[str]:
             archived.append(f"archive/{dest_name}")
         except OSError as e:
             # Log warning but continue with other files
-            print(f"Warning: Could not archive {filename}: {e}")
+            log.warning("Could not archive %s: %s", filename, e)
 
     return archived
 

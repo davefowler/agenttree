@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import platform
 import re
@@ -9,6 +10,11 @@ import shutil
 import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
+
+from rich.console import Console
+
+log = logging.getLogger("agenttree.container")
+console = Console()
 
 if TYPE_CHECKING:
     from agenttree.config import ContainerTypeConfig, ToolConfig
@@ -466,7 +472,7 @@ class ContainerRuntime:
             if "apiserver is running" in result.stdout:
                 return True
 
-            print("Starting Apple Container system service...")
+            console.print("[cyan]Starting Apple Container system service...[/cyan]")
             start_result = subprocess.run(
                 ["container", "system", "start"],
                 capture_output=True,
@@ -475,7 +481,7 @@ class ContainerRuntime:
             )
             return start_result.returncode == 0
         except Exception as e:
-            print(f"Warning: Could not check/start container system: {e}")
+            log.warning("Could not check/start container system: %s", e)
             return False
 
     def _ensure_docker_running(self) -> bool:
@@ -493,7 +499,7 @@ class ContainerRuntime:
             # Docker not running - try to start it on macOS
             system = platform.system()
             if system == "Darwin":
-                print("Docker daemon not running. Attempting to start Docker Desktop...")
+                console.print("[cyan]Docker daemon not running. Attempting to start Docker Desktop...[/cyan]")
                 subprocess.run(
                     ["open", "-a", "Docker"],
                     capture_output=True,
@@ -510,13 +516,13 @@ class ContainerRuntime:
                     )
                     if check.returncode == 0:
                         return True
-                print("Warning: Docker Desktop did not start in time")
+                log.warning("Docker Desktop did not start in time")
                 return False
             else:
-                print("Warning: Docker daemon is not running. Please start Docker.")
+                log.warning("Docker daemon is not running. Please start Docker.")
                 return False
         except Exception as e:
-            print(f"Warning: Could not check Docker status: {e}")
+            log.warning("Could not check Docker status: %s", e)
             return False
 
     def get_runtime_name(self) -> str:
@@ -688,7 +694,7 @@ class ContainerRuntime:
                 if self.delete(name):
                     removed += 1
                     if not quiet:
-                        print(f"Removed: {name}")
+                        console.print(f"[dim]Removed: {name}[/dim]")
 
         return removed
 
