@@ -21,6 +21,7 @@ import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from agenttree.stages import Stage, TerminalStage
 from agenttree.ids import serve_session_name as get_serve_session_name
 
 if TYPE_CHECKING:
@@ -179,11 +180,11 @@ def start_agent(
         raise IssueNotFoundError(issue_id)
 
     # If issue is in backlog, move it to first real stage
-    if issue.stage == "backlog":
+    if issue.stage == TerminalStage.BACKLOG:
         if not quiet:
             console.print(f"[cyan]Moving issue from backlog to explore.define...[/cyan]")
-        update_issue_stage(issue.id, "explore.define")
-        issue.stage = "explore.define"
+        update_issue_stage(issue.id, Stage.EXPLORE_DEFINE)
+        issue.stage = Stage.EXPLORE_DEFINE
 
     # Check if agent already running (tmux session check)
     existing_agent = get_active_agent(issue.id, host)

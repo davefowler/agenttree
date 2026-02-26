@@ -15,6 +15,7 @@ import yaml
 from pydantic import BaseModel, Field, PrivateAttr, field_validator
 
 from agenttree.agents_repo import sync_agents_repo
+from agenttree.stages import Stage, TerminalStage
 
 log = logging.getLogger("agenttree.issues")
 
@@ -119,7 +120,7 @@ class Issue(BaseModel):
     created: str = ""
     updated: str = ""
 
-    stage: str = "explore.define"  # Dot path (e.g., "explore.define", "backlog")
+    stage: str = Stage.EXPLORE_DEFINE  # Dot path (e.g., "explore.define", "backlog")
     flow: str = "default"  # Which workflow flow this issue follows
 
     branch: Optional[str] = None
@@ -372,7 +373,7 @@ def create_issue(
     title: str,
     priority: Priority = Priority.MEDIUM,
     labels: Optional[list[str]] = None,
-    stage: str = "explore.define",
+    stage: str = Stage.EXPLORE_DEFINE,
     flow: str = "default",
     problem: Optional[str] = None,
     context: Optional[str] = None,
@@ -694,7 +695,7 @@ def check_dependencies_met(issue: Issue) -> tuple[bool, list[int]]:
         if dep_issue is None:
             # Dependency doesn't exist - treat as unmet
             unmet.append(dep_id)
-        elif dep_issue.stage != "accepted":
+        elif dep_issue.stage != TerminalStage.ACCEPTED:
             unmet.append(dep_id)
 
     return len(unmet) == 0, unmet
@@ -827,7 +828,7 @@ def get_blocked_issues(completed_issue_id: int | str) -> list[Issue]:
         target_id = completed_issue_id
 
     blocked = []
-    for issue in list_issues(stage="backlog", sync=False):
+    for issue in list_issues(stage=TerminalStage.BACKLOG, sync=False):
         if target_id in issue.dependencies:
             blocked.append(issue)
 
@@ -869,7 +870,7 @@ def get_ready_issues() -> list[Issue]:
         List of issues that are ready to start
     """
     ready = []
-    for issue in list_issues(stage="backlog"):
+    for issue in list_issues(stage=TerminalStage.BACKLOG):
         if issue.dependencies:
             all_met, _ = check_dependencies_met(issue)
             if all_met:
@@ -963,12 +964,12 @@ def update_issue_stage(
     issue.updated = now
 
     # Clear ci_escalated when leaving implement.review
-    if old_stage == "implement.review" and stage != "implement.review":
+    if old_stage == Stage.IMPLEMENT_REVIEW and stage != Stage.IMPLEMENT_REVIEW:
         issue.ci_escalated = False
 
     # Clear ci_notified when entering ci_wait so new CI runs get detected
     # (save() uses exclude_none=True, so setting to None omits the field)
-    if stage == "implement.ci_wait":
+    if stage == Stage.IMPLEMENT_CI_WAIT:
         issue.ci_notified = None
 
     # Explicit overrides from caller

@@ -29,6 +29,7 @@ from agenttree.frontmatter import (
     get_git_context,
     utc_now,
 )
+from agenttree.stages import Stage, TerminalStage
 
 
 def slugify(text: str) -> str:
@@ -317,7 +318,7 @@ def ensure_review_branches(agents_dir: Path) -> int:
         try:
             issue = Issue.from_yaml(issue_yaml)
 
-            if issue.stage != "implement.review":
+            if issue.stage != Stage.IMPLEMENT_REVIEW:
                 continue
 
             issue_id = issue.id
@@ -344,11 +345,11 @@ def ensure_review_branches(agents_dir: Path) -> int:
                     # Conflicts — but re-read issue first to avoid TOCTOU race.
                     # The issue may have been approved while we checked the branch.
                     issue = Issue.from_yaml(issue_yaml)
-                    if issue.stage != "implement.review":
+                    if issue.stage != Stage.IMPLEMENT_REVIEW:
                         continue
                     console.print(f"[yellow]PR #{pr_number} (issue #{issue_id}) has conflicts with main - redirecting to developer[/yellow]")
                     from agenttree.issues import update_issue_stage
-                    update_issue_stage(issue_id, "implement.code", _issue_dir=issue_dir)
+                    update_issue_stage(issue_id, Stage.IMPLEMENT_CODE, _issue_dir=issue_dir)
                     # Try to notify developer agent
                     try:
                         from agenttree.state import get_active_agent
@@ -585,7 +586,7 @@ def check_merged_prs(agents_dir: Path) -> int:
                 # already merged and the agent may not be running).
                 console.print(f"[green]PR #{pr_number} was merged externally (issue was at {stage}), advancing issue #{issue_id} to accepted[/green]")
                 from agenttree.issues import update_issue_stage
-                updated = update_issue_stage(issue_id, "accepted", skip_sync=True, _issue_dir=issue_dir)
+                updated = update_issue_stage(issue_id, TerminalStage.ACCEPTED, skip_sync=True, _issue_dir=issue_dir)
                 if updated:
                     issues_advanced += 1
                     from agenttree.hooks import cleanup_issue_agent, check_and_start_blocked_issues
@@ -595,7 +596,7 @@ def check_merged_prs(agents_dir: Path) -> int:
                 # PR was closed without merging - advance to not_doing
                 console.print(f"[yellow]PR #{pr_number} was closed without merge (issue was at {stage}), advancing issue #{issue_id} to not_doing[/yellow]")
                 from agenttree.issues import update_issue_stage
-                updated = update_issue_stage(issue_id, "not_doing", skip_sync=True, _issue_dir=issue_dir)
+                updated = update_issue_stage(issue_id, TerminalStage.NOT_DOING, skip_sync=True, _issue_dir=issue_dir)
                 if updated:
                     issues_advanced += 1
                     from agenttree.hooks import cleanup_issue_agent
@@ -639,7 +640,7 @@ def _generate_escalation_report(
     content += f"- **Failed Checks:** {', '.join(failed_check_names) if failed_check_names else 'None'}\n"
 
     # Calculate time span from history
-    ci_stages = ("implement.review", "implement.ci_wait", "implement.debug")
+    ci_stages = (Stage.IMPLEMENT_REVIEW, Stage.IMPLEMENT_CI_WAIT, Stage.IMPLEMENT_DEBUG)
     ci_entries = [
         e for e in history
         if e.get("stage") in ci_stages and e.get("timestamp")
@@ -772,7 +773,7 @@ def check_ci_status(agents_dir: Path) -> int:
         try:
             issue = Issue.from_yaml(issue_yaml)
 
-            if issue.stage not in ("implement.ci_wait", "implement.review"):
+            if issue.stage not in (Stage.IMPLEMENT_CI_WAIT, Stage.IMPLEMENT_REVIEW):
                 continue
             if not issue.pr_number:
                 continue
@@ -803,11 +804,11 @@ def check_ci_status(agents_dir: Path) -> int:
 
             if not failed_checks:
                 # All checks passed
-                if stage == "implement.ci_wait":
+                if stage == Stage.IMPLEMENT_CI_WAIT:
                     # Advance ci_wait → review and notify agent
                     console.print(f"[green]CI passed for issue #{issue_id}, advancing to review[/green]")
                     from agenttree.issues import update_issue_stage
-                    update_issue_stage(issue_id, "implement.review", skip_sync=True, _issue_dir=issue_dir)
+                    update_issue_stage(issue_id, Stage.IMPLEMENT_REVIEW, skip_sync=True, _issue_dir=issue_dir)
 
                     # Notify agent that CI passed (best-effort)
                     from agenttree.api import _notify_agent
@@ -863,10 +864,10 @@ def check_ci_status(agents_dir: Path) -> int:
             feedback_file = issue_dir / "ci_feedback.md"
 
             # Count how many times CI has already bounced this issue back
-            ci_stages = ("implement.review", "implement.ci_wait")
+            ci_stages = (Stage.IMPLEMENT_REVIEW, Stage.IMPLEMENT_CI_WAIT)
             ci_bounce_count = sum(
                 1 for i, entry in enumerate(issue.history)
-                if entry.stage == "implement.debug"
+                if entry.stage == Stage.IMPLEMENT_DEBUG
                 and i > 0 and issue.history[i - 1].stage in ci_stages
             )
 
@@ -892,7 +893,7 @@ def check_ci_status(agents_dir: Path) -> int:
 
                 console.print(f"[red]CI failed {ci_bounce_count}x for issue #{issue_id} — escalating to human review[/red]")
                 from agenttree.issues import update_issue_stage
-                update_issue_stage(issue_id, "implement.review", skip_sync=True, ci_escalated=True, _issue_dir=issue_dir)
+                update_issue_stage(issue_id, Stage.IMPLEMENT_REVIEW, skip_sync=True, ci_escalated=True, _issue_dir=issue_dir)
 
                 # Mark as notified so the heartbeat doesn't re-escalate every cycle
                 issue = Issue.from_yaml(issue_yaml)
@@ -909,7 +910,7 @@ def check_ci_status(agents_dir: Path) -> int:
 
             # Transition issue back to implement.debug stage for CI fix
             from agenttree.issues import update_issue_stage
-            update_issue_stage(issue_id, "implement.debug", skip_sync=True, _issue_dir=issue_dir)
+            update_issue_stage(issue_id, Stage.IMPLEMENT_DEBUG, skip_sync=True, _issue_dir=issue_dir)
             console.print(f"[yellow]Issue #{issue_id} moved back to implement.debug stage for CI fix[/yellow]")
 
             # Ensure agent is running and notify it

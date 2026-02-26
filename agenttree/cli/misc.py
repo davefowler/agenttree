@@ -11,6 +11,7 @@ from agenttree.container import get_container_runtime
 from agenttree.github import ensure_gh_cli
 from agenttree.hooks import is_running_in_container
 from agenttree.issues import list_issues as list_issues_func
+from agenttree.stages import TerminalStage
 
 
 @click.command()
@@ -295,7 +296,7 @@ def cleanup_command(
                 reason = "issue not found"
             elif config.is_parking_lot(issue.stage):
                 # Parking lot stages may have worktrees cleaned up
-                if issue.stage == "backlog":
+                if issue.stage == TerminalStage.BACKLOG:
                     # For backlog, keep worktree if there are uncommitted changes
                     status_result = subprocess.run(
                         ["git", "status", "--porcelain"],
@@ -368,7 +369,7 @@ def cleanup_command(
                 issue = issue_by_id.get(branch_issue_id)
                 if not issue:
                     reason = "issue not found"
-                elif config.is_parking_lot(issue.stage) and issue.stage != "backlog":
+                elif config.is_parking_lot(issue.stage) and issue.stage != TerminalStage.BACKLOG:
                     # Clean branches for done/abandoned stages, but keep backlog branches
                     reason = f"issue in {issue.stage} stage"
 

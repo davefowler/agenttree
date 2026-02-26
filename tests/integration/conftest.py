@@ -392,7 +392,7 @@ def workflow_issue(workflow_repo: Path, mock_sync: MagicMock) -> dict[str, Any]:
                 description="This is a test issue for integration testing."
             )
 
-            issue_dir = workflow_repo / "_agenttree" / "issues" / f"{issue.id:03d}"
+            issue_dir = workflow_repo / "_agenttree" / "issues" / issue.dir_name
 
             return {
                 "id": issue.id,

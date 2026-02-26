@@ -33,6 +33,7 @@ _config: Config = load_config()
 from agenttree import issues as issue_crud
 from agenttree.agents_repo import sync_agents_repo
 from agenttree.web.models import KanbanBoard, Issue as WebIssue, IssueMoveRequest, PriorityUpdateRequest
+from agenttree.stages import Stage, TerminalStage
 
 # Module-level logger for web app
 logger = logging.getLogger("agenttree.web")
@@ -424,8 +425,8 @@ def get_kanban_board(search: Optional[str] = None) -> KanbanBoard:
         else:
             logger.warning("Issue #%s has unrecognized stage '%s', showing in backlog",
                         web_issue.number, web_issue.stage)
-            if "backlog" in stages:
-                stages["backlog"].append(web_issue)
+            if TerminalStage.BACKLOG in stages:
+                stages[TerminalStage.BACKLOG].append(web_issue)
 
     return KanbanBoard(stages=stages, total_issues=len(web_issues))
 
@@ -555,13 +556,13 @@ STAGE_FILE_ORDER = [
 # Mapping of filenames to their associated workflow dot path.
 # Used to determine if a file's stage has been "passed" relative to the current stage.
 FILE_TO_STAGE: dict[str, str] = {
-    "problem.md": "explore.define",
-    "research.md": "explore.research",
-    "spec.md": "plan.draft",
-    "spec_review.md": "plan.assess",
-    "review.md": "implement.code_review",
-    "independent_review.md": "implement.independent_review",
-    "feedback.md": "implement.feedback",
+    "problem.md": Stage.EXPLORE_DEFINE,
+    "research.md": Stage.EXPLORE_RESEARCH,
+    "spec.md": Stage.PLAN_DRAFT,
+    "spec_review.md": Stage.PLAN_ASSESS,
+    "review.md": Stage.IMPLEMENT_CODE_REVIEW,
+    "independent_review.md": Stage.IMPLEMENT_INDEPENDENT_REVIEW,
+    "feedback.md": Stage.IMPLEMENT_FEEDBACK,
 }
 
 
@@ -671,7 +672,7 @@ def get_default_doc(dot_path: str, ci_escalated: bool = False) -> str | None:
     since that contains the escalation report that's most relevant for human review.
     """
     # When escalated, show the CI feedback report as the primary document
-    if ci_escalated and dot_path == "implement.review":
+    if ci_escalated and dot_path == Stage.IMPLEMENT_REVIEW:
         return "ci_feedback.md"
 
     stage_config, sub_config = _config.resolve_stage(dot_path)

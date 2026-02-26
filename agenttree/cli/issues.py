@@ -16,6 +16,7 @@ from agenttree.issues import (
     get_ready_issues,
     update_issue_priority,
 )
+from agenttree.stages import TerminalStage
 
 
 @click.group()
@@ -160,12 +161,12 @@ def issue_create(
         unmet = []
         for dep_id in normalized_deps:
             dep_issue = get_issue_func(dep_id)
-            if dep_issue is None or dep_issue.stage != "accepted":
+            if dep_issue is None or dep_issue.stage != TerminalStage.ACCEPTED:
                 unmet.append(dep_id)
 
         if unmet:
             has_unmet_deps = True
-            effective_stage = "backlog"
+            effective_stage = TerminalStage.BACKLOG
             console.print(f"[yellow]Dependencies not met: {', '.join(unmet)}[/yellow]")
             console.print(f"[dim]Issue will be placed in backlog until dependencies complete[/dim]")
 
@@ -191,7 +192,7 @@ def issue_create(
         # Auto-start agent unless blocked or --no-start specified
         if has_unmet_deps:
             console.print(f"\n[yellow]Issue blocked by dependencies - will auto-start when deps complete[/yellow]")
-        elif no_start or effective_stage == "backlog":
+        elif no_start or effective_stage == TerminalStage.BACKLOG:
             console.print(f"\n[bold]Next steps:[/bold]")
             console.print(f"  1. Fill in problem.md: [cyan]_agenttree/issues/{issue.id}-{issue.slug}/problem.md[/cyan]")
             console.print(f"  2. Start agent: [cyan]agenttree start {issue.id}[/cyan]")
@@ -460,7 +461,7 @@ def issue_check_deps() -> None:
     Example:
         agenttree issue check-deps
     """
-    blocked_issues = list_issues_func(stage="backlog")
+    blocked_issues = list_issues_func(stage=TerminalStage.BACKLOG)
 
     if not blocked_issues:
         console.print("[dim]No issues in backlog[/dim]")

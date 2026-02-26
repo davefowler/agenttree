@@ -12,6 +12,7 @@ from agenttree.worktree import WorktreeManager
 from agenttree.agents_repo import AgentsRepository
 from agenttree.dependencies import check_all_dependencies, print_dependency_report
 from agenttree.preflight import run_preflight
+from agenttree.stages import TerminalStage
 
 
 # AI notes patterns to detect (case-insensitive)
@@ -182,7 +183,7 @@ Document your findings in `_agenttree/notes/`:
             title="Populate knowledge base with codebase-specific information",
             priority=Priority.MEDIUM,
             problem=problem,
-            stage="backlog",  # Start in backlog - user can start when ready
+            stage=TerminalStage.BACKLOG,  # Start in backlog - user can start when ready
         )
         console.print(f"[green]✓ Created knowledge base issue #{issue.id}[/green]")
     except Exception as e:

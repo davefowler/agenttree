@@ -319,6 +319,7 @@ from agenttree.issues import (
     get_issue_context,
 )
 from agenttree.config import load_config
+from agenttree.stages import Stage, TerminalStage
 
 console = Console()
 
@@ -597,13 +598,13 @@ def _action_merge_pr(pr_number: Optional[int], **kwargs: Any) -> None:
             except RuntimeError:
                 # Still can't merge after update - redirect to developer
                 raise StageRedirect(
-                    "implement.code",
+                    Stage.IMPLEMENT_CODE,
                     reason=f"PR #{pr_number} can't be merged after branch update. Developer needs to rebase on main.",
                 )
         else:
             # Can't auto-update (real conflicts) - redirect to developer
             raise StageRedirect(
-                "implement.code",
+                Stage.IMPLEMENT_CODE,
                 reason=f"PR #{pr_number} has merge conflicts. Developer needs to rebase on main.",
             )
 
@@ -1512,7 +1513,7 @@ def execute_exit_hooks(issue: "Issue", dot_path: str, **extra_kwargs: Any) -> No
 
     errors: List[str] = []
     hook_kwargs = {
-        "issue_id": issue.id,
+        "issue_id": str(issue.id),
         "issue_title": issue.title,
         "branch": issue.branch or "",
         "issue": issue,  # Pass issue for worktree_dir access in run hooks
@@ -2532,7 +2533,7 @@ def run_resource_cleanup(dry_run: bool = False, log_file: str | None = None) -> 
             elif config.is_parking_lot(issue.stage):
                 # Parking lot stages may have worktrees cleaned up
                 # For backlog, keep worktree if there are uncommitted changes
-                if issue.stage == "backlog":
+                if issue.stage == TerminalStage.BACKLOG:
                     status_result = subprocess.run(
                         ["git", "status", "--porcelain"],
                         cwd=wt_path,
@@ -2596,7 +2597,7 @@ def run_resource_cleanup(dry_run: bool = False, log_file: str | None = None) -> 
                 issue = issue_by_id.get(branch_issue_id)
                 if not issue:
                     reason = "issue not found"
-                elif config.is_parking_lot(issue.stage) and issue.stage != "backlog":
+                elif config.is_parking_lot(issue.stage) and issue.stage != TerminalStage.BACKLOG:
                     # Clean branches for done/abandoned stages, but keep backlog branches
                     reason = f"issue in {issue.stage} stage"
 
