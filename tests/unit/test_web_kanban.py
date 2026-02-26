@@ -2,54 +2,13 @@
 
 import pytest
 from unittest.mock import Mock, patch, MagicMock
-from datetime import datetime
 
 # Skip all tests if web dependencies aren't installed
 pytest.importorskip("fastapi")
 
 from agenttree.web.app import get_kanban_board
-from agenttree.web.models import KanbanBoard, FlowKanbanRow, Issue as WebIssue
+from agenttree.web.models import KanbanBoard, FlowKanbanRow
 from agenttree.issues import Priority
-
-
-@pytest.fixture
-def mock_config():
-    """Create a mock config object with flows."""
-    config = MagicMock()
-
-    # Define parking lot stages
-    config.get_parking_lot_stages.return_value = {"backlog", "accepted", "not_doing"}
-
-    # Define all dot paths (stages)
-    config.get_all_dot_paths.return_value = [
-        "backlog",
-        "explore.define",
-        "explore.research",
-        "plan.draft",
-        "implement.code",
-        "implement.review",
-        "accepted",
-        "not_doing",
-    ]
-
-    # Define flows
-    config.flows = {
-        "default": MagicMock(stages=[
-            "backlog", "explore.define", "explore.research",
-            "plan.draft", "implement.code", "implement.review", "accepted"
-        ]),
-        "quick": MagicMock(stages=[
-            "backlog", "explore.define", "implement.code", "accepted"
-        ]),
-        "not_doing": MagicMock(stages=["not_doing"]),
-    }
-
-    def get_flow_stage_names(flow_name):
-        return config.flows[flow_name].stages
-
-    config.get_flow_stage_names = get_flow_stage_names
-
-    return config
 
 
 @pytest.fixture
@@ -127,7 +86,7 @@ class TestKanbanBoard:
     @patch("agenttree.web.app.issue_crud")
     @patch("agenttree.web.app._config")
     def test_get_kanban_board_returns_flow_organized_structure(
-        self, mock_config_global, mock_crud, mock_config
+        self, mock_config_global, mock_crud
     ):
         """Test that get_kanban_board returns a flow-organized KanbanBoard."""
         # Set up config mock
