@@ -219,15 +219,43 @@ def issue_create(
     is_flag=True,
     help="Output as JSON"
 )
-def issue_list(stage: str | None, priority: str | None, as_json: bool) -> None:
+@click.option(
+    "--all", "-a", "show_all",
+    is_flag=True,
+    help="Show all issues including completed/backlog (by default only active issues are shown)"
+)
+@click.option(
+    "--search", "-q",
+    help="Filter by title (case-insensitive search)"
+)
+@click.option(
+    "--waiting", "-w",
+    is_flag=True,
+    help="Show only issues waiting for human review"
+)
+def issue_list(
+    stage: str | None,
+    priority: str | None,
+    as_json: bool,
+    show_all: bool,
+    search: str | None,
+    waiting: bool
+) -> None:
     """List issues.
 
+    By default, shows only active issues (excludes backlog, accepted, not_doing).
+    Issues are sorted with human review stages first, then by stage progress.
+
     Examples:
-        agenttree issue list
+        agenttree issue list              # Active issues only
+        agenttree issue list --all        # All issues including backlog/completed
+        agenttree issue list --waiting    # Issues needing human review
+        agenttree issue list --search bug # Search by title
         agenttree issue list --stage backlog
         agenttree issue list -s implement -p high
         agenttree issue list --json
     """
+    config = load_config()
     stage_filter = stage if stage else None
     priority_filter = Priority(priority) if priority else None
 
@@ -236,16 +264,72 @@ def issue_list(stage: str | None, priority: str | None, as_json: bool) -> None:
         priority=priority_filter,
     )
 
+    # Apply default filtering (exclude parking lot stages unless --all)
+    if not show_all and not stage_filter:
+        issues = [i for i in issues if not config.is_parking_lot(i.stage)]
+
+    # Apply --waiting filter
+    if waiting:
+        issues = [i for i in issues if config.is_human_review(i.stage)]
+
+    # Apply --search filter
+    if search:
+        search_lower = search.lower()
+        issues = [i for i in issues if search_lower in i.title.lower()]
+
+    # Sort issues: human review first, then by stage progress (later first), then by update time
+    from datetime import datetime
+    from agenttree.issues import Issue
+
+    def sort_key(issue: Issue) -> tuple[bool, int, float]:
+        # Human review issues come first (False sorts before True, so negate)
+        is_human = config.is_human_review(issue.stage)
+
+        # Get stage index within flow (higher index = later stage = should come first)
+        try:
+            stage_names = config.get_flow_stage_names(issue.flow)
+            stage_index = stage_names.index(issue.stage) if issue.stage in stage_names else 0
+        except (ValueError, KeyError):
+            stage_index = 0
+
+        # Parse updated timestamp for tie-breaking (more recent = smaller number = first)
+        try:
+            if isinstance(issue.updated, str):
+                updated = datetime.fromisoformat(issue.updated.replace("Z", "+00:00"))
+            else:
+                updated = issue.updated
+            updated_ts = updated.timestamp() if updated else 0
+        except (ValueError, AttributeError):
+            updated_ts = 0.0
+
+        # Sort order: human review first (not is_human), later stages first (-stage_index), recent first (-updated_ts)
+        return (not is_human, -stage_index, -updated_ts)
+
+    issues = sorted(issues, key=sort_key)
+
     if as_json:
         import json
         console.print(json.dumps([i.model_dump() for i in issues], indent=2))
         return
 
     if not issues:
-        console.print("[yellow]No issues found[/yellow]")
+        if waiting:
+            console.print("[yellow]No issues waiting for human review[/yellow]")
+        elif search:
+            console.print(f"[yellow]No issues matching '{search}'[/yellow]")
+        elif not show_all:
+            console.print("[yellow]No active issues (use --all to show all issues)[/yellow]")
+        else:
+            console.print("[yellow]No issues found[/yellow]")
         return
 
-    table = Table(title="Issues")
+    title = "Issues"
+    if waiting:
+        title = "Issues Waiting for Review"
+    elif not show_all and not stage_filter:
+        title = "Active Issues"
+
+    table = Table(title=title)
     table.add_column("ID", style="cyan")
     table.add_column("Title", style="white")
     table.add_column("Stage", style="magenta")
@@ -253,6 +337,9 @@ def issue_list(stage: str | None, priority: str | None, as_json: bool) -> None:
 
     for issue in issues:
         stage_str = issue.stage
+        # Highlight human review stages
+        if config.is_human_review(issue.stage):
+            stage_str = f"[bold yellow]{stage_str}[/bold yellow]"
 
         # Color priority
         priority_style = {

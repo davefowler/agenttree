@@ -1,9 +1,9 @@
 """Tests for agenttree.mcp_server module."""
+import pytest
+pytest.importorskip("mcp")
 
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from agenttree.mcp_server import (
     status,
