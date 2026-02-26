@@ -1338,18 +1338,54 @@ button[disabled] {
 
 .kanban-board {
     display: flex;
-    gap: 15px;
+    flex-direction: column;
+    gap: 20px;
     padding: 15px;
-    overflow-x: auto;
+    overflow-y: auto;
     height: calc(100vh - 60px);
 }
 
+/* Flow row - one horizontal row per workflow */
+.flow-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    min-height: 150px;
+}
+
+.flow-row.parking-lot-row {
+    min-height: 120px;
+}
+
+.flow-label {
+    flex: 0 0 80px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-tertiary);
+    padding-top: 12px;
+    writing-mode: horizontal-tb;
+}
+
+.flow-columns {
+    display: flex;
+    gap: 15px;
+    flex: 1;
+    overflow-x: auto;
+    padding-bottom: 5px;
+}
+
 .kanban-column {
-    flex: 0 0 220px;
-    min-width: 180px;
+    flex: 0 0 200px;
+    min-width: 160px;
     display: flex;
     flex-direction: column;
-    max-height: calc(100vh - 90px);
+    max-height: 300px;
+}
+
+.flow-row.hidden {
+    display: none;
 }
 
 .kanban-column.hidden {

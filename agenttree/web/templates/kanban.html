@@ -319,6 +319,14 @@
             miniDropzones.classList.add('visible');
         }
 
+        // Hide flow rows where all columns are hidden
+        function applyFlowRowVisibility() {
+            document.querySelectorAll('.flow-row').forEach(row => {
+                const visibleColumns = row.querySelectorAll('.kanban-column:not(.hidden)');
+                row.classList.toggle('hidden', visibleColumns.length === 0);
+            });
+        }
+
         // Stage view toggle
         window.setStageView = function(view) {
             const columns = document.querySelectorAll('.kanban-column');
@@ -354,6 +362,8 @@
 
             // Apply parking stage visibility (overrides view mode for parking stages)
             applyParkingVisibility();
+            // Hide empty flow rows
+            applyFlowRowVisibility();
         };
 
         // Apply view from URL first, then localStorage, then default to 'nonempty'

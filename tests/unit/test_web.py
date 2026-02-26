@@ -1041,7 +1041,8 @@ class TestKanbanUnrecognizedStage:
         mock_agent_mgr._check_issue_tmux_session = Mock(return_value=False)
 
         board = get_kanban_board()
-        backlog_numbers = [i.number for i in board.stages.get("backlog", [])]
+        # Backlog is now in parking_lot_issues (flow-based kanban structure)
+        backlog_numbers = [i.number for i in board.parking_lot_issues.get("backlog", [])]
         assert 162 in backlog_numbers
 
 
