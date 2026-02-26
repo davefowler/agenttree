@@ -35,7 +35,6 @@ class Stage(str, Enum):
     PLAN_REVIEW = "plan.review"
 
     # Implement stages
-    IMPLEMENT_SETUP = "implement.setup"
     IMPLEMENT_CODE = "implement.code"
     IMPLEMENT_CODE_REVIEW = "implement.code_review"
     IMPLEMENT_INDEPENDENT_REVIEW = "implement.independent_review"
