@@ -59,7 +59,7 @@ def _start_manager(
     console.print(f"\n[dim]Commands:[/dim]")
     console.print(f"  agenttree attach 0")
     console.print(f"  agenttree send 0 'message'")
-    console.print(f"  agenttree kill 0")
+    console.print(f"  agenttree stop 0")
 
 
 def _start_agents_background(config: "Config", repo_path: Path) -> None:

@@ -11,13 +11,13 @@ Instead of creating docs on-demand (template or CLI), **pre-create them during d
 
 **Example:**
 ```bash
-agenttree dispatch 1 42
+agenttree start 1 42
 
 # Creates ALL expected docs upfront:
 # 1. TASK.md (current task)
-# 2. agents/tasks/agent-1/2026-01-04-issue-42.md (task log)
-# 3. agents/specs/features/issue-42.md (spec)
-# 4. agents/context/agent-1/issue-42.md (PRE-CREATED!) ← NEW
+# 2. _agenttree/tasks/agent-1/2026-01-04-issue-42.md (task log)
+# 3. _agenttree/specs/features/issue-42.md (spec)
+# 4. _agenttree/context/agent-1/issue-42.md (PRE-CREATED!) ← NEW
 ```
 
 Context summary already exists with:
@@ -33,7 +33,7 @@ Context summary already exists with:
 
 **When:** Agent copies template, fills everything
 ```bash
-cp agents/templates/context.md agents/context/agent-1/issue-42.md
+cp _agenttree/templates/context.md _agenttree/context/agent-1/issue-42.md
 # Agent fills frontmatter + content
 ```
 
@@ -59,7 +59,7 @@ agenttree create-context 42
 
 **When:** System creates during dispatch/setup
 ```bash
-agenttree dispatch 1 42
+agenttree start 1 42
 # Auto-creates context summary file (empty content)
 ```
 
@@ -156,14 +156,14 @@ def dispatch(agent_num, issue_number, ...):
 **Agent workflow:**
 ```bash
 # Day 1: Agent starts task
-agenttree dispatch 1 42
+agenttree start 1 42
 
-# File already exists: agents/context/agent-1/issue-42.md
+# File already exists: _agenttree/context/agent-1/issue-42.md
 # Agent can update it as they work:
 echo "
 ## What Was Done
 - Fixed JWT validation logic
-" >> agents/context/agent-1/issue-42.md
+" >> _agenttree/context/agent-1/issue-42.md
 
 # Day 3: Agent completes task
 agenttree complete 1 --pr 50
@@ -216,7 +216,7 @@ agenttree create-investigation "Session race condition" --issue 45
 **Implementation:**
 ```bash
 # Option A: Template (flexible)
-cp agents/templates/note.md agents/notes/agent-1/my-note.md
+cp _agenttree/templates/note.md _agenttree/notes/agent-1/my-note.md
 
 # Option B: CLI (easier)
 agenttree create-note "JWT pattern"

@@ -7,38 +7,38 @@
 
 ### Already Auto-Created by CLI ✓
 
-1. **Task logs** - `agents/tasks/agent-{N}/{date}-{slug}.md`
-   - Created by: `agenttree dispatch`
+1. **Task logs** - `_agenttree/tasks/agent-{N}/{date}-{slug}.md`
+   - Created by: `agenttree start`
    - Auto-populated: agent, issue, timestamps, git context
    - Agent action: Fill in work log section
 
-2. **Spec files** - `agents/specs/features/issue-{N}.md`
-   - Created by: `agenttree dispatch`
+2. **Spec files** - `_agenttree/specs/features/issue-{N}.md`
+   - Created by: `agenttree start`
    - Auto-populated: issue title, description, URL
    - Agent action: Add implementation notes
 
-3. **Templates** - `agents/templates/*.md`
+3. **Templates** - `_agenttree/templates/*.md`
    - Created by: `agenttree init`
    - Purpose: Reference templates for agents
 
 ### Currently Manual (Agent Creates)
 
-1. **Notes** - `agents/notes/agent-{N}/{topic}.md`
+1. **Notes** - `_agenttree/notes/agent-{N}/{topic}.md`
    - Agent copies template or creates from scratch
    - Must manually fill frontmatter
    - Risk: Inconsistent format, missing fields
 
-2. **RFCs** - `agents/rfcs/{number}-{slug}.md`
+2. **RFCs** - `_agenttree/rfcs/{number}-{slug}.md`
    - Agent copies template
    - Must manually number, fill frontmatter
    - Risk: RFC numbering conflicts
 
-3. **Investigations** - `agents/investigations/{date}-{slug}.md`
+3. **Investigations** - `_agenttree/investigations/{date}-{slug}.md`
    - Agent creates manually
    - Must fill all frontmatter fields
    - Risk: Forgetting important metadata
 
-4. **Context summaries** - `agents/context/agent-{N}/issue-{N}.md`
+4. **Context summaries** - `_agenttree/context/agent-{N}/issue-{N}.md`
    - Currently not created (from PLAN_TASK_REENGAGEMENT.md)
    - Should be auto-created on task completion
 
@@ -52,7 +52,7 @@ Agent thinks: "I'll document this JWT pattern I discovered"
 
 ```bash
 # Agent tries to remember template format
-cat > agents/notes/agent-1/jwt-pattern.md <<EOF
+cat > _agenttree/notes/agent-1/jwt-pattern.md <<EOF
 ---
 document_type: note
 # Wait, what other fields do I need?
@@ -77,7 +77,7 @@ document_type: note
 ## Solution 1: Keep Templates (Status Quo)
 
 **How it works:**
-- Agents copy from `agents/templates/`
+- Agents copy from `_agenttree/templates/`
 - Fill in frontmatter manually
 - Hope they get it right
 
@@ -178,13 +178,13 @@ repo_url: https://github.com/user/project
 
 ```bash
 # Task logs - auto-created on dispatch
-agenttree dispatch 1 42
-# Creates: agents/tasks/agent-1/2026-01-04-fix-auth.md
+agenttree start 1 42
+# Creates: _agenttree/tasks/agent-1/2026-01-04-fix-auth.md
 # All frontmatter auto-populated
 
 # Spec files - auto-created on dispatch
-agenttree dispatch 1 42
-# Creates: agents/specs/features/issue-42.md
+agenttree start 1 42
+# Creates: _agenttree/specs/features/issue-42.md
 # All frontmatter auto-populated
 ```
 
@@ -205,7 +205,7 @@ agenttree create-rfc "Implement JWT Authentication" \
 ```
 
 **Auto-populates:**
-- RFC number (scans `agents/rfcs/`, picks next number)
+- RFC number (scans `_agenttree/rfcs/`, picks next number)
 - Frontmatter (document_type, version, author, proposed_at)
 - Git context
 - Template structure
@@ -259,7 +259,7 @@ agenttree create-investigation "Session store race condition" \
 
 **Method 1: Template** (flexible)
 ```bash
-cp agents/templates/note.md agents/notes/agent-1/my-note.md
+cp _agenttree/templates/note.md _agenttree/notes/agent-1/my-note.md
 # Edit manually
 ```
 
@@ -271,11 +271,11 @@ agenttree create-note "Token expiry gotcha" --type gotcha
 
 **Validation on commit:**
 ```bash
-# When agent commits to agents/ repo:
+# When agent commits to _agenttree/ repo:
 git commit -m "Add note on token expiry"
 
 # Git hook runs:
-agenttree validate-frontmatter agents/notes/agent-1/my-note.md
+agenttree validate-frontmatter _agenttree/notes/agent-1/my-note.md
 # ✓ Valid frontmatter
 # ✓ All required fields present
 # ✓ Timestamps in correct format
@@ -387,13 +387,13 @@ agenttree complete AGENT_NUM [OPTIONS]
 - Auto-populate git context
 - Open editor for content
 - Validate frontmatter before saving
-- Auto-commit to agents/ repo (optional)
+- Auto-commit to _agenttree/ repo (optional)
 
 ---
 
 ### Phase 2: Add Frontmatter Validation
 
-**Git hook** (agents/.git/hooks/pre-commit):
+**Git hook** (_agenttree/.git/hooks/pre-commit):
 
 ```bash
 #!/bin/bash
@@ -419,7 +419,7 @@ done
 
 **Helper command:**
 ```bash
-agenttree fix-frontmatter agents/notes/agent-1/my-note.md
+agenttree fix-frontmatter _agenttree/notes/agent-1/my-note.md
 # Auto-fixes common issues:
 # - Adds missing required fields
 # - Fixes timestamp format
@@ -463,7 +463,7 @@ Captures git context at start of investigation.
 ### Manual Templates (Advanced)
 
 If you prefer manual control:
-1. Copy template: `cp agents/templates/note.md agents/notes/agent-1/my-note.md`
+1. Copy template: `cp _agenttree/templates/note.md _agenttree/notes/agent-1/my-note.md`
 2. Edit frontmatter
 3. Commit (validation hook will check format)
 ```
@@ -497,14 +497,14 @@ def create_note(title, type, tags, applies_to, severity):
     # Auto-populate frontmatter
     # Open editor
     # Validate
-    # Save to agents/notes/agent-{N}/
+    # Save to _agenttree/notes/agent-{N}/
 
 @docs.command("create-rfc")
 @click.argument("title")
 @click.option("--related-issue", type=int)
 def create_rfc(title, related_issue):
     """Create a new RFC with auto-numbered sequence."""
-    # Scan agents/rfcs/ for next number
+    # Scan _agenttree/rfcs/ for next number
     # Auto-populate frontmatter
     # Open editor
     # Save
@@ -549,7 +549,7 @@ def fix_frontmatter(file_path):
 @docs.command("install-hooks")
 def install_hooks():
     """Install git hooks for frontmatter validation."""
-    # Copy pre-commit hook to agents/.git/hooks/
+    # Copy pre-commit hook to _agenttree/.git/hooks/
     # Make executable
 ```
 
@@ -557,7 +557,7 @@ def install_hooks():
 
 ### Week 3: Task Completion Integration
 
-**Enhance `agenttree dispatch` and add `agenttree complete`:**
+**Enhance `agenttree start` and add `agenttree complete`:**
 
 ```python
 @main.command()
@@ -573,7 +573,7 @@ def complete(agent_num, pr, create_summary):
     if create_summary:
         # Auto-create context summary with pre-filled frontmatter
         # Open editor for agent to fill in
-        # Save to agents/context/
+        # Save to _agenttree/context/
 ```
 
 ---
@@ -586,7 +586,7 @@ def complete(agent_num, pr, create_summary):
 
 ```bash
 # Step 1: Find template
-cd agents/templates
+cd _agenttree/templates
 cat note.md
 
 # Step 2: Copy template
@@ -708,7 +708,7 @@ agenttree create-note "JWT token expiry gotcha" \
 
 1. **Pre-commit hook** - Validates all .md files
 2. **CI check** - Fails if invalid frontmatter
-3. **Manual check** - `agenttree validate agents/notes/my-note.md`
+3. **Manual check** - `agenttree validate _agenttree/notes/my-note.md`
 
 ---
 

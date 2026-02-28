@@ -2,12 +2,12 @@
 
 **Date:** 2026-01-04
 **Status:** Planning
-**Goal:** Make agents/ repository navigable via web UI with rich metadata and markdown rendering
+**Goal:** Make _agenttree/ repository navigable via web UI with rich metadata and markdown rendering
 
 ## Problem Statement
 
 Currently:
-- ❌ Markdown files in agents/ repo have no structured metadata
+- ❌ Markdown files in _agenttree/ repo have no structured metadata
 - ❌ No git commit tracking (which commits were made during this task?)
 - ❌ Web dashboard only shows agent status, not work artifacts
 - ❌ No way to browse task history, specs, or knowledge base via web
@@ -27,7 +27,7 @@ Currently:
 **Three views:**
 1. **Agent View** (current) - Agent status, live tmux
 2. **Task View** (new) - Task-centric history with chat logs and artifacts
-3. **File View** (new) - Browse agents/ repo markdown files
+3. **File View** (new) - Browse _agenttree/ repo markdown files
 
 **Features:**
 - Render markdown as HTML
@@ -79,7 +79,7 @@ commits: []                    # List of commit hashes made during work
 # Related items
 issue_number: 42
 pr_number: 50
-related_docs: []               # Paths to related docs in agents/ repo
+related_docs: []               # Paths to related docs in _agenttree/ repo
 ---
 ```
 
@@ -87,7 +87,7 @@ related_docs: []               # Paths to related docs in agents/ repo
 
 ### Schema 1: Task Log
 
-**Path:** `agents/tasks/agent-{num}/{date}-{slug}.md`
+**Path:** `_agenttree/tasks/agent-{num}/{date}-{slug}.md`
 
 **Purpose:** Track an agent's work on a specific task
 
@@ -198,7 +198,7 @@ def create_task_file(agent_num, issue_num, issue_title, issue_body, issue_url):
 
 ### Schema 2: Spec File
 
-**Path:** `agents/specs/features/issue-{num}.md`
+**Path:** `_agenttree/specs/features/issue-{num}.md`
 
 **Purpose:** Living documentation of a feature
 
@@ -254,7 +254,7 @@ last_updated_by: agent-1
 
 ### Schema 3: RFC (Request for Comments)
 
-**Path:** `agents/rfcs/{number}-{slug}.md`
+**Path:** `_agenttree/rfcs/{number}-{slug}.md`
 
 **Purpose:** Design proposals for major changes
 
@@ -311,7 +311,7 @@ estimated_effort_hours: 40
 
 ### Schema 4: Investigation
 
-**Path:** `agents/investigations/{date}-{slug}.md`
+**Path:** `_agenttree/investigations/{date}-{slug}.md`
 
 **Purpose:** Bug investigation or research notes
 
@@ -374,7 +374,7 @@ time_to_diagnose_hours: 4
 
 ### Schema 5: Knowledge/Notes
 
-**Path:** `agents/notes/agent-{num}/{topic}.md`
+**Path:** `_agenttree/notes/agent-{num}/{topic}.md`
 
 **Purpose:** Agent's learnings and findings
 
@@ -424,7 +424,7 @@ tags:
 
 ### Schema 6: Context Summary (for task re-engagement)
 
-**Path:** `agents/context/agent-{num}/issue-{num}.md`
+**Path:** `_agenttree/context/agent-{num}/issue-{num}.md`
 
 **Purpose:** Summary of work for resuming later
 
@@ -547,7 +547,7 @@ FastAPI app
 │   └── GET /task/{id}/artifacts        # Related files/docs
 │
 └── File API
-    ├── GET /files/browse               # Browse agents/ repo
+    ├── GET /files/browse               # Browse _agenttree/ repo
     ├── GET /files/view/{path}          # View markdown file (rendered)
     ├── GET /files/raw/{path}           # Raw markdown
     ├── GET /files/frontmatter/{path}   # Just frontmatter JSON
@@ -702,7 +702,7 @@ FastAPI app
 
 **URL:** `/files`
 
-**Purpose:** Browse agents/ repository markdown files
+**Purpose:** Browse _agenttree/ repository markdown files
 
 **Layout:**
 
@@ -710,7 +710,7 @@ FastAPI app
 ┌────────────────────────────────────────────────────────────┐
 │ Files - Browse Agents Repository                          │
 ├────────────────────────────────────────────────────────────┤
-│ Path: / agents/                                            │
+│ Path: / _agenttree/                                            │
 │                                                            │
 │ Search: [_____________________] [🔍 Search]                │
 ├────────────────────────────────────────────────────────────┤
@@ -929,11 +929,11 @@ FastAPI app
 **Files to create/modify:**
 - `agenttree/web/app.py` - Add new routes
 - `agenttree/web/models.py` (new) - Pydantic models for frontmatter
-- `agenttree/web/agents_reader.py` (new) - Read agents/ repo
+- `agenttree/web/agents_reader.py` (new) - Read _agenttree/ repo
 
 **Steps:**
 
-1. **Create agents/ repo reader** (`agents_reader.py`):
+1. **Create _agenttree/ repo reader** (`agents_reader.py`):
    ```python
    from pathlib import Path
    from typing import List, Dict, Optional
@@ -1030,7 +1030,7 @@ FastAPI app
 
    @app.get("/files", response_class=HTMLResponse)
    async def files_browser(request: Request, path: str = ""):
-       """Browse agents/ repo files."""
+       """Browse _agenttree/ repo files."""
        get_current_user()
        # List directory contents
        # Return file browser template
@@ -1247,7 +1247,7 @@ FastAPI app
 
 1. **Store comments** in separate file:
    ```
-   agents/comments/agent-1/2026-01-04-fix-auth.comments.json
+   _agenttree/comments/agent-1/2026-01-04-fix-auth.comments.json
    ```
 
    Schema:
