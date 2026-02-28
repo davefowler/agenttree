@@ -265,6 +265,7 @@ This is the approach section with content.
         """Should pass when PR is approved."""
         from agenttree.hooks import run_builtin_validator
 
+        # Patch at hooks module level where get_pr_approval_status is imported
         with patch('agenttree.hooks.get_pr_approval_status', return_value=True):
             hook = {"type": "pr_approved"}
             errors = run_builtin_validator(tmp_path, hook, pr_number=123)
@@ -283,6 +284,7 @@ This is the approach section with content.
         mock_cfg.allow_self_approval = False
 
         with patch('agenttree.config.load_config', return_value=mock_cfg):
+            # Patch at hooks module level where get_pr_approval_status is imported
             with patch('agenttree.hooks.get_pr_approval_status', return_value=False):
                 with patch('agenttree.hooks.subprocess.run', return_value=mock_result):
                     hook = {"type": "pr_approved"}
@@ -448,7 +450,8 @@ This is the approach section with content.
         # Mock load_config to return commands and is_running_in_container to avoid /workspace
         mock_config = Config(commands={"git_branch": "echo 'feature-branch'"})
         with patch('agenttree.hooks.load_config', return_value=mock_config):
-            with patch('agenttree.hooks.is_running_in_container', return_value=False):
+            # Patch at environment module level since get_code_directory calls it from there
+            with patch('agenttree.environment.is_running_in_container', return_value=False):
                 with patch('agenttree.issues.get_issue_dir', return_value=issue_dir):
                     hook = {"type": "create_file", "template": "stats.md", "dest": "output.md"}
                     errors = run_builtin_validator(issue_dir, hook, issue=test_issue)
@@ -1198,7 +1201,7 @@ class TestGitUtilities:
 
     def test_get_current_branch(self, temp_git_repo, monkeypatch):
         """Should get the current git branch name."""
-        from agenttree.hooks import get_current_branch
+        from agenttree.git_utils import get_current_branch
 
         monkeypatch.chdir(temp_git_repo)
 
@@ -1219,7 +1222,7 @@ class TestGitUtilities:
 
     def test_has_uncommitted_changes_no_changes(self, temp_git_repo, monkeypatch):
         """Should return False when there are no uncommitted changes."""
-        from agenttree.hooks import has_uncommitted_changes
+        from agenttree.git_utils import has_uncommitted_changes
 
         monkeypatch.chdir(temp_git_repo)
 
@@ -1227,7 +1230,7 @@ class TestGitUtilities:
 
     def test_has_uncommitted_changes_with_unstaged_changes(self, temp_git_repo, monkeypatch):
         """Should return True with unstaged changes."""
-        from agenttree.hooks import has_uncommitted_changes
+        from agenttree.git_utils import has_uncommitted_changes
 
         monkeypatch.chdir(temp_git_repo)
 
@@ -1238,7 +1241,7 @@ class TestGitUtilities:
 
     def test_has_uncommitted_changes_with_staged_changes(self, temp_git_repo, monkeypatch):
         """Should return True with staged changes."""
-        from agenttree.hooks import has_uncommitted_changes
+        from agenttree.git_utils import has_uncommitted_changes
 
         monkeypatch.chdir(temp_git_repo)
 
@@ -1256,7 +1259,7 @@ class TestGitUtilities:
     @patch('subprocess.run')
     def test_get_default_branch_from_symbolic_ref(self, mock_run):
         """Should detect default branch from origin/HEAD."""
-        from agenttree.hooks import get_default_branch
+        from agenttree.git_utils import get_default_branch
 
         mock_run.return_value = MagicMock(
             stdout="refs/remotes/origin/main\n",
@@ -1269,7 +1272,7 @@ class TestGitUtilities:
     @patch('subprocess.run')
     def test_get_default_branch_fallback_to_main(self, mock_run):
         """Should fall back to 'main' when origin/HEAD doesn't exist."""
-        from agenttree.hooks import get_default_branch
+        from agenttree.git_utils import get_default_branch
 
         # First call fails (no symbolic-ref), second succeeds (main exists)
         mock_run.side_effect = [
@@ -1283,7 +1286,7 @@ class TestGitUtilities:
     @patch('subprocess.run')
     def test_get_default_branch_fallback_to_master(self, mock_run):
         """Should fall back to 'master' when neither origin/HEAD nor origin/main exist."""
-        from agenttree.hooks import get_default_branch
+        from agenttree.git_utils import get_default_branch
 
         # Both calls fail
         mock_run.side_effect = [
@@ -1296,7 +1299,7 @@ class TestGitUtilities:
 
     def test_has_commits_to_push_no_commits(self, temp_git_repo, monkeypatch):
         """Should return False when there are no unpushed commits."""
-        from agenttree.hooks import has_commits_to_push
+        from agenttree.git_utils import has_commits_to_push
 
         monkeypatch.chdir(temp_git_repo)
 
@@ -1326,7 +1329,7 @@ class TestGitUtilities:
 
     def test_has_commits_to_push_with_commits(self, temp_git_repo, monkeypatch):
         """Should return True when there are unpushed commits."""
-        from agenttree.hooks import has_commits_to_push
+        from agenttree.git_utils import has_commits_to_push
 
         monkeypatch.chdir(temp_git_repo)
 
@@ -1369,139 +1372,13 @@ class TestGitUtilities:
 
         assert has_commits_to_push() is True
 
-    @patch('subprocess.run')
-    def test_push_branch_to_remote(self, mock_run):
-        """Should push branch to remote with -u flag."""
-        from agenttree.hooks import push_branch_to_remote
-
-        mock_run.return_value = MagicMock(returncode=0)
-
-        push_branch_to_remote("test-branch")
-
-        mock_run.assert_called_once_with(
-            ["git", "push", "-u", "origin", "test-branch:test-branch"],
-            check=True,
-            capture_output=True,
-            text=True
-        )
-
-    @patch('subprocess.run')
-    def test_get_repo_remote_name_ssh_url(self, mock_run):
-        """Should parse owner/repo from SSH URL."""
-        from agenttree.hooks import get_repo_remote_name
-
-        mock_run.return_value = MagicMock(
-            stdout="git@github.com:owner/repo.git\n",
-            returncode=0
-        )
-
-        result = get_repo_remote_name()
-
-        assert result == "owner/repo"
-        mock_run.assert_called_once()
-
-    @patch('subprocess.run')
-    def test_get_repo_remote_name_https_url(self, mock_run):
-        """Should parse owner/repo from HTTPS URL."""
-        from agenttree.hooks import get_repo_remote_name
-
-        mock_run.return_value = MagicMock(
-            stdout="https://github.com/owner/repo.git\n",
-            returncode=0
-        )
-
-        result = get_repo_remote_name()
-
-        assert result == "owner/repo"
-
-    @patch('subprocess.run')
-    def test_get_repo_remote_name_https_no_git_suffix(self, mock_run):
-        """Should parse owner/repo from HTTPS URL without .git."""
-        from agenttree.hooks import get_repo_remote_name
-
-        mock_run.return_value = MagicMock(
-            stdout="https://github.com/owner/repo\n",
-            returncode=0
-        )
-
-        result = get_repo_remote_name()
-
-        assert result == "owner/repo"
-
-    def test_generate_pr_body(self, mock_issue):
-        """Should generate PR body with issue information."""
-        from agenttree.hooks import generate_pr_body
-
-        body = generate_pr_body(mock_issue)
-
-        assert "Issue #23" in body
-        assert "Test Issue" in body
-        assert "agenttree" in body.lower()  # Should mention agenttree
-        assert "Review Checklist" in body
-
-    @patch('subprocess.run')
-    def test_auto_commit_changes_no_changes(self, mock_run):
-        """Should return False when there are no changes to commit."""
-        from agenttree.hooks import auto_commit_changes
-
-        # Mock git status to show no changes
-        mock_run.return_value = MagicMock(
-            stdout="",
-            returncode=0
-        )
-
-        result = auto_commit_changes(Mock(), "implement.code")
-
-        assert result is False
-        # Should only call git status, not git add or commit
-        assert mock_run.call_count == 1
-
-    @patch('agenttree.hooks.has_uncommitted_changes')
-    @patch('subprocess.run')
-    def test_auto_commit_changes_with_changes(self, mock_run, mock_has_changes):
-        """Should commit changes when they exist."""
-        from agenttree.hooks import auto_commit_changes
-
-        mock_has_changes.return_value = True
-        mock_run.return_value = MagicMock(returncode=0)
-
-        issue = Issue(
-            id=23,
-            slug="test-issue",
-            title="Test Issue",
-            created="2026-01-11T12:00:00Z",
-            updated="2026-01-11T12:00:00Z",
-            stage="implement.code",
-        )
-
-        result = auto_commit_changes(issue, "implement.code")
-
-        assert result is True
-        # Should call git add -A and git commit
-        assert mock_run.call_count == 2
-        calls = mock_run.call_args_list
-        assert calls[0][0][0] == ["git", "add", "-A"]
-        assert calls[1][0][0][0] == "git"
-        assert calls[1][0][0][1] == "commit"
-        assert calls[1][0][0][2] == "-m"
-
-    def test_generate_commit_message(self, mock_issue):
-        """Should generate appropriate commit message."""
-        from agenttree.hooks import generate_commit_message
-
-        msg = generate_commit_message(mock_issue, "implement.code")
-
-        assert "Implement" in msg
-        assert "#23" in msg
-        assert "Test Issue" in msg
-
     # Tests for get_git_diff_stats()
 
-    @patch('agenttree.hooks.get_default_branch')
+    @patch('agenttree.git_utils.get_default_branch')
     @patch('subprocess.run')
     def test_get_git_diff_stats_parses_shortstat_output(self, mock_run, mock_default_branch):
         """Should parse typical shortstat output correctly."""
-        from agenttree.hooks import get_git_diff_stats
+        from agenttree.git_utils import get_git_diff_stats
 
         mock_default_branch.return_value = "main"
         mock_run.return_value = MagicMock(
@@ -1520,11 +1397,11 @@ class TestGitUtilities:
         assert "--shortstat" in call_args
         assert "main...HEAD" in call_args
 
-    @patch('agenttree.hooks.get_default_branch')
+    @patch('agenttree.git_utils.get_default_branch')
     @patch('subprocess.run')
     def test_get_git_diff_stats_handles_only_insertions(self, mock_run, mock_default_branch):
         """Should handle output with only insertions (no deletions)."""
-        from agenttree.hooks import get_git_diff_stats
+        from agenttree.git_utils import get_git_diff_stats
 
         mock_default_branch.return_value = "main"
         mock_run.return_value = MagicMock(
@@ -1536,11 +1413,11 @@ class TestGitUtilities:
 
         assert result == {'files_changed': 3, 'lines_added': 50, 'lines_removed': 0}
 
-    @patch('agenttree.hooks.get_default_branch')
+    @patch('agenttree.git_utils.get_default_branch')
     @patch('subprocess.run')
     def test_get_git_diff_stats_handles_only_deletions(self, mock_run, mock_default_branch):
         """Should handle output with only deletions (no insertions)."""
-        from agenttree.hooks import get_git_diff_stats
+        from agenttree.git_utils import get_git_diff_stats
 
         mock_default_branch.return_value = "main"
         mock_run.return_value = MagicMock(
@@ -1552,11 +1429,11 @@ class TestGitUtilities:
 
         assert result == {'files_changed': 2, 'lines_added': 0, 'lines_removed': 30}
 
-    @patch('agenttree.hooks.get_default_branch')
+    @patch('agenttree.git_utils.get_default_branch')
     @patch('subprocess.run')
     def test_get_git_diff_stats_handles_single_file(self, mock_run, mock_default_branch):
         """Should handle singular 'file' in output."""
-        from agenttree.hooks import get_git_diff_stats
+        from agenttree.git_utils import get_git_diff_stats
 
         mock_default_branch.return_value = "main"
         mock_run.return_value = MagicMock(
@@ -1568,11 +1445,11 @@ class TestGitUtilities:
 
         assert result == {'files_changed': 1, 'lines_added': 10, 'lines_removed': 0}
 
-    @patch('agenttree.hooks.get_default_branch')
+    @patch('agenttree.git_utils.get_default_branch')
     @patch('subprocess.run')
     def test_get_git_diff_stats_handles_empty_output(self, mock_run, mock_default_branch):
         """Should return zeros when there are no changes."""
-        from agenttree.hooks import get_git_diff_stats
+        from agenttree.git_utils import get_git_diff_stats
 
         mock_default_branch.return_value = "main"
         mock_run.return_value = MagicMock(
@@ -1584,11 +1461,11 @@ class TestGitUtilities:
 
         assert result == {'files_changed': 0, 'lines_added': 0, 'lines_removed': 0}
 
-    @patch('agenttree.hooks.get_default_branch')
+    @patch('agenttree.git_utils.get_default_branch')
     @patch('subprocess.run')
     def test_get_git_diff_stats_handles_git_failure(self, mock_run, mock_default_branch):
         """Should return zeros gracefully when git command fails."""
-        from agenttree.hooks import get_git_diff_stats
+        from agenttree.git_utils import get_git_diff_stats
 
         mock_default_branch.return_value = "main"
         mock_run.return_value = MagicMock(
@@ -1601,11 +1478,11 @@ class TestGitUtilities:
 
         assert result == {'files_changed': 0, 'lines_added': 0, 'lines_removed': 0}
 
-    @patch('agenttree.hooks.get_default_branch')
+    @patch('agenttree.git_utils.get_default_branch')
     @patch('subprocess.run')
     def test_get_git_diff_stats_uses_default_branch(self, mock_run, mock_default_branch):
         """Should use get_default_branch() to determine base branch."""
-        from agenttree.hooks import get_git_diff_stats
+        from agenttree.git_utils import get_git_diff_stats
 
         mock_default_branch.return_value = "develop"
         mock_run.return_value = MagicMock(
@@ -1621,7 +1498,7 @@ class TestGitUtilities:
 
     def test_get_git_diff_stats_integration(self, temp_git_repo, monkeypatch):
         """Integration test: should return correct stats from real git operations."""
-        from agenttree.hooks import get_git_diff_stats
+        from agenttree.git_utils import get_git_diff_stats
 
         monkeypatch.chdir(temp_git_repo)
 
@@ -1946,12 +1823,12 @@ class TestHostOnlyOption:
 class TestMergeStrategyUsage:
     """Tests for configurable merge strategy."""
 
-    @patch('agenttree.hooks.is_running_in_container', return_value=False)
+    @patch('agenttree.pr_actions.is_running_in_container', return_value=False)
     @patch('agenttree.github.merge_pr')
     @patch('agenttree.config.load_config')
     def test_merge_uses_config_strategy(self, mock_load_config, mock_merge_pr, mock_container):
         """_action_merge_pr should use config.merge_strategy."""
-        from agenttree.hooks import _action_merge_pr
+        from agenttree.pr_actions import _action_merge_pr
         from agenttree.config import Config
 
         # Set up config with rebase strategy
@@ -1962,12 +1839,12 @@ class TestMergeStrategyUsage:
 
         mock_merge_pr.assert_called_once_with(123, method="rebase")
 
-    @patch('agenttree.hooks.is_running_in_container', return_value=False)
+    @patch('agenttree.pr_actions.is_running_in_container', return_value=False)
     @patch('agenttree.github.merge_pr')
     @patch('agenttree.config.load_config')
     def test_merge_default_squash(self, mock_load_config, mock_merge_pr, mock_container):
         """Default merge strategy should be squash."""
-        from agenttree.hooks import _action_merge_pr
+        from agenttree.pr_actions import _action_merge_pr
         from agenttree.config import Config
 
         mock_config = Config()  # Uses default squash
@@ -1992,7 +1869,7 @@ class TestHostActionHooks:
         mock_update, mock_create_pr, mock_run_hooks, tmp_path
     ):
         """post_pr_create hooks should be called after PR creation via ensure_pr_for_issue."""
-        from agenttree.hooks import ensure_pr_for_issue
+        from agenttree.pr_actions import ensure_pr_for_issue
         from agenttree.issues import Issue
         from agenttree.config import Config, HooksConfig
 
@@ -2039,14 +1916,14 @@ class TestHostActionHooks:
         assert call_args[0][0] == hooks_config.post_pr_create
 
     @patch('agenttree.hooks.run_host_hooks')
-    @patch('agenttree.hooks.is_running_in_container', return_value=False)
+    @patch('agenttree.pr_actions.is_running_in_container', return_value=False)
     @patch('agenttree.github.merge_pr')
     @patch('agenttree.config.load_config')
     def test_post_merge_hooks_called(
         self, mock_load_config, mock_merge_pr, mock_container, mock_run_hooks
     ):
         """post_merge hooks should be called after merge."""
-        from agenttree.hooks import _action_merge_pr
+        from agenttree.pr_actions import _action_merge_pr
         from agenttree.config import Config, HooksConfig
 
         hooks_config = HooksConfig(
@@ -2143,13 +2020,13 @@ class TestRunHostHooks:
 class TestCursorReviewRemoved:
     """Tests verifying hardcoded Cursor review is removed."""
 
-    @patch('agenttree.hooks.ensure_pr_for_issue', return_value=True)
+    @patch('agenttree.pr_actions.ensure_pr_for_issue', return_value=True)
     @patch('subprocess.run')
     def test_no_hardcoded_cursor_comment(
         self, mock_subprocess, mock_ensure_pr
     ):
         """_action_create_pr should NOT make hardcoded cursor review comment."""
-        from agenttree.hooks import _action_create_pr
+        from agenttree.pr_actions import _action_create_pr
 
         _action_create_pr(Path("/tmp"), issue_id="001", issue_title="Test")
 
@@ -2165,23 +2042,23 @@ class TestCreatePrRaisesOnFailure:
 
     def test_raises_when_no_issue_id(self):
         """Should raise RuntimeError when no issue_id provided."""
-        from agenttree.hooks import _action_create_pr
+        from agenttree.pr_actions import _action_create_pr
 
         with pytest.raises(RuntimeError, match="no issue_id"):
             _action_create_pr(Path("/tmp"), issue_id="")
 
-    @patch('agenttree.hooks.ensure_pr_for_issue', return_value=False)
+    @patch('agenttree.pr_actions.ensure_pr_for_issue', return_value=False)
     def test_raises_when_ensure_pr_fails(self, mock_ensure):
         """Should raise RuntimeError when ensure_pr_for_issue returns False."""
-        from agenttree.hooks import _action_create_pr
+        from agenttree.pr_actions import _action_create_pr
 
         with pytest.raises(RuntimeError, match="Failed to create PR"):
             _action_create_pr(Path("/tmp"), issue_id="042")
 
-    @patch('agenttree.hooks.ensure_pr_for_issue', return_value=True)
+    @patch('agenttree.pr_actions.ensure_pr_for_issue', return_value=True)
     def test_no_error_when_pr_created(self, mock_ensure):
         """Should not raise when ensure_pr_for_issue succeeds."""
-        from agenttree.hooks import _action_create_pr
+        from agenttree.pr_actions import _action_create_pr
 
         # Should not raise
         _action_create_pr(Path("/tmp"), issue_id="042")
@@ -2996,10 +2873,10 @@ class TestRollbackHook:
 class TestGetCodeDirectory:
     """Tests for get_code_directory() helper function."""
 
-    @patch('agenttree.hooks.is_running_in_container', return_value=True)
+    @patch('agenttree.environment.is_running_in_container', return_value=True)
     def test_returns_workspace_in_container(self, mock_in_container, tmp_path):
         """Should return /workspace when running in container."""
-        from agenttree.hooks import get_code_directory
+        from agenttree.environment import get_code_directory
 
         issue = Issue(
             id="123",
@@ -3015,10 +2892,10 @@ class TestGetCodeDirectory:
 
         assert result == Path("/workspace")
 
-    @patch('agenttree.hooks.is_running_in_container', return_value=False)
+    @patch('agenttree.environment.is_running_in_container', return_value=False)
     def test_returns_worktree_dir_on_host_when_set(self, mock_in_container, tmp_path):
         """Should return worktree_dir on host when it's set."""
-        from agenttree.hooks import get_code_directory
+        from agenttree.environment import get_code_directory
 
         issue = Issue(
             id="123",
@@ -3034,10 +2911,10 @@ class TestGetCodeDirectory:
 
         assert result == Path(".worktrees/issue-123-test")
 
-    @patch('agenttree.hooks.is_running_in_container', return_value=False)
+    @patch('agenttree.environment.is_running_in_container', return_value=False)
     def test_returns_issue_dir_on_host_when_worktree_none(self, mock_in_container, tmp_path):
         """Should return issue_dir on host when worktree_dir is None."""
-        from agenttree.hooks import get_code_directory
+        from agenttree.environment import get_code_directory
 
         issue = Issue(
             id="123",
@@ -3053,10 +2930,10 @@ class TestGetCodeDirectory:
 
         assert result == issue_dir
 
-    @patch('agenttree.hooks.is_running_in_container', return_value=False)
+    @patch('agenttree.environment.is_running_in_container', return_value=False)
     def test_returns_issue_dir_when_issue_none_on_host(self, mock_in_container, tmp_path):
         """Should return issue_dir when issue is None on host."""
-        from agenttree.hooks import get_code_directory
+        from agenttree.environment import get_code_directory
 
         issue_dir = tmp_path / "_agenttree" / "issues" / "123-test-issue"
 
@@ -3064,10 +2941,10 @@ class TestGetCodeDirectory:
 
         assert result == issue_dir
 
-    @patch('agenttree.hooks.is_running_in_container', return_value=True)
+    @patch('agenttree.environment.is_running_in_container', return_value=True)
     def test_returns_workspace_when_issue_none_in_container(self, mock_in_container, tmp_path):
         """Should return /workspace when issue is None in container."""
-        from agenttree.hooks import get_code_directory
+        from agenttree.environment import get_code_directory
 
         issue_dir = tmp_path / "_agenttree" / "issues" / "123-test-issue"
 

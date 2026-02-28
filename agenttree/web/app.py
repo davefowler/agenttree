@@ -469,7 +469,7 @@ async def kanban(
             doc = get_default_doc(issue_obj.stage, ci_escalated=issue_obj.ci_escalated)
             ca, cb = 0, 0
             if web_issue.tmux_active and issue_obj.worktree_dir:
-                from agenttree.hooks import get_commits_ahead_behind_main
+                from agenttree.git_utils import get_commits_ahead_behind_main
                 ca, cb = get_commits_ahead_behind_main(issue_obj.worktree_dir)
             return web_issue, issue_files, doc, ca, cb
 
@@ -908,7 +908,7 @@ async def flow(
             default_doc = get_default_doc(issue_obj.stage, ci_escalated=issue_obj.ci_escalated)
             # Get commits ahead/behind for rebase button
             if selected_issue.tmux_active and issue_obj.worktree_dir:
-                from agenttree.hooks import get_commits_ahead_behind_main
+                from agenttree.git_utils import get_commits_ahead_behind_main
                 commits_ahead, commits_behind = await asyncio.to_thread(
                     get_commits_ahead_behind_main, issue_obj.worktree_dir
                 )
@@ -978,7 +978,7 @@ async def mobile(
             files = get_issue_files(selected_issue_id, include_content=True, current_stage=issue_obj.stage)
             default_doc = get_default_doc(issue_obj.stage, ci_escalated=issue_obj.ci_escalated)
             if selected_issue.tmux_active and issue_obj.worktree_dir:
-                from agenttree.hooks import get_commits_ahead_behind_main
+                from agenttree.git_utils import get_commits_ahead_behind_main
                 commits_ahead, commits_behind = await asyncio.to_thread(
                     get_commits_ahead_behind_main, issue_obj.worktree_dir
                 )
@@ -1515,7 +1515,7 @@ async def rebase_issue(
 
     Performs the rebase and notifies the agent. Client reloads page after.
     """
-    from agenttree.hooks import rebase_issue_branch
+    from agenttree.git_utils import rebase_issue_branch
 
     # Get issue
     issue = issue_crud.get_issue(issue_id, sync=False)

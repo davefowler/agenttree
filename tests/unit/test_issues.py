@@ -895,8 +895,8 @@ class TestLoadSkill:
         mock_config = Config(commands={"git_branch": "echo 'test-branch'"})
         monkeypatch.setattr("agenttree.config.load_config", lambda *args, **kwargs: mock_config)
 
-        # Mock is_running_in_container to avoid /workspace path issues in CI
-        monkeypatch.setattr("agenttree.hooks.is_running_in_container", lambda: False)
+        # Mock is_running_in_container at environment module level (where get_code_directory calls it)
+        monkeypatch.setattr("agenttree.environment.is_running_in_container", lambda: False)
 
         # Create a mock issue
         from agenttree.issues import Issue

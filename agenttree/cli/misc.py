@@ -9,7 +9,7 @@ import click
 from agenttree.cli._utils import console, load_config, get_issue_func, Config
 from agenttree.container import get_container_runtime
 from agenttree.github import ensure_gh_cli
-from agenttree.hooks import is_running_in_container
+from agenttree.environment import is_running_in_container
 from agenttree.issues import list_issues as list_issues_func
 
 
