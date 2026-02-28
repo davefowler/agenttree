@@ -912,7 +912,7 @@ if os.path.exists(config_path):
     try:
         with open(config_path) as f:
             config = json.load(f)
-    except:
+    except Exception:
         pass
 
 # Ensure the structure exists
