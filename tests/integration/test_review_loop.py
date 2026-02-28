@@ -180,7 +180,7 @@ class TestCheckboxApprovalFlow:
         with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
             with patch("agenttree.config.find_config_file", return_value=review_loop_repo / ".agenttree.yaml"):
                 issue = create_issue(title="Test Approved Review")
-                issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
+                issue_dir = agenttree_path / "issues" / issue.dir_name
 
                 create_approved_review(issue_dir)
 
@@ -200,7 +200,7 @@ class TestCheckboxApprovalFlow:
         with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
             with patch("agenttree.config.find_config_file", return_value=review_loop_repo / ".agenttree.yaml"):
                 issue = create_issue(title="Test Rejected Review")
-                issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
+                issue_dir = agenttree_path / "issues" / issue.dir_name
 
                 create_rejected_review(issue_dir)
 
@@ -243,7 +243,7 @@ class TestFullReviewLoop:
         with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
             with patch("agenttree.config.find_config_file", return_value=review_loop_repo / ".agenttree.yaml"):
                 issue = create_issue(title="Test Full Loop")
-                issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
+                issue_dir = agenttree_path / "issues" / issue.dir_name
                 config = load_config()
 
                 # Step 1: Reviewer rejects
