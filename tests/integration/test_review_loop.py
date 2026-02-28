@@ -173,6 +173,7 @@ class TestCheckboxApprovalFlow:
 
     def test_approved_review_passes(self, review_loop_repo: Path):
         """When Approve checkbox is checked, pre_completion passes."""
+        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue
 
         agenttree_path = review_loop_repo / "_agenttree"
@@ -180,7 +181,7 @@ class TestCheckboxApprovalFlow:
         with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
             with patch("agenttree.config.find_config_file", return_value=review_loop_repo / ".agenttree.yaml"):
                 issue = create_issue(title="Test Approved Review")
-                issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
+                issue_dir = agenttree_path / "issues" / format_issue_id(issue.id)
 
                 create_approved_review(issue_dir)
 
@@ -193,6 +194,7 @@ class TestCheckboxApprovalFlow:
 
     def test_rejected_review_raises_redirect(self, review_loop_repo: Path):
         """When Approve checkbox is NOT checked, StageRedirect is raised."""
+        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue
 
         agenttree_path = review_loop_repo / "_agenttree"
@@ -200,7 +202,7 @@ class TestCheckboxApprovalFlow:
         with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
             with patch("agenttree.config.find_config_file", return_value=review_loop_repo / ".agenttree.yaml"):
                 issue = create_issue(title="Test Rejected Review")
-                issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
+                issue_dir = agenttree_path / "issues" / format_issue_id(issue.id)
 
                 create_rejected_review(issue_dir)
 
@@ -236,6 +238,7 @@ class TestFullReviewLoop:
 
     def test_full_rejection_loop_flow(self, review_loop_repo: Path):
         """Test: reject → address → (would rollback) → re-review."""
+        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue
 
         agenttree_path = review_loop_repo / "_agenttree"
@@ -243,7 +246,7 @@ class TestFullReviewLoop:
         with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
             with patch("agenttree.config.find_config_file", return_value=review_loop_repo / ".agenttree.yaml"):
                 issue = create_issue(title="Test Full Loop")
-                issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
+                issue_dir = agenttree_path / "issues" / format_issue_id(issue.id)
                 config = load_config()
 
                 # Step 1: Reviewer rejects

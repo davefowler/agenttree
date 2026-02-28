@@ -245,6 +245,7 @@ class TestDependencyEdgeCases:
 
     def test_missing_dependency_issue(self, workflow_repo: Path, mock_sync: MagicMock):
         """Test handling when dependency issue doesn't exist."""
+        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue, check_dependencies_met, get_issue
 
         agenttree_path = workflow_repo / "_agenttree"
@@ -253,7 +254,7 @@ class TestDependencyEdgeCases:
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
                 issue = create_issue(title="Test Missing Dependency")
 
-                yaml_path = agenttree_path / "issues" / f"{issue.id:03d}" / "issue.yaml"
+                yaml_path = agenttree_path / "issues" / format_issue_id(issue.id) / "issue.yaml"
                 with open(yaml_path) as f:
                     data = yaml.safe_load(f)
                 data["dependencies"] = [999]
@@ -268,6 +269,7 @@ class TestDependencyEdgeCases:
 
     def test_dependency_on_completed_issue(self, workflow_repo: Path, mock_sync: MagicMock):
         """Test that dependency on accepted issue is met."""
+        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue, check_dependencies_met, update_issue_stage, get_issue
 
         agenttree_path = workflow_repo / "_agenttree"
@@ -279,7 +281,7 @@ class TestDependencyEdgeCases:
 
                 main_issue = create_issue(title="Main Issue")
 
-                yaml_path = agenttree_path / "issues" / f"{main_issue.id:03d}" / "issue.yaml"
+                yaml_path = agenttree_path / "issues" / format_issue_id(main_issue.id) / "issue.yaml"
                 with open(yaml_path) as f:
                     data = yaml.safe_load(f)
                 data["dependencies"] = [dep_issue.id]
