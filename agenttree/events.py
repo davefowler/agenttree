@@ -13,7 +13,6 @@ Example config:
     on:
       startup:
         - start_manager
-        - auto_start_agents
       
       heartbeat:
         interval_s: 10
