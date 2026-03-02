@@ -102,7 +102,7 @@ class TestBuiltinActions:
         # Should start subprocess
         mock_popen.assert_called_once()
 
-    @patch("agenttree.hooks.is_running_in_container")
+    @patch("agenttree.environment.is_running_in_container")
     @patch("subprocess.run")
     def test_sync_skips_in_container(
         self,

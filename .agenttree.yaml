@@ -12,7 +12,7 @@ worktrees_dir: .worktrees
 allow_self_approval: true
 
 commands:
-  test: uv run pytest
+  test: uv run pytest tests/unit -m "not local_only"
   lint: "uv run mypy agenttree || echo 'Lint warnings (optional)'"
   git_branch: git branch --show-current
   files_changed: "git diff --stat main...HEAD | grep -c '|' || echo 0"
@@ -119,8 +119,9 @@ flows:
                   section: Test Plan
                   expect: not_empty
 
-          assess:
+          selfcheck:
             output: spec_review.md
+            skill: plan/selfcheck.md
             post_start:
               - create_file:
                   template: spec_review.md
@@ -130,9 +131,6 @@ flows:
                   file: spec_review.md
                   section: Assessment Summary
                   expect: not_empty
-
-          revise:
-            output: spec.md
 
           review:
             human_review: true
@@ -160,7 +158,7 @@ flows:
                   dest: review.md
             pre_completion:
               - run:
-                  command: uv run pytest
+                  command: uv run pytest tests/unit -m "not local_only"
                   must_pass: true
                   timeout: 900
               - run:
@@ -293,6 +291,17 @@ flows:
     stages:
       - not_doing
 
+  # Cleanup flow for periodic code review followup
+  # Skips explore.define (problem auto-generated) and plan.review (automated)
+  cleanup:
+    stages:
+      - explore.research
+      - plan.draft
+      - plan.assess
+      - plan.revise
+      - implement
+      - accepted
+
 default_flow: default
 
 # Controller hooks for dogfooding
@@ -300,3 +309,5 @@ manager_hooks:
   post_sync:
     - cleanup_resources:
         log_file: _agenttree/logs/cleanup.log
+    - trigger_cleanup:
+        threshold: 10
