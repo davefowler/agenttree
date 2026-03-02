@@ -305,6 +305,7 @@ Manager hooks (for post-sync operations):
 
 """
 
+import logging
 import re
 import subprocess
 import time
@@ -321,6 +322,7 @@ from agenttree.issues import (
 from agenttree.config import load_config
 
 console = Console()
+log = logging.getLogger("agenttree.hooks")
 
 
 class ValidationError(Exception):
@@ -542,7 +544,8 @@ def _try_update_pr_branch(pr_number: int) -> bool:
             return False
         # Already up to date is fine
         return True
-    except Exception:
+    except Exception as e:
+        log.debug("PR check failed, proceeding anyway: %s", e)
         return True  # Best-effort; proceed to merge attempt anyway
 
 
@@ -630,7 +633,8 @@ def get_pr_approval_status(pr_number: int) -> bool:
     try:
         from agenttree.github import is_pr_approved
         return is_pr_approved(pr_number)
-    except Exception:
+    except Exception as e:
+        log.debug("PR approval check failed: %s", e)
         return False
 
 
@@ -2366,8 +2370,8 @@ def ensure_pr_for_issue(issue_id: int | str) -> bool:
                 if "\n## " in approach_section[10:]:
                     approach_section = approach_section[:approach_section.index("\n## ", 10)]
                 body += f"### Approach\n{approach_section[12:].strip()[:400]}...\n\n"
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("Failed to extract spec content for PR body: %s", e)
 
     body += f"---\n🤖 Generated with [Claude Code](https://claude.com/claude-code)"
 
