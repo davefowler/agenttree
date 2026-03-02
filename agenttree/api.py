@@ -753,8 +753,8 @@ def cleanup_orphaned_containers(quiet: bool = False) -> int:
     containers = runtime.list_all()
 
     # Check each container to see if it matches our naming pattern
-    # Pattern: agenttree-{project}-{issue_id}
-    pattern = rf"^agenttree-{re.escape(config.project)}-(\d+)$"
+    # Pattern: agenttree-{project}-{issue_id} or agenttree-{project}-{issue_id}-{suffix}
+    pattern = rf"^agenttree-{re.escape(config.project)}-(\d+)(?:-[a-f0-9]+)?$"
 
     for container in containers:
         name = container.get("name", "") or ""

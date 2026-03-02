@@ -81,9 +81,10 @@ class TestStartAgent:
                                         }):
                                                 with patch("agenttree.issues.create_session"):
                                                     with patch("agenttree.issues.update_issue_metadata"):
-                                                        with patch("subprocess.run") as mock_run:
-                                                            mock_run.return_value = MagicMock(returncode=1)
-                                                            result = start_agent("042", quiet=True)
+                                                        with patch("agenttree.container.is_container_running", return_value=False):
+                                                            with patch("subprocess.run") as mock_run:
+                                                                mock_run.return_value = MagicMock(returncode=1)
+                                                                result = start_agent("042", quiet=True)
 
         assert result == mock_agent
 
@@ -189,10 +190,11 @@ class TestStartAgent:
                                         }):
                                                 with patch("agenttree.issues.create_session"):
                                                     with patch("agenttree.issues.update_issue_metadata"):
-                                                        with patch("subprocess.run") as mock_run:
-                                                            mock_run.return_value = MagicMock(returncode=1)
-                                                            with pytest.raises(ContainerUnavailableError) as exc_info:
-                                                                start_agent("042", quiet=True)
+                                                        with patch("agenttree.container.is_container_running", return_value=False):
+                                                            with patch("subprocess.run") as mock_run:
+                                                                mock_run.return_value = MagicMock(returncode=1)
+                                                                with pytest.raises(ContainerUnavailableError) as exc_info:
+                                                                    start_agent("042", quiet=True)
 
         assert "Install Docker" in str(exc_info.value)
 
@@ -224,9 +226,10 @@ class TestStartAgent:
                                         }):
                                                 with patch("agenttree.issues.create_session"):
                                                     with patch("agenttree.issues.update_issue_metadata"):
-                                                        with patch("subprocess.run") as mock_run:
-                                                            mock_run.return_value = MagicMock(returncode=1)
-                                                            start_agent("042", quiet=True)
+                                                        with patch("agenttree.container.is_container_running", return_value=False):
+                                                            with patch("subprocess.run") as mock_run:
+                                                                mock_run.return_value = MagicMock(returncode=1)
+                                                                start_agent("042", quiet=True)
 
         captured = capsys.readouterr()
         assert captured.out == ""
