@@ -46,7 +46,7 @@ class TestEndToEndWorkflow:
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
                 # Step 1: Create issue (starts at explore.define)
                 issue = create_issue(title="E2E Test Issue")
-                issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
+                issue_dir = agenttree_path / "issues" / issue.dir_name
 
                 assert issue.stage == "explore.define"
 
@@ -74,9 +74,9 @@ class TestEndToEndWorkflow:
                     # Create content needed for current stage
                     if current_stage.startswith("explore.research"):
                         create_valid_research_md(issue_dir)
-                    elif current_stage in ["plan.draft", "plan.revise"]:
+                    elif current_stage == "plan.draft":
                         create_valid_spec_md(issue_dir)
-                    elif current_stage == "plan.assess":
+                    elif current_stage == "plan.selfcheck":
                         create_valid_spec_review_md(issue_dir)
 
                     # Execute exit hooks (validates stage completion)
@@ -105,8 +105,7 @@ class TestEndToEndWorkflow:
                 assert "explore.define" in visited_stages
                 assert "explore.research" in visited_stages
                 assert "plan.draft" in visited_stages
-                assert "plan.assess" in visited_stages
-                assert "plan.revise" in visited_stages
+                assert "plan.selfcheck" in visited_stages
                 assert "plan.review" in visited_stages
 
     def test_full_workflow_implement_to_implementation_review(self, workflow_repo: Path, mock_sync: MagicMock):
@@ -123,7 +122,7 @@ class TestEndToEndWorkflow:
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
                 # Create issue and advance to implement stage
                 issue = create_issue(title="E2E Implement Test")
-                issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
+                issue_dir = agenttree_path / "issues" / issue.dir_name
 
                 # Create all prior content
                 create_valid_problem_md(issue_dir)
@@ -197,7 +196,7 @@ class TestEndToEndWorkflow:
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
                 # Create issue
                 issue = create_issue(title="Full E2E Test")
-                issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
+                issue_dir = agenttree_path / "issues" / issue.dir_name
 
                 all_stages_visited = []
                 max_iterations = 30
@@ -265,7 +264,7 @@ class TestEndToEndWorkflow:
         with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
                 issue = create_issue(title="Validation Test")
-                issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
+                issue_dir = agenttree_path / "issues" / issue.dir_name
 
                 # Create invalid problem.md (missing Context section)
                 (issue_dir / "problem.md").write_text("""# Problem
@@ -297,7 +296,7 @@ Just a brief problem description without required sections.
 
             # Test plan substages
             next_stage, _ = get_next_stage("plan.draft")
-            assert next_stage == "plan.assess"
+            assert next_stage == "plan.selfcheck"
 
             # Test implement substages (code -> code_review -> address_review -> wrapup -> feedback)
             next_stage, _ = get_next_stage("implement.code")
@@ -328,7 +327,7 @@ Just a brief problem description without required sections.
                 # Make some transitions
                 update_issue_stage(issue.id, "explore.research")
                 update_issue_stage(issue.id, "plan.draft")
-                update_issue_stage(issue.id, "plan.assess")
+                update_issue_stage(issue.id, "plan.selfcheck")
 
                 # Check history
                 issue = get_issue(issue.id)
@@ -360,7 +359,7 @@ class TestWorkflowEdgeCases:
         with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
                 issue = create_issue(title="Skip Test")
-                issue_dir = agenttree_path / "issues" / f"{issue.id:03d}"
+                issue_dir = agenttree_path / "issues" / issue.dir_name
 
                 # Create problem.md and skip to plan.draft (has pre_completion hooks)
                 create_valid_problem_md(issue_dir)
