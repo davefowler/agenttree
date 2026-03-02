@@ -116,7 +116,7 @@ def _start_agents_background(config: "Config", repo_path: Path) -> None:
 
 @click.command(name="start")
 @click.argument("issue_id", required=False, default=None, type=str)
-@click.option("--host", default="127.0.0.1", help="Host to bind to")
+@click.option("--host", default="0.0.0.0", help="Host to bind to")
 @click.option("--port", default=None, type=int, help="Port to bind to (default: from port_range config)")
 @click.option("--tool", help="AI tool to use (default: from config)")
 @click.option("--role", default="developer", help="Agent role (default: developer)")
@@ -177,7 +177,7 @@ def start_all(
 
 
 @click.command()
-@click.option("--host", default="127.0.0.1", help="Host to bind to")
+@click.option("--host", default="0.0.0.0", help="Host to bind to")
 @click.option("--port", default=None, type=int, help="Port to bind to (default: from port_range config)")
 def server(host: str, port: int | None) -> None:
     """Start just the AgentTree web server (no agents).
