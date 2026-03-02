@@ -431,6 +431,9 @@ from agenttree.events import (
     save_event_state as save_hook_state,
 )
 
+from agenttree.environment import is_running_in_container, get_code_directory
+from agenttree.git_utils import has_commits_to_push, get_git_diff_stats, rebase_issue_branch
+from agenttree.pr_actions import get_pr_approval_status, _action_create_pr, _action_merge_pr
 
 # =============================================================================
 # Hook Parsing

@@ -298,7 +298,7 @@ class TestContainerEnvironmentDetection:
 
     def test_container_environment_variable(self, monkeypatch):
         """Test AGENTTREE_CONTAINER environment variable detection."""
-        from agenttree.hooks import is_running_in_container
+        from agenttree.environment import is_running_in_container
 
         monkeypatch.setenv("AGENTTREE_CONTAINER", "1")
         assert is_running_in_container() is True

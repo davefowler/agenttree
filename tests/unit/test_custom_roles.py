@@ -15,7 +15,7 @@ from agenttree.config import (
     StageConfig,
     load_config,
 )
-from agenttree.hooks import (
+from agenttree.environment import (
     get_current_role,
     can_agent_operate_in_stage,
     is_running_in_container,
@@ -313,21 +313,21 @@ class TestCanAgentOperateInStage:
 
     def test_manager_can_operate_anywhere(self):
         """Manager (human) can operate in any stage."""
-        with patch("agenttree.hooks.get_current_role", return_value="manager"):
+        with patch("agenttree.environment.get_current_role", return_value="manager"):
             assert can_agent_operate_in_stage("developer") is True
             assert can_agent_operate_in_stage("manager") is True
             assert can_agent_operate_in_stage("reviewer") is True
 
     def test_agent_can_only_operate_in_agent_stages(self):
         """Default agent can only operate in role='developer' stages."""
-        with patch("agenttree.hooks.get_current_role", return_value="developer"):
+        with patch("agenttree.environment.get_current_role", return_value="developer"):
             assert can_agent_operate_in_stage("developer") is True
             assert can_agent_operate_in_stage("manager") is False
             assert can_agent_operate_in_stage("reviewer") is False
 
     def test_custom_agent_can_only_operate_in_own_stages(self):
         """Custom agents can only operate in their own role stages."""
-        with patch("agenttree.hooks.get_current_role", return_value="reviewer"):
+        with patch("agenttree.environment.get_current_role", return_value="reviewer"):
             assert can_agent_operate_in_stage("reviewer") is True
             assert can_agent_operate_in_stage("developer") is False
             assert can_agent_operate_in_stage("manager") is False
@@ -341,7 +341,7 @@ class TestCheckCustomAgentStages:
         from agenttree.agents_repo import check_custom_agent_stages
 
         # is_running_in_container is imported from hooks inside the function
-        with patch("agenttree.hooks.is_running_in_container", return_value=True):
+        with patch("agenttree.environment.is_running_in_container", return_value=True):
             result = check_custom_agent_stages(tmp_path)
             assert result == 0
 
@@ -355,7 +355,7 @@ class TestCheckCustomAgentStages:
         mock_config = MagicMock()
         mock_config.get_custom_role_stages.return_value = []
 
-        with patch("agenttree.hooks.is_running_in_container", return_value=False):
+        with patch("agenttree.environment.is_running_in_container", return_value=False):
             with patch("agenttree.config.load_config", return_value=mock_config):
                 result = check_custom_agent_stages(tmp_path)
                 assert result == 0
@@ -387,7 +387,7 @@ class TestCheckCustomAgentStages:
         mock_agent_config = MagicMock()
         mock_config.get_custom_role.return_value = mock_agent_config
 
-        with patch("agenttree.hooks.is_running_in_container", return_value=False):
+        with patch("agenttree.environment.is_running_in_container", return_value=False):
             with patch("agenttree.config.load_config", return_value=mock_config):
                 with patch("agenttree.tmux.session_exists", return_value=True):
                     with patch("agenttree.tmux.is_claude_running", return_value=True):
@@ -421,7 +421,7 @@ class TestCheckCustomAgentStages:
         mock_agent_config = MagicMock()
         mock_config.get_custom_role.return_value = mock_agent_config
 
-        with patch("agenttree.hooks.is_running_in_container", return_value=False):
+        with patch("agenttree.environment.is_running_in_container", return_value=False):
             with patch("agenttree.config.load_config", return_value=mock_config):
                 with patch("agenttree.tmux.session_exists", return_value=False):
                     with patch("agenttree.container.is_container_running", return_value=False):
