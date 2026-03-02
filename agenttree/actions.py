@@ -700,18 +700,9 @@ def switch_agent_to_api_key(
     # Kill the tmux session (container keeps running)
     kill_session(session_name)
     
-    # Build new claude command with API key injected via env
-    # API key is not in the container env by default (to avoid Claude Code
-    # preferring it over OAuth), so we inject it at exec time.
-    import os
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-    if not api_key:
-        creds_file = Path.home() / ".config" / "agenttree" / "credentials"
-        if creds_file.exists():
-            for line in creds_file.read_text().splitlines():
-                if line.startswith("ANTHROPIC_API_KEY="):
-                    api_key = line.split("=", 1)[1].strip()
-                    break
+    # Get API key via the canonical container_env method
+    tool_config = config.get_tool_config(config.default_tool)
+    api_key = tool_config.container_env(force_api_key=True).get("ANTHROPIC_API_KEY", "")
     
     claude_cmd = f"claude --model {model} --dangerously-skip-permissions"
     container_name = config.get_issue_container_name(issue_id)
