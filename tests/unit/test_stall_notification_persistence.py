@@ -1,6 +1,6 @@
 """Integration tests for stall notification persistence through fire_event.
 
-These tests verify that stall notification counts survive the full execution
+Tests verify that stall notification counts survive the full execution
 path: fire_event → check_stalled_agents → state save → state reload.
 
 This catches the race condition where fire_event's save_event_state overwrites
