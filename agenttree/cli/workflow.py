@@ -140,14 +140,12 @@ def stage_status(issue_id: str | None, active_only: bool) -> None:
 
 @click.command("next")
 @click.option("--issue", "-i", "issue_id", required=False, help="Issue ID (auto-detected from branch if not provided)")
-@click.option("--reassess", is_flag=True, help="Go back to plan_assess for another review cycle")
-def stage_next(issue_id: str | None, reassess: bool) -> None:
+def stage_next(issue_id: str | None) -> None:
     """Move to the next substage or stage.
 
     Examples:
         agenttree next --issue 001
         agenttree next  # Auto-detects issue from branch
-        agenttree next --reassess  # Cycle back to plan_assess from plan_revise
     """
     from agenttree.issues import get_issue_from_branch
 
@@ -266,19 +264,11 @@ def stage_next(issue_id: str | None, reassess: bool) -> None:
         console.print(f"[dim]Use 'agenttree approve {issue_id}' from the host to advance.[/dim]")
         return
 
-    # Handle --reassess flag for plan revision cycling
-    if reassess:
-        if issue.stage != "plan.revise":
-            console.print(f"[red]--reassess only works from plan.revise stage[/red]")
-            sys.exit(1)
-        next_stage = "plan.assess"
-        is_human_review = False
-    else:
-        # Calculate next stage (pass issue context for condition evaluation)
-        issue_ctx = get_issue_context(issue, include_docs=False)
-        next_stage, is_human_review = get_next_stage(
-            issue.stage, issue.flow, issue_context=issue_ctx
-        )
+    # Calculate next stage (pass issue context for condition evaluation)
+    issue_ctx = get_issue_context(issue, include_docs=False)
+    next_stage, is_human_review = get_next_stage(
+        issue.stage, issue.flow, issue_context=issue_ctx
+    )
 
     # Check if we're already at the next stage (no change)
     if next_stage == issue.stage:

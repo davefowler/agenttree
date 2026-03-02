@@ -407,8 +407,8 @@ class TestStageTransitions:
     """Tests for stage transition functions.
 
     Stage flow (dot paths):
-    backlog -> explore.define -> explore.research -> plan.draft -> plan.assess ->
-    plan.revise -> plan.review -> implement.code -> implement.independent_review ->
+    backlog -> explore.define -> explore.research -> plan.draft -> plan.selfcheck ->
+    plan.review -> implement.code -> implement.independent_review ->
     implement.review -> knowledge_base -> accepted
     """
 
@@ -430,21 +430,15 @@ class TestStageTransitions:
         assert next_stage == "plan.draft"
         assert is_review is False
 
-    def test_get_next_stage_plan_draft_to_plan_assess(self):
-        """plan.draft -> plan.assess"""
+    def test_get_next_stage_plan_draft_to_plan_selfcheck(self):
+        """plan.draft -> plan.selfcheck"""
         next_stage, is_review = get_next_stage("plan.draft")
-        assert next_stage == "plan.assess"
+        assert next_stage == "plan.selfcheck"
         assert is_review is False
 
-    def test_get_next_stage_plan_assess_to_plan_revise(self):
-        """plan.assess -> plan.revise"""
-        next_stage, is_review = get_next_stage("plan.assess")
-        assert next_stage == "plan.revise"
-        assert is_review is False
-
-    def test_get_next_stage_plan_revise_to_plan_review(self):
-        """plan.revise -> plan.review (human review)"""
-        next_stage, is_review = get_next_stage("plan.revise")
+    def test_get_next_stage_plan_selfcheck_to_plan_review(self):
+        """plan.selfcheck -> plan.review (human review)"""
+        next_stage, is_review = get_next_stage("plan.selfcheck")
         assert next_stage == "plan.review"
         assert is_review is True
 

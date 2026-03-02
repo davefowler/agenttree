@@ -32,12 +32,8 @@ def resolve_conflict_markers(content: str) -> tuple[str, bool]:
     """Resolve git merge conflict markers in content by keeping local (ours) changes.
 
     Handles conflict blocks like:
-        <<<<<<< Updated upstream
-        remote content
-        =======
-        local content
-        >>>>>>> Stashed changes
-
+                remote content
+        
     Args:
         content: File content that may contain conflict markers
 
@@ -1608,5 +1604,11 @@ def get_issue_context(issue: Issue, include_docs: bool = True) -> dict:
                 context[var_name] = doc_path.read_text()
             else:
                 context[var_name] = ""
+
+    # Add ci_feedback_exists flag for debug stage condition
+    if issue_dir:
+        context["ci_feedback_exists"] = (issue_dir / "ci_feedback.md").exists()
+    else:
+        context["ci_feedback_exists"] = False
 
     return context

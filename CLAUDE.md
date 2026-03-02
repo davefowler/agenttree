@@ -155,7 +155,7 @@ When working on web UI (HTML, CSS, templates):
 
 Issues follow a **flow** that determines which stages they pass through:
 
-- **default** (the vast majority of issues): Full workflow — explore.define → explore.research → plan.draft → plan.assess → plan.revise → plan.review (human) → implement.setup → implement.code → implement.code_review → implement.independent_review → implement.ci_wait → implement.review (human) → accepted. Use for anything that requires thought, investigation, or touches non-trivial code.
+- **default** (the vast majority of issues): Full workflow — explore.define → explore.research → plan.draft → plan.selfcheck → plan.review (human) → implement.setup → implement.code → implement.code_review → implement.independent_review → implement.ci_wait → implement.review (human) → accepted. Use for anything that requires thought, investigation, or touches non-trivial code.
 - **quick** (very rare — truly trivial tasks only): Abbreviated — explore.define → implement → accepted. Skips research, planning, and human review. **Only** for tasks where the solution is already fully obvious and requires zero decision-making: typo fixes, color changes, config constant updates. If you have to think about it at all, it's not quick.
 
 **When in doubt, use `default`.** The quick flow has no human review before coding starts. Misusing it wastes time when the implementation goes in the wrong direction.
