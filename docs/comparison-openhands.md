@@ -47,8 +47,9 @@ OpenHands uses an **event-stream architecture**: agents read a log of environmen
 - 68K+ GitHub stars, 7K+ forks, 4M+ downloads
 - $18.8M Series A (Nov 2025) led by Madrona
 - 37% of recent resolver commits written by the AI itself
-- Pricing: Free (open-source) → $10/month individual → $19/user/month business → custom enterprise
-- MIT license (core), separate enterprise license
+- Pricing: Free (local) → Free (cloud individual) → $500/month (Growth, multi-user) → custom enterprise
+- MIT license (core), source-available enterprise license (requires paid license after 30-day trial)
+- Founded by Robert Brennan (CEO, ex-Google), Graham Neubig (Chief Scientist, CMU professor), Xingyao Wang (CTO, UIUC PhD) — strong academic roots with ICLR 2025 publication
 
 ---
 
@@ -108,11 +109,13 @@ AgentTree is pre-launch. This isn't a fair comparison, but it underscores the im
 
 #### 1. Multi-Agent Parallelism (Core Differentiator)
 
-This is the big one. OpenHands runs **one agent per task, sequentially**. AgentTree runs **3-5+ agents on different issues simultaneously**, each in an isolated worktree + container, coordinated by the manager.
+This is the big one. OpenHands runs **one agent per task** by default. It does have sub-agent delegation (parent spawns child agents) and a Refactor SDK for parallel execution, but these are recent additions still evolving (open issue #5251 for enhanced MAS support). The delegation model is hierarchical — one agent delegates subtasks — rather than truly independent parallel agents on separate issues.
 
-OpenHands Cloud can scale to "1000s of agents" but these are independent, uncoordinated runs — not orchestrated parallel work on the same codebase. There's no equivalent of AgentTree's worktree-based isolation with shared git history, manager heartbeat, and file-lock coordination.
+AgentTree runs **3-5+ agents on different issues simultaneously**, each in an isolated worktree + container, coordinated by the manager. The coordination is first-class: git worktrees share object storage, file locks prevent race conditions, and the manager heartbeat handles state sync, PR creation, and CI monitoring across all agents.
 
-**Why this matters**: A solo developer using AgentTree can have 5 features being built simultaneously. With OpenHands, they'd need to sequence them or manually manage parallel sessions.
+OpenHands Cloud can scale to "1000s of agents" and has a Refactor SDK for parallel operations, but these are independent, uncoordinated runs targeting the same refactoring task — not orchestrated parallel work across different features on the same codebase.
+
+**Why this matters**: A solo developer using AgentTree can have 5 *different features* being built simultaneously with full workflow enforcement per feature. OpenHands' parallelism is about scaling one type of operation (refactoring), while AgentTree's is about managing an entire project backlog.
 
 #### 2. Structured Workflow with Quality Gates
 
@@ -158,6 +161,24 @@ Every issue transition in AgentTree is committed to git with timestamps. The ful
 OpenHands uses an event stream that's powerful for real-time execution but harder to audit after the fact. There's no equivalent of "git log the issue's history."
 
 **Why this matters**: Compliance-sensitive teams (finance, healthcare, government) need audit trails. AgentTree provides this by default.
+
+---
+
+### OpenHands' Known Weaknesses (Things to Avoid)
+
+These are well-documented problems with OpenHands that AgentTree should actively design around:
+
+1. **Token-hungry loops**: Agents enter repetitive loops on ambiguous tasks, burning tokens without progress. AgentTree's stall detection and stage-based timeouts are a direct mitigation.
+
+2. **Struggles with ambiguity**: Without a research/planning phase, OpenHands agents drift on open-ended tasks. AgentTree's mandatory explore → plan stages exist precisely for this reason.
+
+3. **Context fragmentation on long tasks**: Agents lose track over extended sessions. AgentTree mitigates this by breaking work into discrete stages with documented artifacts (problem.md, plan.md, spec.md).
+
+4. **Model dependency without guidance**: Users struggle to choose the right model. AgentTree could add per-stage model recommendations in config.
+
+5. **Brittle environments derail agents**: Flaky tests and complex service orchestration cause failures. AgentTree's hook system (optional validators, timeouts, rate limiting) provides guardrails here.
+
+6. **SWE-Bench gaming concerns**: OpenHands' 77.6% on SWE-Bench Verified drops to 19.25% on SWE-Bench Live, suggesting benchmark overfitting. AgentTree should benchmark on real-world metrics (time-to-merge, human intervention rate) not synthetic benchmarks.
 
 ---
 
