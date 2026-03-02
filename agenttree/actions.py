@@ -103,7 +103,6 @@ def start_manager(agents_dir: Path, **kwargs: Any) -> None:
     console.print("[green]✓ Started manager agent[/green]")
 
 
-@register_action("auto_start_agents")
 @register_action("ensure_stage_agents")
 def ensure_stage_agents(agents_dir: Path, max_stage_age_min: int = 10, **kwargs: Any) -> None:
     """Ensure agents are running for issues that need them (heartbeat safety net).
