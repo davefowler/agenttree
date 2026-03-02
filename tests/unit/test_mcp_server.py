@@ -5,6 +5,14 @@ pytest.importorskip("mcp")
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+<<<<<<< HEAD
+=======
+import pytest
+
+# Skip this module if mcp is not installed
+pytest.importorskip("mcp")
+
+>>>>>>> origin/main
 from agenttree.mcp_server import (
     status,
     get_issue,
