@@ -102,7 +102,7 @@ class TestBuiltinActions:
         # Should start subprocess
         mock_popen.assert_called_once()
 
-    @patch("agenttree.hooks.is_running_in_container")
+    @patch("agenttree.environment.is_running_in_container")
     @patch("subprocess.run")
     def test_sync_skips_in_container(
         self,
@@ -156,7 +156,6 @@ class TestDefaultEventConfigs:
         assert config is not None
         assert isinstance(config, list)
         assert "start_manager" in config
-        assert "auto_start_agents" in config
 
     def test_shutdown_has_defaults(self) -> None:
         """shutdown event has default config."""

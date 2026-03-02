@@ -1,6 +1,7 @@
 """GitHub integration for AgentTree."""
 
 import json
+import logging
 import shutil
 import subprocess
 import time
@@ -9,6 +10,8 @@ from typing import List, Optional, Union
 from dataclasses import dataclass
 
 from agenttree.dependencies import GH_CLI_INSTALL_INSTRUCTIONS
+
+log = logging.getLogger("agenttree.github")
 
 
 @dataclass
@@ -142,9 +145,8 @@ def add_label_to_issue(issue_number: int, label: str) -> None:
     """
     try:
         gh_command(["issue", "edit", str(issue_number), "--add-label", label])
-    except RuntimeError:
-        # Label might not exist or issue might not exist
-        pass
+    except RuntimeError as e:
+        log.debug("Failed to add label %s to issue #%s: %s", label, issue_number, e)
 
 
 def remove_label_from_issue(issue_number: int, label: str) -> None:
@@ -156,8 +158,8 @@ def remove_label_from_issue(issue_number: int, label: str) -> None:
     """
     try:
         gh_command(["issue", "edit", str(issue_number), "--remove-label", label])
-    except RuntimeError:
-        pass
+    except RuntimeError as e:
+        log.debug("Failed to remove label %s from issue #%s: %s", label, issue_number, e)
 
 
 def create_pr(title: str, body: str, branch: str, base: str = "main") -> PullRequest:
