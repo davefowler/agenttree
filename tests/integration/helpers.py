@@ -140,7 +140,7 @@ This approach minimizes changes while addressing all three issues.
 
 
 def create_valid_spec_review_md(issue_dir: Path) -> None:
-    """Create a spec_review.md that passes plan.assess hooks.
+    """Create a spec_review.md that passes plan.selfcheck hooks.
 
     Requires:
     - Assessment Summary section not empty
@@ -433,8 +433,7 @@ def setup_issue_at_stage(
         "explore.define": [create_valid_problem_md],
         "explore.research": [create_valid_problem_md, create_valid_research_md],
         "plan.draft": [create_valid_problem_md, create_valid_research_md, create_valid_spec_md],
-        "plan.assess": [create_valid_problem_md, create_valid_research_md, create_valid_spec_md, create_valid_spec_review_md],
-        "plan.revise": [create_valid_problem_md, create_valid_research_md, create_valid_spec_md, create_valid_spec_review_md],
+        "plan.selfcheck": [create_valid_problem_md, create_valid_research_md, create_valid_spec_md, create_valid_spec_review_md],
         "plan.review": [create_valid_problem_md, create_valid_research_md, create_valid_spec_md, create_valid_spec_review_md],
         "implement.code": [create_valid_problem_md, create_valid_research_md, create_valid_spec_md, create_valid_spec_review_md],
         "implement.review": [create_valid_problem_md, create_valid_research_md, create_valid_spec_md, create_valid_spec_review_md, create_valid_review_md],

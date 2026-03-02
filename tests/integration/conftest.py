@@ -103,7 +103,7 @@ def agenttree_config() -> dict[str, Any]:
                                     {"section_check": {"file": "spec.md", "section": "Test Plan", "expect": "not_empty"}}
                                 ],
                             },
-                            "assess": {
+                            "selfcheck": {
                                 "output": "spec_review.md",
                                 "post_start": [
                                     {"create_file": {"template": "spec_review.md", "dest": "spec_review.md"}}
@@ -111,9 +111,6 @@ def agenttree_config() -> dict[str, Any]:
                                 "pre_completion": [
                                     {"section_check": {"file": "spec_review.md", "section": "Assessment Summary", "expect": "not_empty"}}
                                 ],
-                            },
-                            "revise": {
-                                "output": "spec.md",
                             },
                             "review": {
                                 "human_review": True,
