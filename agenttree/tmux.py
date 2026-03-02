@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+import logging
 import subprocess
-import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 from dataclasses import dataclass
@@ -13,6 +13,8 @@ from agenttree.ids import serve_session_name as get_serve_session_name
 
 if TYPE_CHECKING:
     from agenttree.container import ContainerRuntime
+
+log = logging.getLogger("agenttree.tmux")
 
 
 @dataclass
@@ -540,7 +542,7 @@ class TmuxManager:
                 create_session(serve_session, worktree_path, serve_cmd)
             except subprocess.CalledProcessError as e:
                 # Serve session failure should not block agent startup
-                print(f"[warning] Could not start serve session: {e}", file=sys.stderr)
+                log.warning("Could not start serve session: %s", e)
 
         # Wait for Claude CLI prompt before sending startup message
         if wait_for_prompt(session_name, prompt_char="❯", timeout=180.0):

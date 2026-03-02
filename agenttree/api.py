@@ -580,11 +580,15 @@ def transition_issue(
                  issue_id, redirect.target, redirect.reason)
         redirected = update_issue_stage(issue_id, redirect.target)
         if redirected:
-            _notify_agent(issue_id, f"Issue redirected to {redirect.target}: {redirect.reason}. Run `agenttree next` for instructions.", interrupt=True)
+            _ensure_stage_agent(issue_id, redirect.target)
             return redirected
         raise RuntimeError(f"Failed to redirect issue #{issue_id} to {redirect.target}")
     except Exception as e:
         log.warning("Enter hooks failed for issue #%s (%s trigger): %s", issue_id, trigger, e)
+
+    # 4. Ensure the right agent is running and notified for the new stage.
+    # send_message() auto-starts the agent if not running.
+    _ensure_stage_agent(issue_id, next_stage)
 
     return updated
 
@@ -607,6 +611,38 @@ def _notify_agent(issue_id: int, message: str, *, interrupt: bool = False) -> No
             log.info("Notified agent for issue #%s", issue_id)
     except Exception as e:
         log.warning("Failed to notify agent for issue #%s: %s", issue_id, e)
+
+
+def _ensure_stage_agent(issue_id: int, stage: str) -> None:
+    """Best-effort ensure an agent is running and notified for the given stage.
+
+    Uses send_message() which auto-starts the agent if not running.
+    Skips parking lots, human review stages, and manager stages.
+    Never raises — failures are logged.
+    """
+    try:
+        from agenttree.config import load_config
+
+        config = load_config()
+
+        if config.is_parking_lot(stage):
+            return
+        if config.is_human_review(stage):
+            return
+
+        role = config.role_for(stage)
+        if role == "manager":
+            return
+
+        send_message(
+            issue_id,
+            f"Stage is now {stage}. Run `agenttree next` for your instructions.",
+            host=role,
+            quiet=True,
+        )
+        log.info("Ensured agent for issue #%s at %s (role=%s)", issue_id, stage, role)
+    except Exception as e:
+        log.warning("Could not ensure agent for issue #%s at %s: %s", issue_id, stage, e)
 
 
 # =============================================================================
