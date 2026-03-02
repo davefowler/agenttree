@@ -580,7 +580,7 @@ def transition_issue(
                  issue_id, redirect.target, redirect.reason)
         redirected = update_issue_stage(issue_id, redirect.target)
         if redirected:
-            _notify_agent(issue_id, f"Issue redirected to {redirect.target}: {redirect.reason}. Run `agenttree next` for instructions.", interrupt=True)
+            _ensure_stage_agent(issue_id, redirect.target)
             return redirected
         raise RuntimeError(f"Failed to redirect issue #{issue_id} to {redirect.target}")
     except Exception as e:

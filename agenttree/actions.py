@@ -121,6 +121,7 @@ def ensure_stage_agents(agents_dir: Path, max_stage_age_min: int = 10, **kwargs:
         max_stage_age_min: Only ensure if stage was entered within this many minutes
     """
     from datetime import datetime, timezone
+    from agenttree.api import send_message
     from agenttree.config import load_config
     from agenttree.issues import list_issues
     from agenttree.tmux import session_exists
@@ -170,7 +171,6 @@ def ensure_stage_agents(agents_dir: Path, max_stage_age_min: int = 10, **kwargs:
 
         console.print(f"[cyan]Ensuring agent for issue #{issue.id} ({issue.stage})...[/cyan]")
         try:
-            from agenttree.api import send_message
             result = send_message(
                 issue.id,
                 f"Stage is {issue.stage}. Run `agenttree next` for your instructions.",
