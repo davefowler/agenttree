@@ -34,8 +34,11 @@ from agenttree import issues as issue_crud
 from agenttree.agents_repo import sync_agents_repo
 from agenttree.web.models import KanbanBoard, Issue as WebIssue, IssueMoveRequest, PriorityUpdateRequest
 
+from rich.console import Console
+
 # Module-level logger for web app
 logger = logging.getLogger("agenttree.web")
+console = Console()
 
 # Pattern to match Claude Code's input prompt separator line
 # The separator is a line of U+2500 (BOX DRAWINGS LIGHT HORIZONTAL) characters: ─
@@ -121,7 +124,7 @@ async def heartbeat_loop(interval: int = 10) -> None:
                 lambda: fire_event(HEARTBEAT, agents_dir, heartbeat_count=_heartbeat_count)
             )
         except Exception as e:
-            print(f"Heartbeat error: {e}")
+            logger.error("Heartbeat error: %s", e)
         await asyncio.sleep(interval)
 
 
@@ -140,7 +143,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     
     # Start heartbeat task
     _heartbeat_task = asyncio.create_task(heartbeat_loop(interval))
-    print(f"✓ Started heartbeat events (every {interval}s)")
+    console.print(f"[green]✓ Started heartbeat events (every {interval}s)[/green]")
 
     # Auto-start manager if not running (fallback for direct server start)
     from agenttree.tmux import session_exists
@@ -151,11 +154,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             from agenttree.api import start_controller
 
             await asyncio.to_thread(start_controller, quiet=True)
-            print("✓ Started controller agent")
+            console.print("[green]✓ Started controller agent[/green]")
         except Exception as e:
-            print(f"⚠ Could not start controller: {e}")
+            console.print(f"[yellow]⚠ Could not start controller: {e}[/yellow]")
     else:
-        print("✓ Manager already running")
+        console.print("[green]✓ Manager already running[/green]")
 
     yield  # Server runs here
 
@@ -166,7 +169,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await _heartbeat_task
         except asyncio.CancelledError:
             pass
-    print("✓ Stopped heartbeat events")
+    console.print("[green]✓ Stopped heartbeat events[/green]")
 
 
 app = FastAPI(title="AgentTree Dashboard", lifespan=lifespan)
@@ -1415,7 +1418,7 @@ async def create_issue_api(
             await asyncio.to_thread(start_agent, issue.id, quiet=True)
         except Exception as e:
             # Log but don't fail - issue was created, agent start is optional
-            print(f"Warning: Could not auto-start agent for issue #{issue.id}: {e}")
+            logger.warning("Could not auto-start agent for issue #%s: %s", issue.id, e)
 
         return {"ok": True, "issue_id": issue.id, "title": issue.title}
     except Exception as e:
@@ -1999,10 +2002,10 @@ def run_server(
         os.environ["AGENTTREE_REPO_PATH"] = str(repo_path)
         worktree_manager = WorktreeManager(repo_path, config)
         agent_manager = AgentManager(worktree_manager)
-        print(f"✓ Loaded config for project: {config.project}")
+        console.print(f"[green]✓ Loaded config for project: {config.project}[/green]")
     except Exception as e:
-        print(f"⚠ Could not load config: {e}")
-        print("  Run 'agenttree init' to create a config file")
+        console.print(f"[yellow]⚠ Could not load config: {e}[/yellow]")
+        console.print("[dim]  Run 'agenttree init' to create a config file[/dim]")
 
     import uvicorn
     # Single worker — the heartbeat (sync, manager hooks, stall detection) must run

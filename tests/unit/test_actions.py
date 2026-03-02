@@ -156,7 +156,6 @@ class TestDefaultEventConfigs:
         assert config is not None
         assert isinstance(config, list)
         assert "start_manager" in config
-        assert "auto_start_agents" in config
 
     def test_shutdown_has_defaults(self) -> None:
         """shutdown event has default config."""

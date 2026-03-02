@@ -5,7 +5,7 @@ Actions are executed by the event dispatcher when events fire.
 
 Built-in Actions:
     - start_manager: Start the manager agent
-    - auto_start_agents: Start agents for issues not in parking lot
+    - ensure_stage_agents: Ensure agents running for active issues (safety net)
     - stop_all_agents: Stop all running agents
     - sync: Git pull/push _agenttree
     - check_stalled_agents: Nudge stalled agents
@@ -103,29 +103,32 @@ def start_manager(agents_dir: Path, **kwargs: Any) -> None:
     console.print("[green]✓ Started manager agent[/green]")
 
 
-@register_action("auto_start_agents")
-def auto_start_agents(agents_dir: Path, max_stage_age_min: int = 10, **kwargs: Any) -> None:
-    """Start agents for issues that recently entered their current stage but have no agent.
+@register_action("ensure_stage_agents")
+def ensure_stage_agents(agents_dir: Path, max_stage_age_min: int = 10, **kwargs: Any) -> None:
+    """Ensure agents are running for issues that need them (heartbeat safety net).
 
-    Only starts agents for issues where the last stage transition was within
-    max_stage_age_min minutes. Old issues without agents are left to the stall
-    detector, which notifies the manager.
+    The primary mechanism is transition_issue() which starts agents inline.
+    This heartbeat action catches anything that slipped through — e.g., server
+    restart, crashed agent, or edge cases where the transition didn't start one.
+
+    Sends a message (which auto-starts the agent if not running) for issues
+    where the last stage transition was within max_stage_age_min minutes.
 
     Skips parking lots, human review stages, and manager stages.
 
     Args:
         agents_dir: Path to _agenttree directory
-        max_stage_age_min: Only auto-start if stage was entered within this many minutes
+        max_stage_age_min: Only ensure if stage was entered within this many minutes
     """
-    import subprocess
     from datetime import datetime, timezone
+    from agenttree.api import send_message
     from agenttree.config import load_config
     from agenttree.issues import list_issues
     from agenttree.tmux import session_exists
 
     config = load_config()
     issues = list_issues(sync=False)
-    started = 0
+    ensured = 0
     now = datetime.now(timezone.utc)
 
     for issue in issues:
@@ -138,7 +141,7 @@ def auto_start_agents(agents_dir: Path, max_stage_age_min: int = 10, **kwargs: A
         if role == "manager":
             continue
 
-        # Only auto-start if the issue recently entered its current stage.
+        # Only ensure if the issue recently entered its current stage.
         # Old issues without agents are handled by the stall detector.
         if issue.history:
             last_entry = issue.history[-1]
@@ -152,7 +155,6 @@ def auto_start_agents(agents_dir: Path, max_stage_age_min: int = 10, **kwargs: A
             except (ValueError, TypeError):
                 continue
         else:
-            # No history — check created timestamp
             try:
                 created = datetime.fromisoformat(
                     issue.created.replace("Z", "+00:00")
@@ -167,21 +169,24 @@ def auto_start_agents(agents_dir: Path, max_stage_age_min: int = 10, **kwargs: A
         if session_exists(session_name):
             continue
 
-        console.print(f"[cyan]Starting agent for issue #{issue.id} ({issue.stage})...[/cyan]")
-        result = subprocess.run(
-            ["agenttree", "start", str(issue.id), "--skip-preflight"],
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
-        if result.returncode == 0:
-            console.print(f"[green]✓ Started agent for issue #{issue.id}[/green]")
-            started += 1
-        else:
-            console.print(f"[yellow]Failed to start agent for issue #{issue.id}[/yellow]")
+        console.print(f"[cyan]Ensuring agent for issue #{issue.id} ({issue.stage})...[/cyan]")
+        try:
+            result = send_message(
+                issue.id,
+                f"Stage is {issue.stage}. Run `agenttree next` for your instructions.",
+                host=role,
+                quiet=True,
+            )
+            if result in ("sent", "restarted"):
+                console.print(f"[green]✓ Agent running for issue #{issue.id}[/green]")
+                ensured += 1
+            else:
+                console.print(f"[yellow]Could not ensure agent for issue #{issue.id}: {result}[/yellow]")
+        except Exception as e:
+            console.print(f"[yellow]Failed to ensure agent for issue #{issue.id}: {e}[/yellow]")
 
-    if started:
-        console.print(f"[green]Auto-started {started} agent(s)[/green]")
+    if ensured:
+        console.print(f"[green]Ensured {ensured} agent(s)[/green]")
 
 
 @register_action("stop_all_agents")
@@ -906,7 +911,6 @@ def check_rate_limits(agents_dir: Path, **kwargs: Any) -> None:
 DEFAULT_EVENT_CONFIGS: dict[str, list[str] | dict[str, Any]] = {
     "startup": [
         "start_manager",
-        "auto_start_agents",
     ],
     "shutdown": [
         "sync",
@@ -917,7 +921,6 @@ DEFAULT_EVENT_CONFIGS: dict[str, list[str] | dict[str, Any]] = {
         "actions": [
             "sync",
             {"start_manager": {"min_interval_s": 30}},  # Ensure manager stays alive
-            {"auto_start_agents": {"min_interval_s": 30}},  # Start agents for new issues
             {"push_pending_branches": {}},
             {"check_manager_stages": {}},
             {"ensure_review_branches": {"min_interval_s": 60}},

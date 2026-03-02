@@ -745,7 +745,7 @@ class TestTransitionIssue:
         return issue
 
     def test_transition_success(self, mock_issue):
-        """Normal transition: exit hooks -> stage update -> enter hooks."""
+        """Normal transition: exit hooks -> stage update -> enter hooks -> ensure agent."""
         from agenttree.api import transition_issue
 
         updated_issue = MagicMock()
@@ -754,7 +754,8 @@ class TestTransitionIssue:
         with patch("agenttree.issues.get_issue", return_value=mock_issue), \
              patch("agenttree.hooks.execute_exit_hooks") as mock_exit, \
              patch("agenttree.issues.update_issue_stage", return_value=updated_issue) as mock_update, \
-             patch("agenttree.hooks.execute_enter_hooks") as mock_enter:
+             patch("agenttree.hooks.execute_enter_hooks") as mock_enter, \
+             patch("agenttree.api._ensure_stage_agent") as mock_ensure:
 
             result = transition_issue("42", "implement.code")
 
@@ -762,6 +763,7 @@ class TestTransitionIssue:
         mock_exit.assert_called_once_with(mock_issue, "plan.review", skip_pr_approval=False)
         mock_update.assert_called_once_with(42, "implement.code")
         mock_enter.assert_called_once_with(updated_issue, "implement.code")
+        mock_ensure.assert_called_once_with(42, "implement.code")
 
     def test_transition_exit_hook_redirect(self, mock_issue):
         """Exit hook StageRedirect changes the target stage."""
@@ -774,17 +776,19 @@ class TestTransitionIssue:
         with patch("agenttree.issues.get_issue", return_value=mock_issue), \
              patch("agenttree.hooks.execute_exit_hooks", side_effect=StageRedirect("explore.define", "needs more work")), \
              patch("agenttree.issues.update_issue_stage", return_value=updated_issue) as mock_update, \
-             patch("agenttree.hooks.execute_enter_hooks"):
+             patch("agenttree.hooks.execute_enter_hooks"), \
+             patch("agenttree.api._ensure_stage_agent") as mock_ensure:
 
             result = transition_issue("42", "implement.code")
 
         # Should have updated to the redirected stage, not original target
         mock_update.assert_called_once_with(42, "explore.define")
         assert result == updated_issue
+        mock_ensure.assert_called_once_with(42, "explore.define")
 
     def test_transition_enter_hook_redirect(self, mock_issue):
-        """Enter hook StageRedirect updates stage and notifies agent."""
-        from agenttree.api import transition_issue, _notify_agent
+        """Enter hook StageRedirect updates stage and ensures agent for redirect target."""
+        from agenttree.api import transition_issue
         from agenttree.hooks import StageRedirect
 
         updated_issue = MagicMock()
@@ -795,13 +799,12 @@ class TestTransitionIssue:
              patch("agenttree.hooks.execute_exit_hooks"), \
              patch("agenttree.issues.update_issue_stage", side_effect=[updated_issue, redirected_issue]), \
              patch("agenttree.hooks.execute_enter_hooks", side_effect=StageRedirect("implement.code", "merge conflict")), \
-             patch("agenttree.api._notify_agent") as mock_notify:
+             patch("agenttree.api._ensure_stage_agent") as mock_ensure:
 
             result = transition_issue("42", "accepted")
 
         assert result == redirected_issue
-        mock_notify.assert_called_once()
-        assert "merge conflict" in mock_notify.call_args[0][1]
+        mock_ensure.assert_called_once_with(42, "implement.code")
 
     def test_transition_validation_error_propagates(self, mock_issue):
         """ValidationError from exit hooks propagates to caller."""
