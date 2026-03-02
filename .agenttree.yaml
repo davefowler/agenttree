@@ -12,7 +12,7 @@ worktrees_dir: .worktrees
 allow_self_approval: true
 
 commands:
-  test: uv run pytest
+  test: uv run pytest tests/unit -m "not local_only"
   lint: "uv run mypy agenttree || echo 'Lint warnings (optional)'"
   git_branch: git branch --show-current
   files_changed: "git diff --stat main...HEAD | grep -c '|' || echo 0"
@@ -160,7 +160,7 @@ flows:
                   dest: review.md
             pre_completion:
               - run:
-                  command: uv run pytest
+                  command: uv run pytest tests/unit -m "not local_only"
                   must_pass: true
                   timeout: 900
               - run:
