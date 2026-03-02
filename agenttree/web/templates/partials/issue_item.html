@@ -29,6 +29,7 @@ Optional:
             {% endif %}
         </div>
         <div class="issue-header-right">
+            <span class="time-in-stage">{{ issue.time_in_stage }}</span>
             {% for label in issue.labels[:2] %}
             {% if not label.startswith('stage-') %}
             <span class="issue-label">{{ label }}</span>

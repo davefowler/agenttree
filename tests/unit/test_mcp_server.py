@@ -5,7 +5,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+<<<<<<< HEAD
 pytest.importorskip("mcp", reason="mcp module required for MCP server tests")
+=======
+# Skip this module if mcp is not installed
+pytest.importorskip("mcp")
+>>>>>>> origin/main
 
 from agenttree.mcp_server import (
     status,

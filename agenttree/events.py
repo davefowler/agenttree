@@ -13,7 +13,6 @@ Example config:
     on:
       startup:
         - start_manager
-        - auto_start_agents
       
       heartbeat:
         interval_s: 10
@@ -297,7 +296,7 @@ def fire_event(
             if verbose:
                 console.print(f"[dim]Running {action_name}...[/dim]")
             
-            action_fn(agents_dir, **action_config)
+            action_fn(agents_dir, _event_state=state, **action_config)
             update_action_state(action_name, state)
             results["actions_run"] += 1
 

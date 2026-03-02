@@ -23,7 +23,7 @@ def client():
 def mock_issue():
     """Create a mock issue object."""
     mock = Mock()
-    mock.id = "001"
+    mock.id = 1
     mock.title = "Test Issue Title"
     mock.stage = "backlog"
     mock.labels = ["bug"]
@@ -37,6 +37,7 @@ def mock_issue():
     mock.processing = None
     mock.ci_escalated = False
     mock.flow = "default"
+    mock.history = []
     return mock
 
 
@@ -44,7 +45,7 @@ def mock_issue():
 def mock_issue_with_agent():
     """Create a mock issue with an assigned agent."""
     mock = Mock()
-    mock.id = "002"
+    mock.id = 2
     mock.title = "Issue With Agent"
     mock.stage = "implement.code"
     mock.labels = []
@@ -58,6 +59,7 @@ def mock_issue_with_agent():
     mock.processing = None
     mock.ci_escalated = False
     mock.flow = "default"
+    mock.history = []
     return mock
 
 
