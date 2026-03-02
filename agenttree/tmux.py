@@ -85,6 +85,7 @@ def create_session(
         session_name,
         "-c",
         str(working_dir),
+        "-e", "DISABLE_AUTO_UPDATE=true",
     ]
     subprocess.run(cmd, check=True)
 

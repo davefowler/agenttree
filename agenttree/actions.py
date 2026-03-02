@@ -700,16 +700,25 @@ def switch_agent_to_api_key(
     # Kill the tmux session (container keeps running)
     kill_session(session_name)
     
-    # Build new claude command with API key
-    # We use tmux to run the command in the existing container
-    # Since ANTHROPIC_API_KEY is already in the container env, just start claude
-    claude_cmd = f"claude --model {model} --dangerously-skip-permissions"
+    # Build new claude command with API key injected via env
+    # API key is not in the container env by default (to avoid Claude Code
+    # preferring it over OAuth), so we inject it at exec time.
+    import os
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        creds_file = Path.home() / ".config" / "agenttree" / "credentials"
+        if creds_file.exists():
+            for line in creds_file.read_text().splitlines():
+                if line.startswith("ANTHROPIC_API_KEY="):
+                    api_key = line.split("=", 1)[1].strip()
+                    break
     
-    # For containerized agents, we need to exec into the container
+    claude_cmd = f"claude --model {model} --dangerously-skip-permissions"
     container_name = config.get_issue_container_name(issue_id)
     
-    # Create new tmux session that execs into the container
-    exec_cmd = f"docker exec -it {container_name} {claude_cmd} 2>/dev/null || container exec -it {container_name} {claude_cmd}"
+    # Inject API key and unset OAuth token so Claude Code uses the API key
+    shell_cmd = f"export ANTHROPIC_API_KEY={api_key} && unset CLAUDE_CODE_OAUTH_TOKEN && {claude_cmd}"
+    exec_cmd = f"docker exec -it {container_name} sh -c '{shell_cmd}' 2>/dev/null || container exec -it {container_name} sh -c '{shell_cmd}'"
     
     create_session(session_name, worktree_path, exec_cmd)
     
