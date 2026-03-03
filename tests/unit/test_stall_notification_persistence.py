@@ -326,3 +326,4 @@ class TestStallNotificationPersistenceThroughFireEvent:
         state = load_event_state(tmp_path)
         assert state["stall_notifications"][99]["count"] == 1
         assert state["stall_notifications"][99]["stage"] == "plan.draft"
+
