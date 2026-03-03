@@ -168,6 +168,8 @@ class TestIssueListCommand:
         mock_config.agents_dir = tmp_path / "_agenttree"
         mock_config.agents_dir.mkdir()
         (mock_config.agents_dir / "issues").mkdir()
+        mock_config.is_parking_lot.return_value = False
+        mock_config.is_human_review.return_value = False
 
         with patch("agenttree.cli.issues.load_config", return_value=mock_config):
             with patch("agenttree.cli.issues.list_issues_func", return_value=[]):
@@ -183,19 +185,355 @@ class TestIssueListCommand:
         mock_config.agents_dir = tmp_path / "_agenttree"
         mock_config.agents_dir.mkdir()
         (mock_config.agents_dir / "issues").mkdir()
+        mock_config.is_parking_lot.return_value = False
+        mock_config.is_human_review.return_value = False
+        mock_config.get_flow_stage_names.return_value = ["backlog", "explore.define", "implement.code", "accepted"]
 
         mock_issue = MagicMock()
         mock_issue.id = "42"
         mock_issue.title = "Test Issue"
-        mock_issue.stage = "backlog"  # Stages are just strings
-        mock_issue.priority = Priority.MEDIUM  # Priority is an enum
+        mock_issue.stage = "implement.code"  # Active stage, not parking lot
+        mock_issue.priority = Priority.MEDIUM
         mock_issue.assigned_agent = None
+        mock_issue.flow = "default"
+        mock_issue.updated = "2026-01-01T00:00:00Z"
 
         with patch("agenttree.cli.issues.load_config", return_value=mock_config):
             with patch("agenttree.cli.issues.list_issues_func", return_value=[mock_issue]):
                 result = cli_runner.invoke(main, ["issue", "list"])
 
         assert result.exit_code == 0
+        assert "42" in result.output
+
+    def test_issue_list_default_excludes_parking_lot(self, cli_runner, mock_config, tmp_path):
+        """Should exclude parking lot stages (backlog, accepted, not_doing) by default."""
+        from agenttree.cli import main
+        from agenttree.issues import Priority
+
+        mock_config.agents_dir = tmp_path / "_agenttree"
+        mock_config.agents_dir.mkdir()
+        (mock_config.agents_dir / "issues").mkdir()
+
+        # is_parking_lot returns True for backlog/accepted/not_doing
+        def is_parking_lot_side_effect(stage):
+            return stage in ("backlog", "accepted", "not_doing")
+
+        mock_config.is_parking_lot.side_effect = is_parking_lot_side_effect
+        mock_config.is_human_review.return_value = False
+        mock_config.get_flow_stage_names.return_value = ["backlog", "explore.define", "implement.code", "accepted"]
+
+        # Create issues in different stages
+        active_issue = MagicMock()
+        active_issue.id = "42"
+        active_issue.title = "Active Issue"
+        active_issue.stage = "implement.code"
+        active_issue.priority = Priority.MEDIUM
+        active_issue.flow = "default"
+        active_issue.updated = "2026-01-01T00:00:00Z"
+
+        backlog_issue = MagicMock()
+        backlog_issue.id = "43"
+        backlog_issue.title = "Backlog Issue"
+        backlog_issue.stage = "backlog"
+        backlog_issue.priority = Priority.LOW
+        backlog_issue.flow = "default"
+        backlog_issue.updated = "2026-01-01T00:00:00Z"
+
+        accepted_issue = MagicMock()
+        accepted_issue.id = "44"
+        accepted_issue.title = "Accepted Issue"
+        accepted_issue.stage = "accepted"
+        accepted_issue.priority = Priority.MEDIUM
+        accepted_issue.flow = "default"
+        accepted_issue.updated = "2026-01-01T00:00:00Z"
+
+        with patch("agenttree.cli.issues.load_config", return_value=mock_config):
+            with patch("agenttree.cli.issues.list_issues_func", return_value=[active_issue, backlog_issue, accepted_issue]):
+                result = cli_runner.invoke(main, ["issue", "list"])
+
+        assert result.exit_code == 0
+        assert "42" in result.output  # Active issue shown
+        assert "43" not in result.output  # Backlog issue hidden
+        assert "44" not in result.output  # Accepted issue hidden
+        assert "Active Issues" in result.output
+
+    def test_issue_list_all_flag_shows_all(self, cli_runner, mock_config, tmp_path):
+        """Should show all issues including parking lot when --all is used."""
+        from agenttree.cli import main
+        from agenttree.issues import Priority
+
+        mock_config.agents_dir = tmp_path / "_agenttree"
+        mock_config.agents_dir.mkdir()
+        (mock_config.agents_dir / "issues").mkdir()
+        mock_config.is_parking_lot.return_value = True  # All would be filtered, but --all overrides
+        mock_config.is_human_review.return_value = False
+        mock_config.get_flow_stage_names.return_value = ["backlog", "implement.code", "accepted"]
+
+        backlog_issue = MagicMock()
+        backlog_issue.id = "43"
+        backlog_issue.title = "Backlog Issue"
+        backlog_issue.stage = "backlog"
+        backlog_issue.priority = Priority.LOW
+        backlog_issue.flow = "default"
+        backlog_issue.updated = "2026-01-01T00:00:00Z"
+
+        with patch("agenttree.cli.issues.load_config", return_value=mock_config):
+            with patch("agenttree.cli.issues.list_issues_func", return_value=[backlog_issue]):
+                result = cli_runner.invoke(main, ["issue", "list", "--all"])
+
+        assert result.exit_code == 0
+        assert "43" in result.output
+
+    def test_issue_list_waiting_flag(self, cli_runner, mock_config, tmp_path):
+        """Should show only human review issues when --waiting is used."""
+        from agenttree.cli import main
+        from agenttree.issues import Priority
+
+        mock_config.agents_dir = tmp_path / "_agenttree"
+        mock_config.agents_dir.mkdir()
+        (mock_config.agents_dir / "issues").mkdir()
+        mock_config.is_parking_lot.return_value = False
+        mock_config.get_flow_stage_names.return_value = ["explore.define", "plan.review", "implement.code"]
+
+        # is_human_review returns True only for review stages
+        def is_human_review_side_effect(stage):
+            return stage == "plan.review"
+
+        mock_config.is_human_review.side_effect = is_human_review_side_effect
+
+        review_issue = MagicMock()
+        review_issue.id = "45"
+        review_issue.title = "Needs Review"
+        review_issue.stage = "plan.review"
+        review_issue.priority = Priority.HIGH
+        review_issue.flow = "default"
+        review_issue.updated = "2026-01-01T00:00:00Z"
+
+        active_issue = MagicMock()
+        active_issue.id = "46"
+        active_issue.title = "In Progress"
+        active_issue.stage = "implement.code"
+        active_issue.priority = Priority.MEDIUM
+        active_issue.flow = "default"
+        active_issue.updated = "2026-01-01T00:00:00Z"
+
+        with patch("agenttree.cli.issues.load_config", return_value=mock_config):
+            with patch("agenttree.cli.issues.list_issues_func", return_value=[review_issue, active_issue]):
+                result = cli_runner.invoke(main, ["issue", "list", "--waiting"])
+
+        assert result.exit_code == 0
+        assert "45" in result.output  # Review issue shown
+        assert "46" not in result.output  # Non-review issue hidden
+        assert "Waiting for Review" in result.output
+
+    def test_issue_list_search_filter(self, cli_runner, mock_config, tmp_path):
+        """Should filter issues by title when --search is used."""
+        from agenttree.cli import main
+        from agenttree.issues import Priority
+
+        mock_config.agents_dir = tmp_path / "_agenttree"
+        mock_config.agents_dir.mkdir()
+        (mock_config.agents_dir / "issues").mkdir()
+        mock_config.is_parking_lot.return_value = False
+        mock_config.is_human_review.return_value = False
+        mock_config.get_flow_stage_names.return_value = ["explore.define", "implement.code"]
+
+        bug_issue = MagicMock()
+        bug_issue.id = "47"
+        bug_issue.title = "Fix login bug"
+        bug_issue.stage = "implement.code"
+        bug_issue.priority = Priority.HIGH
+        bug_issue.flow = "default"
+        bug_issue.updated = "2026-01-01T00:00:00Z"
+
+        feature_issue = MagicMock()
+        feature_issue.id = "48"
+        feature_issue.title = "Add new feature"
+        feature_issue.stage = "explore.define"
+        feature_issue.priority = Priority.MEDIUM
+        feature_issue.flow = "default"
+        feature_issue.updated = "2026-01-01T00:00:00Z"
+
+        with patch("agenttree.cli.issues.load_config", return_value=mock_config):
+            with patch("agenttree.cli.issues.list_issues_func", return_value=[bug_issue, feature_issue]):
+                result = cli_runner.invoke(main, ["issue", "list", "--search", "bug"])
+
+        assert result.exit_code == 0
+        assert "47" in result.output  # Bug issue shown
+        assert "48" not in result.output  # Feature issue hidden
+
+    def test_issue_list_search_case_insensitive(self, cli_runner, mock_config, tmp_path):
+        """Search should be case-insensitive."""
+        from agenttree.cli import main
+        from agenttree.issues import Priority
+
+        mock_config.agents_dir = tmp_path / "_agenttree"
+        mock_config.agents_dir.mkdir()
+        (mock_config.agents_dir / "issues").mkdir()
+        mock_config.is_parking_lot.return_value = False
+        mock_config.is_human_review.return_value = False
+        mock_config.get_flow_stage_names.return_value = ["implement.code"]
+
+        issue = MagicMock()
+        issue.id = "49"
+        issue.title = "Fix Login BUG"
+        issue.stage = "implement.code"
+        issue.priority = Priority.HIGH
+        issue.flow = "default"
+        issue.updated = "2026-01-01T00:00:00Z"
+
+        with patch("agenttree.cli.issues.load_config", return_value=mock_config):
+            with patch("agenttree.cli.issues.list_issues_func", return_value=[issue]):
+                result = cli_runner.invoke(main, ["issue", "list", "--search", "login"])
+
+        assert result.exit_code == 0
+        assert "49" in result.output
+
+    def test_issue_list_sorting_human_review_first(self, cli_runner, mock_config, tmp_path):
+        """Human review issues should appear before non-review issues."""
+        from agenttree.cli import main
+        from agenttree.issues import Priority
+
+        mock_config.agents_dir = tmp_path / "_agenttree"
+        mock_config.agents_dir.mkdir()
+        (mock_config.agents_dir / "issues").mkdir()
+        mock_config.is_parking_lot.return_value = False
+        mock_config.get_flow_stage_names.return_value = ["explore.define", "plan.review", "implement.code"]
+
+        def is_human_review_side_effect(stage):
+            return stage == "plan.review"
+
+        mock_config.is_human_review.side_effect = is_human_review_side_effect
+
+        # Create issues - review issue has lower ID but should still come first
+        code_issue = MagicMock()
+        code_issue.id = "50"
+        code_issue.title = "Coding"
+        code_issue.stage = "implement.code"
+        code_issue.priority = Priority.MEDIUM
+        code_issue.flow = "default"
+        code_issue.updated = "2026-01-02T00:00:00Z"  # More recent
+
+        review_issue = MagicMock()
+        review_issue.id = "51"
+        review_issue.title = "Review"
+        review_issue.stage = "plan.review"
+        review_issue.priority = Priority.MEDIUM
+        review_issue.flow = "default"
+        review_issue.updated = "2026-01-01T00:00:00Z"
+
+        with patch("agenttree.cli.issues.load_config", return_value=mock_config):
+            with patch("agenttree.cli.issues.list_issues_func", return_value=[code_issue, review_issue]):
+                result = cli_runner.invoke(main, ["issue", "list"])
+
+        assert result.exit_code == 0
+        # Review issue (51) should appear before code issue (50) in output
+        output_lines = result.output.split('\n')
+        id_51_line = next((i for i, line in enumerate(output_lines) if "51" in line), -1)
+        id_50_line = next((i for i, line in enumerate(output_lines) if "50" in line), -1)
+        assert id_51_line < id_50_line, "Review issue should appear before code issue"
+
+    def test_issue_list_combined_filters(self, cli_runner, mock_config, tmp_path):
+        """Should combine --search with --priority filter correctly."""
+        from agenttree.cli import main
+        from agenttree.issues import Priority
+
+        mock_config.agents_dir = tmp_path / "_agenttree"
+        mock_config.agents_dir.mkdir()
+        (mock_config.agents_dir / "issues").mkdir()
+        mock_config.is_parking_lot.return_value = False
+        mock_config.is_human_review.return_value = False
+        mock_config.get_flow_stage_names.return_value = ["implement.code"]
+
+        # Only high priority bugs should match
+        high_bug = MagicMock()
+        high_bug.id = "52"
+        high_bug.title = "Critical bug fix"
+        high_bug.stage = "implement.code"
+        high_bug.priority = Priority.HIGH
+        high_bug.flow = "default"
+        high_bug.updated = "2026-01-01T00:00:00Z"
+
+        low_bug = MagicMock()
+        low_bug.id = "53"
+        low_bug.title = "Minor bug"
+        low_bug.stage = "implement.code"
+        low_bug.priority = Priority.LOW
+        low_bug.flow = "default"
+        low_bug.updated = "2026-01-01T00:00:00Z"
+
+        with patch("agenttree.cli.issues.load_config", return_value=mock_config):
+            # list_issues_func is called with priority filter, so only high priority returned
+            with patch("agenttree.cli.issues.list_issues_func", return_value=[high_bug]):
+                result = cli_runner.invoke(main, ["issue", "list", "--search", "bug", "-p", "high"])
+
+        assert result.exit_code == 0
+        assert "52" in result.output
+
+    def test_issue_list_json_with_filters(self, cli_runner, mock_config, tmp_path):
+        """JSON output should include filtered and sorted issues."""
+        import json
+        from agenttree.cli import main
+        from agenttree.issues import Priority
+
+        mock_config.agents_dir = tmp_path / "_agenttree"
+        mock_config.agents_dir.mkdir()
+        (mock_config.agents_dir / "issues").mkdir()
+        mock_config.is_parking_lot.return_value = False
+        mock_config.is_human_review.return_value = False
+        mock_config.get_flow_stage_names.return_value = ["implement.code"]
+
+        issue = MagicMock()
+        issue.id = "54"
+        issue.title = "Test Issue"
+        issue.stage = "implement.code"
+        issue.priority = Priority.MEDIUM
+        issue.flow = "default"
+        issue.updated = "2026-01-01T00:00:00Z"
+        issue.model_dump.return_value = {"id": 54, "title": "Test Issue", "stage": "implement.code"}
+
+        with patch("agenttree.cli.issues.load_config", return_value=mock_config):
+            with patch("agenttree.cli.issues.list_issues_func", return_value=[issue]):
+                result = cli_runner.invoke(main, ["issue", "list", "--json"])
+
+        assert result.exit_code == 0
+        data = json.loads(result.output)
+        assert len(data) == 1
+        assert data[0]["id"] == 54
+
+    def test_issue_list_empty_with_search(self, cli_runner, mock_config, tmp_path):
+        """Should show appropriate message when search returns no results."""
+        from agenttree.cli import main
+
+        mock_config.agents_dir = tmp_path / "_agenttree"
+        mock_config.agents_dir.mkdir()
+        (mock_config.agents_dir / "issues").mkdir()
+        mock_config.is_parking_lot.return_value = False
+        mock_config.is_human_review.return_value = False
+
+        with patch("agenttree.cli.issues.load_config", return_value=mock_config):
+            with patch("agenttree.cli.issues.list_issues_func", return_value=[]):
+                result = cli_runner.invoke(main, ["issue", "list", "--search", "nonexistent"])
+
+        assert result.exit_code == 0
+        assert "No issues matching 'nonexistent'" in result.output
+
+    def test_issue_list_empty_no_active(self, cli_runner, mock_config, tmp_path):
+        """Should suggest --all when no active issues found."""
+        from agenttree.cli import main
+
+        mock_config.agents_dir = tmp_path / "_agenttree"
+        mock_config.agents_dir.mkdir()
+        (mock_config.agents_dir / "issues").mkdir()
+        mock_config.is_parking_lot.return_value = False
+        mock_config.is_human_review.return_value = False
+
+        with patch("agenttree.cli.issues.load_config", return_value=mock_config):
+            with patch("agenttree.cli.issues.list_issues_func", return_value=[]):
+                result = cli_runner.invoke(main, ["issue", "list"])
+
+        assert result.exit_code == 0
+        assert "--all" in result.output
 
 
 class TestApproveCommand:

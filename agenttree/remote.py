@@ -1,8 +1,8 @@
 """Remote agent execution via SSH and Tailscale."""
 
+import json
 import subprocess
 import shutil
-from typing import Optional, List
 from dataclasses import dataclass
 
 
@@ -13,7 +13,7 @@ class RemoteHost:
     name: str  # Friendly name
     host: str  # Hostname or IP (can be Tailscale name)
     user: str  # SSH user
-    ssh_key: Optional[str] = None  # Path to SSH key
+    ssh_key: str | None = None  # Path to SSH key
     is_tailscale: bool = False  # Whether this is a Tailscale host
 
 
@@ -26,7 +26,7 @@ def is_tailscale_available() -> bool:
     return shutil.which("tailscale") is not None
 
 
-def get_tailscale_hosts() -> List[str]:
+def get_tailscale_hosts() -> list[str]:
     """Get list of Tailscale hosts.
 
     Returns:
@@ -43,7 +43,6 @@ def get_tailscale_hosts() -> List[str]:
             check=True,
         )
 
-        import json
         data = json.loads(result.stdout)
 
         hosts = []

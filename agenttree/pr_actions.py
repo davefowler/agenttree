@@ -4,6 +4,7 @@ This module provides functions for creating, merging, and managing
 GitHub pull requests as part of the workflow.
 """
 
+import logging
 import re
 import subprocess
 import time
@@ -11,6 +12,8 @@ from pathlib import Path
 from typing import Any
 
 from rich.console import Console
+
+log = logging.getLogger(__name__)
 
 from agenttree.environment import is_running_in_container
 from agenttree.issues import Issue
@@ -156,7 +159,8 @@ def get_pr_approval_status(pr_number: int) -> bool:
     try:
         from agenttree.github import is_pr_approved
         return is_pr_approved(pr_number)
-    except Exception:
+    except Exception as e:
+        log.debug("PR approval check failed: %s", e)
         return False
 
 

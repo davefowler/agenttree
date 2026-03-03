@@ -901,6 +901,29 @@ class TestTransitionIssue:
             with pytest.raises(RuntimeError, match="not found"):
                 transition_issue("999", "implement")
 
+    def test_transition_enter_hook_failure_rolls_back_and_raises(self, mock_issue):
+        """Non-redirect enter hook errors rollback stage and raise RuntimeError."""
+        from agenttree.api import transition_issue
+
+        updated_issue = MagicMock()
+        updated_issue.stage = "accepted"
+        rolled_back_issue = MagicMock()
+        rolled_back_issue.stage = "plan.review"
+
+        with patch("agenttree.issues.get_issue", return_value=mock_issue), \
+             patch("agenttree.hooks.execute_exit_hooks"), \
+             patch("agenttree.issues.update_issue_stage", side_effect=[updated_issue, rolled_back_issue]) as mock_update, \
+             patch("agenttree.hooks.execute_enter_hooks", side_effect=RuntimeError("merge failed")), \
+             patch("agenttree.api._ensure_stage_agent") as mock_ensure:
+
+            with pytest.raises(RuntimeError, match="Enter hooks failed"):
+                transition_issue("42", "accepted")
+
+        assert mock_update.call_count == 2
+        assert mock_update.call_args_list[0].args == (42, "accepted")
+        assert mock_update.call_args_list[1].args == (42, "plan.review")
+        mock_ensure.assert_called_once_with(42, "plan.review")
+
 
 class TestNotifyAgent:
     """Tests for _notify_agent() function."""
