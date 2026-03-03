@@ -1463,7 +1463,7 @@ class TestCreateIssueAPI:
     """Tests for the create issue API endpoint."""
 
     @patch("agenttree.api.start_agent")
-    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.routes.issues.issue_crud")
     def test_create_issue_with_problem_and_solutions(self, mock_crud, mock_start, client):
         """Test creating issue with both problem and solutions fields."""
         mock_issue = Mock()
@@ -1493,7 +1493,7 @@ class TestCreateIssueAPI:
         assert call_kwargs["solutions"] == "This is a possible solution"
 
     @patch("agenttree.api.start_agent")
-    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.routes.issues.issue_crud")
     def test_create_issue_with_problem_only_no_solutions(self, mock_crud, mock_start, client):
         """Test creating issue with problem only, no solutions."""
         mock_issue = Mock()
@@ -1519,7 +1519,7 @@ class TestCreateIssueAPI:
         assert call_kwargs["problem"] == "This is just the problem, no solutions yet"
         assert call_kwargs["solutions"] is None
 
-    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.routes.issues.issue_crud")
     def test_create_issue_validation_empty_problem(self, mock_crud, client):
         """Test that empty problem returns 400 error."""
         response = client.post(
@@ -1527,6 +1527,76 @@ class TestCreateIssueAPI:
             data={
                 "problem": "",
                 "solutions": "Some solution"
+            }
+        )
+
+        assert response.status_code == 400
+        assert "problem description" in response.json()["detail"].lower()
+
+    @patch("agenttree.api.start_agent")
+    @patch("agenttree.web.routes.issues.issue_crud")
+    def test_create_issue_legacy_description_fallback(self, mock_crud, mock_start, client):
+        """Test that legacy description parameter works for backwards compatibility."""
+        mock_issue = Mock()
+        mock_issue.id = "003"
+        mock_issue.title = "Legacy Issue"
+        mock_crud.create_issue.return_value = mock_issue
+        mock_start.return_value = None
+
+        response = client.post(
+            "/api/issues",
+            data={
+                "description": "This is a legacy description",
+                "title": "Legacy Issue"
+            }
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["ok"] is True
+        assert data["issue_id"] == "003"
+
+        # Verify create_issue was called with description as problem
+        call_kwargs = mock_crud.create_issue.call_args.kwargs
+        assert call_kwargs["problem"] == "This is a legacy description"
+        assert call_kwargs["solutions"] is None
+
+    @patch("agenttree.api.start_agent")
+    @patch("agenttree.web.routes.issues.issue_crud")
+    def test_create_issue_problem_takes_precedence(self, mock_crud, mock_start, client):
+        """Test that problem parameter takes precedence over description."""
+        mock_issue = Mock()
+        mock_issue.id = "004"
+        mock_issue.title = "Precedence Test"
+        mock_crud.create_issue.return_value = mock_issue
+        mock_start.return_value = None
+
+        response = client.post(
+            "/api/issues",
+            data={
+                "problem": "This is the problem (should be used)",
+                "description": "This is legacy description (should be ignored)",
+                "title": "Precedence Test"
+            }
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["ok"] is True
+
+        # Verify problem takes precedence over description
+        call_kwargs = mock_crud.create_issue.call_args.kwargs
+        assert call_kwargs["problem"] == "This is the problem (should be used)"
+
+    @patch("agenttree.web.routes.issues.issue_crud")
+    def test_create_issue_validation_empty_both(self, mock_crud, client):
+        """Test that empty problem and description returns 400 error."""
+        response = client.post(
+            "/api/issues",
+            data={
+                "problem": "",
+                "description": "",
+                "title": "Empty Test"
             }
         )
 
