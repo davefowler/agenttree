@@ -20,6 +20,7 @@ Naming convention: Action names match function names exactly.
 
 from collections.abc import Callable
 from pathlib import Path
+import shlex
 from typing import Any
 
 from rich.console import Console
@@ -803,7 +804,10 @@ def switch_agent_to_api_key(
     container_name = config.get_issue_container_name(issue_id)
     
     # Inject API key and unset OAuth token so Claude Code uses the API key
-    shell_cmd = f"export ANTHROPIC_API_KEY={api_key} && unset CLAUDE_CODE_OAUTH_TOKEN && {claude_cmd}"
+    shell_cmd = (
+        f"export ANTHROPIC_API_KEY={shlex.quote(api_key)} "
+        f"&& unset CLAUDE_CODE_OAUTH_TOKEN && {claude_cmd}"
+    )
     exec_cmd = f"docker exec -it {container_name} sh -c '{shell_cmd}' 2>/dev/null || container exec -it {container_name} sh -c '{shell_cmd}'"
     
     create_session(session_name, worktree_path, exec_cmd)
