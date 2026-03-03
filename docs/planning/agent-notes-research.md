@@ -387,7 +387,7 @@ Auto-generated index of all specs with last updated dates.
 
 ```bash
 # 1. Dispatch task
-agenttree dispatch 1 42  # Issue #42
+agenttree start 1 42  # Issue #42
 
 # Behind the scenes:
 # - Creates: tasks/agent-1/2025-01-15-fix-login-bug.md (from template)
@@ -408,8 +408,8 @@ agenttree dispatch 1 42  # Issue #42
 ### Example 2: Multiple Agents Collaborate
 
 ```bash
-agenttree dispatch 1 50  # Implement feature X
-agenttree dispatch 2 51  # Implement feature Y (depends on X)
+agenttree start 1 50  # Implement feature X
+agenttree start 2 51  # Implement feature Y (depends on X)
 
 # Agent-2 blocks on Agent-1
 # Agent-2 creates: conversations/2025-01-15-feature-dependencies.md
