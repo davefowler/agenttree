@@ -100,10 +100,12 @@ class ToolConfig(BaseModel):
             if oauth_token:
                 env["CLAUDE_CODE_OAUTH_TOKEN"] = oauth_token
 
-        # Always pass API key if available (for rate limit fallback)
-        api_key = get_credential("ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY")
-        if api_key:
-            env["ANTHROPIC_API_KEY"] = api_key
+        # Only pass API key when explicitly requested (force_api_key mode).
+        # Passing both causes Claude Code to prefer the API key over OAuth.
+        if force_api_key:
+            api_key = get_credential("ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY")
+            if api_key:
+                env["ANTHROPIC_API_KEY"] = api_key
 
         return env
 

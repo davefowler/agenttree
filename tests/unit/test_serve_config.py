@@ -306,22 +306,26 @@ class TestToolConfigContainerMethods:
         assert "CLAUDE_CODE_OAUTH_TOKEN" in env
         assert env["CLAUDE_CODE_OAUTH_TOKEN"] == "sk-ant-oat01-test-token"
 
-    def test_container_env_passes_api_key(self, monkeypatch: "pytest.MonkeyPatch") -> None:
-        """Test that ANTHROPIC_API_KEY is passed when set."""
+    def test_container_env_api_key_only_with_force(self, monkeypatch: "pytest.MonkeyPatch") -> None:
+        """Test that ANTHROPIC_API_KEY is only passed with force_api_key=True."""
         from agenttree.config import ToolConfig
 
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-api03-test-key")
-        # Clear OAuth token to isolate test
         monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN", raising=False)
 
         tool = ToolConfig(command="claude")
+
+        # Without force, API key is NOT passed (avoids Claude Code preferring it)
         env = tool.container_env()
+        assert "ANTHROPIC_API_KEY" not in env
 
-        assert "ANTHROPIC_API_KEY" in env
-        assert env["ANTHROPIC_API_KEY"] == "sk-ant-api03-test-key"
+        # With force, API key IS passed
+        env_forced = tool.container_env(force_api_key=True)
+        assert "ANTHROPIC_API_KEY" in env_forced
+        assert env_forced["ANTHROPIC_API_KEY"] == "sk-ant-api03-test-key"
 
-    def test_container_env_passes_both_credentials(self, monkeypatch: "pytest.MonkeyPatch") -> None:
-        """Test that both credentials are passed when both are set."""
+    def test_container_env_oauth_only_when_both_set(self, monkeypatch: "pytest.MonkeyPatch") -> None:
+        """Test that only OAuth is passed when both credentials are set."""
         from agenttree.config import ToolConfig
 
         monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "sk-ant-oat01-test-token")
@@ -330,11 +334,10 @@ class TestToolConfigContainerMethods:
         tool = ToolConfig(command="claude")
         env = tool.container_env()
 
-        # Both should be present for flexible mode switching
+        # Only OAuth should be present to ensure subscription mode
         assert "CLAUDE_CODE_OAUTH_TOKEN" in env
-        assert "ANTHROPIC_API_KEY" in env
+        assert "ANTHROPIC_API_KEY" not in env
         assert env["CLAUDE_CODE_OAUTH_TOKEN"] == "sk-ant-oat01-test-token"
-        assert env["ANTHROPIC_API_KEY"] == "sk-ant-api03-test-key"
 
     def test_container_env_force_api_key_skips_oauth(self, monkeypatch: "pytest.MonkeyPatch") -> None:
         """Test that force_api_key=True skips OAuth token."""
@@ -352,7 +355,7 @@ class TestToolConfigContainerMethods:
         assert "ANTHROPIC_API_KEY" in env
         assert env["ANTHROPIC_API_KEY"] == "sk-ant-api03-test-key"
 
-    def test_container_env_empty_when_no_credentials(self, monkeypatch: "pytest.MonkeyPatch") -> None:
+    def test_container_env_empty_when_no_credentials(self, monkeypatch: "pytest.MonkeyPatch", tmp_path: Path) -> None:
         """Test that empty dict is returned when no credentials are set."""
         from agenttree.config import ToolConfig
 
@@ -361,7 +364,8 @@ class TestToolConfigContainerMethods:
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
 
         tool = ToolConfig(command="claude")
-        env = tool.container_env()
+        # Use tmp_path as home to avoid reading real credentials file
+        env = tool.container_env(home=tmp_path)
 
         # Neither credential should be in the result
         assert "CLAUDE_CODE_OAUTH_TOKEN" not in env

@@ -12,7 +12,6 @@ import subprocess
 from pathlib import Path
 from datetime import datetime
 from typing import Any, Optional, TYPE_CHECKING
-import re
 from rich.console import Console
 
 log = logging.getLogger("agenttree.agents_repo")
@@ -26,26 +25,13 @@ if TYPE_CHECKING:
 # Global lock file handle (kept open during sync)
 _sync_lock_fd = None
 
+from agenttree.dependencies import GH_CLI_INSTALL_INSTRUCTIONS
 from agenttree.frontmatter import (
     create_frontmatter,
     get_git_context,
     utc_now,
 )
-
-
-def slugify(text: str) -> str:
-    """Convert text to a slug.
-
-    Args:
-        text: Text to slugify
-
-    Returns:
-        Slugified text
-    """
-    text = text.lower()
-    text = re.sub(r'[^\w\s-]', '', text)
-    text = re.sub(r'[-\s]+', '-', text)
-    return text.strip('-')
+from agenttree.ids import slugify
 
 
 def sync_agents_repo(
@@ -261,10 +247,15 @@ def check_manager_stages(agents_dir: Path) -> int:
                 processed += 1
                 continue
             except Exception as e:
-                # Hook failed — mark as done to prevent infinite retry loop.
-                # Retrying every heartbeat won't fix structural errors.
+                # Hook failed — clear running flag so heartbeat can retry.
+                # This prevents one transient merge/network failure from permanently
+                # skipping required manager-stage actions.
                 log.warning("Manager hooks failed for issue %s at %s: %s",
                             issue.id, stage, e)
+                issue = Issue.from_yaml(issue_yaml)
+                issue.manager_hooks_executed = None
+                issue.save()
+                continue
 
             # Re-read yaml — hooks like create_pr update metadata (pr_number etc.)
             # and writing back stale `data` would clobber those changes.
@@ -1077,11 +1068,7 @@ class AgentsRepository:
         """Check gh CLI is installed and authenticated."""
         if not shutil.which("gh"):
             raise RuntimeError(
-                "GitHub CLI (gh) not found.\n\n"
-                "Install: https://cli.github.com/\n"
-                "  macOS:   brew install gh\n"
-                "  Linux:   See https://github.com/cli/cli#installation\n"
-                "  Windows: See https://github.com/cli/cli#installation\n"
+                f"GitHub CLI (gh) not found.\n\n{GH_CLI_INSTALL_INSTRUCTIONS}\n"
             )
 
         # Check auth status

@@ -431,7 +431,7 @@ from agenttree.events import (
     save_event_state as save_hook_state,
 )
 
-from agenttree.environment import is_running_in_container, get_code_directory
+from agenttree import environment
 from agenttree.git_utils import has_commits_to_push, get_git_diff_stats, rebase_issue_branch
 from agenttree.pr_actions import get_pr_approval_status, _action_create_pr, _action_merge_pr
 
@@ -877,7 +877,7 @@ def run_builtin_validator(
                 config = load_config()
                 if config.commands:
                     # Determine working directory for commands
-                    cwd = get_code_directory(issue, issue_dir)
+                    cwd = environment.get_code_directory(issue, issue_dir)
 
                     # Find commands referenced in the template
                     referenced = get_referenced_commands(template_content, config.commands)
@@ -1331,7 +1331,7 @@ def execute_hooks(
         if hook_type == "run":
             # Shell command hook - use correct directory based on context
             issue = kwargs.get("issue")
-            cwd = get_code_directory(issue, issue_dir)
+            cwd = environment.get_code_directory(issue, issue_dir)
             hook_errors = run_command_hook(cwd, params, **kwargs)
             # If optional flag is set and command returns "not configured", warn but don't block
             if params.get("optional") and any("not configured" in e.lower() for e in hook_errors):
@@ -1839,6 +1839,15 @@ def auto_commit_changes(issue: Issue, stage: str) -> bool:
     return True
 
 
+<<<<<<< HEAD
+=======
+def is_running_in_container() -> bool:
+    """Module-level wrapper for shared environment container detection."""
+    return environment.is_running_in_container()
+
+
+
+>>>>>>> origin/main
 def get_current_role() -> str:
     """Get the current agent role.
 

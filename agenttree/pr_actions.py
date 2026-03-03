@@ -13,6 +13,8 @@ from typing import Any
 
 from rich.console import Console
 
+log = logging.getLogger(__name__)
+
 from agenttree.environment import is_running_in_container
 from agenttree.issues import Issue
 

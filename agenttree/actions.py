@@ -20,6 +20,7 @@ Naming convention: Action names match function names exactly.
 
 from collections.abc import Callable
 from pathlib import Path
+import shlex
 from typing import Any
 
 from rich.console import Console
@@ -795,16 +796,19 @@ def switch_agent_to_api_key(
     # Kill the tmux session (container keeps running)
     kill_session(session_name)
     
-    # Build new claude command with API key
-    # We use tmux to run the command in the existing container
-    # Since ANTHROPIC_API_KEY is already in the container env, just start claude
-    claude_cmd = f"claude --model {model} --dangerously-skip-permissions"
+    # Get API key via the canonical container_env method
+    tool_config = config.get_tool_config(config.default_tool)
+    api_key = tool_config.container_env(force_api_key=True).get("ANTHROPIC_API_KEY", "")
     
-    # For containerized agents, we need to exec into the container
+    claude_cmd = f"claude --model {model} --dangerously-skip-permissions"
     container_name = config.get_issue_container_name(issue_id)
     
-    # Create new tmux session that execs into the container
-    exec_cmd = f"docker exec -it {container_name} {claude_cmd} 2>/dev/null || container exec -it {container_name} {claude_cmd}"
+    # Inject API key and unset OAuth token so Claude Code uses the API key
+    shell_cmd = (
+        f"export ANTHROPIC_API_KEY={shlex.quote(api_key)} "
+        f"&& unset CLAUDE_CODE_OAUTH_TOKEN && {claude_cmd}"
+    )
+    exec_cmd = f"docker exec -it {container_name} sh -c '{shell_cmd}' 2>/dev/null || container exec -it {container_name} sh -c '{shell_cmd}'"
     
     create_session(session_name, worktree_path, exec_cmd)
     

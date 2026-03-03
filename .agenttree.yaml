@@ -292,7 +292,7 @@ flows:
       - not_doing
 
   # Cleanup flow for periodic code review followup
-  # Skips explore.define (problem auto-generated) and plan.review (automated)
+  # Skips explore.define (problem auto-generated) and plan.review (human review)
   cleanup:
     stages:
       - explore.research
