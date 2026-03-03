@@ -19,7 +19,8 @@ Understand what changed. Read modified files if needed to write a good commit me
 Run the deterministic merge-conflict checker before any local test run or PR review loop:
 
 ```bash
-uv run python scripts/check_merge_conflicts.py
+git fetch origin main
+uv run python scripts/check_merge_conflicts.py --base origin/main
 ```
 
 If it fails:
@@ -136,7 +137,8 @@ gh run view <run-id> --log-failed
 
 Fix the issue, commit, and push:
 ```bash
-uv run python scripts/check_merge_conflicts.py
+git fetch origin main
+uv run python scripts/check_merge_conflicts.py --base origin/main
 git add -A
 git commit -m "fix: address CI failure - <what you fixed>"
 git push
