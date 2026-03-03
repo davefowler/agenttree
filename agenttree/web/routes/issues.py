@@ -44,7 +44,6 @@ async def create_issue_api(
     request: Request,
     problem: str = Form(""),
     solutions: str = Form(""),
-    description: str = Form(""),  # Legacy parameter for backwards compatibility
     title: str = Form(""),
     files: list[UploadFile] = File(default=[]),
     user: str | None = Depends(get_current_user),
@@ -56,9 +55,8 @@ async def create_issue_api(
     Accepts optional file attachments.
 
     Args:
-        problem: Problem description (preferred)
+        problem: Problem description (what needs to be solved)
         solutions: Optional solution ideas
-        description: Legacy parameter - used if problem is empty (backwards compat)
         title: Optional title (auto-generated if blank)
         files: Optional file attachments
     """
@@ -67,14 +65,10 @@ async def create_issue_api(
 
     problem_text = problem.strip()
     solutions_text = solutions.strip()
-    description_text = description.strip()
     title = title.strip()
 
-    # Use problem if provided, otherwise fall back to description for backwards compat
-    final_problem = problem_text if problem_text else description_text
-
-    # Require at least a problem description
-    if not final_problem:
+    # Require a problem description
+    if not problem_text:
         raise HTTPException(status_code=400, detail="Please provide a problem description")
 
     # Use placeholder if no title - agent will fill it in during define stage
@@ -109,7 +103,7 @@ async def create_issue_api(
         issue = issue_crud.create_issue(
             title=title,
             priority=Priority.MEDIUM,
-            problem=final_problem,
+            problem=problem_text,
             solutions=solutions_text or None,
             attachments=attachments or None,
         )
