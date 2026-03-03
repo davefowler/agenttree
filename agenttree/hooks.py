@@ -569,7 +569,7 @@ def _action_merge_pr(pr_number: Optional[int], **kwargs: Any) -> None:
         raise RuntimeError("No PR number provided for merge")
 
     # If in container, skip - host will handle
-    if environment.is_running_in_container():
+    if is_running_in_container():
         console.print(f"[yellow]Running in container - PR will be merged by host[/yellow]")
         return
 
@@ -1292,7 +1292,7 @@ def run_command_hook(
         List of error messages (empty if command succeeds or skipped)
     """
     # Skip if host_only and running in container
-    if hook.get("host_only") and environment.is_running_in_container():
+    if hook.get("host_only") and is_running_in_container():
         return []
 
     command = hook["command"]
@@ -1374,7 +1374,7 @@ def run_hook(
         hook_key = f"{hook_type}:{params['context']}"
 
     # Check host_only
-    if params.get("host_only") and environment.is_running_in_container():
+    if params.get("host_only") and is_running_in_container():
         if verbose:
             console.print(f"[dim]Skipping {hook_type} (host-only hook)[/dim]")
         return [], True
@@ -1465,7 +1465,7 @@ def execute_hooks(
         hook_type, params = parse_hook(hook)
 
         # Skip host-only hooks when running in container
-        if hook.get("host_only") and environment.is_running_in_container():
+        if hook.get("host_only") and is_running_in_container():
             console.print(f"[dim]Skipping {hook_type} (host-only hook)[/dim]")
             continue
 
@@ -1482,7 +1482,7 @@ def execute_hooks(
             errors.extend(hook_errors)
         elif hook_type == "rebase":
             # Rebase hook - host-only, skips gracefully in container
-            if environment.is_running_in_container():
+            if is_running_in_container():
                 console.print(f"[dim]Skipping rebase (running in container)[/dim]")
                 continue
             issue_id = kwargs.get("issue_id", "")
@@ -1596,7 +1596,7 @@ def execute_enter_hooks(issue: "Issue", dot_path: str) -> None:
     effective_role = config.role_for(dot_path)
 
     # Skip hooks for manager stages when in a container
-    if effective_role == "manager" and environment.is_running_in_container():
+    if effective_role == "manager" and is_running_in_container():
         console.print(f"[dim]Manager stage - hooks will run on host sync[/dim]")
         return
 
@@ -2153,6 +2153,11 @@ def auto_commit_changes(issue: Issue, stage: str) -> bool:
     return True
 
 
+def is_running_in_container() -> bool:
+    """Module-level wrapper for shared environment container detection."""
+    return environment.is_running_in_container()
+
+
 def get_code_directory(issue: Optional["Issue"], issue_dir: Path) -> Path:
     """Get the correct working directory for code operations.
 
@@ -2167,7 +2172,7 @@ def get_code_directory(issue: Optional["Issue"], issue_dir: Path) -> Path:
     Returns:
         Path to the directory containing the code
     """
-    if environment.is_running_in_container():
+    if is_running_in_container():
         return Path("/workspace")
 
     if issue and hasattr(issue, 'worktree_dir') and issue.worktree_dir:
@@ -2193,7 +2198,7 @@ def get_current_role() -> str:
         return role
 
     # Default: "developer" if in container, "manager" if on host
-    if environment.is_running_in_container():
+    if is_running_in_container():
         return "developer"
     return "manager"
 
@@ -2429,7 +2434,7 @@ def check_and_start_blocked_issues(issue: Issue) -> None:
         issue: Issue that just reached ACCEPTED stage
     """
     # Only run on host
-    if environment.is_running_in_container():
+    if is_running_in_container():
         return
 
     from agenttree.config import load_config
