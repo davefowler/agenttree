@@ -26,6 +26,7 @@ from agenttree.web.routes import agents, issues, pages, rate_limit, settings, vo
 from agenttree import __version__
 from agenttree.config import load_config, Config
 from agenttree.worktree import WorktreeManager
+from agenttree.hooks import get_repo_remote_name
 
 # Load config once at module level - server reload on .agenttree.yaml changes
 _config: Config = load_config()
@@ -362,6 +363,15 @@ def convert_issue_to_web(issue: issue_crud.Issue, load_dependents: bool = False)
         minutes_elapsed = int((now - stage_entered).total_seconds() / 60)
         time_in_stage = format_duration(max(0, minutes_elapsed))
 
+    # Derive pr_url from repo if pr_number exists but pr_url is missing
+    pr_url = issue.pr_url
+    if issue.pr_number and not pr_url:
+        try:
+            repo_name = get_repo_remote_name()
+            pr_url = f"https://github.com/{repo_name}/pull/{issue.pr_number}"
+        except (subprocess.CalledProcessError, ValueError) as e:
+            logger.warning("Failed to derive pr_url from repo remote: %s", e)
+
     return WebIssue(
         number=issue.id,
         title=issue.title,
@@ -372,7 +382,7 @@ def convert_issue_to_web(issue: issue_crud.Issue, load_dependents: bool = False)
         priority=issue.priority.value,
         tmux_active=tmux_active,
         has_worktree=bool(issue.worktree_dir),
-        pr_url=issue.pr_url,
+        pr_url=pr_url,
         pr_number=issue.pr_number,
         port=_config.get_port_for_issue(issue.id),
         created_at=datetime.fromisoformat(issue.created.replace("Z", "+00:00")),
