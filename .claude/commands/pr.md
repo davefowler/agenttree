@@ -4,29 +4,22 @@ You are creating a pull request for the current changes and shepherding it throu
 
 **Important:** Other agents may be working in this same repo. You may see changes you didn't make — that's normal. Include everything in the branch; don't try to split out "your" changes.
 
-## Step 1: Assess the changes
+## Step 1: Deterministic preflight (single command)
+
+Run one script to do the repetitive setup/check work with clear output:
 
 ```bash
-git status
-git diff --stat main...HEAD
-git log --oneline main..HEAD
+uv run python scripts/pr_preflight.py --base origin/main
 ```
 
-Understand what changed. Read modified files if needed to write a good commit message and PR description.
+This script deterministically does all of the following:
+- Prints branch/HEAD, working tree status, diff stat, and commit list vs `main`
+- Fetches latest `origin/main`
+- Runs merge-conflict preflight including merge simulation against `origin/main`
+- Suggests `RECOMMENDED_BASE=<branch>` for PR creation
+- Runs local tests (CI-equivalent unit test command)
 
-## Step 1.5: Conflict preflight (required before tests/review)
-
-Run the deterministic merge-conflict checker before any local test run or PR review loop:
-
-```bash
-git fetch origin main
-uv run python scripts/check_merge_conflicts.py --base origin/main
-```
-
-If it fails:
-- Resolve unmerged files (`git diff --name-only --diff-filter=U`)
-- Remove conflict markers accidentally committed (`<<<<<<<`, `=======`, `>>>>>>>`)
-- Re-run the checker until it passes
+If preflight fails, fix issues and rerun before continuing.
 
 ## Step 2: Branch and commit
 
@@ -49,31 +42,9 @@ git reset --soft $(git merge-base HEAD main)
 git commit -m "descriptive commit message"
 ```
 
-## Step 3: Find the right base branch
+## Step 3: Choose base branch
 
-Before pushing, check if your branch shares commit history with any open PRs. If it does, base your PR on that branch instead of `main` to avoid duplicate commits and a bloated diff.
-
-```bash
-gh pr list --state open --json number,title,headRefName,baseRefName --limit 50
-```
-
-For each open PR's branch, check if it's an ancestor of your current HEAD:
-
-```bash
-git fetch origin <pr-branch>
-git merge-base --is-ancestor origin/<pr-branch> HEAD && echo "ANCESTOR" || echo "no"
-```
-
-**Choose your base:**
-- If an open PR's branch is an ancestor of HEAD → use that branch as your base (`--base <pr-branch>`)
-- If multiple are ancestors → use the one closest to HEAD (most commits in common)
-- If none are ancestors → use `main`
-
-To find the closest ancestor among multiple candidates:
-```bash
-# The branch with the highest merge-base commit (closest to HEAD) wins
-git merge-base HEAD origin/<branch>
-```
+Use `RECOMMENDED_BASE` from preflight script output. If preflight defaulted to `main`, use `main`.
 
 ## Step 4: Push and create PR
 
@@ -113,32 +84,21 @@ Now enter a check-fix loop. Repeat until CI is green and no unaddressed review c
 sleep 30
 ```
 
-### 5b. Check CI status
+### 5b. Check CI/review status (single command)
 ```bash
-gh pr checks HEAD --watch --fail-fast
-```
-
-Or poll manually:
-```bash
-gh pr checks HEAD
+uv run python scripts/pr_ci_status.py --watch
 ```
 
 ### 5c. If CI fails
 
-Read the failing check logs:
-```bash
-gh run list --branch $(git branch --show-current) --limit 5 --json status,conclusion,name
-```
-
-Find the failing run and read its logs:
+Read failing run logs with:
 ```bash
 gh run view <run-id> --log-failed
 ```
 
 Fix the issue, commit, and push:
 ```bash
-git fetch origin main
-uv run python scripts/check_merge_conflicts.py --base origin/main
+uv run python scripts/pr_preflight.py --base origin/main --skip-tests
 git add -A
 git commit -m "fix: address CI failure - <what you fixed>"
 git push
