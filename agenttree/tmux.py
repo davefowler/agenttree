@@ -87,10 +87,12 @@ def create_session(
         str(working_dir),
         "-e", "DISABLE_AUTO_UPDATE=true",
     ]
-    subprocess.run(cmd, check=True)
-
+    # Run startup command directly in tmux session creation so tmux launches
+    # a non-interactive shell. This avoids user interactive shell rc files
+    # (e.g. broken ~/.zshrc) from breaking agent startup.
     if start_command:
-        send_keys(session_name, start_command)
+        cmd.append(start_command)
+    subprocess.run(cmd, check=True)
 
 
 def kill_session(session_name: str) -> None:
