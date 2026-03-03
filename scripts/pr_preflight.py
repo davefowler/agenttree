@@ -134,6 +134,21 @@ def main() -> int:
         print("ERROR: You are on main. Create a feature branch first.", file=sys.stderr)
         return 1
 
+    # Hard fail before any test run if conflict markers are present.
+    # This avoids spending time on tests when the branch is already invalid.
+    print_section("Conflict Marker Gate")
+    marker_gate_cmd = [
+        "uv",
+        "run",
+        "python",
+        "scripts/check_merge_conflicts.py",
+    ]
+    print(f"Running: {' '.join(shlex.quote(x) for x in marker_gate_cmd)}")
+    marker_gate = run(marker_gate_cmd, capture_output=False)
+    if marker_gate.returncode != 0:
+        print("ERROR: Unresolved merge conflicts/conflict markers detected.", file=sys.stderr)
+        return marker_gate.returncode
+
     print_section("Working Tree")
     changes = status_porcelain()
     if changes:

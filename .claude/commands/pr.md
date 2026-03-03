@@ -13,6 +13,7 @@ uv run python scripts/pr_preflight.py --base origin/main
 ```
 
 This script deterministically does all of the following:
+- Runs a **hard conflict-marker gate first** (before any tests)
 - Prints branch/HEAD, working tree status, diff stat, and commit list vs `main`
 - Fetches latest `origin/main`
 - Runs merge-conflict preflight including merge simulation against `origin/main`

@@ -69,7 +69,7 @@ def find_conflict_markers(path: Path) -> list[tuple[int, str]]:
     start_line = 0
 
     for idx, line in enumerate(content.splitlines(), start=1):
-        if line.startswith("<<<<<<< "):
+        if line.startswith("<<<<<<<"):
             in_conflict = True
             saw_separator = False
             start_line = idx
@@ -82,7 +82,7 @@ def find_conflict_markers(path: Path) -> list[tuple[int, str]]:
             saw_separator = True
             continue
 
-        if line.startswith(">>>>>>> "):
+        if line.startswith(">>>>>>>"):
             if saw_separator:
                 markers.append((start_line, "<<<<<<<"))
                 markers.append((idx, ">>>>>>>"))
