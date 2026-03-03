@@ -1,12 +1,10 @@
 """Tests for agenttree.mcp_server module."""
-
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 pytest.importorskip("mcp", reason="MCP dependencies not installed")
-
 from agenttree.mcp_server import (
     status,
     get_issue,

@@ -119,8 +119,9 @@ flows:
                   section: Test Plan
                   expect: not_empty
 
-          assess:
+          selfcheck:
             output: spec_review.md
+            skill: plan/selfcheck.md
             post_start:
               - create_file:
                   template: spec_review.md
@@ -130,9 +131,6 @@ flows:
                   file: spec_review.md
                   section: Assessment Summary
                   expect: not_empty
-
-          revise:
-            output: spec.md
 
           review:
             human_review: true
@@ -293,6 +291,16 @@ flows:
     stages:
       - not_doing
 
+  # Cleanup flow for periodic code review followup
+  # Skips explore.define (problem auto-generated) and plan.review (automated)
+  cleanup:
+    stages:
+      - explore.research
+      - plan.draft
+      - plan.selfcheck
+      - implement
+      - accepted
+
 default_flow: default
 
 # Controller hooks for dogfooding
@@ -300,3 +308,5 @@ manager_hooks:
   post_sync:
     - cleanup_resources:
         log_file: _agenttree/logs/cleanup.log
+    - trigger_cleanup:
+        threshold: 10

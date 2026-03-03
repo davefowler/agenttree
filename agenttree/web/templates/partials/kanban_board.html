@@ -1,21 +1,52 @@
 {#
 Kanban board columns partial - used for htmx polling refresh.
-Required: 'board', 'stages'
+Required: 'board' (KanbanBoard with parking_lot_stages, parking_lot_issues, flow_rows)
 #}
-{% for stage in stages %}
-<div class="kanban-column" data-stage="{{ stage }}" data-group="{{ stage.split('.')[0] }}">
-    <div class="column-header">
-        {% if '.' in stage %}
-        <span class="column-group">{{ stage.split('.')[0] }}</span>
-        {% endif %}
-        <span>{{ stage | stage_name }}</span>
-        <span class="column-count">{{ board.stages[stage]|length }}</span>
+
+<!-- Parking lot row (backlog, accepted, not_doing) -->
+<div class="flow-row parking-lot-row" data-flow="parking">
+    <div class="flow-label">Parking</div>
+    <div class="flow-columns">
+        {% for stage in board.parking_lot_stages %}
+        <div class="kanban-column" data-stage="{{ stage }}" data-group="parking">
+            <div class="column-header">
+                <span>{{ stage | stage_name }}</span>
+                <span class="column-count">{{ board.parking_lot_issues[stage]|length }}</span>
+            </div>
+            <div class="column-cards">
+                {% for issue in board.parking_lot_issues[stage] %}
+                {% set base_url = '/kanban' %}
+                {% set draggable = true %}
+                {% include 'partials/issue_item.html' %}
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
     </div>
-    <div class="column-cards">
-        {% for issue in board.stages[stage] %}
-        {% set base_url = '/kanban' %}
-        {% set draggable = true %}
-        {% include 'partials/issue_item.html' %}
+</div>
+
+<!-- Flow rows (one per workflow) -->
+{% for flow_row in board.flow_rows %}
+<div class="flow-row" data-flow="{{ flow_row.flow_name }}">
+    <div class="flow-label">{{ flow_row.flow_name | capitalize }}</div>
+    <div class="flow-columns">
+        {% for stage in flow_row.stages %}
+        <div class="kanban-column" data-stage="{{ stage }}" data-group="{{ stage.split('.')[0] }}" data-flow="{{ flow_row.flow_name }}">
+            <div class="column-header">
+                {% if '.' in stage %}
+                <span class="column-group">{{ stage.split('.')[0] }}</span>
+                {% endif %}
+                <span>{{ stage | stage_name }}</span>
+                <span class="column-count">{{ flow_row.issues_by_stage[stage]|length }}</span>
+            </div>
+            <div class="column-cards">
+                {% for issue in flow_row.issues_by_stage[stage] %}
+                {% set base_url = '/kanban' %}
+                {% set draggable = true %}
+                {% include 'partials/issue_item.html' %}
+                {% endfor %}
+            </div>
+        </div>
         {% endfor %}
     </div>
 </div>

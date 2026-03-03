@@ -87,8 +87,22 @@ class AgentStatus(BaseModel):
     last_activity: datetime | None = None
 
 
-class KanbanBoard(BaseModel):
-    """Kanban board view."""
+class FlowKanbanRow(BaseModel):
+    """A single flow's kanban row with its stages and issues."""
 
-    stages: dict[str, list[Issue]]
+    flow_name: str
+    stages: list[str]  # Ordered list of dot paths for this flow
+    issues_by_stage: dict[str, list[Issue]]
+
+
+class KanbanBoard(BaseModel):
+    """Kanban board view organized by flow.
+
+    The board has a parking lot row (shared stages like backlog, accepted)
+    and flow rows (one per active workflow flow).
+    """
+
+    parking_lot_stages: list[str]
+    parking_lot_issues: dict[str, list[Issue]]
+    flow_rows: list[FlowKanbanRow]
     total_issues: int
