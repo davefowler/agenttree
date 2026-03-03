@@ -1839,15 +1839,12 @@ def auto_commit_changes(issue: Issue, stage: str) -> bool:
     return True
 
 
-<<<<<<< HEAD
-=======
 def is_running_in_container() -> bool:
     """Module-level wrapper for shared environment container detection."""
     return environment.is_running_in_container()
 
 
 
->>>>>>> origin/main
 def get_current_role() -> str:
     """Get the current agent role.
 
