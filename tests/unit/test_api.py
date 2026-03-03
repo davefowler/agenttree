@@ -234,6 +234,82 @@ class TestStartAgent:
         captured = capsys.readouterr()
         assert captured.out == ""
 
+    def test_start_agent_passes_force_api_key(
+        self, mock_config, mock_issue, mock_agent, tmp_path, monkeypatch
+    ):
+        """Verify force_api_key=True is passed through to TmuxManager."""
+        monkeypatch.chdir(tmp_path)
+
+        mock_runtime = MagicMock()
+        mock_runtime.is_available.return_value = True
+        mock_runtime.get_runtime_name.return_value = "docker"
+
+        with patch("agenttree.config.load_config", return_value=mock_config):
+            with patch("agenttree.preflight.run_preflight", return_value=[]):
+                with patch("agenttree.issues.get_issue", return_value=mock_issue):
+                    with patch("agenttree.state.get_active_agent", return_value=None):
+                        with patch("agenttree.tmux.TmuxManager") as mock_tm_class:
+                            mock_tm = MagicMock()
+                            mock_tm.start_issue_agent_in_container.return_value = True
+                            mock_tm_class.return_value = mock_tm
+
+                            with patch("agenttree.state.create_agent_for_issue", return_value=mock_agent):
+                                with patch("agenttree.container.get_container_runtime", return_value=mock_runtime):
+                                    with patch("agenttree.worktree.create_worktree"):
+                                        with patch("agenttree.state.get_issue_names", return_value={
+                                            "branch": "issue-042-test-issue",
+                                            "session": "testproj-issue-042",
+                                        }):
+                                                with patch("agenttree.issues.create_session"):
+                                                    with patch("agenttree.issues.update_issue_metadata"):
+                                                        with patch("agenttree.container.is_container_running", return_value=False):
+                                                            with patch("subprocess.run") as mock_run:
+                                                                mock_run.return_value = MagicMock(returncode=1)
+                                                                start_agent("042", quiet=True, force_api_key=True)
+
+        # Verify force_api_key was passed through
+        mock_tm.start_issue_agent_in_container.assert_called_once()
+        call_kwargs = mock_tm.start_issue_agent_in_container.call_args.kwargs
+        assert call_kwargs.get("force_api_key") is True
+
+    def test_start_agent_default_force_api_key_false(
+        self, mock_config, mock_issue, mock_agent, tmp_path, monkeypatch
+    ):
+        """Verify default behavior doesn't enable force_api_key."""
+        monkeypatch.chdir(tmp_path)
+
+        mock_runtime = MagicMock()
+        mock_runtime.is_available.return_value = True
+        mock_runtime.get_runtime_name.return_value = "docker"
+
+        with patch("agenttree.config.load_config", return_value=mock_config):
+            with patch("agenttree.preflight.run_preflight", return_value=[]):
+                with patch("agenttree.issues.get_issue", return_value=mock_issue):
+                    with patch("agenttree.state.get_active_agent", return_value=None):
+                        with patch("agenttree.tmux.TmuxManager") as mock_tm_class:
+                            mock_tm = MagicMock()
+                            mock_tm.start_issue_agent_in_container.return_value = True
+                            mock_tm_class.return_value = mock_tm
+
+                            with patch("agenttree.state.create_agent_for_issue", return_value=mock_agent):
+                                with patch("agenttree.container.get_container_runtime", return_value=mock_runtime):
+                                    with patch("agenttree.worktree.create_worktree"):
+                                        with patch("agenttree.state.get_issue_names", return_value={
+                                            "branch": "issue-042-test-issue",
+                                            "session": "testproj-issue-042",
+                                        }):
+                                                with patch("agenttree.issues.create_session"):
+                                                    with patch("agenttree.issues.update_issue_metadata"):
+                                                        with patch("agenttree.container.is_container_running", return_value=False):
+                                                            with patch("subprocess.run") as mock_run:
+                                                                mock_run.return_value = MagicMock(returncode=1)
+                                                                start_agent("042", quiet=True)
+
+        # Verify force_api_key defaults to False
+        mock_tm.start_issue_agent_in_container.assert_called_once()
+        call_kwargs = mock_tm.start_issue_agent_in_container.call_args.kwargs
+        assert call_kwargs.get("force_api_key") is False
+
 
 class TestSendMessage:
     """Tests for send_message() function."""

@@ -1811,26 +1811,31 @@ async def switch_to_api_key_mode(
             detail="Already running in API key mode"
         )
     
-    # Restart all affected agents with --api-key flag
+    # Restart all affected agents with force_api_key=True
+    from agenttree.api import start_agent, AgentStartError
+
     affected_agents = state.get("affected_agents", [])
     restarted = 0
     failed = []
-    
+
     for agent_info in affected_agents:
         issue_id = agent_info.get("issue_id")
         if not issue_id:
             continue
-        
-        result = subprocess.run(
-            ["agenttree", "start", str(issue_id), "--api-key", "--skip-preflight", "--force"],
-            capture_output=True,
-            text=True,
-            timeout=120,  # Container startup can be slow
-        )
-        if result.returncode == 0:
+
+        try:
+            start_agent(
+                issue_id,
+                force=True,
+                skip_preflight=True,
+                force_api_key=True,
+                quiet=True,
+            )
             restarted += 1
-        else:
-            failed.append({"issue_id": issue_id, "error": result.stderr[:200]})
+        except AgentStartError as e:
+            failed.append({"issue_id": issue_id, "error": str(e)[:200]})
+        except Exception as e:
+            failed.append({"issue_id": issue_id, "error": str(e)[:200]})
     
     # Update state to reflect API key mode
     state["mode"] = "api_key"

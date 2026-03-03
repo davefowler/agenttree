@@ -64,6 +64,8 @@ def _start_manager(
 
 def _start_agents_background(config: "Config", repo_path: Path) -> None:
     """Start all agents in parallel (runs in a background thread)."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from agenttree.api import start_agent, AgentStartError
     from agenttree.issues import list_issues
     from agenttree.state import get_active_agent
     from agenttree.tmux import session_exists
@@ -71,8 +73,8 @@ def _start_agents_background(config: "Config", repo_path: Path) -> None:
     parking_lot_stages = config.get_parking_lot_stages()
     issues = list_issues(sync=True)
 
-    # Launch all agent starts in parallel
-    pending: list[tuple[int, subprocess.Popen[str]]] = []
+    # Collect issues that need agents started
+    issues_to_start: list[int] = []
     skipped_count = 0
 
     for issue in issues:
@@ -84,24 +86,29 @@ def _start_agents_background(config: "Config", repo_path: Path) -> None:
             continue
 
         console.print(f"[cyan]Starting agent for issue #{issue.id} ({issue.stage})...[/cyan]")
-        proc = subprocess.Popen(
-            ["agenttree", "start", str(issue.id), "--skip-preflight"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-        pending.append((issue.id, proc))
+        issues_to_start.append(issue.id)
 
-    # Wait for all to finish
+    def start_single_agent(issue_id: int) -> tuple[int, bool, str]:
+        """Start a single agent, returns (issue_id, success, error_msg)."""
+        try:
+            start_agent(issue_id, skip_preflight=True, quiet=True)
+            return (issue_id, True, "")
+        except AgentStartError as e:
+            return (issue_id, False, str(e))
+        except Exception as e:
+            return (issue_id, False, str(e))
+
+    # Start all agents in parallel using ThreadPoolExecutor
     started_count = 0
-    for issue_id, proc in pending:
-        returncode = proc.wait()
-        if returncode == 0:
-            started_count += 1
-            console.print(f"[green]✓ Started agent for #{issue_id}[/green]")
-        else:
-            stderr = proc.stderr.read() if proc.stderr else ""
-            console.print(f"[yellow]Could not start agent for #{issue_id}: {stderr.strip()}[/yellow]")
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        futures = {executor.submit(start_single_agent, issue_id): issue_id for issue_id in issues_to_start}
+        for future in as_completed(futures):
+            issue_id, success, error_msg = future.result()
+            if success:
+                started_count += 1
+                console.print(f"[green]✓ Started agent for #{issue_id}[/green]")
+            else:
+                console.print(f"[yellow]Could not start agent for #{issue_id}: {error_msg}[/yellow]")
 
     console.print(f"\n[bold]Agents: {started_count} started, {skipped_count} in parking lot[/bold]")
 

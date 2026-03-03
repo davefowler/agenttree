@@ -498,6 +498,8 @@ def send(issue_id: str, message: str, role: str, interrupt: bool) -> None:
     # Helper to start agent if needed
     def ensure_agent_running() -> bool:
         """Start agent if not running. Returns True if agent is now running."""
+        from agenttree.api import start_agent as api_start_agent, AgentStartError
+
         agent = get_active_agent(issue_id_normalized, role)
         if agent and tmux_manager.is_issue_running(agent.tmux_session):
             return True
@@ -506,17 +508,16 @@ def send(issue_id: str, message: str, role: str, interrupt: bool) -> None:
         role_label = format_role_label(role)
         console.print(f"[dim]Agent{role_label} not running, starting...[/dim]")
 
-        result = subprocess.run(
-            ["agenttree", "start", str(issue_id_normalized)] + (["--role", role] if role != "developer" else []) + ["--skip-preflight"],
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode != 0:
-            console.print(f"[red]Error: Could not start agent: {result.stderr}[/red]")
+        try:
+            api_start_agent(issue_id_normalized, host=role, skip_preflight=True, quiet=True)
+            console.print(f"[green]✓ Started agent{role_label}[/green]")
+            return True
+        except AgentStartError as e:
+            console.print(f"[red]Error: Could not start agent: {e}[/red]")
             return False
-
-        console.print(f"[green]✓ Started agent{role_label}[/green]")
-        return True
+        except Exception as e:
+            console.print(f"[red]Error: Could not start agent: {e}[/red]")
+            return False
 
     # Ensure agent is running
     if not ensure_agent_running():

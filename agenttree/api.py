@@ -111,6 +111,7 @@ def start_agent(
     force: bool = False,
     tool: str | None = None,
     quiet: bool = False,
+    force_api_key: bool = False,
 ) -> "ActiveAgent":
     """Start an agent for an issue.
 
@@ -123,6 +124,7 @@ def start_agent(
         force: Force restart if agent already running
         tool: AI tool to use (default: from config)
         quiet: Suppress console output if True
+        force_api_key: Force API key mode (skip OAuth subscription)
 
     Returns:
         ActiveAgent with agent details
@@ -305,6 +307,7 @@ def start_agent(
         role=host,
         has_merge_conflicts=has_merge_conflicts,
         is_restart=is_restart,
+        force_api_key=force_api_key,
     )
 
     if not start_success:
