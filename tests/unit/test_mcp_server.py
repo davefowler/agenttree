@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 =======
 import pytest
 
-# Skip this module if mcp is not installed
+# Skip entire module if mcp not installed
 pytest.importorskip("mcp")
 
 >>>>>>> origin/main
