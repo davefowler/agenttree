@@ -297,8 +297,7 @@ flows:
     stages:
       - explore.research
       - plan.draft
-      - plan.assess
-      - plan.revise
+      - plan.selfcheck
       - implement
       - accepted
 
