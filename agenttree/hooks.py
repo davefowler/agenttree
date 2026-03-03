@@ -1182,7 +1182,8 @@ def run_command_hook(
             cwd=issue_dir,
             capture_output=True,
             text=True,
-            timeout=timeout
+            timeout=timeout,
+            stdin=subprocess.DEVNULL,
         )
 
         if result.returncode != 0:
