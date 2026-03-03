@@ -9,6 +9,7 @@ Examples:
   - agenttree-reviewer-042  -> issue 042, role "reviewer"
 """
 
+import logging
 import re
 import subprocess
 from dataclasses import dataclass
@@ -17,6 +18,8 @@ from pathlib import Path
 from typing import Optional
 
 from agenttree.config import load_config
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -215,7 +218,13 @@ def list_active_agents() -> list[ActiveAgent]:
         parsed = _parse_tmux_session_name(session_name, project)
         if parsed:
             issue_id, role = parsed
-            agents.append(_build_agent_from_session(issue_id, role, session_name, created, project))
+            if role == "manager":
+                continue
+            try:
+                agents.append(_build_agent_from_session(issue_id, role, session_name, created, project))
+            except RuntimeError as e:
+                logger.warning("Skipping session %s: %s", session_name, e)
+                continue
 
     return agents
 

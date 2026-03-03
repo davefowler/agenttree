@@ -60,7 +60,8 @@ class TestCreateSession:
             capture_output=True,
         )
         mock_run.assert_any_call(
-            ["tmux", "new-session", "-d", "-s", "test-session", "-c", str(tmp_path)],
+            ["tmux", "new-session", "-d", "-s", "test-session", "-c", str(tmp_path),
+             "-e", "DISABLE_AUTO_UPDATE=true"],
             check=True,
         )
 
@@ -71,8 +72,15 @@ class TestCreateSession:
         with patch("subprocess.run") as mock_run:
             create_session("test-session", tmp_path, start_command="echo hello")
 
-        # session_exists + kill + new-session + send-keys (literal) + send-keys (Enter)
-        assert mock_run.call_count == 5
+        # session_exists + kill + new-session (with command)
+        assert mock_run.call_count == 3
+        mock_run.assert_any_call(
+            [
+                "tmux", "new-session", "-d", "-s", "test-session", "-c", str(tmp_path),
+                "-e", "DISABLE_AUTO_UPDATE=true", "echo hello",
+            ],
+            check=True,
+        )
 
 
 class TestKillSession:
