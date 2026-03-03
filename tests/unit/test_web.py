@@ -597,7 +597,7 @@ class TestRebaseIssueEndpoint:
 
     @patch("agenttree.tmux.session_exists")
     @patch("agenttree.tmux.send_message")
-    @patch("agenttree.hooks.rebase_issue_branch")
+    @patch("agenttree.git_utils.rebase_issue_branch")
     @patch("agenttree.web.app.issue_crud")
     def test_rebase_issue_success(self, mock_crud, mock_rebase, mock_send, mock_session_exists, client, mock_review_issue):
         """Test rebase issue succeeds."""
@@ -610,7 +610,7 @@ class TestRebaseIssueEndpoint:
         assert response.status_code == 200
         assert response.json()["ok"] is True
 
-    @patch("agenttree.hooks.rebase_issue_branch")
+    @patch("agenttree.git_utils.rebase_issue_branch")
     @patch("agenttree.web.app.issue_crud")
     def test_rebase_issue_fails(self, mock_crud, mock_rebase, client, mock_review_issue):
         """Test rebase issue when rebase fails."""
@@ -1041,7 +1041,8 @@ class TestKanbanUnrecognizedStage:
         mock_agent_mgr._check_issue_tmux_session = Mock(return_value=False)
 
         board = get_kanban_board()
-        backlog_numbers = [i.number for i in board.stages.get("backlog", [])]
+        # Backlog is now in parking_lot_issues (flow-based kanban structure)
+        backlog_numbers = [i.number for i in board.parking_lot_issues.get("backlog", [])]
         assert 162 in backlog_numbers
 
 
@@ -1183,7 +1184,7 @@ class TestFileToStageMapping:
         assert FILE_TO_STAGE["problem.md"] == "explore.define"
         assert FILE_TO_STAGE["research.md"] == "explore.research"
         assert FILE_TO_STAGE["spec.md"] == "plan.draft"
-        assert FILE_TO_STAGE["spec_review.md"] == "plan.assess"
+        assert FILE_TO_STAGE["spec_review.md"] == "plan.selfcheck"
         assert FILE_TO_STAGE["review.md"] == "implement.code_review"
         assert FILE_TO_STAGE["independent_review.md"] == "implement.independent_review"
         assert FILE_TO_STAGE["feedback.md"] == "implement.feedback"
@@ -1239,7 +1240,7 @@ class TestFileToStageMapping:
         mock_config.stage_color.return_value = "#aaa"
         mock_config.get_flow_stage_names.return_value = [
             "backlog", "explore.define", "explore.research",
-            "plan.draft", "plan.assess", "plan.revise", "plan.review",
+            "plan.draft", "plan.selfcheck", "plan.review",
             "implement.setup", "implement.code", "implement.code_review",
         ]
 
@@ -1274,7 +1275,7 @@ class TestFileToStageMapping:
         mock_config.stage_color.return_value = "#aaa"
         mock_config.get_flow_stage_names.return_value = [
             "backlog", "explore.define", "explore.research",
-            "plan.draft", "plan.assess", "plan.revise", "plan.review",
+            "plan.draft", "plan.selfcheck", "plan.review",
             "implement.setup", "implement.code", "implement.code_review",
         ]
 

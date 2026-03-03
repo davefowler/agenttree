@@ -15,6 +15,7 @@ import yaml
 from pydantic import BaseModel, Field, PrivateAttr, field_validator
 
 from agenttree.agents_repo import sync_agents_repo
+from agenttree.ids import slugify
 
 log = logging.getLogger("agenttree.issues")
 
@@ -32,12 +33,8 @@ def resolve_conflict_markers(content: str) -> tuple[str, bool]:
     """Resolve git merge conflict markers in content by keeping local (ours) changes.
 
     Handles conflict blocks like:
-        <<<<<<< Updated upstream
-        remote content
-        =======
-        local content
-        >>>>>>> Stashed changes
-
+                remote content
+        
     Args:
         content: File content that may contain conflict markers
 
@@ -262,20 +259,6 @@ class Issue(BaseModel):
         return get_issue(issue_id, sync=sync)
 
 
-def slugify(text: str) -> str:
-    """Convert text to a URL-friendly slug."""
-    # Lowercase and replace spaces with hyphens
-    slug = text.lower().strip()
-    # Remove special characters
-    slug = re.sub(r'[^\w\s-]', '', slug)
-    # Replace whitespace with hyphens
-    slug = re.sub(r'[\s_]+', '-', slug)
-    # Remove leading/trailing hyphens
-    slug = slug.strip('-')
-    # Limit length
-    return slug[:50]
-
-
 def get_agenttree_path() -> Path:
     """Get the path to _agenttree directory.
 
@@ -410,7 +393,7 @@ def create_issue(
 
     # Generate ID
     issue_id = get_next_issue_number()
-    slug = slugify(title)
+    slug = slugify(title, max_length=50)
     dir_name = format_issue_id(issue_id)
 
     # Create issue directory
@@ -1262,7 +1245,7 @@ def load_skill(
 
     # Inject command outputs for referenced commands
     from agenttree.commands import get_referenced_commands, get_command_output
-    from agenttree.hooks import get_code_directory
+    from agenttree.environment import get_code_directory
 
     issue_dir = get_issue_dir(issue.id)
     if config.commands:
@@ -1608,5 +1591,11 @@ def get_issue_context(issue: Issue, include_docs: bool = True) -> dict:
                 context[var_name] = doc_path.read_text()
             else:
                 context[var_name] = ""
+
+    # Add ci_feedback_exists flag for debug stage condition
+    if issue_dir:
+        context["ci_feedback_exists"] = (issue_dir / "ci_feedback.md").exists()
+    else:
+        context["ci_feedback_exists"] = False
 
     return context

@@ -12,7 +12,6 @@ import subprocess
 from pathlib import Path
 from datetime import datetime
 from typing import Any, Optional, TYPE_CHECKING
-import re
 from rich.console import Console
 
 log = logging.getLogger("agenttree.agents_repo")
@@ -26,26 +25,13 @@ if TYPE_CHECKING:
 # Global lock file handle (kept open during sync)
 _sync_lock_fd = None
 
+from agenttree.dependencies import GH_CLI_INSTALL_INSTRUCTIONS
 from agenttree.frontmatter import (
     create_frontmatter,
     get_git_context,
     utc_now,
 )
-
-
-def slugify(text: str) -> str:
-    """Convert text to a slug.
-
-    Args:
-        text: Text to slugify
-
-    Returns:
-        Slugified text
-    """
-    text = text.lower()
-    text = re.sub(r'[^\w\s-]', '', text)
-    text = re.sub(r'[-\s]+', '-', text)
-    return text.strip('-')
+from agenttree.ids import slugify
 
 
 def sync_agents_repo(
@@ -68,7 +54,7 @@ def sync_agents_repo(
     global _sync_lock_fd
 
     # Skip sync in containers - no SSH access, host handles syncing
-    from agenttree.hooks import is_running_in_container
+    from agenttree.environment import is_running_in_container
     if is_running_in_container():
         return False
 
@@ -197,7 +183,8 @@ def check_manager_stages(agents_dir: Path) -> int:
         Number of issues processed
     """
     # Bail early if running in a container - host operations only
-    from agenttree.hooks import is_running_in_container, execute_enter_hooks, StageRedirect
+    from agenttree.environment import is_running_in_container
+    from agenttree.hooks import execute_enter_hooks, StageRedirect
     from agenttree.config import load_config
     from agenttree.issues import Issue
 
@@ -295,7 +282,8 @@ def ensure_review_branches(agents_dir: Path) -> int:
         Number of issues processed
     """
     from rich.console import Console
-    from agenttree.hooks import is_running_in_container, ensure_pr_for_issue
+    from agenttree.environment import is_running_in_container
+    from agenttree.pr_actions import ensure_pr_for_issue
     from agenttree.issues import Issue
 
     if is_running_in_container():
@@ -336,7 +324,7 @@ def ensure_review_branches(agents_dir: Path) -> int:
                 continue  # Whether or not PR was created, move on
 
             # 2. PR exists - try to keep branch up to date
-            from agenttree.hooks import _try_update_pr_branch
+            from agenttree.pr_actions import _try_update_pr_branch
             try:
                 updated = _try_update_pr_branch(pr_number)
                 if updated:
@@ -391,7 +379,7 @@ def check_custom_agent_stages(agents_dir: Path) -> int:
     Returns:
         Number of agents spawned
     """
-    from agenttree.hooks import is_running_in_container
+    from agenttree.environment import is_running_in_container
     from agenttree.config import load_config
     from agenttree.issues import Issue
 
@@ -522,7 +510,7 @@ def check_merged_prs(agents_dir: Path) -> int:
     Returns:
         Number of issues advanced
     """
-    from agenttree.hooks import is_running_in_container
+    from agenttree.environment import is_running_in_container
     if is_running_in_container():
         return 0
 
@@ -740,7 +728,7 @@ def check_ci_status(agents_dir: Path) -> int:
     Returns:
         Number of issues processed
     """
-    from agenttree.hooks import is_running_in_container
+    from agenttree.environment import is_running_in_container
     if is_running_in_container():
         return 0
 
@@ -963,7 +951,7 @@ def push_pending_branches(agents_dir: Path) -> int:
     Returns:
         Number of branches pushed
     """
-    from agenttree.hooks import is_running_in_container
+    from agenttree.environment import is_running_in_container
     if is_running_in_container():
         return 0
 
@@ -1075,11 +1063,7 @@ class AgentsRepository:
         """Check gh CLI is installed and authenticated."""
         if not shutil.which("gh"):
             raise RuntimeError(
-                "GitHub CLI (gh) not found.\n\n"
-                "Install: https://cli.github.com/\n"
-                "  macOS:   brew install gh\n"
-                "  Linux:   See https://github.com/cli/cli#installation\n"
-                "  Windows: See https://github.com/cli/cli#installation\n"
+                f"GitHub CLI (gh) not found.\n\n{GH_CLI_INSTALL_INSTRUCTIONS}\n"
             )
 
         # Check auth status

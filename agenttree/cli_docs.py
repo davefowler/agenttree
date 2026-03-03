@@ -21,7 +21,7 @@ from agenttree.frontmatter import (
     get_commits_since,
     add_frontmatter_fields,
 )
-from agenttree.agents_repo import slugify
+from agenttree.ids import slugify
 
 console = Console()
 

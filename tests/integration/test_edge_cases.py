@@ -253,7 +253,7 @@ class TestDependencyEdgeCases:
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
                 issue = create_issue(title="Test Missing Dependency")
 
-                yaml_path = agenttree_path / "issues" / f"{issue.id:03d}" / "issue.yaml"
+                yaml_path = agenttree_path / "issues" / issue.dir_name / "issue.yaml"
                 with open(yaml_path) as f:
                     data = yaml.safe_load(f)
                 data["dependencies"] = [999]
@@ -279,7 +279,7 @@ class TestDependencyEdgeCases:
 
                 main_issue = create_issue(title="Main Issue")
 
-                yaml_path = agenttree_path / "issues" / f"{main_issue.id:03d}" / "issue.yaml"
+                yaml_path = agenttree_path / "issues" / main_issue.dir_name / "issue.yaml"
                 with open(yaml_path) as f:
                     data = yaml.safe_load(f)
                 data["dependencies"] = [dep_issue.id]
@@ -298,7 +298,7 @@ class TestContainerEnvironmentDetection:
 
     def test_container_environment_variable(self, monkeypatch):
         """Test AGENTTREE_CONTAINER environment variable detection."""
-        from agenttree.hooks import is_running_in_container
+        from agenttree.environment import is_running_in_container
 
         monkeypatch.setenv("AGENTTREE_CONTAINER", "1")
         assert is_running_in_container() is True

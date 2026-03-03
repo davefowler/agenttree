@@ -431,6 +431,9 @@ from agenttree.events import (
     save_event_state as save_hook_state,
 )
 
+from agenttree.environment import is_running_in_container, get_code_directory
+from agenttree.git_utils import has_commits_to_push, get_git_diff_stats, rebase_issue_branch
+from agenttree.pr_actions import get_pr_approval_status, _action_create_pr, _action_merge_pr
 
 # =============================================================================
 # Hook Parsing
@@ -804,8 +807,8 @@ def run_builtin_validator(
             if not found:
                 errors.append(f"Section '{section}' not found in {params['file']}")
             else:
-                # Count list items (lines starting with - or *)
-                list_items = re.findall(r'^\s*[-*]\s+\S', section_content, re.MULTILINE)
+                # Count list items (lines starting with -, *, or numbered like 1., 2.)
+                list_items = re.findall(r'^\s*(?:[-*]|\d+\.)\s+\S', section_content, re.MULTILINE)
                 if len(list_items) < min_items:
                     errors.append(
                         f"Section '{section}' has {len(list_items)} list items, minimum is {min_items}"
@@ -1266,7 +1269,7 @@ def run_builtin_validator(
 def run_command_hook(
     issue_dir: Path,
     hook: Dict[str, Any],
-    issue_id: str = "",
+    issue_id: int | str = "",
     issue_title: str = "",
     branch: str = "",
     stage: str = "",
@@ -1294,7 +1297,7 @@ def run_command_hook(
 
     command = hook["command"]
 
-    # Replace template variables
+    # Replace template variables (issue_id is converted to str for replace())
     command = command.replace("{{issue_id}}", str(issue_id))
     command = command.replace("{{issue_title}}", issue_title)
     command = command.replace("{{branch}}", branch)
