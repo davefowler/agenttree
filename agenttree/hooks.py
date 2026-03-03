@@ -2163,14 +2163,12 @@ def is_running_in_container() -> bool:
         True if running in a container, False otherwise
     """
     import os
-    # Check for agenttree-specific env var first (most reliable)
-    if os.environ.get("AGENTTREE_CONTAINER") == "1":
-        return True
-    # Fall back to common container indicators
+    # Trust explicit runtime signals set by AgentTree.
+    # Generic container indicators (/.dockerenv, /.containerenv) are also
+    # true in CI and cause host-path assumptions like /workspace to break.
     return (
-        os.path.exists("/.dockerenv") or
-        os.path.exists("/run/.containerenv") or
-        os.environ.get("CONTAINER_RUNTIME") is not None
+        os.environ.get("AGENTTREE_CONTAINER") == "1"
+        or os.environ.get("CONTAINER_RUNTIME") is not None
     )
 
 
@@ -2188,7 +2186,11 @@ def get_code_directory(issue: Optional["Issue"], issue_dir: Path) -> Path:
     Returns:
         Path to the directory containing the code
     """
-    if is_running_in_container():
+    # Use shared environment module detection so tests and runtime patching
+    # behave consistently across modules.
+    from agenttree.environment import is_running_in_container as env_is_running_in_container
+
+    if env_is_running_in_container():
         return Path("/workspace")
 
     if issue and hasattr(issue, 'worktree_dir') and issue.worktree_dir:
