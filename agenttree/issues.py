@@ -366,7 +366,7 @@ def create_issue(
     title: str,
     priority: Priority = Priority.MEDIUM,
     labels: Optional[list[str]] = None,
-    stage: str = "explore.define",
+    stage: str | None = None,
     flow: str = "default",
     problem: Optional[str] = None,
     context: Optional[str] = None,
@@ -381,7 +381,7 @@ def create_issue(
         title: Issue title
         priority: Issue priority
         labels: Optional list of labels
-        stage: Starting stage dot path (default: "explore.define")
+        stage: Starting stage dot path (default: first stage of flow)
         flow: Workflow flow for this issue (default: "default")
         problem: Problem statement text (fills problem.md)
         context: Context/background text (fills problem.md)
@@ -393,7 +393,13 @@ def create_issue(
     Returns:
         The created Issue object
     """
+    from agenttree.config import load_config
     from agenttree.ids import format_issue_id, parse_issue_id
+
+    # Get default stage from config if not provided
+    if stage is None:
+        config = load_config()
+        stage = config.get_first_stage(flow)
 
     # Sync before and after writing
     agents_path = get_agenttree_path()
@@ -669,7 +675,7 @@ def get_issue_dir(issue_id: int | str) -> Optional[Path]:
 def check_dependencies_met(issue: Issue) -> tuple[bool, list[int]]:
     """Check if all dependencies for an issue are met.
 
-    A dependency is met when the dependent issue is in the ACCEPTED stage.
+    A dependency is met when the dependent issue is in a completion stage.
 
     Args:
         issue: Issue to check dependencies for
@@ -682,13 +688,16 @@ def check_dependencies_met(issue: Issue) -> tuple[bool, list[int]]:
     if not issue.dependencies:
         return True, []
 
+    from agenttree.config import load_config
+    config = load_config()
+
     unmet: list[int] = []
     for dep_id in issue.dependencies:
         dep_issue = get_issue(dep_id, sync=False)
         if dep_issue is None:
             # Dependency doesn't exist - treat as unmet
             unmet.append(dep_id)
-        elif dep_issue.stage != "accepted":
+        elif not config.is_completion_stage(dep_issue.stage):
             unmet.append(dep_id)
 
     return len(unmet) == 0, unmet
@@ -804,7 +813,7 @@ def detect_circular_dependency(
 
 
 def get_blocked_issues(completed_issue_id: int | str) -> list[Issue]:
-    """Get all issues in backlog that were waiting on a completed issue.
+    """Get all issues in resumable parking lots that were waiting on a completed issue.
 
     Args:
         completed_issue_id: ID of the issue that was just completed
@@ -812,7 +821,10 @@ def get_blocked_issues(completed_issue_id: int | str) -> list[Issue]:
     Returns:
         List of issues that have this issue as a dependency
     """
+    from agenttree.config import load_config
     from agenttree.ids import parse_issue_id
+
+    config = load_config()
 
     # Normalize to int
     if isinstance(completed_issue_id, str):
@@ -821,8 +833,8 @@ def get_blocked_issues(completed_issue_id: int | str) -> list[Issue]:
         target_id = completed_issue_id
 
     blocked = []
-    for issue in list_issues(stage="backlog", sync=False):
-        if target_id in issue.dependencies:
+    for issue in list_issues(sync=False):
+        if config.is_resumable_stage(issue.stage) and target_id in issue.dependencies:
             blocked.append(issue)
 
     return blocked
@@ -857,18 +869,23 @@ def get_dependent_issues(issue_id: int | str) -> list[Issue]:
 
 
 def get_ready_issues() -> list[Issue]:
-    """Get all issues in backlog that have all dependencies met and can be started.
+    """Get all issues in resumable parking lots that have all dependencies met and can be started.
 
     Returns:
         List of issues that are ready to start
     """
+    from agenttree.config import load_config
+    config = load_config()
+
     ready = []
-    for issue in list_issues(stage="backlog"):
+    for issue in list_issues():
+        if not config.is_resumable_stage(issue.stage):
+            continue
         if issue.dependencies:
             all_met, _ = check_dependencies_met(issue)
             if all_met:
                 ready.append(issue)
-        # Issues without dependencies in backlog can also be started
+        # Issues without dependencies in resumable stages can also be started
         # but they were likely put there intentionally, so don't auto-start
 
     return ready
@@ -956,13 +973,16 @@ def update_issue_stage(
     issue.stage = stage
     issue.updated = now
 
-    # Clear ci_escalated when leaving implement.review
-    if old_stage == "implement.review" and stage != "implement.review":
+    # Clear ci_escalated when leaving a human review stage
+    old_stage_cfg, old_substage_cfg = config.resolve_stage(old_stage)
+    old_is_human_review = (old_substage_cfg.human_review if old_substage_cfg
+                           else old_stage_cfg.human_review if old_stage_cfg else False)
+    if old_is_human_review and old_stage != stage:
         issue.ci_escalated = False
 
-    # Clear ci_notified when entering ci_wait so new CI runs get detected
+    # Clear ci_notified when entering a CI wait stage so new CI runs get detected
     # (save() uses exclude_none=True, so setting to None omits the field)
-    if stage == "implement.ci_wait":
+    if config.has_hook(stage, "ci_check"):
         issue.ci_notified = None
 
     # Explicit overrides from caller

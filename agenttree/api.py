@@ -182,12 +182,13 @@ def start_issue(
     if not issue:
         raise IssueNotFoundError(issue_id)
 
-    # If issue is in backlog, move it to first real stage
-    if issue.stage == "backlog":
+    # If issue is in a resumable parking lot (e.g., backlog), move it to first real stage
+    if config.is_resumable_stage(issue.stage):
+        first_stage = config.get_first_stage(issue.flow)
         if not quiet:
-            console.print(f"[cyan]Moving issue from backlog to explore.define...[/cyan]")
-        update_issue_stage(issue.id, "explore.define")
-        issue.stage = "explore.define"
+            console.print(f"[cyan]Moving issue from {issue.stage} to {first_stage}...[/cyan]")
+        update_issue_stage(issue.id, first_stage)
+        issue.stage = first_stage
 
     # Check if agent already running (tmux session check)
     existing_agent = get_active_agent(issue.id, host)
