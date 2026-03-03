@@ -1844,7 +1844,6 @@ def is_running_in_container() -> bool:
     return environment.is_running_in_container()
 
 
-<<<<<<< HEAD
 def get_code_directory(issue: Optional["Issue"], issue_dir: Path) -> Path:
     """Get the correct working directory for code operations.
 
@@ -1866,9 +1865,6 @@ def get_code_directory(issue: Optional["Issue"], issue_dir: Path) -> Path:
         return Path(issue.worktree_dir)
 
     return issue_dir
-
-=======
->>>>>>> origin/main
 
 def get_current_role() -> str:
     """Get the current agent role.
