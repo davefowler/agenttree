@@ -371,6 +371,22 @@ class TestAgentStatusEndpoint:
         assert data["tmux_active"] is False
         assert data["status"] == "off"
 
+    @patch("agenttree.web.routes.issues.issue_crud")
+    @patch("agenttree.web.routes.issues.agent_manager")
+    def test_agent_status_returns_stage(self, mock_agent_mgr, mock_crud, client, mock_issue):
+        """Test agent status returns the issue's current stage."""
+        mock_issue.stage = "implement.code"
+        mock_crud.get_issue.return_value = mock_issue
+        mock_agent_mgr._check_issue_tmux_session.return_value = True
+
+        response = client.get("/api/issues/001/agent-status")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["stage"] == "implement.code"
+        assert data["tmux_active"] is True
+        assert data["status"] == "running"
+
 
 class TestStartIssueEndpoint:
     """Tests for start issue endpoint."""
