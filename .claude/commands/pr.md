@@ -14,6 +14,19 @@ git log --oneline main..HEAD
 
 Understand what changed. Read modified files if needed to write a good commit message and PR description.
 
+## Step 1.5: Conflict preflight (required before tests/review)
+
+Run the deterministic merge-conflict checker before any local test run or PR review loop:
+
+```bash
+uv run python scripts/check_merge_conflicts.py
+```
+
+If it fails:
+- Resolve unmerged files (`git diff --name-only --diff-filter=U`)
+- Remove conflict markers accidentally committed (`<<<<<<<`, `=======`, `>>>>>>>`)
+- Re-run the checker until it passes
+
 ## Step 2: Branch and commit
 
 If you're on `main`, create a new branch:
@@ -123,6 +136,7 @@ gh run view <run-id> --log-failed
 
 Fix the issue, commit, and push:
 ```bash
+uv run python scripts/check_merge_conflicts.py
 git add -A
 git commit -m "fix: address CI failure - <what you fixed>"
 git push
