@@ -53,7 +53,8 @@ def _time_in_stage(issue: Issue) -> str:
         return "?"
     try:
         ts = issue.history[-1].timestamp
-        stage_start = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        from agenttree.issues import parse_utc_timestamp
+        stage_start = parse_utc_timestamp(ts)
         elapsed_min = int((datetime.now(timezone.utc) - stage_start).total_seconds() / 60)
         return _format_duration(elapsed_min)
     except (ValueError, TypeError):

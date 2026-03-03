@@ -21,14 +21,12 @@ def is_running_in_container() -> bool:
     Returns:
         True if running in a container, False otherwise
     """
-    # Check for agenttree-specific env var first (most reliable)
-    if os.environ.get("AGENTTREE_CONTAINER") == "1":
-        return True
-    # Fall back to common container indicators
+    # Trust explicit runtime signals set by AgentTree.
+    # Generic container indicators (/.dockerenv, /.containerenv) are also
+    # true in CI and cause host-path assumptions like /workspace to break.
     return (
-        os.path.exists("/.dockerenv") or
-        os.path.exists("/run/.containerenv") or
-        os.environ.get("CONTAINER_RUNTIME") is not None
+        os.environ.get("AGENTTREE_CONTAINER") == "1"
+        or os.environ.get("CONTAINER_RUNTIME") is not None
     )
 
 

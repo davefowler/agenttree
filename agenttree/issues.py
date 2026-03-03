@@ -19,6 +19,15 @@ from agenttree.ids import slugify
 
 log = logging.getLogger("agenttree.issues")
 
+
+def parse_utc_timestamp(ts: str) -> datetime:
+    """Parse an ISO timestamp string into a timezone-aware UTC datetime."""
+    dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
 # Per-file mtime cache: only re-parse YAML files whose mtime changed.
 # Turns 146 YAML parses (~500ms) into 146 stat() calls (~1.5ms).
 _issue_file_cache: dict[Path, tuple[float, "Issue"]] = {}

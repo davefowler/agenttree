@@ -95,7 +95,8 @@ def get_stalled_agents(
 
             # Parse timestamp and check if stalled
             try:
-                last_time = datetime.fromisoformat(last_advanced_at.replace("Z", "+00:00"))
+                from agenttree.issues import parse_utc_timestamp
+                last_time = parse_utc_timestamp(last_advanced_at)
                 minutes_since = (now - last_time).total_seconds() / 60
 
                 if minutes_since < threshold_min:

@@ -348,6 +348,8 @@ def convert_issue_to_web(issue: issue_crud.Issue, load_dependents: bool = False)
     if issue.history:
         last_entry = issue.history[-1]
         stage_entered = datetime.fromisoformat(last_entry.timestamp.replace("Z", "+00:00"))
+        if stage_entered.tzinfo is None:
+            stage_entered = stage_entered.replace(tzinfo=timezone.utc)
         now = datetime.now(timezone.utc)
         minutes_elapsed = int((now - stage_entered).total_seconds() / 60)
         time_in_stage = format_duration(max(0, minutes_elapsed))
