@@ -1018,7 +1018,7 @@ def run_builtin_validator(
                 config = load_config()
                 if config.commands:
                     # Determine working directory for commands
-                    cwd = get_code_directory(issue, issue_dir)
+                    cwd = environment.get_code_directory(issue, issue_dir)
 
                     # Find commands referenced in the template
                     referenced = get_referenced_commands(template_content, config.commands)
@@ -1472,7 +1472,7 @@ def execute_hooks(
         if hook_type == "run":
             # Shell command hook - use correct directory based on context
             issue = kwargs.get("issue")
-            cwd = get_code_directory(issue, issue_dir)
+            cwd = environment.get_code_directory(issue, issue_dir)
             hook_errors = run_command_hook(cwd, params, **kwargs)
             # If optional flag is set and command returns "not configured", warn but don't block
             if params.get("optional") and any("not configured" in e.lower() for e in hook_errors):
@@ -2156,29 +2156,6 @@ def auto_commit_changes(issue: Issue, stage: str) -> bool:
 def is_running_in_container() -> bool:
     """Module-level wrapper for shared environment container detection."""
     return environment.is_running_in_container()
-
-
-def get_code_directory(issue: Optional["Issue"], issue_dir: Path) -> Path:
-    """Get the correct working directory for code operations.
-
-    Inside containers, code is always mounted at /workspace regardless of
-    the issue's worktree_dir (which is a host path). On the host, use the
-    issue's worktree_dir if set, otherwise fall back to issue_dir.
-
-    Args:
-        issue: The issue object (may be None)
-        issue_dir: The issue's _agenttree/issues/ directory (fallback)
-
-    Returns:
-        Path to the directory containing the code
-    """
-    if is_running_in_container():
-        return Path("/workspace")
-
-    if issue and hasattr(issue, 'worktree_dir') and issue.worktree_dir:
-        return Path(issue.worktree_dir)
-
-    return issue_dir
 
 
 def get_current_role() -> str:
