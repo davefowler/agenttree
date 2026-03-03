@@ -379,6 +379,7 @@ def workflow_issue(workflow_repo: Path, mock_sync: MagicMock) -> dict[str, Any]:
 
     Returns dict with issue info including id, path, and worktree.
     """
+    from agenttree.ids import format_issue_id
     from agenttree.issues import create_issue, get_issue_dir
 
     # Patch the agenttree path to use our test repo
