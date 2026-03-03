@@ -2,9 +2,12 @@
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+<<<<<<< HEAD
+=======
 import pytest
 
 pytest.importorskip("mcp", reason="MCP dependencies not installed")
+>>>>>>> origin/main
 from agenttree.mcp_server import (
     status,
     get_issue,
