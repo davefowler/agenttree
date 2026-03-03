@@ -47,6 +47,17 @@ git commit -m "descriptive commit message"
 
 Use `RECOMMENDED_BASE` from preflight script output. If preflight defaulted to `main`, use `main`.
 
+## Step 3.5: Re-check mergeability right before push (fast)
+
+Run a quick merge-conflict check again immediately before push. This catches the
+case where `origin/main` advanced while tests were running.
+
+```bash
+uv run python scripts/check_merge_conflicts.py --base origin/main
+```
+
+If this fails, merge/rebase `origin/main`, resolve conflicts, then continue.
+
 ## Step 4: Push and create PR
 
 ```bash
