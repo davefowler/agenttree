@@ -116,7 +116,7 @@ Look at this project and customize the scripts for:
 - Testing commands
 - Any special build steps
 
-Reference implementation: https://github.com/davefowler/agenttree/blob/main/spec.md#reference-implementation-working-scripts
+Reference: See [README.md Quick Start](../README.md#quick-start) for current CLI usage.
 
 ## After setup:
 

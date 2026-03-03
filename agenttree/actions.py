@@ -20,6 +20,7 @@ Naming convention: Action names match function names exactly.
 
 from collections.abc import Callable
 from pathlib import Path
+import shlex
 from typing import Any
 
 from rich.console import Console
@@ -254,7 +255,7 @@ def sync(agents_dir: Path, pull_only: bool = True, **kwargs: Any) -> None:
         agents_dir: Path to _agenttree directory
         pull_only: If True, only pull changes (default)
     """
-    from agenttree.hooks import is_running_in_container
+    from agenttree.environment import is_running_in_container
     import subprocess
     
     if is_running_in_container():
@@ -542,6 +543,101 @@ def cleanup_resources(
             f.write(f"{datetime.now().isoformat()}: cleanup_resources executed\n")
 
 
+@register_action("trigger_cleanup")
+def trigger_cleanup(
+    agents_dir: Path,
+    threshold: int = 10,
+    **kwargs: Any
+) -> None:
+    """Create a cleanup issue when N issues have been accepted since last cleanup.
+
+    Tracks accepted issue count in state file. When count reaches threshold,
+    creates a cleanup issue with flow="cleanup" to review recent code reviews
+    for deferred items and consolidation opportunities.
+
+    Args:
+        agents_dir: Path to _agenttree directory
+        threshold: Number of accepted issues before triggering cleanup (default: 10)
+    """
+    from agenttree.events import load_event_state, save_event_state
+    from agenttree.issues import list_issues, create_issue, Priority
+
+    # Load state
+    state = load_event_state(agents_dir)
+    cleanup_state = state.get("cleanup_trigger", {})
+    last_batch_end = cleanup_state.get("last_batch_end", 0)
+
+    # Get all issues
+    all_issues = list_issues(sync=False)
+
+    # Check if there's already a cleanup issue in progress (not accepted)
+    for issue in all_issues:
+        if issue.flow == "cleanup" and issue.stage != "accepted":
+            # Cleanup in progress, skip
+            return
+
+    # Count accepted issues with id > last_batch_end
+    accepted_issues = [
+        i for i in all_issues
+        if i.stage == "accepted" and i.id > last_batch_end
+    ]
+
+    if len(accepted_issues) < threshold:
+        # Not enough accepted issues yet
+        return
+
+    # Find the highest accepted issue ID in this batch
+    new_batch_end = max(i.id for i in accepted_issues)
+
+    # Build the issue range for the problem statement
+    issue_ids = sorted(i.id for i in accepted_issues)
+    first_id = min(issue_ids)
+
+    # Create problem statement
+    problem = f"""# Cleanup Batch: Issues #{first_id} - #{new_batch_end}
+
+This is an automated cleanup issue created after {len(issue_ids)} issues were accepted.
+
+## Your Task
+
+1. **Research Phase**: Read the `review.md` and `independent_review.md` files for issues #{first_id} through #{new_batch_end}
+2. **Look for**:
+   - "Should Fix" items that were deferred
+   - "Proposed Next Steps > Code Improvements" suggestions
+   - Patterns indicating consolidation/DRY opportunities
+3. **Plan and Implement**: Address the most impactful items found
+
+## Issues to Review
+
+"""
+    for issue_id in issue_ids:
+        problem += f"- Issue #{issue_id}\n"
+
+    problem += """
+## Notes
+
+- If no actionable items are found, document this in your research and skip to accepted
+- Focus on high-impact improvements over minor cleanups
+- Group related changes together for cleaner PRs
+"""
+
+    # Create the cleanup issue
+    create_issue(
+        title=f"Cleanup batch #{first_id}-#{new_batch_end}",
+        flow="cleanup",
+        priority=Priority.LOW,
+        problem=problem,
+        stage="explore.research",
+    )
+
+    console.print(f"[green]Created cleanup issue for batch #{first_id}-#{new_batch_end}[/green]")
+
+    # Update state
+    cleanup_state["last_batch_end"] = new_batch_end
+    state["cleanup_trigger"] = cleanup_state
+    save_event_state(agents_dir, state)
+
+
 # =============================================================================
 # Rate Limit Fallback
 # =============================================================================
@@ -700,16 +796,19 @@ def switch_agent_to_api_key(
     # Kill the tmux session (container keeps running)
     kill_session(session_name)
     
-    # Build new claude command with API key
-    # We use tmux to run the command in the existing container
-    # Since ANTHROPIC_API_KEY is already in the container env, just start claude
-    claude_cmd = f"claude --model {model} --dangerously-skip-permissions"
+    # Get API key via the canonical container_env method
+    tool_config = config.get_tool_config(config.default_tool)
+    api_key = tool_config.container_env(force_api_key=True).get("ANTHROPIC_API_KEY", "")
     
-    # For containerized agents, we need to exec into the container
+    claude_cmd = f"claude --model {model} --dangerously-skip-permissions"
     container_name = config.get_issue_container_name(issue_id)
     
-    # Create new tmux session that execs into the container
-    exec_cmd = f"docker exec -it {container_name} {claude_cmd} 2>/dev/null || container exec -it {container_name} {claude_cmd}"
+    # Inject API key and unset OAuth token so Claude Code uses the API key
+    shell_cmd = (
+        f"export ANTHROPIC_API_KEY={shlex.quote(api_key)} "
+        f"&& unset CLAUDE_CODE_OAUTH_TOKEN && {claude_cmd}"
+    )
+    exec_cmd = f"docker exec -it {container_name} sh -c '{shell_cmd}' 2>/dev/null || container exec -it {container_name} sh -c '{shell_cmd}'"
     
     create_session(session_name, worktree_path, exec_cmd)
     

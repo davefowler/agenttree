@@ -60,7 +60,8 @@ class TestCreateSession:
             capture_output=True,
         )
         mock_run.assert_any_call(
-            ["tmux", "new-session", "-d", "-s", "test-session", "-c", str(tmp_path)],
+            ["tmux", "new-session", "-d", "-s", "test-session", "-c", str(tmp_path),
+             "-e", "DISABLE_AUTO_UPDATE=true"],
             check=True,
         )
 

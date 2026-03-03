@@ -305,6 +305,7 @@ Manager hooks (for post-sync operations):
 
 """
 
+import logging
 import re
 import subprocess
 import time
@@ -321,6 +322,7 @@ from agenttree.issues import (
 from agenttree.config import load_config
 
 console = Console()
+log = logging.getLogger("agenttree.hooks")
 
 
 class ValidationError(Exception):
@@ -376,7 +378,7 @@ HOOK_TYPES = {
     "checkbox_checked",  # Review loop: check if checkbox is marked
     # Actions (perform side effects)
     "create_file", "create_pr", "merge_pr", "run", "rebase",
-    "cleanup_agent", "start_blocked_issues", "cleanup_resources",
+    "cleanup_agent", "start_blocked_issues", "cleanup_resources", "trigger_cleanup",
     "rollback",  # Review loop: programmatic rollback to earlier stage (with optional max_rollbacks limit)
     # Manager hooks (run on post-sync)
     "push_pending_branches", "check_manager_stages", "ensure_review_branches",
@@ -429,6 +431,9 @@ from agenttree.events import (
     save_event_state as save_hook_state,
 )
 
+from agenttree import environment
+from agenttree.git_utils import has_commits_to_push, get_git_diff_stats, rebase_issue_branch
+from agenttree.pr_actions import get_pr_approval_status, _action_create_pr, _action_merge_pr
 
 # =============================================================================
 # Hook Parsing
@@ -542,7 +547,8 @@ def _try_update_pr_branch(pr_number: int) -> bool:
             return False
         # Already up to date is fine
         return True
-    except Exception:
+    except Exception as e:
+        log.debug("PR check failed, proceeding anyway: %s", e)
         return True  # Best-effort; proceed to merge attempt anyway
 
 
@@ -630,7 +636,8 @@ def get_pr_approval_status(pr_number: int) -> bool:
     try:
         from agenttree.github import is_pr_approved
         return is_pr_approved(pr_number)
-    except Exception:
+    except Exception as e:
+        log.debug("PR approval check failed: %s", e)
         return False
 
 
@@ -800,8 +807,8 @@ def run_builtin_validator(
             if not found:
                 errors.append(f"Section '{section}' not found in {params['file']}")
             else:
-                # Count list items (lines starting with - or *)
-                list_items = re.findall(r'^\s*[-*]\s+\S', section_content, re.MULTILINE)
+                # Count list items (lines starting with -, *, or numbered like 1., 2.)
+                list_items = re.findall(r'^\s*(?:[-*]|\d+\.)\s+\S', section_content, re.MULTILINE)
                 if len(list_items) < min_items:
                     errors.append(
                         f"Section '{section}' has {len(list_items)} list items, minimum is {min_items}"
@@ -1011,7 +1018,7 @@ def run_builtin_validator(
                 config = load_config()
                 if config.commands:
                     # Determine working directory for commands
-                    cwd = get_code_directory(issue, issue_dir)
+                    cwd = environment.get_code_directory(issue, issue_dir)
 
                     # Find commands referenced in the template
                     referenced = get_referenced_commands(template_content, config.commands)
@@ -1073,6 +1080,15 @@ def run_builtin_validator(
         if cleanup_result.get("errors"):
             for err in cleanup_result["errors"]:
                 errors.append(f"Cleanup error: {err}")
+
+    elif hook_type == "trigger_cleanup":
+        # Create cleanup issue after N accepted issues
+        # Dispatches to the trigger_cleanup action in actions.py
+        from agenttree.actions import trigger_cleanup as trigger_cleanup_action
+        agents_dir = kwargs.get("agents_dir")
+        threshold = params.get("threshold", 10)
+        if agents_dir:
+            trigger_cleanup_action(agents_dir=agents_dir, threshold=threshold)
 
     # === Review loop hooks ===
 
@@ -1253,7 +1269,7 @@ def run_builtin_validator(
 def run_command_hook(
     issue_dir: Path,
     hook: Dict[str, Any],
-    issue_id: str = "",
+    issue_id: int | str = "",
     issue_title: str = "",
     branch: str = "",
     stage: str = "",
@@ -1281,7 +1297,7 @@ def run_command_hook(
 
     command = hook["command"]
 
-    # Replace template variables
+    # Replace template variables (issue_id is converted to str for replace())
     command = command.replace("{{issue_id}}", str(issue_id))
     command = command.replace("{{issue_title}}", issue_title)
     command = command.replace("{{branch}}", branch)
@@ -1456,7 +1472,7 @@ def execute_hooks(
         if hook_type == "run":
             # Shell command hook - use correct directory based on context
             issue = kwargs.get("issue")
-            cwd = get_code_directory(issue, issue_dir)
+            cwd = environment.get_code_directory(issue, issue_dir)
             hook_errors = run_command_hook(cwd, params, **kwargs)
             # If optional flag is set and command returns "not configured", warn but don't block
             if params.get("optional") and any("not configured" in e.lower() for e in hook_errors):
@@ -1512,7 +1528,7 @@ def execute_exit_hooks(issue: "Issue", dot_path: str, **extra_kwargs: Any) -> No
 
     errors: List[str] = []
     hook_kwargs = {
-        "issue_id": issue.id,
+        "issue_id": str(issue.id),
         "issue_title": issue.title,
         "branch": issue.branch or "",
         "issue": issue,  # Pass issue for worktree_dir access in run hooks
@@ -1591,7 +1607,7 @@ def execute_enter_hooks(issue: "Issue", dot_path: str) -> None:
 
     errors: List[str] = []
     hook_kwargs = {
-        "issue_id": issue.id,
+        "issue_id": str(issue.id),
         "issue_title": issue.title,
         "branch": issue.branch or "",
         "issue": issue,  # Pass issue object for cleanup_agent and start_blocked_issues hooks
@@ -2138,47 +2154,8 @@ def auto_commit_changes(issue: Issue, stage: str) -> bool:
 
 
 def is_running_in_container() -> bool:
-    """Check if we're running inside a container.
-
-    Checks for AGENTTREE_CONTAINER env var (set by agenttree when launching)
-    as well as common container indicators.
-
-    Returns:
-        True if running in a container, False otherwise
-    """
-    import os
-    # Check for agenttree-specific env var first (most reliable)
-    if os.environ.get("AGENTTREE_CONTAINER") == "1":
-        return True
-    # Fall back to common container indicators
-    return (
-        os.path.exists("/.dockerenv") or
-        os.path.exists("/run/.containerenv") or
-        os.environ.get("CONTAINER_RUNTIME") is not None
-    )
-
-
-def get_code_directory(issue: Optional["Issue"], issue_dir: Path) -> Path:
-    """Get the correct working directory for code operations.
-
-    Inside containers, code is always mounted at /workspace regardless of
-    the issue's worktree_dir (which is a host path). On the host, use the
-    issue's worktree_dir if set, otherwise fall back to issue_dir.
-
-    Args:
-        issue: The issue object (may be None)
-        issue_dir: The issue's _agenttree/issues/ directory (fallback)
-
-    Returns:
-        Path to the directory containing the code
-    """
-    if is_running_in_container():
-        return Path("/workspace")
-
-    if issue and hasattr(issue, 'worktree_dir') and issue.worktree_dir:
-        return Path(issue.worktree_dir)
-
-    return issue_dir
+    """Module-level wrapper for shared environment container detection."""
+    return environment.is_running_in_container()
 
 
 def get_current_role() -> str:
@@ -2366,8 +2343,8 @@ def ensure_pr_for_issue(issue_id: int | str) -> bool:
                 if "\n## " in approach_section[10:]:
                     approach_section = approach_section[:approach_section.index("\n## ", 10)]
                 body += f"### Approach\n{approach_section[12:].strip()[:400]}...\n\n"
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug("Failed to extract spec content for PR body: %s", e)
 
     body += f"---\n🤖 Generated with [Claude Code](https://claude.com/claude-code)"
 
@@ -2380,7 +2357,7 @@ def ensure_pr_for_issue(issue_id: int | str) -> bool:
         config = load_config()
         if config.hooks.post_pr_create:
             run_host_hooks(config.hooks.post_pr_create, {
-                "issue_id": issue.id,
+                "issue_id": str(issue.id),
                 "issue_title": issue.title,
                 "pr_number": pr.number,
                 "pr_url": pr.url,
@@ -2444,7 +2421,7 @@ def check_and_start_blocked_issues(issue: Issue) -> None:
     config = load_config()
     if config.hooks.post_accepted:
         run_host_hooks(config.hooks.post_accepted, {
-            "issue_id": issue.id,
+            "issue_id": str(issue.id),
         })
 
     blocked = get_blocked_issues(issue.id)

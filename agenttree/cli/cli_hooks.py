@@ -6,7 +6,8 @@ import click
 
 from agenttree.cli._utils import console, get_issue_func, normalize_issue_id
 from agenttree.config import load_config
-from agenttree.hooks import parse_hook, is_running_in_container
+from agenttree.environment import is_running_in_container
+from agenttree.hooks import parse_hook
 from agenttree.issues import get_next_stage, get_issue_context
 
 
