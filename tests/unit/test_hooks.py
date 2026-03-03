@@ -909,6 +909,25 @@ class TestCommandHooks:
         output = (tmp_path / "output.txt").read_text().strip()
         assert output == "123"
 
+    @patch('agenttree.hooks.subprocess.run')
+    def test_command_uses_stdin_devnull(self, mock_run, tmp_path):
+        """Should pass stdin=DEVNULL to prevent subprocess blocking on input.
+
+        This is critical for hooks like pytest/mypy that may attempt to read
+        stdin for interactive prompts or worker coordination.
+        """
+        import subprocess
+        from agenttree.hooks import run_command_hook
+
+        mock_run.return_value = MagicMock(returncode=0, stdout='', stderr='')
+        hook = {"command": "echo hello"}
+        run_command_hook(tmp_path, hook)
+
+        mock_run.assert_called_once()
+        call_kwargs = mock_run.call_args.kwargs
+        assert call_kwargs.get('stdin') == subprocess.DEVNULL, \
+            "subprocess.run must be called with stdin=DEVNULL to prevent hanging"
+
 
 class TestWrapupVerifiedValidator:
     """Tests for wrapup_verified validator."""
