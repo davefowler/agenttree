@@ -1310,6 +1310,15 @@ button[disabled] {
     margin-bottom: 10px;
 }
 
+.agent-chat-panel .no-agent-message a {
+    color: var(--accent);
+    text-decoration: underline;
+}
+
+.agent-chat-panel .no-agent-message a:hover {
+    color: var(--text-primary);
+}
+
 /* ==============================================
    Scrollbars
    ============================================== */

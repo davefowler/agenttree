@@ -6,7 +6,7 @@ from unittest.mock import Mock, patch, MagicMock
 # Skip all tests if web dependencies aren't installed
 pytest.importorskip("fastapi")
 
-from agenttree.web.app import get_kanban_board
+from agenttree.web.utils import get_kanban_board
 from agenttree.web.models import KanbanBoard, FlowKanbanRow
 from agenttree.issues import Priority
 
@@ -83,8 +83,8 @@ def mock_issue_backlog():
 class TestKanbanBoard:
     """Tests for flow-based kanban board structure."""
 
-    @patch("agenttree.web.app.issue_crud")
-    @patch("agenttree.web.app._config")
+    @patch("agenttree.web.utils.issue_crud")
+    @patch("agenttree.web.utils._config")
     def test_get_kanban_board_returns_flow_organized_structure(
         self, mock_config_global, mock_crud
     ):
@@ -114,8 +114,8 @@ class TestKanbanBoard:
         assert hasattr(board, "flow_rows")
         assert isinstance(board.flow_rows, list)
 
-    @patch("agenttree.web.app.issue_crud")
-    @patch("agenttree.web.app._config")
+    @patch("agenttree.web.utils.issue_crud")
+    @patch("agenttree.web.utils._config")
     def test_parking_lot_stages_are_separated(
         self, mock_config_global, mock_crud, mock_issue_backlog
     ):
@@ -141,8 +141,8 @@ class TestKanbanBoard:
         # Verify backlog issue is in parking lot issues
         assert len(board.parking_lot_issues.get("backlog", [])) == 1
 
-    @patch("agenttree.web.app.issue_crud")
-    @patch("agenttree.web.app._config")
+    @patch("agenttree.web.utils.issue_crud")
+    @patch("agenttree.web.utils._config")
     def test_issues_grouped_by_flow(
         self, mock_config_global, mock_crud,
         mock_issue_default_flow, mock_issue_quick_flow
@@ -178,8 +178,8 @@ class TestKanbanBoard:
         assert quick_row is not None
         assert len(quick_row.issues_by_stage.get("implement.code", [])) == 1
 
-    @patch("agenttree.web.app.issue_crud")
-    @patch("agenttree.web.app._config")
+    @patch("agenttree.web.utils.issue_crud")
+    @patch("agenttree.web.utils._config")
     def test_flow_rows_only_include_non_parking_stages(
         self, mock_config_global, mock_crud
     ):
@@ -202,8 +202,8 @@ class TestKanbanBoard:
             assert "backlog" not in row.stages
             assert "accepted" not in row.stages
 
-    @patch("agenttree.web.app.issue_crud")
-    @patch("agenttree.web.app._config")
+    @patch("agenttree.web.utils.issue_crud")
+    @patch("agenttree.web.utils._config")
     def test_search_filtering_works_across_flows(
         self, mock_config_global, mock_crud,
         mock_issue_default_flow, mock_issue_quick_flow
@@ -230,8 +230,8 @@ class TestKanbanBoard:
         # Total should be 1
         assert board.total_issues == 1
 
-    @patch("agenttree.web.app.issue_crud")
-    @patch("agenttree.web.app._config")
+    @patch("agenttree.web.utils.issue_crud")
+    @patch("agenttree.web.utils._config")
     def test_empty_flows_excluded(
         self, mock_config_global, mock_crud
     ):

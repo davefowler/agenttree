@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 pytest.importorskip("fastapi")
 
-from agenttree.web.app import format_duration
+from agenttree.web.utils import format_duration
 from agenttree.web.models import Issue as WebIssue
 
 
@@ -77,10 +77,10 @@ class TestWebIssueModel:
 class TestConvertIssueToWeb:
     """Tests for convert_issue_to_web() time_in_stage calculation."""
 
-    @patch("agenttree.web.app.agent_manager")
+    @patch("agenttree.web.utils.agent_manager")
     def test_populates_time_in_stage(self, mock_agent_manager: MagicMock) -> None:
         """Test convert_issue_to_web() populates time_in_stage from history."""
-        from agenttree.web.app import convert_issue_to_web
+        from agenttree.web.utils import convert_issue_to_web
         from agenttree.issues import Issue, HistoryEntry
 
         # Mock agent_manager to avoid tmux checks
@@ -109,10 +109,10 @@ class TestConvertIssueToWeb:
         # Should be approximately 45 minutes
         assert web_issue.time_in_stage == "45m"
 
-    @patch("agenttree.web.app.agent_manager")
+    @patch("agenttree.web.utils.agent_manager")
     def test_empty_history_defaults_to_zero(self, mock_agent_manager: MagicMock) -> None:
         """Test convert_issue_to_web() defaults to '0m' for empty history."""
-        from agenttree.web.app import convert_issue_to_web
+        from agenttree.web.utils import convert_issue_to_web
         from agenttree.issues import Issue
 
         # Mock agent_manager
@@ -131,10 +131,10 @@ class TestConvertIssueToWeb:
         web_issue = convert_issue_to_web(issue)
         assert web_issue.time_in_stage == "0m"
 
-    @patch("agenttree.web.app.agent_manager")
+    @patch("agenttree.web.utils.agent_manager")
     def test_hours_formatting(self, mock_agent_manager: MagicMock) -> None:
         """Test convert_issue_to_web() formats hours correctly."""
-        from agenttree.web.app import convert_issue_to_web
+        from agenttree.web.utils import convert_issue_to_web
         from agenttree.issues import Issue, HistoryEntry
 
         mock_agent_manager._check_issue_tmux_session.return_value = False
@@ -159,10 +159,10 @@ class TestConvertIssueToWeb:
         web_issue = convert_issue_to_web(issue)
         assert web_issue.time_in_stage == "3h"
 
-    @patch("agenttree.web.app.agent_manager")
+    @patch("agenttree.web.utils.agent_manager")
     def test_days_formatting(self, mock_agent_manager: MagicMock) -> None:
         """Test convert_issue_to_web() formats days correctly."""
-        from agenttree.web.app import convert_issue_to_web
+        from agenttree.web.utils import convert_issue_to_web
         from agenttree.issues import Issue, HistoryEntry
 
         mock_agent_manager._check_issue_tmux_session.return_value = False
