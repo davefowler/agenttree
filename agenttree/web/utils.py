@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 from agenttree import issues as issue_crud
 from agenttree.config import load_config
 from agenttree.web.agent_manager import agent_manager
-from agenttree.web.models import KanbanBoard, Issue as WebIssue
+from agenttree.web.models import FlowKanbanRow, KanbanBoard, Issue as WebIssue
 
 # Load config at module level
 _config = load_config()
@@ -77,7 +77,7 @@ FILE_TO_STAGE: dict[str, str] = {
     "problem.md": "explore.define",
     "research.md": "explore.research",
     "spec.md": "plan.draft",
-    "spec_review.md": "plan.assess",
+    "spec_review.md": "plan.selfcheck",
     "review.md": "implement.code_review",
     "independent_review.md": "implement.independent_review",
     "feedback.md": "implement.feedback",
@@ -134,6 +134,17 @@ def convert_issue_to_web(
             # Fall back to 0m if timestamp parsing fails
             pass
 
+    # Derive pr_url from repo if pr_number exists but pr_url is missing
+    pr_url = issue.pr_url
+    if issue.pr_number and not pr_url:
+        try:
+            from agenttree.hooks import get_repo_remote_name
+
+            repo_name = get_repo_remote_name()
+            pr_url = f"https://github.com/{repo_name}/pull/{issue.pr_number}"
+        except (subprocess.CalledProcessError, ValueError) as e:
+            logger.warning("Failed to derive pr_url from repo remote: %s", e)
+
     return WebIssue(
         number=issue.id,
         title=issue.title,
@@ -144,7 +155,7 @@ def convert_issue_to_web(
         priority=issue.priority.value,
         tmux_active=tmux_active,
         has_worktree=bool(issue.worktree_dir),
-        pr_url=issue.pr_url,
+        pr_url=pr_url,
         pr_number=issue.pr_number,
         port=_config.get_port_for_issue(issue.id),
         created_at=datetime.fromisoformat(issue.created.replace("Z", "+00:00")),
@@ -186,36 +197,82 @@ def filter_issues(issues: list[WebIssue], search: str | None) -> list[WebIssue]:
 
 
 def get_kanban_board(search: str | None = None) -> KanbanBoard:
-    """Build a kanban board from issues.
+    """Build a kanban board from issues, organized by flow.
 
-    Each column is a dot-path substage (e.g., "explore.define", "implement.code").
-    Stages without substages (e.g., "backlog", "accepted") get a single column.
+    The board has:
+    - A parking lot row with shared stages (backlog, accepted, not_doing)
+    - A row for each flow (default, quick) with their specific stages
 
     Args:
         search: Optional search query to filter issues
     """
-    dot_paths = _config.get_all_dot_paths()
-    stages: dict[str, list[WebIssue]] = {path: [] for path in dot_paths}
+    # Get parking lot stages
+    parking_lot_names = _config.get_parking_lot_stages()
+    parking_lot_stages = [s for s in _config.get_all_dot_paths() if s in parking_lot_names]
+    parking_lot_issues: dict[str, list[WebIssue]] = {s: [] for s in parking_lot_stages}
 
+    # Get flows to display (exclude flows that only have parking lot stages)
+    flows_to_show = []
+    for flow_name in _config.flows:
+        flow_stages = _config.get_flow_stage_names(flow_name)
+        non_parking_stages = [s for s in flow_stages if s not in parking_lot_names]
+        if non_parking_stages:
+            flows_to_show.append((flow_name, non_parking_stages))
+
+    # Initialize flow rows
+    flow_rows_data: dict[str, dict[str, list[WebIssue]]] = {}
+    for flow_name, stages in flows_to_show:
+        flow_rows_data[flow_name] = {s: [] for s in stages}
+
+    # Load and filter issues
     issues = issue_crud.list_issues(sync=False)
     web_issues = [convert_issue_to_web(issue) for issue in issues]
 
     if search:
         web_issues = filter_issues(web_issues, search)
 
+    # Group issues by stage and flow
     for web_issue in web_issues:
-        if web_issue.stage in stages:
-            stages[web_issue.stage].append(web_issue)
-        else:
-            logger.warning(
-                "Issue #%s has unrecognized stage '%s', showing in backlog",
-                web_issue.number,
-                web_issue.stage,
-            )
-            if "backlog" in stages:
-                stages["backlog"].append(web_issue)
+        stage = web_issue.stage
+        flow = web_issue.flow
 
-    return KanbanBoard(stages=stages, total_issues=len(web_issues))
+        # Parking lot stages go to the shared row
+        if stage in parking_lot_names:
+            if stage in parking_lot_issues:
+                parking_lot_issues[stage].append(web_issue)
+            continue
+
+        # Flow-specific stages go to their flow's row
+        if flow in flow_rows_data and stage in flow_rows_data[flow]:
+            flow_rows_data[flow][stage].append(web_issue)
+        else:
+            # Unrecognized stage/flow combination - put in backlog
+            logger.warning(
+                "Issue #%s has unrecognized stage '%s' for flow '%s', showing in backlog",
+                web_issue.number,
+                stage,
+                flow,
+            )
+            if "backlog" in parking_lot_issues:
+                parking_lot_issues["backlog"].append(web_issue)
+
+    # Build flow rows
+    flow_rows = []
+    for flow_name, stages in flows_to_show:
+        flow_rows.append(
+            FlowKanbanRow(
+                flow_name=flow_name,
+                stages=stages,
+                issues_by_stage=flow_rows_data[flow_name],
+            )
+        )
+
+    return KanbanBoard(
+        parking_lot_stages=parking_lot_stages,
+        parking_lot_issues=parking_lot_issues,
+        flow_rows=flow_rows,
+        total_issues=len(web_issues),
+    )
 
 
 def get_issue_files(

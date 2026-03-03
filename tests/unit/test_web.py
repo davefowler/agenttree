@@ -912,8 +912,8 @@ class TestConvertIssueToWeb:
 
         assert web_issue.stage == "unknown_stage"
 
-    @patch("agenttree.web.app.get_repo_remote_name")
-    @patch("agenttree.web.app.agent_manager")
+    @patch("agenttree.hooks.get_repo_remote_name")
+    @patch("agenttree.web.utils.agent_manager")
     def test_convert_issue_derives_pr_url_when_missing(self, mock_agent_mgr, mock_get_repo, mock_issue):
         """Test that pr_url is derived from repo when pr_number exists but pr_url is None."""
         mock_agent_mgr._check_issue_tmux_session.return_value = False
@@ -926,8 +926,8 @@ class TestConvertIssueToWeb:
         assert web_issue.pr_url == "https://github.com/owner/repo/pull/123"
         assert web_issue.pr_number == 123
 
-    @patch("agenttree.web.app.get_repo_remote_name")
-    @patch("agenttree.web.app.agent_manager")
+    @patch("agenttree.hooks.get_repo_remote_name")
+    @patch("agenttree.web.utils.agent_manager")
     def test_convert_issue_preserves_explicit_pr_url(self, mock_agent_mgr, mock_get_repo, mock_issue):
         """Test that explicit pr_url is preserved and not overridden."""
         mock_agent_mgr._check_issue_tmux_session.return_value = False
@@ -940,8 +940,8 @@ class TestConvertIssueToWeb:
         mock_get_repo.assert_not_called()
         assert web_issue.pr_url == "https://custom.github.com/pull/123"
 
-    @patch("agenttree.web.app.get_repo_remote_name")
-    @patch("agenttree.web.app.agent_manager")
+    @patch("agenttree.hooks.get_repo_remote_name")
+    @patch("agenttree.web.utils.agent_manager")
     def test_convert_issue_handles_repo_error_gracefully(self, mock_agent_mgr, mock_get_repo, mock_issue):
         """Test that pr_url derivation handles errors gracefully."""
         mock_agent_mgr._check_issue_tmux_session.return_value = False
@@ -955,7 +955,7 @@ class TestConvertIssueToWeb:
         assert web_issue.pr_url is None
         assert web_issue.pr_number == 123
 
-    @patch("agenttree.web.app.agent_manager")
+    @patch("agenttree.web.utils.agent_manager")
     def test_convert_issue_port_always_passed(self, mock_agent_mgr, mock_issue):
         """Test that port is passed regardless of tmux_active status."""
         mock_agent_mgr._check_issue_tmux_session.return_value = False
