@@ -585,6 +585,16 @@ def transition_issue(
         raise RuntimeError(f"Failed to redirect issue #{issue_id} to {redirect.target}")
     except Exception as e:
         log.warning("Enter hooks failed for issue #%s (%s trigger): %s", issue_id, trigger, e)
+        # Never leave issue in a stage whose enter hooks failed (e.g. accepted with unmerged PR).
+        rolled_back = update_issue_stage(issue_id, from_stage)
+        if not rolled_back:
+            raise RuntimeError(
+                f"Enter hooks failed for issue #{issue_id} and rollback to {from_stage} also failed"
+            ) from e
+        _ensure_stage_agent(issue_id, from_stage)
+        raise RuntimeError(
+            f"Enter hooks failed for issue #{issue_id} transitioning to {next_stage}: {e}"
+        ) from e
 
     # 4. Ensure the right agent is running and notified for the new stage.
     # send_message() auto-starts the agent if not running.
