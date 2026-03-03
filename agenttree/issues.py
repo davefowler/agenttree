@@ -1601,10 +1601,24 @@ def get_issue_context(issue: Issue, include_docs: bool = True) -> dict:
             else:
                 context[var_name] = ""
 
-    # Add ci_feedback_exists flag for debug stage condition
-    if issue_dir:
-        context["ci_feedback_exists"] = (issue_dir / "ci_feedback.md").exists()
-    else:
-        context["ci_feedback_exists"] = False
+    # Add CI feedback context variables for conditional stage routing
+    ci_feedback_path = issue_dir / "ci_feedback.md" if issue_dir else None
+    ci_feedback_exists = ci_feedback_path and ci_feedback_path.exists()
+    context["ci_feedback_exists"] = ci_feedback_exists
+
+    # Parse CI feedback to detect test failures vs review-only failures
+    ci_has_test_failures = False
+    ci_has_review_failures = False
+
+    if ci_feedback_exists and ci_feedback_path:
+        feedback_content = ci_feedback_path.read_text().lower()
+        # Look for test/lint failure patterns
+        test_failure_patterns = ["pytest", "failed", "mypy", "error:"]
+        ci_has_test_failures = any(pattern in feedback_content for pattern in test_failure_patterns)
+        # Any feedback implies review is needed
+        ci_has_review_failures = True
+
+    context["ci_has_test_failures"] = ci_has_test_failures
+    context["ci_has_review_failures"] = ci_has_review_failures
 
     return context

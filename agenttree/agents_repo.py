@@ -893,10 +893,15 @@ def check_ci_status(agents_dir: Path) -> int:
 
             console.print(f"[yellow]CI failed for PR #{pr_number} (attempt {ci_bounce_count + 1}/{max_ci_bounces}), notifying issue #{issue_id}[/yellow]")
 
-            # Transition issue back to implement.debug stage for CI fix
-            from agenttree.issues import update_issue_stage
-            update_issue_stage(issue_id, "implement.debug", skip_sync=True, _issue_dir=issue_dir)
-            console.print(f"[yellow]Issue #{issue_id} moved back to implement.debug stage for CI fix[/yellow]")
+            # Use conditional flow logic to determine next stage
+            # Reload issue to get fresh state after feedback file was written
+            from agenttree.issues import update_issue_stage, get_issue_context
+            issue = Issue.from_yaml(issue_yaml)
+            issue_context = get_issue_context(issue)
+            next_stage, _ = config.get_next_stage("implement.code", issue.flow, issue_context)
+
+            update_issue_stage(issue_id, next_stage, skip_sync=True, _issue_dir=issue_dir)
+            console.print(f"[yellow]Issue #{issue_id} moved to {next_stage} stage for CI fix[/yellow]")
 
             # Ensure agent is running and notify it
             tmux_manager = TmuxManager(config)

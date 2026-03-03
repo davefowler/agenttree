@@ -145,7 +145,7 @@ flows:
           setup: {}
           code: {}
           debug:
-            condition: "{{ ci_feedback_exists }}"
+            condition: "{{ ci_has_test_failures }}"
             skill: implement/debug.md
           code_review:
             output: review.md

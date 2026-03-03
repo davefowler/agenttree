@@ -652,6 +652,46 @@ class TestCheckCiStatus:
             assert data["stage"] == "implement.debug"
 
     @patch("agenttree.environment.is_running_in_container", return_value=False)
+    def test_check_ci_status_uses_conditional_routing(self, mock_container, agents_dir, issue_at_implementation_review):
+        """Verify CI routing uses config.get_next_stage for conditional logic."""
+        from agenttree.agents_repo import check_ci_status
+        from agenttree.github import CheckStatus
+
+        with patch("agenttree.github.get_pr_checks") as mock_get_checks, \
+             patch("agenttree.state.get_active_agent", return_value=None), \
+             patch("agenttree.api.start_agent"), \
+             patch("agenttree.tmux.TmuxManager"), \
+             patch("agenttree.config.load_config") as mock_load_config, \
+             patch("agenttree.issues.get_issue_context") as mock_get_context:
+
+            # Set up mock config to spy on get_next_stage calls
+            mock_config = Mock()
+            mock_config.manager.max_ci_bounces = 5
+            # Return implement.debug like the real config would
+            mock_config.get_next_stage.return_value = ("implement.debug", False)
+            mock_load_config.return_value = mock_config
+
+            # Mock context with CI failure flags
+            mock_get_context.return_value = {
+                "ci_has_test_failures": True,
+                "ci_has_review_failures": True,
+            }
+
+            mock_get_checks.return_value = [
+                CheckStatus(name="test", state="FAILURE"),
+            ]
+            check_ci_status(agents_dir)
+
+            # Verify get_next_stage was called with implement.code as starting point
+            mock_config.get_next_stage.assert_called_once()
+            call_args = mock_config.get_next_stage.call_args
+            assert call_args[0][0] == "implement.code"  # starting stage for routing
+            # Second arg is the flow name
+            assert isinstance(call_args[0][1], str)
+            # Third arg is the issue context dict
+            assert isinstance(call_args[0][2], dict)
+
+    @patch("agenttree.environment.is_running_in_container", return_value=False)
     def test_check_ci_status_on_ci_failure_sends_tmux_message(self, mock_container, agents_dir, issue_at_implementation_review):
         """Verify agent is notified via tmux."""
         from agenttree.agents_repo import check_ci_status
