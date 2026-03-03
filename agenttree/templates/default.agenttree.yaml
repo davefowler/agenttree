@@ -8,6 +8,11 @@ port_range: 9000-9100
 project: "{{PROJECT_NAME}}"
 worktrees_dir: .worktrees
 
+manager:
+  max_ci_bounces: 5
+  max_ci_bounces_review_only: 3
+  max_ci_bounces_repeated_failure: 3
+
 commands:
   test: uv run pytest
   lint: "uv run mypy {{PROJECT_NAME}} || echo 'Lint warnings (optional)'"

@@ -305,6 +305,8 @@ class ManagerConfig(BaseModel):
     nudge_cooldown_min: int = 30
     max_nudges_before_escalate: int = 3
     max_ci_bounces: int = 5
+    max_ci_bounces_review_only: int = 3
+    max_ci_bounces_repeated_failure: int = 3
 
 
 class SecurityConfig(BaseModel):

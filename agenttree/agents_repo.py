@@ -6,6 +6,7 @@ Manages the _agenttree/ git repository (separate from main project).
 from __future__ import annotations
 
 import fcntl
+import hashlib
 import logging
 import shutil
 import subprocess
@@ -314,13 +315,27 @@ def ensure_review_branches(agents_dir: Path) -> int:
 
             # 1. No PR yet - create one
             if not pr_number:
-                if ensure_pr_for_issue(issue_id):
-                    # Re-read to get updated pr_number
-                    issue = Issue.from_yaml(issue_yaml)
-                    pr_number = issue.pr_number
-                    if pr_number:
-                        console.print(f"[green]✓ Created PR #{pr_number} for issue #{issue_id}[/green]")
-                        processed += 1
+                try:
+                    if ensure_pr_for_issue(issue_id):
+                        # Re-read to get updated pr_number
+                        issue = Issue.from_yaml(issue_yaml)
+                        pr_number = issue.pr_number
+                        if pr_number:
+                            console.print(f"[green]✓ Created PR #{pr_number} for issue #{issue_id}[/green]")
+                            processed += 1
+                except RuntimeError as e:
+                    error_message = str(e)
+                    console.print(f"[yellow]Could not create PR for issue #{issue_id}: {error_message}[/yellow]")
+                    if "Unresolved conflict markers" in error_message:
+                        # Give the developer agent a chance to resolve markers automatically.
+                        from agenttree.issues import update_issue_stage
+                        from agenttree.api import _notify_agent
+                        update_issue_stage(issue_id, "implement.debug", _issue_dir=issue_dir)
+                        _notify_agent(
+                            issue_id,
+                            "Unresolved merge conflict markers were detected in your branch. "
+                            "Issue moved to implement.debug. Resolve conflicts and run `agenttree next`.",
+                        )
                 continue  # Whether or not PR was created, move on
 
             # 2. PR exists - try to keep branch up to date
@@ -789,6 +804,10 @@ def check_ci_status(agents_dir: Path) -> int:
 
             if not failed_checks:
                 # All checks passed
+                if issue.ci_last_failure_fingerprint or issue.ci_same_failure_count:
+                    issue.ci_last_failure_fingerprint = None
+                    issue.ci_same_failure_count = 0
+                    issue.save()
                 if stage == "implement.ci_wait":
                     # Advance ci_wait → review and notify agent
                     console.print(f"[green]CI passed for issue #{issue_id}, advancing to review[/green]")
@@ -834,6 +853,37 @@ def check_ci_status(agents_dir: Path) -> int:
                     feedback_content += f"- `{test}`\n"
                 feedback_content += "\n"
 
+            # Failure fingerprint: keeps repeated failures from burning full retry budget.
+            failed_check_names = sorted({check.name.strip().lower() for check in failed_checks if check.name})
+            failed_test_names = sorted(set(all_failing_tests))
+            fingerprint_input = "\n".join(
+                [f"check:{name}" for name in failed_check_names]
+                + [f"test:{name}" for name in failed_test_names]
+            )
+            failure_fingerprint = hashlib.sha1(fingerprint_input.encode("utf-8")).hexdigest()
+            if issue.ci_last_failure_fingerprint == failure_fingerprint:
+                issue.ci_same_failure_count = max(1, issue.ci_same_failure_count) + 1
+            else:
+                issue.ci_last_failure_fingerprint = failure_fingerprint
+                issue.ci_same_failure_count = 1
+            issue.save()
+
+            has_test_failures = any("test" in name for name in failed_check_names)
+            has_review_failures = any("review" in name for name in failed_check_names)
+            review_only_failure = has_review_failures and not has_test_failures
+
+            max_ci_bounces = config.manager.max_ci_bounces
+            if review_only_failure:
+                max_ci_bounces = min(max_ci_bounces, config.manager.max_ci_bounces_review_only)
+            if issue.ci_same_failure_count >= 2:
+                max_ci_bounces = min(max_ci_bounces, config.manager.max_ci_bounces_repeated_failure)
+
+            feedback_content += "\n## Failure Pattern\n\n"
+            feedback_content += f"- **Fingerprint:** `{failure_fingerprint[:12]}`\n"
+            feedback_content += f"- **Consecutive identical failures:** {issue.ci_same_failure_count}\n"
+            if review_only_failure:
+                feedback_content += "- **Type:** Review-only failure (tests are passing)\n"
+
             # Add log sections after the summary
             for section in logs_sections:
                 feedback_content += section
@@ -856,7 +906,6 @@ def check_ci_status(agents_dir: Path) -> int:
                 and i > 0 and issue.history[i - 1].stage in ci_stages
             )
 
-            max_ci_bounces = config.manager.max_ci_bounces
             if ci_bounce_count >= max_ci_bounces:
                 # Circuit breaker: stop looping, escalate to human review
                 # Generate a structured escalation report for human review
@@ -960,6 +1009,7 @@ def push_pending_branches(agents_dir: Path) -> int:
         return 0
 
     from agenttree.issues import Issue
+    from agenttree.git_utils import find_conflict_markers
 
     branches_pushed = 0
 
@@ -991,6 +1041,16 @@ def push_pending_branches(agents_dir: Path) -> int:
                 timeout=10,
             )
             if check_result.returncode != 0 or not check_result.stdout.strip():
+                continue
+
+            conflicted_files = find_conflict_markers(worktree_path)
+            if conflicted_files:
+                files_preview = ", ".join(conflicted_files[:5])
+                if len(conflicted_files) > 5:
+                    files_preview += f" (and {len(conflicted_files) - 5} more)"
+                console.print(
+                    f"[red]Skipping push for issue #{issue_id}: unresolved conflict markers in {files_preview}[/red]"
+                )
                 continue
 
             console.print(f"[dim]Pushing branch {branch} for issue #{issue_id}...[/dim]")

@@ -9,6 +9,24 @@ import subprocess
 from pathlib import Path
 
 
+def find_conflict_markers(worktree_path: Path) -> list[str]:
+    """Return tracked files that contain git conflict markers."""
+    result = subprocess.run(
+        [
+            "git", "-C", str(worktree_path), "grep", "-l", "-E",
+            r"^(<<<<<<<|=======|>>>>>>>)",
+            "--", ".",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode not in (0, 1):
+        return []
+    stdout = result.stdout if isinstance(result.stdout, str) else ""
+    return [line.strip() for line in stdout.splitlines() if line.strip()]
+
+
 def get_current_branch() -> str:
     """Get current git branch name.
 

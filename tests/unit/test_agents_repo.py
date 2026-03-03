@@ -1200,8 +1200,9 @@ class TestPushPendingBranches:
         result = push_pending_branches(agents_dir)
 
         assert result == 1
-        # Should have called: git log, git push (failed), git push --force-with-lease
-        assert call_count[0] == 3
+        # Should have called: git log, git grep (conflict check),
+        # git push (failed), git push --force-with-lease
+        assert call_count[0] == 4
 
     @patch("subprocess.run")
     @patch("agenttree.environment.is_running_in_container", return_value=False)

@@ -155,6 +155,8 @@ class Issue(BaseModel):
 
     # Tracks whether CI notification was sent for current PR check run
     ci_notified: Optional[bool] = None
+    ci_last_failure_fingerprint: Optional[str] = None
+    ci_same_failure_count: int = 0
 
     # Guard for manager hook re-entry (e.g., "implement.review", "implement.review:running")
     manager_hooks_executed: Optional[str] = None

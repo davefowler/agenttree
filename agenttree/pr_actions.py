@@ -181,6 +181,7 @@ def ensure_pr_for_issue(issue_id: int | str) -> bool:
     from agenttree.issues import get_issue, update_issue_metadata
     from agenttree.github import create_pr
     from agenttree.config import load_config
+    from agenttree.git_utils import find_conflict_markers
 
     issue = get_issue(issue_id)
     if not issue:
@@ -200,6 +201,16 @@ def ensure_pr_for_issue(issue_id: int | str) -> bool:
     worktree_path = Path(issue.worktree_dir)
     if not worktree_path.exists():
         raise RuntimeError(f"Worktree {issue.worktree_dir} does not exist for issue #{issue_id}")
+
+    conflicted_files = find_conflict_markers(worktree_path)
+    if conflicted_files:
+        files_preview = ", ".join(conflicted_files[:5])
+        if len(conflicted_files) > 5:
+            files_preview += f" (and {len(conflicted_files) - 5} more)"
+        raise RuntimeError(
+            f"Unresolved conflict markers found in issue #{issue_id}: {files_preview}. "
+            "Resolve conflicts before PR creation."
+        )
 
     console.print(f"[dim]Creating PR for issue #{issue_id} from host...[/dim]")
 
