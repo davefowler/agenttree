@@ -85,7 +85,7 @@ def create_session(
         session_name,
         "-c",
         str(working_dir),
-        "-e", "DISABLE_AUTO_UPDATE=true",
+        "-e", "DISABLE_AUTOUPDATER=1",
     ]
     # Run startup command directly in tmux session creation so tmux launches
     # a non-interactive shell. This avoids user interactive shell rc files

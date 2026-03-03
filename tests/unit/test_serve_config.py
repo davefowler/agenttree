@@ -497,6 +497,7 @@ class TestBuildContainerCommand:
         assert "AGENTTREE_CONTAINER=1" in cmd_str
         assert "AGENTTREE_ROLE=developer" in cmd_str
         assert "AGENTTREE_ISSUE_ID=42" in cmd_str
+        assert "DISABLE_AUTOUPDATER=1" in cmd_str
 
     def test_build_container_command_port_forwarding(self, tmp_path: Path) -> None:
         """Test that ports are forwarded correctly."""
