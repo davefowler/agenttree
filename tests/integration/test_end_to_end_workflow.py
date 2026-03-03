@@ -37,7 +37,6 @@ class TestEndToEndWorkflow:
 
         This tests the agent-driven portion of the workflow before human review.
         """
-        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue, get_issue, get_next_stage, update_issue_stage
         from agenttree.hooks import execute_exit_hooks, execute_enter_hooks, ValidationError
 
@@ -115,7 +114,6 @@ class TestEndToEndWorkflow:
 
         This tests the implementation portion after plan approval.
         """
-        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue, get_issue, get_next_stage, update_issue_stage
         from agenttree.hooks import execute_exit_hooks, execute_enter_hooks, ValidationError
 
@@ -190,7 +188,6 @@ class TestEndToEndWorkflow:
         This is the full end-to-end test, including human review gates
         (simulated by skipping the human_review check).
         """
-        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue, get_issue, get_next_stage, update_issue_stage
         from agenttree.hooks import execute_exit_hooks, execute_enter_hooks, ValidationError
 
@@ -260,7 +257,6 @@ class TestEndToEndWorkflow:
 
     def test_validation_blocks_invalid_content(self, workflow_repo: Path, mock_sync: MagicMock):
         """Test that validation actually blocks progression with invalid content."""
-        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue, get_issue
         from agenttree.hooks import execute_exit_hooks, ValidationError
 
@@ -356,7 +352,6 @@ class TestWorkflowEdgeCases:
         Note: Stage-level pre_completion hooks only run when exiting the LAST
         substage of a stage (e.g., plan.draft has its own hooks).
         """
-        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue, get_issue, update_issue_stage
         from agenttree.hooks import execute_exit_hooks, execute_enter_hooks, ValidationError
 

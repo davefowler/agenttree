@@ -23,7 +23,6 @@ class TestDefineStageValidation:
 
     def test_blocks_without_context_section(self, workflow_repo: Path, mock_sync: MagicMock):
         """Define stage should block if Context section is empty."""
-        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue
         from agenttree.hooks import execute_hooks
         from agenttree.config import load_config
@@ -59,7 +58,6 @@ class TestDefineStageValidation:
 
     def test_passes_with_valid_problem(self, workflow_repo: Path, mock_sync: MagicMock):
         """Define stage should pass with valid problem.md."""
-        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue
         from agenttree.hooks import execute_hooks
         from agenttree.config import load_config
@@ -87,7 +85,6 @@ class TestResearchStageValidation:
 
     def test_blocks_without_relevant_files(self, workflow_repo: Path, mock_sync: MagicMock):
         """Research stage should block if Relevant Files section is empty."""
-        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue
         from agenttree.hooks import execute_hooks
         from agenttree.config import load_config
@@ -122,7 +119,6 @@ Some patterns here.
 
     def test_passes_with_valid_research(self, workflow_repo: Path, mock_sync: MagicMock):
         """Research stage should pass with valid research.md."""
-        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue
         from agenttree.hooks import execute_hooks
         from agenttree.config import load_config
@@ -150,7 +146,6 @@ class TestPlanStageValidation:
 
     def test_blocks_without_approach(self, workflow_repo: Path, mock_sync: MagicMock):
         """Plan stage should block if Approach section is empty."""
-        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue
         from agenttree.hooks import execute_hooks
         from agenttree.config import load_config
@@ -194,7 +189,6 @@ Test here.
 
     def test_passes_with_valid_spec(self, workflow_repo: Path, mock_sync: MagicMock):
         """Plan stage should pass with valid spec.md."""
-        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue
         from agenttree.hooks import execute_hooks
         from agenttree.config import load_config
@@ -222,7 +216,6 @@ class TestPlanReviewValidation:
 
     def test_blocks_without_spec_file(self, workflow_repo: Path, mock_sync: MagicMock):
         """Plan review should block if spec.md doesn't exist."""
-        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue
         from agenttree.hooks import execute_hooks
         from agenttree.config import load_config
@@ -251,7 +244,6 @@ class TestImplementCodeReviewValidation:
 
     def test_blocks_with_unchecked_items(self, workflow_repo: Path, mock_sync: MagicMock):
         """Code review should block if checklist items are unchecked."""
-        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue
         from agenttree.hooks import execute_hooks
         from agenttree.config import load_config
@@ -275,7 +267,6 @@ class TestImplementCodeReviewValidation:
 
     def test_passes_with_all_checked(self, workflow_repo: Path, mock_sync: MagicMock):
         """Code review should pass if all checklist items are checked."""
-        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue
         from agenttree.hooks import execute_hooks
         from agenttree.config import load_config
@@ -303,7 +294,6 @@ class TestImplementWrapupValidation:
 
     def test_blocks_with_low_score(self, workflow_repo: Path, mock_sync: MagicMock):
         """Wrapup should block if average score < 7."""
-        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue
         from agenttree.hooks import execute_hooks
         from agenttree.config import load_config
@@ -328,7 +318,6 @@ class TestImplementWrapupValidation:
 
     def test_passes_with_score_7(self, workflow_repo: Path, mock_sync: MagicMock):
         """Wrapup should pass if average score == 7."""
-        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue
         from agenttree.hooks import execute_hooks
         from agenttree.config import load_config
@@ -352,7 +341,6 @@ class TestImplementWrapupValidation:
 
     def test_passes_with_score_above_7(self, workflow_repo: Path, mock_sync: MagicMock):
         """Wrapup should pass if average score > 7."""
-        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue
         from agenttree.hooks import execute_hooks
         from agenttree.config import load_config
@@ -380,7 +368,6 @@ class TestImplementFeedbackValidation:
 
     def test_blocks_without_commits(self, workflow_repo: Path, mock_sync: MagicMock):
         """Feedback should block if no commits to push."""
-        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue
         from agenttree.hooks import execute_hooks
         from agenttree.config import load_config
@@ -406,7 +393,6 @@ class TestImplementFeedbackValidation:
 
     def test_blocks_with_critical_issues(self, workflow_repo: Path, mock_sync: MagicMock):
         """Feedback should block if Critical Issues section is not empty."""
-        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue
         from agenttree.hooks import execute_hooks
         from agenttree.config import load_config
@@ -431,7 +417,6 @@ class TestImplementFeedbackValidation:
 
     def test_passes_with_commits_and_no_critical_issues(self, workflow_repo: Path, mock_sync: MagicMock):
         """Feedback should pass with commits and empty Critical Issues."""
-        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue
         from agenttree.hooks import execute_hooks
         from agenttree.config import load_config
@@ -460,7 +445,6 @@ class TestSectionCheckVariants:
 
     def test_accepts_h2_headers(self, workflow_repo: Path, mock_sync: MagicMock):
         """Section check should accept ## headers."""
-        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue
         from agenttree.hooks import execute_hooks
         from agenttree.config import load_config
@@ -495,7 +479,6 @@ This is the context section with content.
 
     def test_accepts_h3_subsections(self, workflow_repo: Path, mock_sync: MagicMock):
         """Section check should accept h2 headers with h3 subsections."""
-        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue
         from agenttree.hooks import execute_hooks
         from agenttree.config import load_config
@@ -538,7 +521,6 @@ class TestMultipleHookErrors:
 
     def test_collects_all_errors(self, workflow_repo: Path, mock_sync: MagicMock):
         """Should collect errors from multiple failing hooks."""
-        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue
         from agenttree.hooks import execute_hooks
         from agenttree.config import load_config

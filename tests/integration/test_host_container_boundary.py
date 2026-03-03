@@ -224,7 +224,6 @@ class TestHookContextAwareness:
     def test_section_check_works_in_both_contexts(self, workflow_repo: Path, mock_sync: MagicMock):
         """Section check validators should work in both contexts."""
         from agenttree.hooks import run_builtin_validator
-        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue
 
         agenttree_path = workflow_repo / "_agenttree"
@@ -296,7 +295,6 @@ class TestApprovalBoundary:
 
     def test_host_can_approve_plan_review(self, workflow_repo: Path, host_environment, mock_sync: MagicMock):
         """Host should be able to advance past plan.review via approve command."""
-        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue, get_next_stage
         from agenttree.hooks import execute_hooks
         from agenttree.config import load_config
@@ -343,7 +341,6 @@ class TestApprovalBoundary:
 
         Without the fix, step 3 would skip implement entirely.
         """
-        from agenttree.ids import format_issue_id
         from agenttree.issues import (
             create_issue, update_issue_stage, get_next_stage,
             create_session, get_session, is_restart, mark_session_oriented,
@@ -461,7 +458,6 @@ class TestStartBlockedIssuesBoundary:
     @pytest.mark.skip(reason="check_and_start_blocked_issues not yet implemented")
     def test_blocked_issues_started_after_dependency_accepted(self, workflow_repo: Path, host_environment, mock_sync: MagicMock):
         """Issues blocked by an accepted issue should be auto-started on host."""
-        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue, update_issue_stage, check_dependencies_met, get_issue
         from agenttree.agents_repo import check_and_start_blocked_issues
 

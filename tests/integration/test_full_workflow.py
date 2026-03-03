@@ -27,7 +27,6 @@ class TestStageTransitions:
 
     def test_define_to_research(self, workflow_repo: Path, mock_sync: MagicMock):
         """Test transition from explore.define to explore.research."""
-        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue, get_next_stage
         from agenttree.hooks import execute_hooks
         from agenttree.config import load_config
@@ -70,7 +69,6 @@ class TestStageTransitions:
 
     def test_research_to_plan(self, workflow_repo: Path, mock_sync: MagicMock):
         """Test transition from explore.research to plan.draft."""
-        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue, get_next_stage
         from agenttree.hooks import execute_hooks
         from agenttree.config import load_config
@@ -196,7 +194,6 @@ class TestImplementSubstages:
 
     def test_code_review_requires_checklist(self, workflow_repo: Path, mock_sync: MagicMock):
         """Test that code_review exit requires all checklist items checked."""
-        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue
         from agenttree.hooks import execute_hooks
         from agenttree.config import load_config
@@ -229,7 +226,6 @@ class TestImplementSubstages:
 
     def test_wrapup_requires_score_7(self, workflow_repo: Path, mock_sync: MagicMock):
         """Test that wrapup exit requires average score >= 7."""
-        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue
         from agenttree.hooks import execute_hooks
         from agenttree.config import load_config
@@ -262,7 +258,6 @@ class TestImplementSubstages:
 
     def test_feedback_requires_commits(self, workflow_repo: Path, mock_sync: MagicMock):
         """Test that feedback exit requires unpushed commits."""
-        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue
         from agenttree.hooks import execute_hooks
         from agenttree.config import load_config
@@ -295,7 +290,6 @@ class TestImplementSubstages:
 
     def test_feedback_blocks_with_critical_issues(self, workflow_repo: Path, mock_sync: MagicMock):
         """Test that feedback exit blocks if Critical Issues section is not empty."""
-        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue
         from agenttree.hooks import execute_hooks
         from agenttree.config import load_config
@@ -357,7 +351,6 @@ class TestFullWorkflowHappyPath:
 
     def test_full_workflow_creates_all_files(self, workflow_repo: Path, mock_sync: MagicMock):
         """Test that advancing through workflow creates expected files."""
-        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue
         from agenttree.hooks import execute_hooks
         from agenttree.config import load_config

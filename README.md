@@ -431,9 +431,7 @@ agenttree/
 ├── github.py           # GitHub API integration
 ├── container.py        # Container runtime support
 └── agents/
-    ├── base.py         # BaseAgent interface
-    ├── claude.py       # Claude Code adapter
-    └── aider.py        # Aider adapter
+    └── base.py         # BaseAgent interface
 ```
 
 ## Documentation
@@ -472,7 +470,7 @@ uv run mypy agenttree
 uv run agenttree preflight
 
 # Start the web dashboard
-uv run agenttree serve
+uv run agenttree server
 ```
 
 

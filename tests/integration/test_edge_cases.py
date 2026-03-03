@@ -245,7 +245,6 @@ class TestDependencyEdgeCases:
 
     def test_missing_dependency_issue(self, workflow_repo: Path, mock_sync: MagicMock):
         """Test handling when dependency issue doesn't exist."""
-        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue, check_dependencies_met, get_issue
 
         agenttree_path = workflow_repo / "_agenttree"
@@ -269,7 +268,6 @@ class TestDependencyEdgeCases:
 
     def test_dependency_on_completed_issue(self, workflow_repo: Path, mock_sync: MagicMock):
         """Test that dependency on accepted issue is met."""
-        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue, check_dependencies_met, update_issue_stage, get_issue
 
         agenttree_path = workflow_repo / "_agenttree"

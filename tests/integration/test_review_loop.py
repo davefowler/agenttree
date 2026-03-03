@@ -173,7 +173,6 @@ class TestCheckboxApprovalFlow:
 
     def test_approved_review_passes(self, review_loop_repo: Path):
         """When Approve checkbox is checked, pre_completion passes."""
-        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue
 
         agenttree_path = review_loop_repo / "_agenttree"
@@ -194,7 +193,6 @@ class TestCheckboxApprovalFlow:
 
     def test_rejected_review_raises_redirect(self, review_loop_repo: Path):
         """When Approve checkbox is NOT checked, StageRedirect is raised."""
-        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue
 
         agenttree_path = review_loop_repo / "_agenttree"
@@ -238,7 +236,6 @@ class TestFullReviewLoop:
 
     def test_full_rejection_loop_flow(self, review_loop_repo: Path):
         """Test: reject → address → (would rollback) → re-review."""
-        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue
 
         agenttree_path = review_loop_repo / "_agenttree"
