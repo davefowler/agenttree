@@ -97,10 +97,10 @@ class TestGithubLogging:
 class TestHooksLogging:
     """Tests for hooks.py exception logging."""
 
-    @patch("agenttree.hooks.log")
+    @patch("agenttree.pr_actions.log")
     def test_pr_approval_check_logs_on_failure(self, mock_log: MagicMock) -> None:
         """Test that PR approval check logs on exception."""
-        from agenttree.hooks import get_pr_approval_status
+        from agenttree.pr_actions import get_pr_approval_status
 
         # Mock is_pr_approved to raise
         with patch("agenttree.github.is_pr_approved") as mock_check:
