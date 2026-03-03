@@ -1645,7 +1645,7 @@ class TestCheckAndStartBlockedIssues:
             dependencies=[1],
         )
 
-    @patch('agenttree.hooks.is_running_in_container', return_value=True)
+    @patch('agenttree.hooks.environment.is_running_in_container', return_value=True)
     def test_check_and_start_blocked_issues_in_container(self, mock_in_container, accepted_issue):
         """Should exit early when running in container."""
         from agenttree.hooks import check_and_start_blocked_issues
@@ -1659,7 +1659,7 @@ class TestCheckAndStartBlockedIssues:
                 mock_get_blocked.assert_not_called()
                 mock_run.assert_not_called()
 
-    @patch('agenttree.hooks.is_running_in_container', return_value=False)
+    @patch('agenttree.hooks.environment.is_running_in_container', return_value=False)
     def test_check_and_start_blocked_issues_no_blocked(self, mock_in_container, accepted_issue):
         """Should do nothing when no blocked issues exist."""
         from agenttree.hooks import check_and_start_blocked_issues
@@ -1674,7 +1674,7 @@ class TestCheckAndStartBlockedIssues:
                 # Should not call subprocess.run (no agents to start)
                 mock_run.assert_not_called()
 
-    @patch('agenttree.hooks.is_running_in_container', return_value=False)
+    @patch('agenttree.hooks.environment.is_running_in_container', return_value=False)
     def test_check_and_start_blocked_issues_starts_ready(
         self, mock_in_container, accepted_issue, blocked_issue
     ):
@@ -1689,7 +1689,7 @@ class TestCheckAndStartBlockedIssues:
                     # Should call api.start_agent for the blocked issue
                     mock_start.assert_called_once_with(blocked_issue.id, quiet=True)
 
-    @patch('agenttree.hooks.is_running_in_container', return_value=False)
+    @patch('agenttree.hooks.environment.is_running_in_container', return_value=False)
     def test_check_and_start_blocked_issues_skips_unmet(
         self, mock_in_container, accepted_issue, blocked_issue
     ):
@@ -1705,7 +1705,7 @@ class TestCheckAndStartBlockedIssues:
                     # Should not call start_agent (deps not met)
                     mock_start.assert_not_called()
 
-    @patch('agenttree.hooks.is_running_in_container', return_value=False)
+    @patch('agenttree.hooks.environment.is_running_in_container', return_value=False)
     def test_check_and_start_blocked_issues_api_failure(
         self, mock_in_container, accepted_issue, blocked_issue
     ):
@@ -1725,7 +1725,7 @@ class TestCheckAndStartBlockedIssues:
                     # Should have attempted to start
                     mock_start.assert_called_once()
 
-    @patch('agenttree.hooks.is_running_in_container', return_value=False)
+    @patch('agenttree.hooks.environment.is_running_in_container', return_value=False)
     def test_check_and_start_blocked_issues_exception_handling(
         self, mock_in_container, accepted_issue, blocked_issue
     ):
@@ -1744,7 +1744,7 @@ class TestCheckAndStartBlockedIssues:
                     # Should have attempted to start
                     mock_start.assert_called_once()
 
-    @patch('agenttree.hooks.is_running_in_container', return_value=False)
+    @patch('agenttree.hooks.environment.is_running_in_container', return_value=False)
     def test_check_and_start_blocked_issues_multiple_blocked(
         self, mock_in_container, accepted_issue
     ):
@@ -1846,7 +1846,7 @@ class TestBackwardCompatibility:
 class TestHostOnlyOption:
     """Tests for host_only option in shell command hooks."""
 
-    @patch('agenttree.hooks.is_running_in_container', return_value=True)
+    @patch('agenttree.hooks.environment.is_running_in_container', return_value=True)
     def test_host_only_skips_in_container(self, mock_in_container, tmp_path):
         """Shell commands with host_only=True should be skipped in container."""
         from agenttree.hooks import run_command_hook
@@ -1857,7 +1857,7 @@ class TestHostOnlyOption:
         # Should return empty (skipped), not error
         assert errors == []
 
-    @patch('agenttree.hooks.is_running_in_container', return_value=False)
+    @patch('agenttree.hooks.environment.is_running_in_container', return_value=False)
     def test_host_only_runs_on_host(self, mock_in_container, tmp_path):
         """Shell commands with host_only=True should run on host."""
         from agenttree.hooks import run_command_hook
@@ -1867,7 +1867,7 @@ class TestHostOnlyOption:
 
         assert errors == []
 
-    @patch('agenttree.hooks.is_running_in_container', return_value=True)
+    @patch('agenttree.hooks.environment.is_running_in_container', return_value=True)
     def test_non_host_only_runs_in_container(self, mock_in_container, tmp_path):
         """Shell commands without host_only should run in container."""
         from agenttree.hooks import run_command_hook
@@ -1998,7 +1998,7 @@ class TestHostActionHooks:
         assert call_args[0][0] == hooks_config.post_merge
 
     @patch('agenttree.hooks.run_host_hooks')
-    @patch('agenttree.hooks.is_running_in_container', return_value=False)
+    @patch('agenttree.hooks.environment.is_running_in_container', return_value=False)
     @patch('agenttree.issues.get_blocked_issues', return_value=[])
     @patch('agenttree.config.load_config')
     def test_post_accepted_hooks_called(
@@ -2044,7 +2044,7 @@ class TestRunHostHooks:
 
         assert (tmp_path / "marker.txt").exists()
 
-    @patch('agenttree.hooks.is_running_in_container', return_value=True)
+    @patch('agenttree.hooks.environment.is_running_in_container', return_value=True)
     def test_run_host_hooks_respects_host_only(self, mock_container, tmp_path):
         """run_host_hooks should skip host_only commands in container."""
         from agenttree.hooks import run_host_hooks
@@ -2382,7 +2382,7 @@ class TestAsyncHookExecution:
         # the exact timing of the output. The key behavior is that no exception
         # is raised.
 
-    @patch('agenttree.hooks.is_running_in_container', return_value=True)
+    @patch('agenttree.hooks.environment.is_running_in_container', return_value=True)
     def test_async_hook_respects_host_only(self, mock_container, tmp_path):
         """Async hook with host_only should skip execution in container."""
         from agenttree.hooks import run_host_hooks
@@ -2650,7 +2650,7 @@ class TestHookExecutionOrder:
         call_config = mock_execute_hooks.call_args[0][2]
         assert hasattr(call_config, 'name') and call_config.name == "backlog"
 
-    @patch('agenttree.hooks.is_running_in_container', return_value=False)
+    @patch('agenttree.hooks.environment.is_running_in_container', return_value=False)
     @patch('agenttree.hooks.execute_hooks')
     @patch('agenttree.config.load_config')
     @patch('agenttree.issues.get_issue_dir')
