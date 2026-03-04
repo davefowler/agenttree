@@ -305,6 +305,9 @@ class ManagerConfig(BaseModel):
     nudge_cooldown_min: int = 30
     max_nudges_before_escalate: int = 3
     max_ci_bounces: int = 5
+    # When False, disables all agent nudging/auto-restart by heartbeat actions.
+    # ensure_stage_agents and check_stalled_agents become no-ops.
+    nudge_agents: bool = True
 
 
 class SecurityConfig(BaseModel):
@@ -539,6 +542,10 @@ class Config(BaseModel):
         """Get tmux session name for the manager agent."""
         from agenttree.ids import manager_session_name
         return manager_session_name(self.project)
+
+    def get_architect_tmux_session(self) -> str:
+        """Get tmux session name for the architect agent."""
+        return f"{self.project}-architect-000"
 
     def get_issue_session_patterns(self, issue_id: int) -> list[str]:
         """Get all possible tmux session names for an issue."""

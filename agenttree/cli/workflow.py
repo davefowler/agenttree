@@ -679,6 +679,74 @@ def shutdown_issue(
     console.print(f"[green]✓ Issue #{issue.id} shutdown to {stage}[/green]")
 
 
+@click.command("reset")
+@click.option("--issue", "-i", "issue_id", required=True, help="Issue ID to reset")
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
+def reset_issue_cmd(issue_id: str, yes: bool) -> None:
+    """Fully reset an issue as if it was never started.
+
+    Stops agents, removes worktree/branch, clears all files, resets to backlog.
+    After this, `agenttree start {id}` treats it as a fresh issue.
+
+    Example:
+        agenttree reset --issue 042
+    """
+    if is_running_in_container():
+        console.print("[red]Error: 'reset' cannot be run from inside a container[/red]")
+        sys.exit(1)
+
+    issue_id_normalized = normalize_issue_id(issue_id)
+    issue = get_issue_func(issue_id_normalized)
+    if not issue:
+        console.print(f"[red]Issue {issue_id} not found[/red]")
+        sys.exit(1)
+
+    if not yes:
+        console.print(f"[yellow]This will fully reset issue #{issue.id}: {issue.title}[/yellow]")
+        console.print("[yellow]All generated files, worktree, and branch will be deleted.[/yellow]")
+        if not click.confirm("Proceed?"):
+            console.print("[dim]Cancelled[/dim]")
+            return
+
+    from agenttree.api import reset_issue
+    reset_issue(issue_id_normalized)
+
+
+@click.command("reimplement")
+@click.option("--issue", "-i", "issue_id", required=True, help="Issue ID to reimplement")
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
+def reimplement_issue_cmd(issue_id: str, yes: bool) -> None:
+    """Reset an issue to the start of implementation.
+
+    Keeps explore/plan files but removes all implementation artifacts.
+    Resets to implement.setup so `agenttree start {id}` picks up with
+    the approved plan intact.
+
+    Example:
+        agenttree reimplement --issue 042
+    """
+    if is_running_in_container():
+        console.print("[red]Error: 'reimplement' cannot be run from inside a container[/red]")
+        sys.exit(1)
+
+    issue_id_normalized = normalize_issue_id(issue_id)
+    issue = get_issue_func(issue_id_normalized)
+    if not issue:
+        console.print(f"[red]Issue {issue_id} not found[/red]")
+        sys.exit(1)
+
+    if not yes:
+        console.print(f"[yellow]This will reset issue #{issue.id} to implement.setup[/yellow]")
+        console.print("[yellow]Implementation files, worktree, and branch will be deleted.[/yellow]")
+        console.print("[dim]Plan files (problem.md, research.md, spec.md) will be kept.[/dim]")
+        if not click.confirm("Proceed?"):
+            console.print("[dim]Cancelled[/dim]")
+            return
+
+    from agenttree.api import reimplement_issue
+    reimplement_issue(issue_id_normalized)
+
+
 @click.command("rollback")
 @click.argument("issue_id", type=str)
 @click.argument("stage_name", type=str)

@@ -613,6 +613,44 @@ class TmuxManager:
             # Load manager instructions
             send_keys(session_name, "cat _agenttree/skills/manager.md")
 
+    def start_architect(
+        self,
+        session_name: str,
+        repo_path: Path,
+        tool_name: str,
+        model: str | None = None,
+    ) -> None:
+        """Start the architect agent on the host (not in a container).
+
+        The architect supervises the system — watching issues flow through
+        the pipeline, fixing friction, and resetting issues that get stuck.
+
+        Args:
+            session_name: Tmux session name (typically {project}-architect-000)
+            repo_path: Path to the repository root
+            tool_name: Name of the AI tool to use
+            model: Model to use (e.g., "sonnet", "opus"). If None, uses tool default.
+        """
+        # Kill existing session if it exists
+        if session_exists(session_name):
+            kill_session(session_name)
+
+        # Get tool config
+        tool_config = self.config.get_tool_config(tool_name)
+
+        # Build command to run the AI tool directly (not in container)
+        ai_command = tool_config.command
+        if model:
+            ai_command = f"{ai_command} --model {model}"
+
+        # Create tmux session running the AI tool
+        create_session(session_name, repo_path, ai_command)
+
+        # Wait for prompt before sending startup message
+        if wait_for_prompt(session_name, prompt_char="❯", timeout=30.0):
+            # Load architect instructions
+            send_keys(session_name, "cat _agenttree/skills/architect.md")
+
     def stop_issue_agent(self, session_name: str) -> None:
         """Stop an issue-bound agent's tmux session.
 

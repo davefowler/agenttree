@@ -11,6 +11,9 @@ worktrees_dir: .worktrees
 # Allow approving own PRs (skips PR approval check - for solo projects)
 allow_self_approval: true
 
+manager:
+  nudge_agents: false  # Disabled while architect supervises the system
+
 commands:
   test: uv run pytest tests/unit -m "not local_only"
   lint: "uv run mypy agenttree || echo 'Lint warnings (optional)'"
@@ -52,6 +55,11 @@ roles:
     tool: claude
     model: sonnet
     skill: independent_review.md
+
+  architect:
+    description: "System supervisor - watches issues flow through the pipeline and fixes friction"
+    tool: claude
+    model: opus
 
 # Workflow flows
 # The default flow defines stages inline (dict). Secondary flows reference
@@ -302,6 +310,21 @@ flows:
       - accepted
 
 default_flow: default
+
+# Event-driven hooks
+on:
+  heartbeat:
+    interval_s: 10
+    actions:
+      - sync
+      - check_stalled_agents: { min_interval_s: 60 }
+      - check_ci_status: { min_interval_s: 120 }
+      - check_merged_prs: { min_interval_s: 30 }
+      - push_pending_branches
+      - check_manager_stages
+      - ensure_review_branches
+      - check_custom_agent_stages
+      - ping_architect: { min_interval_s: 300 }
 
 # Controller hooks for dogfooding
 manager_hooks:

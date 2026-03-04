@@ -115,6 +115,16 @@ def start_agent(
             sys.exit(1)
         console.print("[green]✓ Preflight checks passed[/green]\n")
 
+    # Special handling for architect (before normalize which expects digits)
+    if issue_id == "architect":
+        from agenttree.api import start_architect, AgentAlreadyRunningError
+        try:
+            start_architect(tool=tool, force=force)
+        except AgentAlreadyRunningError:
+            console.print("[yellow]Architect already running. Use --force to restart.[/yellow]")
+            sys.exit(1)
+        return
+
     # Normalize issue ID (strip leading zeros for lookup, keep for display)
     issue_id_normalized = normalize_issue_id(issue_id)
 

@@ -33,6 +33,8 @@ from agenttree.cli.workflow import (
     defer_issue,
     shutdown_issue,
     rollback_issue,
+    reset_issue_cmd,
+    reimplement_issue_cmd,
 )
 from agenttree.cli.agents import (
     start_agent,
@@ -80,5 +82,7 @@ main.add_command(approve_issue)
 main.add_command(defer_issue)
 main.add_command(shutdown_issue)
 main.add_command(rollback_issue)
+main.add_command(reset_issue_cmd)
+main.add_command(reimplement_issue_cmd)
 
 __all__ = ["main"]
