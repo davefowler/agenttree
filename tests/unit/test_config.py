@@ -1299,3 +1299,25 @@ class TestSemanticStageQueries:
             }
         )
         assert config.get_abandon_stage() is None
+
+    def test_get_abandon_stage_respects_flow(self) -> None:
+        """get_abandon_stage should only return abandon stages in the given flow."""
+        from agenttree.config import FlowConfig
+
+        config = Config(
+            stages={
+                "backlog": StageConfig(name="backlog", is_parking_lot=True),
+                "implement": StageConfig(name="implement"),
+                "accepted": StageConfig(
+                    name="accepted", is_parking_lot=True, is_completion=True
+                ),
+                "not_doing": StageConfig(
+                    name="not_doing", is_parking_lot=True, is_abandon=True
+                ),
+            },
+            flows={
+                "quick": FlowConfig(stages=["backlog", "implement", "accepted"]),
+            },
+        )
+        # quick flow has no abandon stage
+        assert config.get_abandon_stage("quick") is None

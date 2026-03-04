@@ -953,9 +953,9 @@ class Config(BaseModel):
         Returns:
             The dot path of the abandon stage, or None if not found.
         """
-        for name, stage in self.stages.items():
-            if stage.is_abandon:
-                return name
+        for stage_name in self.get_flow_stage_names(flow):
+            if self.is_abandon_stage(stage_name):
+                return stage_name
         return None
 
     def get_flow(self, flow_name: str) -> FlowConfig | None:
