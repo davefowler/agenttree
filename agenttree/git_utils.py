@@ -8,6 +8,9 @@ import re
 import subprocess
 from pathlib import Path
 
+# Default timeout for git commands (seconds) - prevents indefinite hangs
+GIT_COMMAND_TIMEOUT = 30
+
 
 def get_current_branch() -> str:
     """Get current git branch name.
@@ -17,12 +20,14 @@ def get_current_branch() -> str:
 
     Raises:
         subprocess.CalledProcessError: If git command fails
+        subprocess.TimeoutExpired: If git command times out
     """
     result = subprocess.run(
         ["git", "rev-parse", "--abbrev-ref", "HEAD"],
         capture_output=True,
         text=True,
         check=True,
+        timeout=GIT_COMMAND_TIMEOUT,
     )
     return result.stdout.strip()
 
@@ -38,6 +43,7 @@ def has_uncommitted_changes() -> bool:
         capture_output=True,
         text=True,
         check=True,
+        timeout=GIT_COMMAND_TIMEOUT,
     )
     return bool(result.stdout.strip())
 
@@ -51,27 +57,35 @@ def get_default_branch() -> str:
         Default branch name (e.g., 'main' or 'master')
     """
     # Try to get from origin/HEAD symbolic ref
-    result = subprocess.run(
-        ["git", "symbolic-ref", "refs/remotes/origin/HEAD"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode == 0:
-        # Output is like "refs/remotes/origin/main"
-        ref = result.stdout.strip()
-        if ref.startswith("refs/remotes/origin/"):
-            return ref.replace("refs/remotes/origin/", "")
+    try:
+        result = subprocess.run(
+            ["git", "symbolic-ref", "refs/remotes/origin/HEAD"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=GIT_COMMAND_TIMEOUT,
+        )
+        if result.returncode == 0:
+            # Output is like "refs/remotes/origin/main"
+            ref = result.stdout.strip()
+            if ref.startswith("refs/remotes/origin/"):
+                return ref.replace("refs/remotes/origin/", "")
+    except subprocess.TimeoutExpired:
+        pass
 
     # Fallback: check if origin/main exists
-    result = subprocess.run(
-        ["git", "rev-parse", "--verify", "origin/main"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode == 0:
-        return "main"
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--verify", "origin/main"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=GIT_COMMAND_TIMEOUT,
+        )
+        if result.returncode == 0:
+            return "main"
+    except subprocess.TimeoutExpired:
+        pass
 
     # Last resort: try master
     return "master"
@@ -90,38 +104,50 @@ def has_commits_to_push(branch: str | None = None) -> bool:
         branch = get_current_branch()
 
     # First try checking against the remote branch with same name
-    result = subprocess.run(
-        ["git", "log", f"origin/{branch}..HEAD", "--oneline"],
-        capture_output=True,
-        text=True,
-        check=False,  # Don't fail if remote branch doesn't exist
-    )
+    try:
+        result = subprocess.run(
+            ["git", "log", f"origin/{branch}..HEAD", "--oneline"],
+            capture_output=True,
+            text=True,
+            check=False,  # Don't fail if remote branch doesn't exist
+            timeout=GIT_COMMAND_TIMEOUT,
+        )
 
-    if result.returncode == 0 and result.stdout.strip():
-        return True
+        if result.returncode == 0 and result.stdout.strip():
+            return True
+    except subprocess.TimeoutExpired:
+        pass
 
     # Check if we have commits beyond upstream (whatever branch we're tracking)
-    result = subprocess.run(
-        ["git", "rev-list", "@{upstream}..HEAD", "--oneline"],
-        capture_output=True,
-        text=True,
-        check=False,  # Don't fail if no upstream
-    )
+    try:
+        result = subprocess.run(
+            ["git", "rev-list", "@{upstream}..HEAD", "--oneline"],
+            capture_output=True,
+            text=True,
+            check=False,  # Don't fail if no upstream
+            timeout=GIT_COMMAND_TIMEOUT,
+        )
 
-    if result.returncode == 0 and result.stdout.strip():
-        return True
+        if result.returncode == 0 and result.stdout.strip():
+            return True
+    except subprocess.TimeoutExpired:
+        pass
 
     # Fallback: check if we have ANY local commits not on default branch
     # This handles new branches that haven't been pushed and aren't tracking anything
     default_branch = get_default_branch()
-    result = subprocess.run(
-        ["git", "log", f"origin/{default_branch}..HEAD", "--oneline"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    try:
+        result = subprocess.run(
+            ["git", "log", f"origin/{default_branch}..HEAD", "--oneline"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=GIT_COMMAND_TIMEOUT,
+        )
 
-    return bool(result.stdout.strip())
+        return bool(result.stdout.strip())
+    except subprocess.TimeoutExpired:
+        return False
 
 
 def get_git_diff_stats() -> dict[str, int]:
@@ -135,15 +161,18 @@ def get_git_diff_stats() -> dict[str, int]:
         Returns zeros if there are no changes or on error.
     """
     default_branch = get_default_branch()
-
-    result = subprocess.run(
-        ["git", "diff", "--shortstat", f"{default_branch}...HEAD"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-
     stats = {'files_changed': 0, 'lines_added': 0, 'lines_removed': 0}
+
+    try:
+        result = subprocess.run(
+            ["git", "diff", "--shortstat", f"{default_branch}...HEAD"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=GIT_COMMAND_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        return stats
 
     if result.returncode != 0 or not result.stdout.strip():
         return stats

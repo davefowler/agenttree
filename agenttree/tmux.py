@@ -17,6 +17,9 @@ if TYPE_CHECKING:
 
 log = logging.getLogger("agenttree.tmux")
 
+# Default timeout for tmux commands (seconds) - prevents indefinite hangs
+TMUX_COMMAND_TIMEOUT = 30
+
 
 @dataclass
 class TmuxSession:
@@ -49,16 +52,17 @@ def session_exists(session_name: str) -> bool:
         session_name: Name of the session
 
     Returns:
-        True if session exists
+        True if session exists, False if not or on timeout
     """
     try:
         subprocess.run(
             ["tmux", "has-session", "-t", session_name],
             check=True,
             capture_output=True,
+            timeout=TMUX_COMMAND_TIMEOUT,
         )
         return True
-    except subprocess.CalledProcessError:
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
         return False
 
 
@@ -93,7 +97,7 @@ def create_session(
     # (e.g. broken ~/.zshrc) from breaking agent startup.
     if start_command:
         cmd.append(start_command)
-    subprocess.run(cmd, check=True)
+    subprocess.run(cmd, check=True, timeout=TMUX_COMMAND_TIMEOUT)
 
 
 def kill_session(session_name: str) -> None:
@@ -107,9 +111,10 @@ def kill_session(session_name: str) -> None:
             ["tmux", "kill-session", "-t", session_name],
             check=True,
             capture_output=True,
+            timeout=TMUX_COMMAND_TIMEOUT,
         )
-    except subprocess.CalledProcessError:
-        # Session doesn't exist or already killed
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        # Session doesn't exist, already killed, or timeout
         pass
 
 
@@ -129,6 +134,7 @@ def send_keys(session_name: str, keys: str, submit: bool = True, interrupt: bool
         subprocess.run(
             ["tmux", "send-keys", "-t", session_name, "C-c"],
             check=True,
+            timeout=TMUX_COMMAND_TIMEOUT,
         )
         time.sleep(0.5)  # Wait for Claude to process the interrupt
 
@@ -136,6 +142,7 @@ def send_keys(session_name: str, keys: str, submit: bool = True, interrupt: bool
     subprocess.run(
         ["tmux", "send-keys", "-t", session_name, "-l", keys],
         check=True,
+        timeout=TMUX_COMMAND_TIMEOUT,
     )
     if submit:
         # Small delay to let the terminal process the text
@@ -145,6 +152,7 @@ def send_keys(session_name: str, keys: str, submit: bool = True, interrupt: bool
         subprocess.run(
             ["tmux", "send-keys", "-t", session_name, "Enter"],
             check=True,
+            timeout=TMUX_COMMAND_TIMEOUT,
         )
 
 
@@ -241,9 +249,10 @@ def capture_pane(session_name: str, lines: int = 50) -> str:
             capture_output=True,
             text=True,
             check=True,
+            timeout=TMUX_COMMAND_TIMEOUT,
         )
         return result.stdout
-    except subprocess.CalledProcessError:
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
         return ""
 
 
@@ -272,9 +281,10 @@ def save_tmux_history_to_file(session_name: str, output_path: Path, stage: str) 
             capture_output=True,
             text=True,
             check=True,
+            timeout=TMUX_COMMAND_TIMEOUT,
         )
         history = result.stdout
-    except subprocess.CalledProcessError:
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
         return False
 
     if not history.strip():
@@ -352,6 +362,7 @@ def list_sessions() -> list[TmuxSession]:
             capture_output=True,
             text=True,
             check=True,
+            timeout=TMUX_COMMAND_TIMEOUT,
         )
 
         sessions = []
@@ -381,7 +392,7 @@ def list_sessions() -> list[TmuxSession]:
                 )
 
         return sessions
-    except subprocess.CalledProcessError:
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
         return []
 
 
