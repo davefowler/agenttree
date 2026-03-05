@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 import click
 
+from agenttree.config import DEFAULT_ROLE
 from agenttree.cli._utils import console, load_config, get_manager_session_name
 from agenttree.tmux import TmuxManager
 
@@ -62,7 +63,7 @@ def _start_manager(
     console.print(f"  agenttree kill 0")
 
 
-def _start_agents_background(config: "Config", repo_path: Path) -> None:
+def _start_issues_background(config: "Config", repo_path: Path) -> None:
     """Start all agents in parallel (runs in a background thread)."""
     from agenttree.issues import list_issues
     from agenttree.state import get_active_agent
@@ -119,7 +120,7 @@ def _start_agents_background(config: "Config", repo_path: Path) -> None:
 @click.option("--host", default="0.0.0.0", help="Host to bind to")
 @click.option("--port", default=None, type=int, help="Port to bind to (default: from port_range config)")
 @click.option("--tool", help="AI tool to use (default: from config)")
-@click.option("--role", default="developer", help="Agent role (default: developer)")
+@click.option("--role", default=DEFAULT_ROLE, help="Agent role (default: developer)")
 @click.option("--force", is_flag=True, help="Force start even if already running")
 @click.option("--skip-preflight", is_flag=True, help="Skip preflight environment checks")
 def start_all(
@@ -142,10 +143,10 @@ def start_all(
         agenttree start --port 9000    # Use custom port for server
     """
     if issue_id is not None:
-        from agenttree.cli.agents import start_agent
+        from agenttree.cli.agents import start_issue
         ctx = click.get_current_context()
         ctx.invoke(
-            start_agent,
+            start_issue,
             issue_id=issue_id,
             tool=tool,
             role=role,
@@ -164,7 +165,7 @@ def start_all(
         port = config.server_port
 
     thread = threading.Thread(
-        target=_start_agents_background,
+        target=_start_issues_background,
         args=(config, repo_path),
         daemon=True,
     )

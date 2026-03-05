@@ -37,7 +37,7 @@ from agenttree.cli.workflow import (
     reimplement_issue_cmd,
 )
 from agenttree.cli.agents import (
-    start_agent,
+    start_issue,
     agents_status,
     attach,
     output,
@@ -48,7 +48,7 @@ from agenttree.cli.agents import (
 
 # Register all commands with main group
 main.add_command(start_all)
-main.add_command(start_agent)
+main.add_command(start_issue)
 main.add_command(server)
 main.add_command(run_command)
 main.add_command(agents_status)

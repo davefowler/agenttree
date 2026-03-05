@@ -666,12 +666,12 @@ class TestIssueCreateCommand:
 
         with patch("agenttree.cli.issues.load_config", return_value=mock_config):
             with patch("agenttree.cli.issues.create_issue_func", return_value=mock_issue):
-                with patch("agenttree.cli.agents.start_agent") as mock_start_agent:
+                with patch("agenttree.cli.agents.start_issue") as mock_start_issue:
                     result = cli_runner.invoke(main, ["issue", "create", "A valid issue title here", "--problem", problem])
 
         assert "Auto-starting agent" in result.output
-        # start_agent is invoked via ctx.invoke, so check it was called
-        mock_start_agent.assert_called_once()
+        # start_issue is invoked via ctx.invoke, so check it was called
+        mock_start_issue.assert_called_once()
 
     def test_issue_create_skips_auto_start_with_unmet_deps(self, cli_runner, mock_config, tmp_path):
         """Should skip auto-start when issue has unmet dependencies."""
@@ -698,12 +698,12 @@ class TestIssueCreateCommand:
         with patch("agenttree.cli.issues.load_config", return_value=mock_config):
             with patch("agenttree.cli.issues.create_issue_func", return_value=mock_issue):
                 with patch("agenttree.cli.issues.get_issue_func", return_value=mock_dep_issue):
-                    with patch("agenttree.cli.agents.start_agent") as mock_start_agent:
+                    with patch("agenttree.cli.agents.start_issue") as mock_start_issue:
                         result = cli_runner.invoke(main, ["issue", "create", "A valid issue title here", "--problem", problem, "--depends-on", "053"])
 
         assert result.exit_code == 0
         assert "blocked by dependencies" in result.output
-        mock_start_agent.assert_not_called()
+        mock_start_issue.assert_not_called()
 
     def test_issue_create_skips_auto_start_with_explicit_backlog_stage(self, cli_runner, mock_config, tmp_path):
         """Should skip auto-start when issue is explicitly created in backlog stage."""
@@ -725,14 +725,14 @@ class TestIssueCreateCommand:
 
         with patch("agenttree.cli.issues.load_config", return_value=mock_config):
             with patch("agenttree.cli.issues.create_issue_func", return_value=mock_issue):
-                with patch("agenttree.cli.agents.start_agent") as mock_start_agent:
+                with patch("agenttree.cli.agents.start_issue") as mock_start_issue:
                     result = cli_runner.invoke(main, ["issue", "create", "A valid issue title here", "--problem", problem, "--stage", "backlog"])
 
         assert result.exit_code == 0
         # Should show "Next steps" message, not auto-start
         assert "Next steps" in result.output
         assert "agenttree start" in result.output
-        mock_start_agent.assert_not_called()
+        mock_start_issue.assert_not_called()
 
 
 class TestStatusCommand:

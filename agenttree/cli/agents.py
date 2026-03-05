@@ -8,6 +8,7 @@ from pathlib import Path
 import click
 from rich.table import Table
 
+from agenttree.config import DEFAULT_ROLE
 from agenttree.cli._utils import console, load_config, get_issue_func, normalize_issue_id, format_role_label, get_manager_session_name, require_manager_running, get_manager_session_if_running
 from agenttree.tmux import TmuxManager
 from agenttree.container import get_container_runtime
@@ -66,10 +67,10 @@ def prepare_git_mounts(
 @click.command(name="start-agent", hidden=True)
 @click.argument("issue_id", type=str)
 @click.option("--tool", help="AI tool to use (default: from config)")
-@click.option("--role", default="developer", help="Agent role (default: developer)")
+@click.option("--role", default=DEFAULT_ROLE, help="Agent role (default: developer)")
 @click.option("--force", is_flag=True, help="Force start even if agent already exists")
 @click.option("--skip-preflight", is_flag=True, help="Skip preflight environment checks")
-def start_agent(
+def start_issue(
     issue_id: str,
     tool: str | None,
     role: str,
@@ -163,7 +164,7 @@ def start_agent(
             console.print(f"  Container: {existing_agent.container}")
             console.print(f"  Port: {existing_agent.port}")
             console.print(f"\nUse --force to replace it, or attach with:")
-            console.print(f"  agenttree attach {issue.id}" + (f" --role {role}" if role != "developer" else ""))
+            console.print(f"  agenttree attach {issue.id}" + (f" --role {role}" if role != DEFAULT_ROLE else ""))
             sys.exit(1)
         # --force: stop the existing agent via consolidated API
         from agenttree.api import stop_agent as api_stop_agent
@@ -287,7 +288,7 @@ def start_agent(
     console.print(f"  Port: {agent.port}")
     console.print(f"  Role: {role}")
     console.print(f"\n[dim]Commands:[/dim]")
-    role_flag = f" --role {role}" if role != "developer" else ""
+    role_flag = f" --role {role}" if role != DEFAULT_ROLE else ""
     console.print(f"  agenttree attach {issue.id}{role_flag}")
     console.print(f"  agenttree send {issue.id}{role_flag} 'message'")
     console.print(f"  agenttree agents")
@@ -364,7 +365,7 @@ def agents_status() -> None:
 
 @click.command()
 @click.argument("issue_id", type=str)
-@click.option("--role", default="developer", help="Agent role (default: developer)")
+@click.option("--role", default=DEFAULT_ROLE, help="Agent role (default: developer)")
 def attach(issue_id: str, role: str) -> None:
     """Attach to an issue's agent tmux session.
 
@@ -397,7 +398,7 @@ def attach(issue_id: str, role: str) -> None:
     if not agent:
         role_label = format_role_label(role)
         console.print(f"[red]Error: No active{role_label} agent for issue #{issue_id}[/red]")
-        role_flag = f" --role {role}" if role != "developer" else ""
+        role_flag = f" --role {role}" if role != DEFAULT_ROLE else ""
         console.print(f"[yellow]Start one with: agenttree start {issue_id}{role_flag}[/yellow]")
         sys.exit(1)
 
@@ -412,7 +413,7 @@ def attach(issue_id: str, role: str) -> None:
 
 @click.command()
 @click.argument("issue_id", type=str)
-@click.option("--role", default="developer", help="Agent role (default: developer)")
+@click.option("--role", default=DEFAULT_ROLE, help="Agent role (default: developer)")
 @click.option("--lines", "-n", default=50, help="Number of lines to show (default: 50)")
 def output(issue_id: str, role: str, lines: int) -> None:
     """Show recent output from an agent's tmux session.
@@ -463,7 +464,7 @@ def output(issue_id: str, role: str, lines: int) -> None:
 @click.command()
 @click.argument("issue_id", type=str)
 @click.argument("message")
-@click.option("--role", default="developer", help="Agent role (default: developer)")
+@click.option("--role", default=DEFAULT_ROLE, help="Agent role (default: developer)")
 @click.option("--interrupt", is_flag=True, help="Send Ctrl+C first to interrupt current task")
 def send(issue_id: str, message: str, role: str, interrupt: bool) -> None:
     """Send a message to an issue's agent.
@@ -514,7 +515,7 @@ def send(issue_id: str, message: str, role: str, interrupt: bool) -> None:
         console.print(f"[dim]Agent{role_label} not running, starting...[/dim]")
 
         result = subprocess.run(
-            ["agenttree", "start", str(issue_id_normalized)] + (["--role", role] if role != "developer" else []) + ["--skip-preflight"],
+            ["agenttree", "start", str(issue_id_normalized)] + (["--role", role] if role != DEFAULT_ROLE else []) + ["--skip-preflight"],
             capture_output=True,
             text=True,
         )
@@ -563,7 +564,7 @@ def send(issue_id: str, message: str, role: str, interrupt: bool) -> None:
 
 @click.command()
 @click.argument("issue_id", type=str)
-@click.option("--role", default="developer", help="Agent role (default: developer)")
+@click.option("--role", default=DEFAULT_ROLE, help="Agent role (default: developer)")
 @click.option("--all", "all_roles", is_flag=True, help="Stop all agents for this issue (all roles)")
 def stop(issue_id: str, role: str, all_roles: bool) -> None:
     """Stop an issue's agent (kills tmux, stops container, cleans up state).

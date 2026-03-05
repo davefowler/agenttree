@@ -1844,53 +1844,6 @@ def is_running_in_container() -> bool:
     return environment.is_running_in_container()
 
 
-
-def get_current_role() -> str:
-    """Get the current agent role.
-
-    The role is determined by the AGENTTREE_ROLE env var.
-    If not set, defaults to "developer" for containers or "manager" for host.
-
-    Returns:
-        Role name (e.g., "developer", "manager", "reviewer")
-    """
-    import os
-
-    # Check for explicit role
-    role = os.environ.get("AGENTTREE_ROLE")
-    if role:
-        return role
-
-    # Default: "developer" if in container, "manager" if on host
-    if is_running_in_container():
-        return "developer"
-    return "manager"
-
-
-def can_agent_operate_in_stage(stage_role: str) -> bool:
-    """Check if the current agent can operate in a stage with the given role.
-
-    Agents can only operate in stages where the stage's role matches their identity.
-    - Default agents (role="developer") can only operate in role="developer" stages
-    - Custom agents (role="reviewer") can only operate in role="reviewer" stages
-    - Manager can operate in any stage (it's human-driven)
-
-    Args:
-        stage_role: The role value from the stage config (e.g., "developer", "manager", "reviewer")
-
-    Returns:
-        True if the current agent can operate in this stage, False otherwise
-    """
-    current_role = get_current_role()
-
-    # Manager (human) can operate anywhere
-    if current_role == "manager":
-        return True
-
-    # Agents can only operate in their own role stages
-    return current_role == stage_role
-
-
 def cleanup_issue_agent(issue: Issue) -> None:
     """Clean up agent resources when issue is accepted.
 
@@ -1946,9 +1899,9 @@ def check_and_start_blocked_issues(issue: Issue) -> None:
         if all_met:
             console.print(f"[green]→ Issue #{blocked_issue.id} ready to start (all dependencies met)[/green]")
             try:
-                from agenttree.api import start_agent, IssueNotFoundError, AgentStartError
+                from agenttree.api import start_issue, IssueNotFoundError, AgentStartError
 
-                start_agent(blocked_issue.id, quiet=True)
+                start_issue(blocked_issue.id, quiet=True)
                 console.print(f"[green]✓ Started agent for issue #{blocked_issue.id}[/green]")
             except (IssueNotFoundError, AgentStartError) as e:
                 console.print(f"[yellow]Could not start issue #{blocked_issue.id}: {e}[/yellow]")

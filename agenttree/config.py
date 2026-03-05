@@ -8,6 +8,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 logger = logging.getLogger(__name__)
 
+# Default role for agents — used as parameter default across the codebase.
+DEFAULT_ROLE = "developer"
+
 
 class ToolConfig(BaseModel):
     """Configuration for an AI tool.
@@ -254,7 +257,7 @@ class StageConfig(BaseModel):
     is_parking_lot: bool = False  # No agent auto-starts here (backlog, accepted, not_doing)
     redirect_only: bool = False  # Only reachable via StageRedirect
     condition: str | None = None  # Jinja expression - skip stage when false
-    role: str = "developer"  # Who executes this stage
+    role: str = DEFAULT_ROLE  # Who executes this stage
     review_doc: str | None = None
     substages: dict[str, SubstageConfig] = Field(default_factory=dict)
     pre_completion: list[dict] = Field(default_factory=list)
@@ -455,7 +458,7 @@ class Config(BaseModel):
     port_range: str = "9000-9100"  # Manager on 9000, issues 9001-9100
     default_tool: str = "claude"
     default_model: str = "opus"
-    default_role: str = "developer"
+    default_role: str = DEFAULT_ROLE
     default_container_image: str = "agenttree-agent:latest"
     model_tiers: dict[str, str] = Field(default_factory=dict)
     refresh_interval: int = 10
@@ -541,7 +544,7 @@ class Config(BaseModel):
         """Get tmux session name for a specific agent (legacy numbered agents)."""
         return f"{self.project}-developer-{agent_num}"
 
-    def get_issue_tmux_session(self, issue_id: int, role: str = "developer") -> str:
+    def get_issue_tmux_session(self, issue_id: int, role: str = DEFAULT_ROLE) -> str:
         """Get tmux session name for an issue-bound agent."""
         from agenttree.ids import tmux_session_name
         return tmux_session_name(self.project, issue_id, role)
@@ -703,10 +706,10 @@ class Config(BaseModel):
             if stage.substages:
                 for sub_name, sub in stage.substages.items():
                     role = sub.role or stage.role
-                    if role not in ("developer", "manager") and role in all_roles:
+                    if role not in (DEFAULT_ROLE, "manager") and role in all_roles:
                         result.append(f"{name}.{sub_name}")
             else:
-                if stage.role not in ("developer", "manager") and stage.role in all_roles:
+                if stage.role not in (DEFAULT_ROLE, "manager") and stage.role in all_roles:
                     result.append(name)
         return result
 
@@ -716,7 +719,7 @@ class Config(BaseModel):
 
     def is_custom_role(self, role_name: str) -> bool:
         """Check if a role name is a custom role (not manager or default developer)."""
-        if role_name in ("manager", "developer"):
+        if role_name in ("manager", DEFAULT_ROLE):
             return False
         return role_name in self.roles
 
@@ -727,9 +730,9 @@ class Config(BaseModel):
             if stage.substages:
                 for sub_name, sub in stage.substages.items():
                     role = sub.role or stage.role
-                    if role != "developer":
+                    if role != DEFAULT_ROLE:
                         result.append(f"{name}.{sub_name}")
-            elif stage.role != "developer":
+            elif stage.role != DEFAULT_ROLE:
                 result.append(name)
         return result
 

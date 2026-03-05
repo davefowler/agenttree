@@ -375,7 +375,7 @@ class TestAgentStatusEndpoint:
 class TestStartIssueEndpoint:
     """Tests for start issue endpoint."""
 
-    @patch("agenttree.api.start_agent")
+    @patch("agenttree.api.start_issue")
     def test_start_issue_success(self, mock_start, client):
         """Test starting an agent for an issue."""
         mock_start.return_value = Mock()
@@ -387,9 +387,9 @@ class TestStartIssueEndpoint:
         assert data["ok"] is True
         assert "Started agent" in data["status"]
 
-    @patch("agenttree.api.start_agent")
+    @patch("agenttree.api.start_issue")
     def test_start_issue_error(self, mock_start, client):
-        """Test start issue when start_agent fails."""
+        """Test start issue when start_issue fails."""
         from agenttree.api import AgentStartError
         mock_start.side_effect = AgentStartError("001", "Process failed")
 

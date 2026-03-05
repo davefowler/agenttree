@@ -447,7 +447,7 @@ class TestCheckCustomAgentStages:
             with patch("agenttree.config.load_config", return_value=mock_config):
                 with patch("agenttree.tmux.session_exists", return_value=False):
                     with patch("agenttree.container.is_container_running", return_value=False):
-                        with patch("agenttree.api.start_agent") as mock_start:
+                        with patch("agenttree.api.start_issue") as mock_start:
                             result = check_custom_agent_stages(tmp_path)
                             assert result == 1
                             mock_start.assert_called_once_with(

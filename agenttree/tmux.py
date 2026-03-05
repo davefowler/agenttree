@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from dataclasses import dataclass
 
-from agenttree.config import Config
+from agenttree.config import Config, DEFAULT_ROLE
 from agenttree.ids import serve_session_name as get_serve_session_name
 
 if TYPE_CHECKING:
@@ -448,7 +448,7 @@ class TmuxManager:
         tool_name: str,
         container_runtime: "ContainerRuntime",
         model: str | None = None,
-        role: str = "developer",
+        role: str = DEFAULT_ROLE,
         has_merge_conflicts: bool = False,
         is_restart: bool = False,
         force_api_key: bool = False,

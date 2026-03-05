@@ -7,6 +7,7 @@ from pathlib import Path
 import click
 from rich.table import Table
 
+from agenttree.config import DEFAULT_ROLE
 from agenttree.cli._utils import console, load_config, get_issue_func, get_issue_dir, normalize_issue_id
 from agenttree.tmux import TmuxManager, save_tmux_history_to_file
 from agenttree.environment import is_running_in_container, get_current_role
@@ -129,7 +130,7 @@ def stage_status(issue_id: str | None, active_only: bool) -> None:
     config_for_status = load_config()
     stage_group, _ = config_for_status.parse_stage(issue.stage)
     status_stage_config = config_for_status.get_stage(stage_group)
-    if status_stage_config and status_stage_config.role != "developer":
+    if status_stage_config and status_stage_config.role != DEFAULT_ROLE:
         if status_stage_config.role == "manager":
             console.print(f"\n[yellow]⏳ Waiting for human review[/yellow]")
         else:
@@ -220,7 +221,7 @@ def stage_next(issue_id: str | None) -> None:
 
         # Load and display persona for context
         persona = load_persona(
-            agent_type="developer",  # TODO: Get from host config
+            agent_type=DEFAULT_ROLE,  # TODO: Get from host config
             issue=issue,
             is_takeover=is_takeover,
             current_stage=issue.stage,
@@ -313,7 +314,7 @@ def stage_next(issue_id: str | None) -> None:
 
     # Check if next stage requires a different role
     next_role = config.role_for(next_stage)
-    if next_role != "developer" and is_running_in_container():
+    if next_role != DEFAULT_ROLE and is_running_in_container():
         if next_role == "manager" or is_human_review:
             console.print(f"\n[yellow]⏳ Waiting for human review[/yellow]")
             console.print(f"[dim]Your work has been submitted for review.[/dim]")

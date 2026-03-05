@@ -5,10 +5,10 @@ that was previously only available through CLI commands. Internal code
 should import these functions directly instead of shelling out via subprocess.
 
 Example:
-    from agenttree.api import start_agent, send_message
+    from agenttree.api import start_issue, send_message
 
     # Start an agent for an issue
-    agent = start_agent("042", quiet=True)
+    agent = start_issue("042", quiet=True)
 
     # Send a message to an agent
     result = send_message("042", "Please run the tests", quiet=True)
@@ -21,6 +21,7 @@ import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from agenttree.config import DEFAULT_ROLE
 from agenttree.ids import serve_session_name as get_serve_session_name
 
 if TYPE_CHECKING:
@@ -30,7 +31,7 @@ if TYPE_CHECKING:
 log = logging.getLogger("agenttree.api")
 
 __all__ = [
-    "start_agent",
+    "start_issue",
     "send_message",
     "start_controller",
     "start_role",
@@ -74,7 +75,7 @@ class AgentStartError(Exception):
 class AgentAlreadyRunningError(Exception):
     """Raised when trying to start an agent that's already running."""
 
-    def __init__(self, issue_id: int | str, host: str = "developer"):
+    def __init__(self, issue_id: int | str, host: str = DEFAULT_ROLE):
         self.issue_id = issue_id
         self.host = host
         super().__init__(
@@ -106,10 +107,10 @@ class ControllerNotRunningError(Exception):
         super().__init__("Controller not running. Start with: agenttree start 0")
 
 
-def start_agent(
+def start_issue(
     issue_id: int | str,
     *,
-    host: str = "developer",
+    host: str = DEFAULT_ROLE,
     skip_preflight: bool = False,
     force: bool = False,
     tool: str | None = None,
@@ -198,7 +199,7 @@ def start_agent(
     # the developer container, and container names don't encode role.
     from agenttree.container import is_container_running
     container_name = config.get_issue_container_name(issue.id)
-    if host == "developer" and is_container_running(container_name) and not force:
+    if host == DEFAULT_ROLE and is_container_running(container_name) and not force:
         raise AgentAlreadyRunningError(issue.id, host)
 
     # If force, clean up existing container before proceeding
@@ -279,7 +280,7 @@ def start_agent(
     # Save branch and worktree info to issue metadata
     update_issue_metadata(issue.id, branch=names["branch"], worktree_dir=str(worktree_path))
 
-    role_label = f" ({host})" if host != "developer" else ""
+    role_label = f" ({host})" if host != DEFAULT_ROLE else ""
     if not quiet:
         console.print(f"[green]✓ Starting agent{role_label} for issue #{issue.id}: {issue.title}[/green]")
 
@@ -406,7 +407,7 @@ def send_message(
     issue_id: int | str,
     message: str,
     *,
-    host: str = "developer",
+    host: str = DEFAULT_ROLE,
     auto_start: bool = True,
     interrupt: bool = False,
     quiet: bool = False,
@@ -475,12 +476,12 @@ def send_message(
         if not auto_start:
             return False
 
-        role_label = f" ({host})" if host != "developer" else ""
+        role_label = f" ({host})" if host != DEFAULT_ROLE else ""
         if not quiet:
             console.print(f"[dim]Agent{role_label} not running, starting...[/dim]")
 
         try:
-            start_agent(
+            start_issue(
                 issue.id,
                 host=host,
                 skip_preflight=True,
@@ -508,7 +509,7 @@ def send_message(
     # Send the message
     result = tmux_manager.send_message_to_issue(agent.tmux_session, message, interrupt=interrupt)
 
-    role_label = f" ({agent.role})" if agent.role != "developer" else ""
+    role_label = f" ({agent.role})" if agent.role != DEFAULT_ROLE else ""
     if result == "sent":
         if not quiet:
             console.print(f"[green]✓ Sent message to issue #{agent.issue_id}{role_label}[/green]")
@@ -686,7 +687,7 @@ def _ensure_stage_agent(issue_id: int, stage: str) -> None:
 # =============================================================================
 
 
-def stop_agent(issue_id: int, role: str = "developer", quiet: bool = False) -> bool:
+def stop_agent(issue_id: int, role: str = DEFAULT_ROLE, quiet: bool = False) -> bool:
     """Stop an active agent - kills tmux and stops container.
 
     Uses config methods to ensure consistent naming across the system.
@@ -785,8 +786,8 @@ def stop_all_agents_for_issue(issue_id: int, quiet: bool = False) -> int:
 
     # Always try to stop the container directly — tmux session may be gone
     # while the container is still running and modifying issue state.
-    if "developer" not in roles_stopped:
-        if stop_agent(issue_id, "developer", quiet):
+    if DEFAULT_ROLE not in roles_stopped:
+        if stop_agent(issue_id, DEFAULT_ROLE, quiet):
             count += 1
     return count
 
@@ -841,7 +842,7 @@ def cleanup_orphaned_containers(quiet: bool = False) -> int:
         issue_id = int(match.group(1))
 
         # Check if there's a tmux session for this container (developer is default role)
-        session_name = config.get_issue_tmux_session(issue_id, "developer")
+        session_name = config.get_issue_tmux_session(issue_id, DEFAULT_ROLE)
 
         if not session_exists(session_name):
             # Orphaned container - stop and remove it
