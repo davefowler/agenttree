@@ -18,8 +18,6 @@ log = logging.getLogger(__name__)
 from agenttree.environment import is_running_in_container
 from agenttree.issues import Issue
 
-log = logging.getLogger(__name__)
-
 console = Console()
 
 
