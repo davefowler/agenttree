@@ -8,7 +8,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException
 
 from agenttree.actions import load_rate_limit_state, save_rate_limit_state
-from agenttree.api import AgentStartError, start_agent
+from agenttree.api import AgentStartError, start_issue
 from agenttree.config import load_config
 from agenttree.web.deps import get_current_user
 
@@ -96,7 +96,7 @@ async def switch_to_api_key_mode(
 
         try:
             await asyncio.to_thread(
-                start_agent,
+                start_issue,
                 issue_id,
                 force=True,
                 skip_preflight=True,

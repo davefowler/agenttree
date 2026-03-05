@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 def _start_issues_background(config: "Config", repo_path: Path) -> None:
     """Start all agents in parallel (runs in a background thread)."""
     from concurrent.futures import ThreadPoolExecutor, as_completed
-    from agenttree.api import start_agent, AgentStartError
+    from agenttree.api import start_issue, AgentStartError
     from agenttree.issues import list_issues
     from agenttree.state import get_active_agent
     from agenttree.tmux import session_exists
@@ -43,7 +43,7 @@ def _start_issues_background(config: "Config", repo_path: Path) -> None:
     def start_single_agent(issue_id: int) -> tuple[int, bool, str]:
         """Start a single agent, returns (issue_id, success, error_msg)."""
         try:
-            start_agent(issue_id, skip_preflight=True, quiet=True)
+            start_issue(issue_id, skip_preflight=True, quiet=True)
             return (issue_id, True, "")
         except AgentStartError as e:
             return (issue_id, False, str(e))

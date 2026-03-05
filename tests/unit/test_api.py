@@ -265,7 +265,7 @@ class TestStartAgent:
                                                         with patch("agenttree.container.is_container_running", return_value=False):
                                                             with patch("subprocess.run") as mock_run:
                                                                 mock_run.return_value = MagicMock(returncode=1)
-                                                                start_agent("042", quiet=True, force_api_key=True)
+                                                                start_issue("042", quiet=True, force_api_key=True)
 
         # Verify force_api_key was passed through
         mock_tm.start_issue_agent_in_container.assert_called_once()
@@ -303,7 +303,7 @@ class TestStartAgent:
                                                         with patch("agenttree.container.is_container_running", return_value=False):
                                                             with patch("subprocess.run") as mock_run:
                                                                 mock_run.return_value = MagicMock(returncode=1)
-                                                                start_agent("042", quiet=True)
+                                                                start_issue("042", quiet=True)
 
         # Verify force_api_key defaults to False
         mock_tm.start_issue_agent_in_container.assert_called_once()
