@@ -1478,7 +1478,7 @@ class TestGetDefaultDoc:
 class TestCreateIssueAPI:
     """Tests for the create issue API endpoint."""
 
-    @patch("agenttree.api.start_agent")
+    @patch("agenttree.api.start_issue")
     @patch("agenttree.web.routes.issues.issue_crud")
     def test_create_issue_with_problem_and_solutions(self, mock_crud, mock_start, client):
         """Test creating issue with both problem and solutions fields."""
@@ -1508,7 +1508,7 @@ class TestCreateIssueAPI:
         assert call_kwargs["problem"] == "This is the problem description"
         assert call_kwargs["solutions"] == "This is a possible solution"
 
-    @patch("agenttree.api.start_agent")
+    @patch("agenttree.api.start_issue")
     @patch("agenttree.web.routes.issues.issue_crud")
     def test_create_issue_with_problem_only_no_solutions(self, mock_crud, mock_start, client):
         """Test creating issue with problem only, no solutions."""
