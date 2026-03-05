@@ -115,6 +115,10 @@ def ensure_stage_agents(agents_dir: Path, max_stage_age_min: int = 10, **kwargs:
     from agenttree.tmux import session_exists
 
     config = load_config()
+
+    if not config.manager.nudge_agents:
+        return
+
     issues = list_issues(sync=False)
     ensured = 0
     now = datetime.now(timezone.utc)
@@ -316,6 +320,10 @@ def check_stalled_agents(
     from agenttree.tmux import session_exists, send_message
 
     config = load_config()
+
+    if not config.manager.nudge_agents:
+        return
+
     manager_session = config.get_manager_tmux_session()
 
     issues = list_issues(sync=False)
@@ -419,6 +427,43 @@ def check_stalled_agents(
     result = send_message(manager_session, "\n".join(lines))
     if result == "sent":
         console.print(f"[dim]Notified manager about {len(needs_attention)} issue(s) needing attention[/dim]")
+
+
+@register_action("ping_architect")
+def ping_architect(agents_dir: Path, **kwargs: Any) -> None:
+    """Send a periodic status reminder to the architect agent.
+
+    Sends the current time and a checklist of things to check.
+    Only sends if the architect tmux session is running.
+
+    Args:
+        agents_dir: Path to _agenttree directory
+    """
+    from datetime import datetime, timezone
+    from agenttree.config import load_config
+    from agenttree.tmux import session_exists, send_message
+
+    config = load_config()
+    session_name = config.get_role_tmux_session("architect")
+
+    if not session_exists(session_name):
+        return
+
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    message = (
+        f"[ARCHITECT HEARTBEAT — {now}]\n"
+        f"Time to check on progress:\n"
+        f"1. What stage is the current issue at? → agenttree status\n"
+        f"2. Is the agent making progress? → agenttree output <id>\n"
+        f"3. Is the manager running and healthy? → agenttree output 0\n"
+        f"4. Any issues stuck or erroring?\n"
+        f"5. If stuck, has the manager noticed? Give it a few minutes before intervening.\n"
+        f"6. Log anything wrong to your architect log."
+    )
+
+    result = send_message(session_name, message)
+    if result == "sent":
+        console.print(f"[dim]Pinged architect[/dim]")
 
 
 @register_action("check_ci_status")

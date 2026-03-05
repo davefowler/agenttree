@@ -17,6 +17,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+from agenttree.config import DEFAULT_ROLE
+
 from agenttree.config import load_config
 
 logger = logging.getLogger(__name__)
@@ -150,7 +152,7 @@ def _build_agent_from_session(
     )
 
 
-def get_active_agent(issue_id: int, role: str = "developer") -> Optional[ActiveAgent]:
+def get_active_agent(issue_id: int, role: str = DEFAULT_ROLE) -> Optional[ActiveAgent]:
     """Get active agent for an issue and role by checking tmux sessions.
 
     Args:
@@ -233,7 +235,7 @@ def list_active_agents() -> list[ActiveAgent]:
 
 
 
-def unregister_agent(issue_id: int, role: str = "developer") -> Optional[ActiveAgent]:
+def unregister_agent(issue_id: int, role: str = DEFAULT_ROLE) -> Optional[ActiveAgent]:
     """Unregister an active agent by stopping its tmux session.
 
     With dynamic state, unregistration = killing the tmux session.
@@ -275,7 +277,7 @@ def unregister_all_agents_for_issue(issue_id: int) -> list[ActiveAgent]:
 
 
 
-def get_issue_names(issue_id: int, project: str = "agenttree", role: str = "developer") -> dict[str, str]:
+def get_issue_names(issue_id: int, project: str = "agenttree", role: str = DEFAULT_ROLE) -> dict[str, str]:
     """Get standardized names for issue-bound resources.
 
     Args:
@@ -302,7 +304,7 @@ def create_agent_for_issue(
     worktree_path: Path,
     port: int,
     project: str = "agenttree",
-    role: str = "developer",
+    role: str = DEFAULT_ROLE,
 ) -> ActiveAgent:
     """Create an ActiveAgent object for an issue.
 

@@ -7,6 +7,7 @@ from pathlib import Path
 import click
 from rich.table import Table
 
+from agenttree.config import DEFAULT_ROLE
 from agenttree.cli._utils import console, load_config, get_issue_func, get_issue_dir, normalize_issue_id
 from agenttree.tmux import TmuxManager, save_tmux_history_to_file
 from agenttree.environment import is_running_in_container, get_current_role
@@ -129,7 +130,7 @@ def stage_status(issue_id: str | None, active_only: bool) -> None:
     config_for_status = load_config()
     stage_group, _ = config_for_status.parse_stage(issue.stage)
     status_stage_config = config_for_status.get_stage(stage_group)
-    if status_stage_config and status_stage_config.role != "developer":
+    if status_stage_config and status_stage_config.role != DEFAULT_ROLE:
         if status_stage_config.role == "manager":
             console.print(f"\n[yellow]⏳ Waiting for human review[/yellow]")
         else:
@@ -220,7 +221,7 @@ def stage_next(issue_id: str | None) -> None:
 
         # Load and display persona for context
         persona = load_persona(
-            agent_type="developer",  # TODO: Get from host config
+            agent_type=DEFAULT_ROLE,  # TODO: Get from host config
             issue=issue,
             is_takeover=is_takeover,
             current_stage=issue.stage,
@@ -313,7 +314,7 @@ def stage_next(issue_id: str | None) -> None:
 
     # Check if next stage requires a different role
     next_role = config.role_for(next_stage)
-    if next_role != "developer" and is_running_in_container():
+    if next_role != DEFAULT_ROLE and is_running_in_container():
         if next_role == "manager" or is_human_review:
             console.print(f"\n[yellow]⏳ Waiting for human review[/yellow]")
             console.print(f"[dim]Your work has been submitted for review.[/dim]")
@@ -677,6 +678,74 @@ def shutdown_issue(
     delete_session(issue_id_normalized)
 
     console.print(f"[green]✓ Issue #{issue.id} shutdown to {stage}[/green]")
+
+
+@click.command("reset")
+@click.option("--issue", "-i", "issue_id", required=True, help="Issue ID to reset")
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
+def reset_issue_cmd(issue_id: str, yes: bool) -> None:
+    """Fully reset an issue as if it was never started.
+
+    Stops agents, removes worktree/branch, clears all files, resets to backlog.
+    After this, `agenttree start {id}` treats it as a fresh issue.
+
+    Example:
+        agenttree reset --issue 042
+    """
+    if is_running_in_container():
+        console.print("[red]Error: 'reset' cannot be run from inside a container[/red]")
+        sys.exit(1)
+
+    issue_id_normalized = normalize_issue_id(issue_id)
+    issue = get_issue_func(issue_id_normalized)
+    if not issue:
+        console.print(f"[red]Issue {issue_id} not found[/red]")
+        sys.exit(1)
+
+    if not yes:
+        console.print(f"[yellow]This will fully reset issue #{issue.id}: {issue.title}[/yellow]")
+        console.print("[yellow]All generated files, worktree, and branch will be deleted.[/yellow]")
+        if not click.confirm("Proceed?"):
+            console.print("[dim]Cancelled[/dim]")
+            return
+
+    from agenttree.api import reset_issue
+    reset_issue(issue_id_normalized)
+
+
+@click.command("reimplement")
+@click.option("--issue", "-i", "issue_id", required=True, help="Issue ID to reimplement")
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
+def reimplement_issue_cmd(issue_id: str, yes: bool) -> None:
+    """Reset an issue to the start of implementation.
+
+    Keeps explore/plan files but removes all implementation artifacts.
+    Resets to implement.setup so `agenttree start {id}` picks up with
+    the approved plan intact.
+
+    Example:
+        agenttree reimplement --issue 042
+    """
+    if is_running_in_container():
+        console.print("[red]Error: 'reimplement' cannot be run from inside a container[/red]")
+        sys.exit(1)
+
+    issue_id_normalized = normalize_issue_id(issue_id)
+    issue = get_issue_func(issue_id_normalized)
+    if not issue:
+        console.print(f"[red]Issue {issue_id} not found[/red]")
+        sys.exit(1)
+
+    if not yes:
+        console.print(f"[yellow]This will reset issue #{issue.id} to implement.setup[/yellow]")
+        console.print("[yellow]Implementation files, worktree, and branch will be deleted.[/yellow]")
+        console.print("[dim]Plan files (problem.md, research.md, spec.md) will be kept.[/dim]")
+        if not click.confirm("Proceed?"):
+            console.print("[dim]Cancelled[/dim]")
+            return
+
+    from agenttree.api import reimplement_issue
+    reimplement_issue(issue_id_normalized)
 
 
 @click.command("rollback")

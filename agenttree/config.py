@@ -8,6 +8,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 logger = logging.getLogger(__name__)
 
+# Default role for agents — used as parameter default across the codebase.
+DEFAULT_ROLE = "developer"
+
 
 class ToolConfig(BaseModel):
     """Configuration for an AI tool.
@@ -169,10 +172,15 @@ class RoleConfig(BaseModel):
     tool: str | None = None  # AI tool to use (e.g., "claude", "codex")
     model: str | None = None  # Explicit model (e.g., "opus"). Overrides model_tier.
     model_tier: str | None = None  # Tier name (e.g., "high", "medium", "low") → resolved via model_tiers
-    skill: str | None = None  # Skill file path for custom agents
+    skill: str | None = None  # Skill file in _agenttree/skills/. Defaults to {name}.md.
 
     # Process to run (for manager, this could be "agenttree watch")
     process: str | None = None
+
+    @property
+    def skill_file(self) -> str:
+        """Resolved skill file path. Convention: {role_name}.md if not explicitly set."""
+        return self.skill or f"{self.name}.md"
 
     def is_containerized(self) -> bool:
         """Check if this role runs in a container."""
@@ -249,7 +257,7 @@ class StageConfig(BaseModel):
     is_parking_lot: bool = False  # No agent auto-starts here (backlog, accepted, not_doing)
     redirect_only: bool = False  # Only reachable via StageRedirect
     condition: str | None = None  # Jinja expression - skip stage when false
-    role: str = "developer"  # Who executes this stage
+    role: str = DEFAULT_ROLE  # Who executes this stage
     review_doc: str | None = None
     substages: dict[str, SubstageConfig] = Field(default_factory=dict)
     pre_completion: list[dict] = Field(default_factory=list)
@@ -305,6 +313,9 @@ class ManagerConfig(BaseModel):
     nudge_cooldown_min: int = 30
     max_nudges_before_escalate: int = 3
     max_ci_bounces: int = 5
+    # When False, disables all agent nudging/auto-restart by heartbeat actions.
+    # ensure_stage_agents and check_stalled_agents become no-ops.
+    nudge_agents: bool = True
 
 
 class SecurityConfig(BaseModel):
@@ -388,12 +399,13 @@ def resolve_container_type(
         result_env.update(cfg.env)
 
     # Apply defaults for any values still None
-    final_image = result_image if result_image is not None else "agenttree-agent:latest"
+    if result_image is None:
+        raise ValueError(f"Container type '{name}' has no image configured (check extends chain)")
     final_allow_dangerous = result_allow_dangerous if result_allow_dangerous is not None else True
 
     return ContainerTypeConfig(
         extends=None,  # Resolved config has no extends
-        image=final_image,
+        image=result_image,
         mounts=result_mounts,
         env=result_env,
         allow_dangerous=final_allow_dangerous,
@@ -446,6 +458,8 @@ class Config(BaseModel):
     port_range: str = "9000-9100"  # Manager on 9000, issues 9001-9100
     default_tool: str = "claude"
     default_model: str = "opus"
+    default_role: str = DEFAULT_ROLE
+    default_container_image: str = "agenttree-agent:latest"
     model_tiers: dict[str, str] = Field(default_factory=dict)
     refresh_interval: int = 10
     tools: dict[str, ToolConfig] = Field(default_factory=dict)
@@ -530,15 +544,25 @@ class Config(BaseModel):
         """Get tmux session name for a specific agent (legacy numbered agents)."""
         return f"{self.project}-developer-{agent_num}"
 
-    def get_issue_tmux_session(self, issue_id: int, role: str = "developer") -> str:
+    def get_issue_tmux_session(self, issue_id: int, role: str = DEFAULT_ROLE) -> str:
         """Get tmux session name for an issue-bound agent."""
         from agenttree.ids import tmux_session_name
         return tmux_session_name(self.project, issue_id, role)
 
     def get_manager_tmux_session(self) -> str:
         """Get tmux session name for the manager agent."""
-        from agenttree.ids import manager_session_name
-        return manager_session_name(self.project)
+        return self.get_role_tmux_session("manager")
+
+    def get_role_tmux_session(self, role: str) -> str:
+        """Get tmux session name for a host-level role agent.
+
+        Args:
+            role: Role name (e.g., "manager", "architect")
+
+        Returns:
+            Session name (e.g., "myproject-manager-000")
+        """
+        return f"{self.project}-{role}-000"
 
     def get_issue_session_patterns(self, issue_id: int) -> list[str]:
         """Get all possible tmux session names for an issue."""
@@ -663,29 +687,12 @@ class Config(BaseModel):
         return result
 
     def get_all_roles(self) -> dict[str, RoleConfig]:
-        """Get all roles including built-in defaults."""
-        all_roles: dict[str, RoleConfig] = {
-            "manager": RoleConfig(
-                name="manager",
-                description="Human-driven manager (runs on host)",
-                container=None,
-                process=None,
-                model_tier="low",
-            ),
-            "developer": RoleConfig(
-                name="developer",
-                description="Default AI agent that writes code",
-                container=ContainerConfig(enabled=True),
-                tool=self.default_tool,
-                model=self.default_model,
-            ),
-        }
-        all_roles.update(self.roles)
-        return all_roles
+        """Get all roles from config."""
+        return self.roles
 
     def get_role(self, role_name: str) -> RoleConfig | None:
-        """Get configuration for a role (including built-in defaults)."""
-        return self.get_all_roles().get(role_name)
+        """Get configuration for a role."""
+        return self.roles.get(role_name)
 
     def get_custom_role_stages(self) -> list[str]:
         """Get list of dot paths that use custom roles."""
@@ -695,10 +702,10 @@ class Config(BaseModel):
             if stage.substages:
                 for sub_name, sub in stage.substages.items():
                     role = sub.role or stage.role
-                    if role not in ("developer", "manager") and role in all_roles:
+                    if role not in (DEFAULT_ROLE, "manager") and role in all_roles:
                         result.append(f"{name}.{sub_name}")
             else:
-                if stage.role not in ("developer", "manager") and stage.role in all_roles:
+                if stage.role not in (DEFAULT_ROLE, "manager") and stage.role in all_roles:
                     result.append(name)
         return result
 
@@ -708,7 +715,7 @@ class Config(BaseModel):
 
     def is_custom_role(self, role_name: str) -> bool:
         """Check if a role name is a custom role (not manager or default developer)."""
-        if role_name in ("manager", "developer"):
+        if role_name in ("manager", DEFAULT_ROLE):
             return False
         return role_name in self.roles
 
@@ -719,9 +726,9 @@ class Config(BaseModel):
             if stage.substages:
                 for sub_name, sub in stage.substages.items():
                     role = sub.role or stage.role
-                    if role != "developer":
+                    if role != DEFAULT_ROLE:
                         result.append(f"{name}.{sub_name}")
-            elif stage.role != "developer":
+            elif stage.role != DEFAULT_ROLE:
                 result.append(name)
         return result
 
@@ -730,7 +737,7 @@ class Config(BaseModel):
         role = self.get_role(role_name)
         if role:
             return role.is_containerized()
-        return role_name != "manager"
+        return False
 
     def role_for(self, dot_path: str) -> str:
         """Get the effective role for a dot path."""
@@ -739,7 +746,7 @@ class Config(BaseModel):
             return sub.role
         if stage:
             return stage.role
-        return "developer"
+        return self.default_role
 
     def substages_for(self, stage_name: str) -> list[str]:
         """Get ordered list of substage names for a stage."""
