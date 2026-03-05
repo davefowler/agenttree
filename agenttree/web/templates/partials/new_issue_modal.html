@@ -6,14 +6,19 @@
             <h2>Create New Issue</h2>
             <form id="new-issue-form" onsubmit="submitNewIssue(event)">
                 <div class="form-group">
-                    <label for="issue-description">Description</label>
-                    <textarea id="issue-description" name="description" rows="12" autofocus
-                              placeholder="Describe the problem and any ideas for solutions..."></textarea>
+                    <label for="issue-problem">Problem</label>
+                    <textarea id="issue-problem" name="problem" rows="8" autofocus
+                              placeholder="Describe the problem you're trying to solve..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="issue-solutions">Possible Solutions <span class="label-hint">(optional)</span></label>
+                    <textarea id="issue-solutions" name="solutions" rows="4"
+                              placeholder="Any ideas for how to solve this..."></textarea>
                 </div>
                 <div class="form-group">
                     <label for="issue-title">Title <span class="label-hint">(optional - auto-generated if blank)</span></label>
                     <input type="text" id="issue-title" name="title"
-                           placeholder="Leave blank to auto-generate from description">
+                           placeholder="Leave blank to auto-generate from problem">
                 </div>
                 <div class="form-group">
                     <label>Attachments <span class="label-hint">(paste, drag-drop, or click to add)</span></label>
@@ -50,7 +55,7 @@ var shortcutText = isMac ? '⌘↩' : 'Ctrl+↩';
 
 window.openNewIssueModal = function() {
     document.getElementById('new-issue-modal').classList.add('active');
-    document.getElementById('issue-description').focus();
+    document.getElementById('issue-problem').focus();
 };
 
 window.closeNewIssueModal = function() {
@@ -110,9 +115,9 @@ window.submitNewIssue = async function(event) {
         formData.append('files', pendingAttachments[i]);
     }
 
-    var description = (formData.get('description') || '').trim();
-    if (!description) {
-        errorDiv.textContent = 'Please provide a description';
+    var problem = (formData.get('problem') || '').trim();
+    if (!problem) {
+        errorDiv.textContent = 'Please provide a problem description';
         return;
     }
 
@@ -168,9 +173,9 @@ window.submitNewIssue = async function(event) {
     }
 
     // Cmd/Ctrl+Enter to submit from textarea
-    var textarea = document.getElementById('issue-description');
-    if (textarea) {
-        textarea.addEventListener('keydown', function(e) {
+    var problemTextarea = document.getElementById('issue-problem');
+    if (problemTextarea) {
+        problemTextarea.addEventListener('keydown', function(e) {
             if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
                 e.preventDefault();
                 document.getElementById('new-issue-form').requestSubmit();
@@ -183,7 +188,7 @@ window.submitNewIssue = async function(event) {
 (function() {
     var dropzone = document.getElementById('attachment-dropzone');
     var fileInput = document.getElementById('attachment-input');
-    var textarea = document.getElementById('issue-description');
+    var textarea = document.getElementById('issue-problem');
 
     if (dropzone && fileInput) {
         // File input change
