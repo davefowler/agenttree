@@ -2248,9 +2248,9 @@ def check_and_start_blocked_issues(issue: Issue) -> None:
         if all_met:
             console.print(f"[green]→ Issue #{blocked_issue.id} ready to start (all dependencies met)[/green]")
             try:
-                from agenttree.api import start_agent, IssueNotFoundError, AgentStartError
+                from agenttree.api import start_issue, IssueNotFoundError, AgentStartError
 
-                start_agent(blocked_issue.id, quiet=True)
+                start_issue(blocked_issue.id, quiet=True)
                 console.print(f"[green]✓ Started agent for issue #{blocked_issue.id}[/green]")
             except (IssueNotFoundError, AgentStartError) as e:
                 console.print(f"[yellow]Could not start issue #{blocked_issue.id}: {e}[/yellow]")

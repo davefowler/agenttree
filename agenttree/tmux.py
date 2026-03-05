@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from dataclasses import dataclass
 
-from agenttree.config import Config
+from agenttree.config import Config, DEFAULT_ROLE
 from agenttree.ids import serve_session_name as get_serve_session_name
 
 if TYPE_CHECKING:
@@ -459,7 +459,7 @@ class TmuxManager:
         tool_name: str,
         container_runtime: "ContainerRuntime",
         model: str | None = None,
-        role: str = "developer",
+        role: str = DEFAULT_ROLE,
         has_merge_conflicts: bool = False,
         is_restart: bool = False,
         force_api_key: bool = False,
@@ -519,8 +519,15 @@ class TmuxManager:
         # Build container command using generic builder
         from agenttree.config import ContainerTypeConfig
         from agenttree.container import build_container_command
+
+        # Get image from role's container config
+        role_config = self.config.roles.get(role)
+        if role_config and role_config.container:
+            image = role_config.container.image
+        else:
+            image = self.config.default_container_image
         container_type = ContainerTypeConfig(
-            image="agenttree-agent:latest",
+            image=image,
             allow_dangerous=True,
         )
         container_cmd = build_container_command(
@@ -586,22 +593,26 @@ class TmuxManager:
                 kill_session(session_name)
             return False
 
-    def start_manager(
+    def start_host_role(
         self,
         session_name: str,
         repo_path: Path,
         tool_name: str,
         model: str | None = None,
+        skill_file: str | None = None,
     ) -> None:
-        """Start the manager agent on the host (not in a container).
+        """Start a host-level role agent (not in a container).
 
-        The manager runs on the main branch and orchestrates other agents.
+        Generic method for starting any role that runs directly on the host.
+        The role's behavior is determined by its prompt file in _agenttree/roles/.
 
         Args:
-            session_name: Tmux session name (typically {project}-manager-000)
+            session_name: Tmux session name (e.g., "myproject-manager-000")
             repo_path: Path to the repository root
             tool_name: Name of the AI tool to use
             model: Model to use (e.g., "sonnet", "opus"). If None, uses tool default.
+            skill_file: Prompt file name (e.g., "manager.md").
+                        Looked up in _agenttree/roles/. If None, no initial prompt.
         """
         # Kill existing session if it exists
         if session_exists(session_name):
@@ -610,8 +621,7 @@ class TmuxManager:
         # Get tool config
         tool_config = self.config.get_tool_config(tool_name)
 
-        # Build command to run the AI tool directly (not in container)
-        # Manager runs on the host with full access
+        # Build command to run the AI tool directly on host
         ai_command = tool_config.command
         if model:
             ai_command = f"{ai_command} --model {model}"
@@ -620,9 +630,16 @@ class TmuxManager:
         create_session(session_name, repo_path, ai_command)
 
         # Wait for prompt before sending startup message
-        if wait_for_prompt(session_name, prompt_char="❯", timeout=30.0):
-            # Load manager instructions
-            send_keys(session_name, "cat _agenttree/skills/manager.md")
+        if skill_file and wait_for_prompt(session_name, prompt_char="❯", timeout=30.0):
+            role_prompt_path = f"_agenttree/roles/{skill_file}"
+            legacy_prompt_path = f"_agenttree/skills/{skill_file}"
+            if (repo_path / role_prompt_path).exists():
+                send_keys(session_name, f"cat {role_prompt_path}")
+            elif (repo_path / legacy_prompt_path).exists():
+                # Existing checkouts may still keep role prompts under _agenttree/skills/.
+                send_keys(session_name, f"cat {legacy_prompt_path}")
+            else:
+                send_keys(session_name, f"cat {role_prompt_path}")
 
     def stop_issue_agent(self, session_name: str) -> None:
         """Stop an issue-bound agent's tmux session.

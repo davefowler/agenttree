@@ -14,6 +14,8 @@ from typing import Any, Optional
 import yaml
 from pydantic import BaseModel, Field, PrivateAttr, field_validator
 
+from agenttree.config import DEFAULT_ROLE
+
 from agenttree.agents_repo import sync_agents_repo
 from agenttree.ids import slugify
 
@@ -1280,7 +1282,7 @@ def load_skill(
 
 
 def load_persona(
-    agent_type: str = "developer",
+    agent_type: str = DEFAULT_ROLE,
     issue: Optional["Issue"] = None,
     is_takeover: bool = False,
     current_stage: Optional[str] = None,

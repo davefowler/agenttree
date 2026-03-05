@@ -456,7 +456,7 @@ class TestTmuxManager:
 
 
 class TestStartController:
-    """Tests for TmuxManager.start_manager method."""
+    """Tests for host-role startup in TmuxManager."""
 
     @pytest.fixture
     def mock_config(self):
@@ -478,10 +478,11 @@ class TestStartController:
             with patch("agenttree.tmux.create_session") as mock_create:
                 with patch("agenttree.tmux.wait_for_prompt", return_value=True):
                     with patch("agenttree.tmux.send_keys") as mock_send:
-                        manager.start_manager(
+                        manager.start_host_role(
                             session_name="testproject-manager-000",
                             repo_path=tmp_path,
                             tool_name="claude",
+                            skill_file="manager.md",
                         )
 
         mock_create.assert_called_once_with("testproject-manager-000", tmp_path, "claude")
@@ -500,10 +501,11 @@ class TestStartController:
             with patch("agenttree.tmux.kill_session") as mock_kill:
                 with patch("agenttree.tmux.create_session"):
                     with patch("agenttree.tmux.wait_for_prompt", return_value=False):
-                        manager.start_manager(
+                        manager.start_host_role(
                             session_name="testproject-manager-000",
                             repo_path=tmp_path,
                             tool_name="claude",
+                            skill_file="manager.md",
                         )
 
         mock_kill.assert_called_once_with("testproject-manager-000")
@@ -522,7 +524,7 @@ class TestStartController:
         with patch("agenttree.tmux.session_exists", return_value=False):
             with patch("agenttree.tmux.create_session") as mock_create:
                 with patch("agenttree.tmux.wait_for_prompt", return_value=False):
-                    manager.start_manager(
+                    manager.start_host_role(
                         session_name="testproject-manager-000",
                         repo_path=tmp_path,
                         tool_name="custom",
@@ -540,12 +542,20 @@ class TestServeSession:
     @pytest.fixture
     def mock_config(self):
         """Create a mock config with serve command."""
+        from agenttree.config import RoleConfig, ContainerConfig
         config = MagicMock()
         config.project = "myproject"
         config.default_model = "claude-sonnet"
+        config.default_container_image = "agenttree-agent:latest"
         config.commands = {"serve": "uv run uvicorn app:app --port $PORT"}
         config.get_port_for_issue.return_value = 9135
         config.get_issue_container_name.return_value = "myproject-issue-135"
+        config.roles = {
+            "developer": RoleConfig(
+                name="developer",
+                container=ContainerConfig(enabled=True, image="agenttree-agent:latest"),
+            ),
+        }
         tool_config = MagicMock()
         tool_config.command = "claude"
         tool_config.container_entry_command.return_value = ["claude", "--dangerously-skip-permissions"]

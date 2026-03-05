@@ -1702,10 +1702,10 @@ class TestCheckAndStartBlockedIssues:
 
         with patch('agenttree.issues.get_blocked_issues', return_value=[blocked_issue]):
             with patch('agenttree.issues.check_dependencies_met', return_value=(True, [])):
-                with patch('agenttree.api.start_agent') as mock_start:
+                with patch('agenttree.api.start_issue') as mock_start:
                     check_and_start_blocked_issues(accepted_issue)
 
-                    # Should call api.start_agent for the blocked issue
+                    # Should call api.start_issue for the blocked issue
                     mock_start.assert_called_once_with(blocked_issue.id, quiet=True)
 
     @patch('agenttree.hooks.is_running_in_container', return_value=False)
@@ -1718,10 +1718,10 @@ class TestCheckAndStartBlockedIssues:
         with patch('agenttree.issues.get_blocked_issues', return_value=[blocked_issue]):
             # Dependencies not met - issue 003 is still pending
             with patch('agenttree.issues.check_dependencies_met', return_value=(False, ["003"])):
-                with patch('agenttree.api.start_agent') as mock_start:
+                with patch('agenttree.api.start_issue') as mock_start:
                     check_and_start_blocked_issues(accepted_issue)
 
-                    # Should not call start_agent (deps not met)
+                    # Should not call start_issue (deps not met)
                     mock_start.assert_not_called()
 
     @patch('agenttree.hooks.is_running_in_container', return_value=False)
@@ -1734,7 +1734,7 @@ class TestCheckAndStartBlockedIssues:
 
         with patch('agenttree.issues.get_blocked_issues', return_value=[blocked_issue]):
             with patch('agenttree.issues.check_dependencies_met', return_value=(True, [])):
-                with patch('agenttree.api.start_agent') as mock_start:
+                with patch('agenttree.api.start_issue') as mock_start:
                     # Simulate API failure
                     mock_start.side_effect = AgentStartError(blocked_issue.id, "Error starting agent")
 
@@ -1753,7 +1753,7 @@ class TestCheckAndStartBlockedIssues:
 
         with patch('agenttree.issues.get_blocked_issues', return_value=[blocked_issue]):
             with patch('agenttree.issues.check_dependencies_met', return_value=(True, [])):
-                with patch('agenttree.api.start_agent') as mock_start:
+                with patch('agenttree.api.start_issue') as mock_start:
                     # Simulate an exception
                     mock_start.side_effect = Exception("Something went wrong")
 
@@ -1797,7 +1797,7 @@ class TestCheckAndStartBlockedIssues:
                 return (False, [4])
 
             with patch('agenttree.issues.check_dependencies_met', side_effect=check_deps):
-                with patch('agenttree.api.start_agent') as mock_start:
+                with patch('agenttree.api.start_issue') as mock_start:
                     check_and_start_blocked_issues(accepted_issue)
 
                     # Should only start blocked1 (blocked2 has unmet deps)

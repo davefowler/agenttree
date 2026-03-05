@@ -12,6 +12,8 @@ All issue IDs are integers internally. This module handles:
 
 import re
 
+from agenttree.config import DEFAULT_ROLE
+
 
 def slugify(text: str, max_length: int | None = None) -> str:
     """Convert text to a URL-friendly slug.
@@ -142,7 +144,7 @@ def session_name(
     )
 
 
-def tmux_session_name(project: str, issue_id: int, role: str = "developer") -> str:
+def tmux_session_name(project: str, issue_id: int, role: str = DEFAULT_ROLE) -> str:
     """Get tmux session name for an issue-bound agent.
 
     Args:

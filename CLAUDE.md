@@ -66,7 +66,7 @@ Every operation has ONE authoritative function. Don't reinvent, don't call lower
 |-----------|----------------------|--------|
 | Stop an agent | `stop_agent()` | `agenttree/api.py` |
 | Stop all agents for issue | `stop_all_agents_for_issue()` | `agenttree/api.py` |
-| Start an agent | `start_agent()` | `agenttree/api.py` |
+| Start an agent | `start_issue()` | `agenttree/api.py` |
 | Send message to agent | `send_message()` | `agenttree/api.py` |
 | Transition issue stage | `transition_issue()` | `agenttree/api.py` |
 | Clean up orphaned containers | `cleanup_orphaned_containers()` | `agenttree/api.py` |

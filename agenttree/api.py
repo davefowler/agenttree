@@ -5,10 +5,10 @@ that was previously only available through CLI commands. Internal code
 should import these functions directly instead of shelling out via subprocess.
 
 Example:
-    from agenttree.api import start_agent, send_message
+    from agenttree.api import start_issue, send_message
 
     # Start an agent for an issue
-    agent = start_agent("042", quiet=True)
+    agent = start_issue("042", quiet=True)
 
     # Send a message to an agent
     result = send_message("042", "Please run the tests", quiet=True)
@@ -21,6 +21,7 @@ import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from agenttree.config import DEFAULT_ROLE
 from agenttree.ids import serve_session_name as get_serve_session_name
 
 if TYPE_CHECKING:
@@ -30,12 +31,15 @@ if TYPE_CHECKING:
 log = logging.getLogger("agenttree.api")
 
 __all__ = [
-    "start_agent",
+    "start_issue",
     "send_message",
     "start_controller",
+    "start_role",
     "stop_agent",
     "stop_all_agents_for_issue",
     "transition_issue",
+    "reset_issue",
+    "reimplement_issue",
     "cleanup_orphaned_containers",
     "cleanup_all_agenttree_containers",
     "cleanup_all_with_retry",
@@ -71,7 +75,7 @@ class AgentStartError(Exception):
 class AgentAlreadyRunningError(Exception):
     """Raised when trying to start an agent that's already running."""
 
-    def __init__(self, issue_id: int | str, host: str = "developer"):
+    def __init__(self, issue_id: int | str, host: str = DEFAULT_ROLE):
         self.issue_id = issue_id
         self.host = host
         super().__init__(
@@ -103,10 +107,10 @@ class ControllerNotRunningError(Exception):
         super().__init__("Controller not running. Start with: agenttree start 0")
 
 
-def start_agent(
+def start_issue(
     issue_id: int | str,
     *,
-    host: str = "developer",
+    host: str = DEFAULT_ROLE,
     skip_preflight: bool = False,
     force: bool = False,
     tool: str | None = None,
@@ -195,7 +199,7 @@ def start_agent(
     # the developer container, and container names don't encode role.
     from agenttree.container import is_container_running
     container_name = config.get_issue_container_name(issue.id)
-    if host == "developer" and is_container_running(container_name) and not force:
+    if host == DEFAULT_ROLE and is_container_running(container_name) and not force:
         raise AgentAlreadyRunningError(issue.id, host)
 
     # If force, clean up existing container before proceeding
@@ -276,7 +280,7 @@ def start_agent(
     # Save branch and worktree info to issue metadata
     update_issue_metadata(issue.id, branch=names["branch"], worktree_dir=str(worktree_path))
 
-    role_label = f" ({host})" if host != "developer" else ""
+    role_label = f" ({host})" if host != DEFAULT_ROLE else ""
     if not quiet:
         console.print(f"[green]✓ Starting agent{role_label} for issue #{issue.id}: {issue.title}[/green]")
 
@@ -326,18 +330,31 @@ def start_controller(
     force: bool = False,
     quiet: bool = False,
 ) -> None:
-    """Start the controller agent (issue 0).
+    """Start the controller agent (issue 0). Delegates to start_role("manager")."""
+    start_role("manager", tool=tool, force=force, quiet=quiet)
 
-    The controller runs on the host (not in a container) and orchestrates
-    other agents.
+
+def start_role(
+    role_name: str,
+    *,
+    tool: str | None = None,
+    force: bool = False,
+    quiet: bool = False,
+) -> None:
+    """Start a host-level role agent (e.g., manager, architect).
+
+    Reads all configuration (tool, model, skill file, container settings)
+    from the role's config in .agenttree.yaml. No role-specific logic here.
 
     Args:
-        tool: AI tool to use (default: from config)
+        role_name: Role name as defined in config roles (e.g., "manager", "architect")
+        tool: AI tool override (default: from role config or global default)
         force: Force restart if already running
         quiet: Suppress console output if True
 
     Raises:
-        AgentAlreadyRunningError: If controller already running (without force)
+        AgentAlreadyRunningError: If role agent already running (without force)
+        ValueError: If role not found in config
     """
     from agenttree.config import load_config
     from agenttree.tmux import TmuxManager, session_exists, kill_session
@@ -348,39 +365,49 @@ def start_controller(
 
     repo_path = Path.cwd()
     config = load_config(repo_path)
-    tmux_manager = TmuxManager(config)
 
-    session_name = config.get_manager_tmux_session()
-    tool_name = tool or config.default_tool
+    # Look up role config
+    role_config = config.roles.get(role_name)
+    if not role_config:
+        raise ValueError(f"Unknown role: '{role_name}'. Available: {', '.join(config.roles.keys())}")
+
+    tmux_manager = TmuxManager(config)
+    session_name = config.get_role_tmux_session(role_name)
+
+    # Resolve tool and model from role config, falling back to global defaults
+    tool_name = tool or role_config.tool or config.default_tool
+    model = role_config.model or config.default_model
 
     # Check if already running
     if session_exists(session_name):
         if not force:
-            raise AgentAlreadyRunningError("0", "controller")
+            raise AgentAlreadyRunningError(role_name, role_name)
         if not quiet:
-            console.print("[dim]Killing existing controller session...[/dim]")
+            console.print(f"[dim]Killing existing {role_name} session...[/dim]")
         kill_session(session_name)
 
     if not quiet:
-        console.print("[green]✓ Starting controller...[/green]")
+        console.print(f"[green]Starting {role_name}...[/green]")
+        console.print(f"[dim]Tool: {tool_name}, Model: {model}[/dim]")
 
-    tmux_manager.start_manager(
+    tmux_manager.start_host_role(
         session_name=session_name,
         repo_path=repo_path,
         tool_name=tool_name,
+        model=model,
+        skill_file=role_config.skill_file,
     )
 
     if not quiet:
-        console.print(f"[green]✓ Controller started[/green]")
-        console.print(f"\n[bold]Controller ready[/bold]")
-        console.print(f"[dim]Attach with: agenttree attach 0[/dim]")
+        console.print(f"[green]✓ {role_name.capitalize()} started[/green]")
+        console.print(f"[dim]Attach with: agenttree attach {role_name}[/dim]")
 
 
 def send_message(
     issue_id: int | str,
     message: str,
     *,
-    host: str = "developer",
+    host: str = DEFAULT_ROLE,
     auto_start: bool = True,
     interrupt: bool = False,
     quiet: bool = False,
@@ -449,12 +476,12 @@ def send_message(
         if not auto_start:
             return False
 
-        role_label = f" ({host})" if host != "developer" else ""
+        role_label = f" ({host})" if host != DEFAULT_ROLE else ""
         if not quiet:
             console.print(f"[dim]Agent{role_label} not running, starting...[/dim]")
 
         try:
-            start_agent(
+            start_issue(
                 issue.id,
                 host=host,
                 skip_preflight=True,
@@ -482,7 +509,7 @@ def send_message(
     # Send the message
     result = tmux_manager.send_message_to_issue(agent.tmux_session, message, interrupt=interrupt)
 
-    role_label = f" ({agent.role})" if agent.role != "developer" else ""
+    role_label = f" ({agent.role})" if agent.role != DEFAULT_ROLE else ""
     if result == "sent":
         if not quiet:
             console.print(f"[green]✓ Sent message to issue #{agent.issue_id}{role_label}[/green]")
@@ -660,7 +687,7 @@ def _ensure_stage_agent(issue_id: int, stage: str) -> None:
 # =============================================================================
 
 
-def stop_agent(issue_id: int, role: str = "developer", quiet: bool = False) -> bool:
+def stop_agent(issue_id: int, role: str = DEFAULT_ROLE, quiet: bool = False) -> bool:
     """Stop an active agent - kills tmux and stops container.
 
     Uses config methods to ensure consistent naming across the system.
@@ -759,8 +786,8 @@ def stop_all_agents_for_issue(issue_id: int, quiet: bool = False) -> int:
 
     # Always try to stop the container directly — tmux session may be gone
     # while the container is still running and modifying issue state.
-    if "developer" not in roles_stopped:
-        if stop_agent(issue_id, "developer", quiet):
+    if DEFAULT_ROLE not in roles_stopped:
+        if stop_agent(issue_id, DEFAULT_ROLE, quiet):
             count += 1
     return count
 
@@ -815,7 +842,7 @@ def cleanup_orphaned_containers(quiet: bool = False) -> int:
         issue_id = int(match.group(1))
 
         # Check if there's a tmux session for this container (developer is default role)
-        session_name = config.get_issue_tmux_session(issue_id, "developer")
+        session_name = config.get_issue_tmux_session(issue_id, DEFAULT_ROLE)
 
         if not session_exists(session_name):
             # Orphaned container - stop and remove it
@@ -890,6 +917,248 @@ def cleanup_all_agenttree_containers(quiet: bool = False) -> int:
         console.print(f"[green]✓ Removed {removed} container(s)[/green]")
 
     return removed
+
+
+# =============================================================================
+# Reset Functions
+# =============================================================================
+
+
+def _clean_issue_files(issue_id: int, keep_files: set[str] | None = None) -> list[str]:
+    """Remove generated files from an issue directory, keeping issue.yaml.
+
+    Args:
+        issue_id: Issue ID
+        keep_files: Set of filenames to keep (in addition to issue.yaml).
+                    If None, only issue.yaml is kept.
+
+    Returns:
+        List of filenames that were removed
+    """
+    from agenttree.issues import get_issue_dir
+
+    issue_dir = get_issue_dir(issue_id)
+    if not issue_dir or not issue_dir.exists():
+        return []
+
+    keep = {"issue.yaml"}
+    if keep_files:
+        keep.update(keep_files)
+
+    removed: list[str] = []
+    for f in issue_dir.iterdir():
+        if f.name in keep or f.name.startswith("."):
+            continue
+        if f.is_dir():
+            # Remove subdirectories (e.g., attachments/) but not hidden dirs
+            import shutil
+            shutil.rmtree(f)
+            removed.append(f"{f.name}/")
+        else:
+            f.unlink()
+            removed.append(f.name)
+
+    return removed
+
+
+def _delete_issue_branch(issue_id: int, branch: str | None, quiet: bool = False) -> None:
+    """Delete the git branch for an issue (local only).
+
+    Args:
+        issue_id: Issue ID
+        branch: Branch name to delete (if None, does nothing)
+        quiet: Suppress output
+    """
+    if not branch:
+        return
+
+    repo_path = Path.cwd()
+    result = subprocess.run(
+        ["git", "branch", "-D", branch],
+        cwd=repo_path,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode == 0 and not quiet:
+        log.info("Deleted branch %s for issue #%s", branch, issue_id)
+
+
+def _remove_issue_worktree(issue_id: int, worktree_dir: str | None, quiet: bool = False) -> None:
+    """Remove worktree for an issue.
+
+    Args:
+        issue_id: Issue ID
+        worktree_dir: Worktree directory path (if None, uses config default)
+        quiet: Suppress output
+    """
+    from agenttree.config import load_config
+    from agenttree.worktree import remove_worktree
+
+    config = load_config()
+    repo_path = Path.cwd()
+
+    # Try the stored worktree_dir first, then the config default
+    paths_to_try = []
+    if worktree_dir:
+        paths_to_try.append(Path(worktree_dir))
+    paths_to_try.append(config.get_issue_worktree_path(issue_id))
+
+    for wt_path in paths_to_try:
+        if wt_path.exists():
+            remove_worktree(repo_path, wt_path)
+            if not quiet:
+                log.info("Removed worktree %s for issue #%s", wt_path, issue_id)
+            return
+
+
+def reset_issue(issue_id: int | str, *, quiet: bool = False) -> None:
+    """Fully reset an issue as if it was never started.
+
+    Stops all agents, removes worktree and branch, clears all generated files,
+    and resets issue.yaml to its starting state (backlog).
+
+    After this, `agenttree start {id}` treats it as a fresh issue.
+
+    Args:
+        issue_id: Issue ID
+        quiet: Suppress output
+
+    Raises:
+        IssueNotFoundError: If issue doesn't exist
+    """
+    from agenttree.ids import parse_issue_id
+    from agenttree.issues import get_issue, get_issue_dir, HistoryEntry
+    from datetime import datetime, timezone
+
+    if isinstance(issue_id, str):
+        issue_id = parse_issue_id(issue_id)
+
+    issue = get_issue(issue_id)
+    if not issue:
+        raise IssueNotFoundError(issue_id)
+
+    if not quiet:
+        from rich.console import Console
+        console = Console()
+        console.print(f"[cyan]Resetting issue #{issue_id}: {issue.title}[/cyan]")
+
+    # 1. Stop all agents
+    stop_all_agents_for_issue(issue_id, quiet=quiet)
+
+    # 2. Remove worktree
+    _remove_issue_worktree(issue_id, issue.worktree_dir, quiet=quiet)
+
+    # 3. Delete branch
+    _delete_issue_branch(issue_id, issue.branch, quiet=quiet)
+
+    # 4. Clean all generated files (keep only issue.yaml)
+    removed = _clean_issue_files(issue_id)
+    if removed and not quiet:
+        console.print(f"[dim]Removed files: {', '.join(removed)}[/dim]")
+
+    # 5. Reset issue.yaml to starting state
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    issue.stage = "backlog"
+    issue.branch = None
+    issue.worktree_dir = None
+    issue.pr_number = None
+    issue.pr_url = None
+    issue.processing = None
+    issue.agent_ensured = None
+    issue.ci_escalated = False
+    issue.ci_notified = None
+    issue.manager_hooks_executed = None
+    issue.history = [HistoryEntry(stage="backlog", timestamp=now, type="reset")]
+    issue.updated = now
+    issue.save()
+
+    # 6. Delete session file if it exists
+    from agenttree.issues import delete_session
+    delete_session(issue_id)
+
+    if not quiet:
+        console.print(f"[green]✓ Issue #{issue_id} fully reset to backlog[/green]")
+
+
+def reimplement_issue(issue_id: int | str, *, quiet: bool = False) -> None:
+    """Reset an issue to the start of implementation (after plan approval).
+
+    Keeps explore/plan files (problem.md, research.md, spec.md, spec_review.md)
+    but removes all implementation artifacts. Resets stage to implement.setup.
+
+    After this, `agenttree start {id}` picks up at implementation with the
+    approved plan intact.
+
+    Args:
+        issue_id: Issue ID
+        quiet: Suppress output
+
+    Raises:
+        IssueNotFoundError: If issue doesn't exist
+    """
+    from agenttree.ids import parse_issue_id
+    from agenttree.issues import get_issue, HistoryEntry
+    from datetime import datetime, timezone
+
+    if isinstance(issue_id, str):
+        issue_id = parse_issue_id(issue_id)
+
+    issue = get_issue(issue_id)
+    if not issue:
+        raise IssueNotFoundError(issue_id)
+
+    if not quiet:
+        from rich.console import Console
+        console = Console()
+        console.print(f"[cyan]Re-implementing issue #{issue_id}: {issue.title}[/cyan]")
+
+    # 1. Stop all agents
+    stop_all_agents_for_issue(issue_id, quiet=quiet)
+
+    # 2. Remove worktree
+    _remove_issue_worktree(issue_id, issue.worktree_dir, quiet=quiet)
+
+    # 3. Delete branch
+    _delete_issue_branch(issue_id, issue.branch, quiet=quiet)
+
+    # 4. Clean implementation files, keep pre-implement files
+    pre_implement_files = {
+        "problem.md",
+        "research.md",
+        "spec.md",
+        "spec_review.md",
+    }
+    removed = _clean_issue_files(issue_id, keep_files=pre_implement_files)
+    if removed and not quiet:
+        console.print(f"[dim]Removed files: {', '.join(removed)}[/dim]")
+
+    # 5. Reset issue.yaml to implement.setup
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    # Keep history up to plan.review, add reimplement entry
+    kept_history = [h for h in issue.history if not h.stage.startswith("implement")]
+    kept_history.append(HistoryEntry(stage="implement.setup", timestamp=now, type="reimplement"))
+
+    issue.stage = "implement.setup"
+    issue.branch = None
+    issue.worktree_dir = None
+    issue.pr_number = None
+    issue.pr_url = None
+    issue.processing = None
+    issue.agent_ensured = None
+    issue.ci_escalated = False
+    issue.ci_notified = None
+    issue.manager_hooks_executed = None
+    issue.history = kept_history
+    issue.updated = now
+    issue.save()
+
+    # 6. Delete session file
+    from agenttree.issues import delete_session
+    delete_session(issue_id)
+
+    if not quiet:
+        console.print(f"[green]✓ Issue #{issue_id} reset to implement.setup[/green]")
 
 
 def cleanup_all_with_retry(max_passes: int = 3, delay_s: float = 2.0, quiet: bool = False) -> None:
