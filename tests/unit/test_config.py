@@ -1316,7 +1316,7 @@ class TestSemanticStageQueries:
                 ),
             },
             flows={
-                "quick": FlowConfig(stages=["backlog", "implement", "accepted"]),
+                "quick": FlowConfig(name="quick", stages=["backlog", "implement", "accepted"]),
             },
         )
         # quick flow has no abandon stage
