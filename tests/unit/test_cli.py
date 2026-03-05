@@ -78,8 +78,9 @@ class TestSendCommand:
                         mock_tm.send_message_to_issue.return_value = "sent"
                         mock_tm_class.return_value = mock_tm
 
-                        with patch("agenttree.cli.agents.subprocess.run") as mock_run:
-                            mock_run.return_value = MagicMock(returncode=0, stderr="")
+                        # Mock the API start_issue function (used instead of subprocess)
+                        with patch("agenttree.api.start_issue") as mock_start:
+                            mock_start.return_value = mock_agent
                             result = cli_runner.invoke(main, ["send", "42", "hello"])
 
         assert result.exit_code == 0
