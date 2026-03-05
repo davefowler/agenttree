@@ -142,20 +142,22 @@ agenttree remote start my-home-pc 1
 ### Multi-CLI Support
 Use any AI coding CLI with your agents:
 
-```python
+```yaml
 # .agenttree.yaml
-agents:
-  - id: 1
-    tool: claude     # Claude Code (default)
-  - id: 2
-    tool: aider      # Aider
-    model: opus
-  - id: 3
-    tool: gemini     # Google Gemini Code Assist
-    model: gemini-2.0-flash-exp
-  - id: 4
-    tool: cursor     # Or any custom CLI
+tools:
+  claude:
+    command: claude
+    skip_permissions: true  # Add --dangerously-skip-permissions
+  aider:
+    command: aider
+  gemini:
+    command: gemini-cli
+  cursor:
     command: cursor-cli
+
+# Set default tool and model at the top level
+default_tool: claude
+default_model: opus
 ```
 
 
