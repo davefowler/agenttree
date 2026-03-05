@@ -96,7 +96,6 @@ def start_issue(
         get_issue_names,
     )
     from agenttree.worktree import create_worktree, update_worktree_with_main
-    from agenttree.cli.server import _start_manager
 
     repo_path = Path.cwd()
     config = load_config(repo_path)
