@@ -1027,3 +1027,297 @@ model_tiers:
             }
         )
         assert config.model_for("implement.code_review") == "sonnet"
+
+
+class TestSemanticStageQueries:
+    """Tests for semantic stage query methods (get_first_stage, has_hook, etc.)."""
+
+    def test_get_first_stage_returns_first_non_parking_lot(self) -> None:
+        """get_first_stage should return first non-parking-lot stage."""
+        from agenttree.config import FlowConfig
+
+        config = Config(
+            stages={
+                "backlog": StageConfig(name="backlog", is_parking_lot=True),
+                "explore": StageConfig(
+                    name="explore",
+                    substages={"define": SubstageConfig(name="define")}
+                ),
+                "accepted": StageConfig(name="accepted", is_parking_lot=True),
+            },
+            flows={
+                "default": FlowConfig(
+                    name="default",
+                    stages=["backlog", "explore.define", "accepted"]
+                )
+            }
+        )
+        assert config.get_first_stage("default") == "explore.define"
+
+    def test_get_first_stage_skips_parking_lots(self) -> None:
+        """get_first_stage should skip all leading parking lots."""
+        from agenttree.config import FlowConfig
+
+        config = Config(
+            stages={
+                "backlog": StageConfig(name="backlog", is_parking_lot=True),
+                "pending": StageConfig(name="pending", is_parking_lot=True),
+                "work": StageConfig(name="work"),
+            },
+            flows={
+                "default": FlowConfig(
+                    name="default",
+                    stages=["backlog", "pending", "work"]
+                )
+            }
+        )
+        assert config.get_first_stage("default") == "work"
+
+    def test_get_first_stage_returns_first_if_all_parking_lots(self) -> None:
+        """get_first_stage returns first stage if all are parking lots."""
+        from agenttree.config import FlowConfig
+
+        config = Config(
+            stages={
+                "backlog": StageConfig(name="backlog", is_parking_lot=True),
+                "done": StageConfig(name="done", is_parking_lot=True),
+            },
+            flows={
+                "default": FlowConfig(
+                    name="default",
+                    stages=["backlog", "done"]
+                )
+            }
+        )
+        # Falls back to first stage
+        assert config.get_first_stage("default") == "backlog"
+
+    def test_has_hook_returns_true_for_existing_hook(self) -> None:
+        """has_hook should return True when hook exists in pre_completion."""
+        config = Config(
+            stages={
+                "implement": StageConfig(
+                    name="implement",
+                    substages={
+                        "ci_wait": SubstageConfig(
+                            name="ci_wait",
+                            pre_completion=[{"ci_check": {}}]
+                        )
+                    }
+                )
+            }
+        )
+        assert config.has_hook("implement.ci_wait", "ci_check") is True
+
+    def test_has_hook_returns_false_for_missing_hook(self) -> None:
+        """has_hook should return False when hook doesn't exist."""
+        config = Config(
+            stages={
+                "explore": StageConfig(
+                    name="explore",
+                    substages={
+                        "define": SubstageConfig(
+                            name="define",
+                            pre_completion=[{"section_check": {"file": "problem.md"}}]
+                        )
+                    }
+                )
+            }
+        )
+        assert config.has_hook("explore.define", "ci_check") is False
+
+    def test_has_hook_checks_stage_level_hooks(self) -> None:
+        """has_hook should check stage-level hooks when no substage."""
+        config = Config(
+            stages={
+                "deploy": StageConfig(
+                    name="deploy",
+                    pre_completion=[{"create_pr": {}}]
+                )
+            }
+        )
+        assert config.has_hook("deploy", "create_pr") is True
+        assert config.has_hook("deploy", "ci_check") is False
+
+    def test_is_completion_stage_true_for_accepted(self) -> None:
+        """is_completion_stage should return True for stages with is_completion=True."""
+        config = Config(
+            stages={
+                "accepted": StageConfig(
+                    name="accepted",
+                    is_parking_lot=True,
+                    is_completion=True
+                )
+            }
+        )
+        assert config.is_completion_stage("accepted") is True
+
+    def test_is_completion_stage_false_for_backlog(self) -> None:
+        """is_completion_stage should return False for non-completion stages."""
+        config = Config(
+            stages={
+                "backlog": StageConfig(name="backlog", is_parking_lot=True)
+            }
+        )
+        assert config.is_completion_stage("backlog") is False
+
+    def test_is_abandon_stage_true_for_not_doing(self) -> None:
+        """is_abandon_stage should return True for stages with is_abandon=True."""
+        config = Config(
+            stages={
+                "not_doing": StageConfig(
+                    name="not_doing",
+                    is_parking_lot=True,
+                    is_abandon=True
+                )
+            }
+        )
+        assert config.is_abandon_stage("not_doing") is True
+
+    def test_is_abandon_stage_false_for_accepted(self) -> None:
+        """is_abandon_stage should return False for completion stages."""
+        config = Config(
+            stages={
+                "accepted": StageConfig(
+                    name="accepted",
+                    is_parking_lot=True,
+                    is_completion=True
+                )
+            }
+        )
+        assert config.is_abandon_stage("accepted") is False
+
+    def test_is_resumable_stage_true_for_backlog(self) -> None:
+        """is_resumable_stage should return True for parking lots that aren't terminal."""
+        config = Config(
+            stages={
+                "backlog": StageConfig(name="backlog", is_parking_lot=True)
+            }
+        )
+        assert config.is_resumable_stage("backlog") is True
+
+    def test_is_resumable_stage_false_for_accepted(self) -> None:
+        """is_resumable_stage should return False for completion stages."""
+        config = Config(
+            stages={
+                "accepted": StageConfig(
+                    name="accepted",
+                    is_parking_lot=True,
+                    is_completion=True
+                )
+            }
+        )
+        assert config.is_resumable_stage("accepted") is False
+
+    def test_is_resumable_stage_false_for_not_doing(self) -> None:
+        """is_resumable_stage should return False for abandon stages."""
+        config = Config(
+            stages={
+                "not_doing": StageConfig(
+                    name="not_doing",
+                    is_parking_lot=True,
+                    is_abandon=True
+                )
+            }
+        )
+        assert config.is_resumable_stage("not_doing") is False
+
+    def test_is_resumable_stage_false_for_non_parking_lot(self) -> None:
+        """is_resumable_stage should return False for non-parking-lot stages."""
+        config = Config(
+            stages={
+                "implement": StageConfig(name="implement")
+            }
+        )
+        assert config.is_resumable_stage("implement") is False
+
+    def test_get_completion_stage_returns_completion_stage(self) -> None:
+        """get_completion_stage should return the stage marked as completion."""
+        from agenttree.config import FlowConfig
+
+        config = Config(
+            stages={
+                "backlog": StageConfig(name="backlog", is_parking_lot=True),
+                "implement": StageConfig(name="implement"),
+                "done": StageConfig(
+                    name="done",
+                    is_parking_lot=True,
+                    is_completion=True
+                ),
+            },
+            flows={
+                "default": FlowConfig(
+                    name="default",
+                    stages=["backlog", "implement", "done"]
+                )
+            }
+        )
+        assert config.get_completion_stage("default") == "done"
+
+    def test_get_completion_stage_returns_none_if_not_found(self) -> None:
+        """get_completion_stage should return None if no completion stage exists."""
+        from agenttree.config import FlowConfig
+
+        config = Config(
+            stages={
+                "backlog": StageConfig(name="backlog", is_parking_lot=True),
+                "implement": StageConfig(name="implement"),
+            },
+            flows={
+                "default": FlowConfig(
+                    name="default",
+                    stages=["backlog", "implement"]
+                )
+            }
+        )
+        assert config.get_completion_stage("default") is None
+
+    def test_get_abandon_stage_returns_abandon_stage(self) -> None:
+        """get_abandon_stage should return the stage marked as abandon."""
+        config = Config(
+            stages={
+                "backlog": StageConfig(name="backlog", is_parking_lot=True),
+                "cancelled": StageConfig(
+                    name="cancelled",
+                    is_parking_lot=True,
+                    is_abandon=True
+                ),
+            }
+        )
+        assert config.get_abandon_stage() == "cancelled"
+
+    def test_get_abandon_stage_returns_none_if_not_found(self) -> None:
+        """get_abandon_stage should return None if no abandon stage exists."""
+        config = Config(
+            stages={
+                "backlog": StageConfig(name="backlog", is_parking_lot=True),
+                "done": StageConfig(
+                    name="done",
+                    is_parking_lot=True,
+                    is_completion=True
+                ),
+            }
+        )
+        assert config.get_abandon_stage() is None
+
+    def test_get_abandon_stage_respects_flow(self) -> None:
+        """get_abandon_stage should only return abandon stages in the given flow."""
+        from agenttree.config import FlowConfig
+
+        config = Config(
+            stages={
+                "backlog": StageConfig(name="backlog", is_parking_lot=True),
+                "implement": StageConfig(name="implement"),
+                "accepted": StageConfig(
+                    name="accepted", is_parking_lot=True, is_completion=True
+                ),
+                "not_doing": StageConfig(
+                    name="not_doing", is_parking_lot=True, is_abandon=True
+                ),
+            },
+            flows={
+                "quick": FlowConfig(name="quick", stages=["backlog", "implement", "accepted"]),
+            },
+        )
+        # quick flow has no abandon stage
+        assert config.get_abandon_stage("quick") is None

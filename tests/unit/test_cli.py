@@ -721,6 +721,9 @@ class TestIssueCreateCommand:
         mock_dep_issue = MagicMock()
         mock_dep_issue.stage = "implement"  # Not accepted yet
 
+        # Configure mock to recognize "implement" is not a completion stage
+        mock_config.is_completion_stage.return_value = False
+
         problem = "This is a detailed problem statement that is at least 50 characters long for the test."
 
         with patch("agenttree.cli.issues.load_config", return_value=mock_config):

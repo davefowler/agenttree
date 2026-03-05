@@ -572,22 +572,24 @@ def check_merged_prs(agents_dir: Path) -> int:
             merged_at = pr_data.get("mergedAt")
 
             if pr_state == "MERGED" or merged_at:
-                # PR was merged externally - advance to accepted
+                # PR was merged externally - advance to completion stage
                 # Note: This skips knowledge_base stage (can't run it — PR is
                 # already merged and the agent may not be running).
-                console.print(f"[green]PR #{pr_number} was merged externally (issue was at {stage}), advancing issue #{issue_id} to accepted[/green]")
+                completion_stage = config.get_completion_stage(issue.flow) or "accepted"
+                console.print(f"[green]PR #{pr_number} was merged externally (issue was at {stage}), advancing issue #{issue_id} to {completion_stage}[/green]")
                 from agenttree.issues import update_issue_stage
-                updated = update_issue_stage(issue_id, "accepted", skip_sync=True, _issue_dir=issue_dir)
+                updated = update_issue_stage(issue_id, completion_stage, skip_sync=True, _issue_dir=issue_dir)
                 if updated:
                     issues_advanced += 1
                     from agenttree.hooks import cleanup_issue_agent, check_and_start_blocked_issues
                     cleanup_issue_agent(updated)
                     check_and_start_blocked_issues(updated)
             elif pr_state == "CLOSED":
-                # PR was closed without merging - advance to not_doing
-                console.print(f"[yellow]PR #{pr_number} was closed without merge (issue was at {stage}), advancing issue #{issue_id} to not_doing[/yellow]")
+                # PR was closed without merging - advance to abandon stage
+                abandon_stage = config.get_abandon_stage(issue.flow) or "not_doing"
+                console.print(f"[yellow]PR #{pr_number} was closed without merge (issue was at {stage}), advancing issue #{issue_id} to {abandon_stage}[/yellow]")
                 from agenttree.issues import update_issue_stage
-                updated = update_issue_stage(issue_id, "not_doing", skip_sync=True, _issue_dir=issue_dir)
+                updated = update_issue_stage(issue_id, abandon_stage, skip_sync=True, _issue_dir=issue_dir)
                 if updated:
                     issues_advanced += 1
                     from agenttree.hooks import cleanup_issue_agent
