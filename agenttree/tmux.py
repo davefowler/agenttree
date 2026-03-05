@@ -12,6 +12,7 @@ from agenttree.config import Config, DEFAULT_ROLE
 from agenttree.ids import serve_session_name as get_serve_session_name
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from agenttree.container import ContainerRuntime
 
 log = logging.getLogger("agenttree.tmux")
@@ -303,6 +304,7 @@ def wait_for_prompt(
     prompt_char: str = "❯",
     timeout: float = 30.0,
     poll_interval: float = 0.5,
+    progress_callback: "Callable[[float, float], None] | None" = None,
 ) -> bool:
     """Wait for a prompt to appear in a tmux session.
 
@@ -311,6 +313,7 @@ def wait_for_prompt(
         prompt_char: Character to look for (default: Claude CLI prompt)
         timeout: Maximum time to wait in seconds
         poll_interval: Time between checks in seconds
+        progress_callback: Optional callback(elapsed, timeout) called every 30s during wait
 
     Returns:
         True if prompt found, False if timeout
@@ -318,10 +321,21 @@ def wait_for_prompt(
     import time
 
     start = time.time()
+    last_progress_time = start
+    progress_interval = 30.0  # Report progress every 30 seconds
+
     while time.time() - start < timeout:
         pane_content = capture_pane(session_name, lines=20)
         if prompt_char in pane_content:
             return True
+
+        # Call progress callback periodically
+        current_time = time.time()
+        if progress_callback and (current_time - last_progress_time >= progress_interval):
+            elapsed = current_time - start
+            progress_callback(elapsed, timeout)
+            last_progress_time = current_time
+
         time.sleep(poll_interval)
     return False
 
@@ -554,8 +568,14 @@ class TmuxManager:
                 # Serve session failure should not block agent startup
                 log.warning("Could not start serve session: %s", e)
 
+        # Progress callback for long waits - print status every 30 seconds
+        def startup_progress(elapsed: float, timeout: float) -> None:
+            from rich.console import Console
+            console = Console()
+            console.print(f"[dim]Waiting for Claude CLI... {int(elapsed)}s/{int(timeout)}s[/dim]")
+
         # Wait for Claude CLI prompt before sending startup message
-        if wait_for_prompt(session_name, prompt_char="❯", timeout=180.0):
+        if wait_for_prompt(session_name, prompt_char="❯", timeout=180.0, progress_callback=startup_progress):
             # Build issue-specific startup prompt based on state
             if has_merge_conflicts:
                 startup_prompt = (

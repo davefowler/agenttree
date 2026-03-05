@@ -464,7 +464,7 @@ class TestStopAgent:
     """Tests for stop_agent function."""
 
     def test_stop_agent_kills_tmux_and_container(self):
-        """stop_agent should kill tmux session and stop/delete container using config names."""
+        """stop_agent should kill tmux session and cleanup containers by prefix."""
         from agenttree.api import stop_agent
 
         mock_config = MagicMock()
@@ -474,13 +474,12 @@ class TestStopAgent:
 
         mock_runtime = MagicMock()
         mock_runtime.runtime = "container"
-        mock_runtime.stop.return_value = True
-        mock_runtime.delete.return_value = True
 
         with patch("agenttree.config.load_config", return_value=mock_config), \
              patch("agenttree.tmux.session_exists", return_value=True), \
              patch("agenttree.tmux.kill_session") as mock_kill, \
-             patch("agenttree.container.get_container_runtime", return_value=mock_runtime):
+             patch("agenttree.container.get_container_runtime", return_value=mock_runtime), \
+             patch("agenttree.container.cleanup_containers_by_prefix", return_value=1) as mock_cleanup:
 
             result = stop_agent(42, "developer", quiet=True)
 
@@ -489,10 +488,9 @@ class TestStopAgent:
         mock_config.get_issue_tmux_session.assert_called_with(42, "developer")
         mock_kill.assert_any_call("myproject-developer-042")
 
-        # Verify container was stopped/deleted using config method
+        # Verify container was cleaned up using prefix-based cleanup
         mock_config.get_issue_container_name.assert_called_with(42)
-        mock_runtime.stop.assert_called_with("agenttree-myproject-042")
-        mock_runtime.delete.assert_called_with("agenttree-myproject-042")
+        mock_cleanup.assert_called_once_with("container", "agenttree-myproject-042")
 
     def test_stop_agent_handles_no_session(self):
         """stop_agent should gracefully handle when tmux session doesn't exist."""
@@ -505,13 +503,12 @@ class TestStopAgent:
 
         mock_runtime = MagicMock()
         mock_runtime.runtime = "container"
-        mock_runtime.stop.return_value = True
-        mock_runtime.delete.return_value = True
 
         with patch("agenttree.config.load_config", return_value=mock_config), \
              patch("agenttree.tmux.session_exists", return_value=False), \
              patch("agenttree.tmux.kill_session") as mock_kill, \
-             patch("agenttree.container.get_container_runtime", return_value=mock_runtime):
+             patch("agenttree.container.get_container_runtime", return_value=mock_runtime), \
+             patch("agenttree.container.cleanup_containers_by_prefix", return_value=1) as mock_cleanup:
 
             result = stop_agent(42, "developer", quiet=True)
 
@@ -519,12 +516,11 @@ class TestStopAgent:
         assert result is True
         # Should not attempt to kill session
         mock_kill.assert_not_called()
-        # Should still stop/delete container
-        mock_runtime.stop.assert_called_with("agenttree-myproject-042")
-        mock_runtime.delete.assert_called_with("agenttree-myproject-042")
+        # Should still cleanup containers by prefix
+        mock_cleanup.assert_called_once_with("container", "agenttree-myproject-042")
 
     def test_stop_agent_handles_no_container(self):
-        """stop_agent should gracefully handle when container doesn't exist."""
+        """stop_agent should gracefully handle when no container runtime is available."""
         from agenttree.api import stop_agent
 
         mock_config = MagicMock()
@@ -538,16 +534,76 @@ class TestStopAgent:
         with patch("agenttree.config.load_config", return_value=mock_config), \
              patch("agenttree.tmux.session_exists", return_value=True), \
              patch("agenttree.tmux.kill_session") as mock_kill, \
-             patch("agenttree.container.get_container_runtime", return_value=mock_runtime):
+             patch("agenttree.container.get_container_runtime", return_value=mock_runtime), \
+             patch("agenttree.container.cleanup_containers_by_prefix") as mock_cleanup:
 
             result = stop_agent(42, "developer", quiet=True)
 
         assert result is True  # Still returns True because tmux was stopped
         # Should kill tmux session
         mock_kill.assert_called_with("myproject-developer-042")
-        # Should not attempt container operations
+        # Should not attempt container operations (no runtime)
+        mock_cleanup.assert_not_called()
+
+    def test_stop_agent_uses_prefix_cleanup(self):
+        """stop_agent should use cleanup_containers_by_prefix for container cleanup.
+
+        This ensures containers with random suffixes (e.g., agenttree-myproject-042-abc123)
+        are properly cleaned up, not just containers matching the exact base name.
+        """
+        from agenttree.api import stop_agent
+
+        mock_config = MagicMock()
+        mock_config.project = "myproject"
+        mock_config.get_issue_tmux_session.return_value = "myproject-developer-042"
+        mock_config.get_issue_container_name.return_value = "agenttree-myproject-042"
+
+        mock_runtime = MagicMock()
+        mock_runtime.runtime = "container"
+
+        with patch("agenttree.config.load_config", return_value=mock_config), \
+             patch("agenttree.tmux.session_exists", return_value=True), \
+             patch("agenttree.tmux.kill_session"), \
+             patch("agenttree.container.get_container_runtime", return_value=mock_runtime), \
+             patch("agenttree.container.cleanup_containers_by_prefix", return_value=2) as mock_cleanup:
+
+            result = stop_agent(42, "developer", quiet=True)
+
+        assert result is True
+        # Verify cleanup_containers_by_prefix was called with correct prefix
+        mock_cleanup.assert_called_once_with("container", "agenttree-myproject-042")
+        # Direct stop/delete should NOT be called - we use prefix cleanup instead
         mock_runtime.stop.assert_not_called()
         mock_runtime.delete.assert_not_called()
+
+    def test_stop_agent_prefix_cleanup_handles_multiple_containers(self):
+        """stop_agent should clean up all containers matching the prefix.
+
+        When multiple containers exist with suffixes (e.g., from repeated --force starts),
+        cleanup_containers_by_prefix should remove all of them.
+        """
+        from agenttree.api import stop_agent
+
+        mock_config = MagicMock()
+        mock_config.project = "myproject"
+        mock_config.get_issue_tmux_session.return_value = "myproject-developer-042"
+        mock_config.get_issue_container_name.return_value = "agenttree-myproject-042"
+
+        mock_runtime = MagicMock()
+        mock_runtime.runtime = "container"
+
+        # cleanup_containers_by_prefix returns count of containers cleaned
+        with patch("agenttree.config.load_config", return_value=mock_config), \
+             patch("agenttree.tmux.session_exists", return_value=False), \
+             patch("agenttree.tmux.kill_session"), \
+             patch("agenttree.container.get_container_runtime", return_value=mock_runtime), \
+             patch("agenttree.container.cleanup_containers_by_prefix", return_value=3) as mock_cleanup:
+
+            result = stop_agent(42, "developer", quiet=True)
+
+        # Should return True because containers were cleaned
+        assert result is True
+        mock_cleanup.assert_called_once_with("container", "agenttree-myproject-042")
 
 
 class TestStopAllAgentsForIssue:
@@ -709,7 +765,7 @@ class TestContainerNamingConsistency:
     """Tests to verify API uses consistent container naming from config."""
 
     def test_container_naming_consistency(self):
-        """stop_agent should use same container name as config.get_issue_container_name()."""
+        """stop_agent should use cleanup_containers_by_prefix with config-derived prefix."""
         from agenttree.api import stop_agent
 
         mock_config = MagicMock()
@@ -719,22 +775,20 @@ class TestContainerNamingConsistency:
 
         mock_runtime = MagicMock()
         mock_runtime.runtime = "container"
-        mock_runtime.stop.return_value = True
-        mock_runtime.delete.return_value = True
 
         with patch("agenttree.config.load_config", return_value=mock_config), \
              patch("agenttree.tmux.session_exists", return_value=False), \
              patch("agenttree.tmux.kill_session"), \
-             patch("agenttree.container.get_container_runtime", return_value=mock_runtime):
+             patch("agenttree.container.get_container_runtime", return_value=mock_runtime), \
+             patch("agenttree.container.cleanup_containers_by_prefix", return_value=1) as mock_cleanup:
 
             stop_agent(123, "developer", quiet=True)
 
-        # Verify both config methods were called with same issue_id
+        # Verify config method was called with issue_id
         mock_config.get_issue_container_name.assert_called_with(123)
-        # Verify container operations used the config-derived name
-        expected_name = "agenttree-testproject-123"
-        mock_runtime.stop.assert_called_with(expected_name)
-        mock_runtime.delete.assert_called_with(expected_name)
+        # Verify cleanup_containers_by_prefix was called with prefix (handles random suffixes)
+        expected_prefix = "agenttree-testproject-123"
+        mock_cleanup.assert_called_with("container", expected_prefix)
 
 
 class TestTransitionIssue:

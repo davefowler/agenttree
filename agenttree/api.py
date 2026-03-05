@@ -735,21 +735,21 @@ def stop_agent(issue_id: int, role: str = DEFAULT_ROLE, quiet: bool = False) -> 
         if not quiet:
             console.print(f"[yellow]  Warning: Could not stop tmux session: {e}[/yellow]")
 
-    # 3. Stop container by name (fast and reliable)
+    # 3. Stop containers by prefix (handles random suffixes from mDNS collision avoidance)
+    # Containers are created with random suffixes like "agenttree-myproject-042-abc123"
+    # so we use prefix-based cleanup to catch all of them
     try:
         runtime = get_container_runtime()
         if runtime.runtime:
-            # Use config method for consistent container naming
-            container_name = config.get_issue_container_name(issue_id)
+            from agenttree.container import cleanup_containers_by_prefix
+            # Use config method for consistent container naming prefix
+            container_prefix = config.get_issue_container_name(issue_id)
 
-            if runtime.stop(container_name):
+            cleaned = cleanup_containers_by_prefix(runtime.runtime, container_prefix)
+            if cleaned > 0:
                 stopped_something = True
                 if not quiet:
-                    console.print(f"[dim]  Stopped container: {container_name}[/dim]")
-
-            # Remove container (Apple Containers do NOT auto-remove, Docker needs explicit rm too)
-            if runtime.delete(container_name):
-                stopped_something = True
+                    console.print(f"[dim]  Stopped {cleaned} container(s) matching: {container_prefix}[/dim]")
     except Exception as e:
         if not quiet:
             console.print(f"[yellow]  Warning: Could not stop container: {e}[/yellow]")
