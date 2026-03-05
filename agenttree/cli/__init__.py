@@ -13,8 +13,8 @@ This package contains the CLI commands organized into submodules:
 - misc: Miscellaneous commands (auto-merge, context-init, tui, cleanup)
 """
 
-# Main CLI group from _legacy.py
-from agenttree.cli._legacy import main
+# Main CLI group
+from agenttree.cli.main import main
 
 # Import command groups and commands from submodules
 from agenttree.cli.notes import notes
