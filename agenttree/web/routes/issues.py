@@ -8,6 +8,8 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 
+from agenttree.config import DEFAULT_ROLE
+
 from agenttree import issues as issue_crud
 from agenttree.config import load_config
 from agenttree.web.agent_manager import agent_manager
@@ -60,7 +62,7 @@ async def create_issue_api(
         title: Optional title (auto-generated if blank)
         files: Optional file attachments
     """
-    from agenttree.api import start_agent
+    from agenttree.api import start_issue
     from agenttree.issues import Priority
 
     problem_text = problem.strip()
@@ -110,7 +112,7 @@ async def create_issue_api(
 
         # Auto-start agent for the new issue
         try:
-            await asyncio.to_thread(start_agent, issue.id, quiet=True)
+            await asyncio.to_thread(start_issue, issue.id, quiet=True)
         except Exception as e:
             # Log but don't fail - issue was created, agent start is optional
             logger.warning("Could not auto-start agent for issue #%s: %s", issue.id, e)
@@ -125,11 +127,11 @@ async def start_issue(
     issue_id: str, user: str | None = Depends(get_current_user)
 ) -> dict:
     """Start an agent to work on an issue."""
-    from agenttree.api import AgentStartError, IssueNotFoundError, start_agent
+    from agenttree.api import AgentStartError, IssueNotFoundError, start_issue
 
     try:
         # Use force=True to restart stalled agents (tmux dead but state exists)
-        await asyncio.to_thread(start_agent, issue_id, force=True, quiet=True)
+        await asyncio.to_thread(start_issue, issue_id, force=True, quiet=True)
         return {"ok": True, "status": f"Started agent for issue #{issue_id}"}
     except IssueNotFoundError:
         raise HTTPException(status_code=404, detail=f"Issue #{issue_id} not found")
@@ -174,7 +176,7 @@ async def get_agent_status(
     # For human review stages, check the developer agent session
     issue = issue_crud.get_issue(parsed_id, sync=False)
     if issue and _config.is_human_review(issue.stage):
-        dev_session = _config.get_issue_tmux_session(parsed_id, "developer")
+        dev_session = _config.get_issue_tmux_session(parsed_id, DEFAULT_ROLE)
         tmux_active = await asyncio.to_thread(
             lambda: dev_session in agent_manager._get_active_sessions()
         )

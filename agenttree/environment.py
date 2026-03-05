@@ -8,6 +8,8 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from agenttree.config import DEFAULT_ROLE
+
 if TYPE_CHECKING:
     from agenttree.issues import Issue
 
@@ -67,9 +69,9 @@ def get_current_role() -> str:
     if role:
         return role
 
-    # Default: "developer" if in container, "manager" if on host
+    # Default: developer if in container, manager if on host
     if is_running_in_container():
-        return "developer"
+        return DEFAULT_ROLE
     return "manager"
 
 

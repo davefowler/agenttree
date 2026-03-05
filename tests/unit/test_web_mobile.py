@@ -232,7 +232,7 @@ class TestMobileEndpoint:
 class TestCreateIssueEndpoint:
     """Tests for create issue API endpoint."""
 
-    @patch("agenttree.api.start_agent")
+    @patch("agenttree.api.start_issue")
     @patch("agenttree.web.routes.issues.issue_crud")
     def test_create_issue_success(self, mock_crud, mock_start, client):
         """Test creating issue with problem (title auto-generated)."""
@@ -253,7 +253,7 @@ class TestCreateIssueEndpoint:
         assert data["ok"] is True
         assert data["issue_id"] == "042"
 
-    @patch("agenttree.api.start_agent")
+    @patch("agenttree.api.start_issue")
     @patch("agenttree.web.routes.issues.issue_crud")
     def test_create_issue_with_title(self, mock_crud, mock_start, client):
         """Test creating issue with explicit title."""

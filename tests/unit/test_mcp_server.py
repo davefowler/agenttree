@@ -13,7 +13,7 @@ from agenttree.mcp_server import (
     send_message,
     create_issue,
     approve,
-    start_agent,
+    start_issue,
     stop_agent,
     _get_repo_path,
 )
@@ -235,7 +235,7 @@ class TestCreateIssue:
     def test_create_success(self, mock_issue: MagicMock) -> None:
         with (
             patch("agenttree.issues.create_issue", return_value=mock_issue),
-            patch("agenttree.api.start_agent"),
+            patch("agenttree.api.start_issue"),
         ):
             result = create_issue(
                 "Fix the broken widget",
@@ -299,32 +299,32 @@ class TestApprove:
 class TestStartAgent:
     def test_start_controller(self) -> None:
         with patch("agenttree.api.start_controller"):
-            result = start_agent(0)
+            result = start_issue(0)
             assert "Controller started" in result
 
     def test_start_success(self) -> None:
-        with patch("agenttree.api.start_agent"):
-            result = start_agent(42)
+        with patch("agenttree.api.start_issue"):
+            result = start_issue(42)
             assert "Agent started" in result
 
     def test_issue_not_found(self) -> None:
         from agenttree.api import IssueNotFoundError
 
         with patch(
-            "agenttree.api.start_agent",
+            "agenttree.api.start_issue",
             side_effect=IssueNotFoundError("042"),
         ):
-            result = start_agent(42)
+            result = start_issue(42)
             assert "not found" in result
 
     def test_start_error(self) -> None:
         from agenttree.api import AgentStartError
 
         with patch(
-            "agenttree.api.start_agent",
+            "agenttree.api.start_issue",
             side_effect=AgentStartError("042", "container failed"),
         ):
-            result = start_agent(42)
+            result = start_issue(42)
             assert "Failed to start" in result
 
 

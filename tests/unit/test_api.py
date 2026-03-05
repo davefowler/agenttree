@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch, call
 import pytest
 
 from agenttree.api import (
-    start_agent,
+    start_issue,
     start_controller,
     send_message,
     IssueNotFoundError,
@@ -18,7 +18,7 @@ from agenttree.api import (
 
 
 class TestStartAgent:
-    """Tests for start_agent() function."""
+    """Tests for start_issue() function."""
 
     @pytest.fixture
     def mock_config(self):
@@ -53,7 +53,7 @@ class TestStartAgent:
         agent.port = 8042
         return agent
 
-    def test_start_agent_creates_worktree_and_starts_tmux(
+    def test_start_issue_creates_worktree_and_starts_tmux(
         self, mock_config, mock_issue, mock_agent, tmp_path, monkeypatch
     ):
         """Happy path: returns ActiveAgent."""
@@ -84,11 +84,11 @@ class TestStartAgent:
                                                         with patch("agenttree.container.is_container_running", return_value=False):
                                                             with patch("subprocess.run") as mock_run:
                                                                 mock_run.return_value = MagicMock(returncode=1)
-                                                                result = start_agent("042", quiet=True)
+                                                                result = start_issue("042", quiet=True)
 
         assert result == mock_agent
 
-    def test_start_agent_issue_not_found_raises(self, mock_config, tmp_path, monkeypatch):
+    def test_start_issue_issue_not_found_raises(self, mock_config, tmp_path, monkeypatch):
         """IssueNotFoundError when issue doesn't exist."""
         monkeypatch.chdir(tmp_path)
 
@@ -96,11 +96,11 @@ class TestStartAgent:
             with patch("agenttree.preflight.run_preflight", return_value=[]):
                 with patch("agenttree.issues.get_issue", return_value=None):
                     with pytest.raises(IssueNotFoundError) as exc_info:
-                        start_agent("999", quiet=True)
+                        start_issue("999", quiet=True)
 
         assert exc_info.value.issue_id == 999
 
-    def test_start_agent_already_running_without_force_raises(
+    def test_start_issue_already_running_without_force_raises(
         self, mock_config, mock_issue, mock_agent, tmp_path, monkeypatch
     ):
         """AgentAlreadyRunningError without --force."""
@@ -111,11 +111,11 @@ class TestStartAgent:
                 with patch("agenttree.issues.get_issue", return_value=mock_issue):
                     with patch("agenttree.state.get_active_agent", return_value=mock_agent):
                         with pytest.raises(AgentAlreadyRunningError) as exc_info:
-                            start_agent("042", quiet=True)
+                            start_issue("042", quiet=True)
 
         assert exc_info.value.issue_id == "042"
 
-    def test_start_agent_force_restarts_existing(
+    def test_start_issue_force_restarts_existing(
         self, mock_config, mock_issue, mock_agent, tmp_path, monkeypatch
     ):
         """With force=True, restarts agent."""
@@ -145,11 +145,11 @@ class TestStartAgent:
                                                     with patch("agenttree.issues.update_issue_metadata"):
                                                         with patch("subprocess.run") as mock_run:
                                                             mock_run.return_value = MagicMock(returncode=1)
-                                                            result = start_agent("042", force=True, quiet=True)
+                                                            result = start_issue("042", force=True, quiet=True)
 
         assert result == mock_agent
 
-    def test_start_agent_preflight_failure(self, mock_config, tmp_path, monkeypatch):
+    def test_start_issue_preflight_failure(self, mock_config, tmp_path, monkeypatch):
         """PreflightError when checks fail."""
         monkeypatch.chdir(tmp_path)
 
@@ -161,11 +161,11 @@ class TestStartAgent:
         with patch("agenttree.config.load_config", return_value=mock_config):
             with patch("agenttree.preflight.run_preflight", return_value=[mock_result]):
                 with pytest.raises(PreflightError) as exc_info:
-                    start_agent("042", quiet=True)
+                    start_issue("042", quiet=True)
 
         assert "git_clean" in str(exc_info.value)
 
-    def test_start_agent_container_not_available(
+    def test_start_issue_container_not_available(
         self, mock_config, mock_issue, tmp_path, monkeypatch
     ):
         """ContainerUnavailableError when no runtime."""
@@ -194,11 +194,11 @@ class TestStartAgent:
                                                             with patch("subprocess.run") as mock_run:
                                                                 mock_run.return_value = MagicMock(returncode=1)
                                                                 with pytest.raises(ContainerUnavailableError) as exc_info:
-                                                                    start_agent("042", quiet=True)
+                                                                    start_issue("042", quiet=True)
 
         assert "Install Docker" in str(exc_info.value)
 
-    def test_start_agent_quiet_suppresses_output(
+    def test_start_issue_quiet_suppresses_output(
         self, mock_config, mock_issue, mock_agent, tmp_path, monkeypatch, capsys
     ):
         """No console output when quiet=True."""
@@ -229,7 +229,7 @@ class TestStartAgent:
                                                         with patch("agenttree.container.is_container_running", return_value=False):
                                                             with patch("subprocess.run") as mock_run:
                                                                 mock_run.return_value = MagicMock(returncode=1)
-                                                                start_agent("042", quiet=True)
+                                                                start_issue("042", quiet=True)
 
         captured = capsys.readouterr()
         assert captured.out == ""
@@ -296,7 +296,7 @@ class TestSendMessage:
                         mock_tm.send_message_to_issue.return_value = "sent"
                         mock_tm_class.return_value = mock_tm
 
-                        with patch("agenttree.api.start_agent", return_value=mock_agent):
+                        with patch("agenttree.api.start_issue", return_value=mock_agent):
                             result = send_message("042", "hello", quiet=True)
 
         assert result == "sent"
@@ -334,7 +334,7 @@ class TestSendMessage:
                         mock_tm.send_message_to_issue.side_effect = mock_send
                         mock_tm_class.return_value = mock_tm
 
-                        with patch("agenttree.api.start_agent", return_value=mock_agent):
+                        with patch("agenttree.api.start_issue", return_value=mock_agent):
                             result = send_message("042", "hello", quiet=True)
 
         assert result == "restarted"
@@ -356,10 +356,14 @@ class TestStartController:
     @pytest.fixture
     def mock_config(self):
         """Create a mock config."""
+        from agenttree.config import RoleConfig
         config = MagicMock()
         config.project = "testproj"
         config.default_tool = "claude"
-        config.get_manager_tmux_session.return_value = "testproj-controller-000"
+        config.default_model = "opus"
+        manager_role = RoleConfig(name="manager", tool="claude", model="sonnet")
+        config.roles = {"manager": manager_role}
+        config.get_role_tmux_session.return_value = "testproj-controller-000"
         return config
 
     def test_start_controller_creates_session(self, mock_config, tmp_path, monkeypatch):
@@ -374,8 +378,8 @@ class TestStartController:
 
                     start_controller(quiet=True)
 
-        mock_tm.start_manager.assert_called_once()
-        call_args = mock_tm.start_manager.call_args
+        mock_tm.start_host_role.assert_called_once()
+        call_args = mock_tm.start_host_role.call_args
         assert call_args.kwargs["session_name"] == "testproj-controller-000"
 
     def test_start_controller_not_in_container(self, mock_config, tmp_path, monkeypatch):
@@ -390,8 +394,8 @@ class TestStartController:
 
                     start_controller(quiet=True)
 
-        # Verify start_manager was called (not start_issue_agent_in_container)
-        mock_tm.start_manager.assert_called_once()
+        # Verify start_host_role was called (not start_issue_agent_in_container)
+        mock_tm.start_host_role.assert_called_once()
         mock_tm.start_issue_agent_in_container.assert_not_called()
 
     def test_start_controller_already_running_raises(self, mock_config, tmp_path, monkeypatch):
@@ -403,7 +407,7 @@ class TestStartController:
                 with pytest.raises(AgentAlreadyRunningError) as exc_info:
                     start_controller(quiet=True)
 
-        assert exc_info.value.issue_id == "0"
+        assert exc_info.value.issue_id == "manager"
 
     def test_start_controller_force_restarts(self, mock_config, tmp_path, monkeypatch):
         """With force=True, restarts controller."""
@@ -419,7 +423,7 @@ class TestStartController:
                         start_controller(force=True, quiet=True)
 
         mock_kill.assert_called_once_with("testproj-controller-000")
-        mock_tm.start_manager.assert_called_once()
+        mock_tm.start_host_role.assert_called_once()
 
 
 class TestControllerMessages:

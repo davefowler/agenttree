@@ -341,7 +341,7 @@ class TestActions:
                 mock_update.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_start_agent_action(self, sample_issues: list[Issue]) -> None:
+    async def test_start_issue_action(self, sample_issues: list[Issue]) -> None:
         """Verify 's' key shows appropriate message for starting agent."""
         with patch("agenttree.tui.app.list_issues") as mock_list:
             mock_list.return_value = sample_issues
