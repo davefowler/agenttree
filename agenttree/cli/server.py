@@ -7,14 +7,62 @@ from typing import TYPE_CHECKING
 
 import click
 
-from agenttree.config import DEFAULT_ROLE
 from agenttree.cli._utils import console, load_config, get_manager_session_name
+from agenttree.tmux import TmuxManager
 
 if TYPE_CHECKING:
     from agenttree.config import Config
 
 
-def _start_issues_background(config: "Config", repo_path: Path) -> None:
+def _start_manager(
+    tool: str | None,
+    force: bool,
+    config: "Config",
+    repo_path: Path,
+) -> None:
+    """Start the manager agent (agent 0).
+
+    The manager runs on the host (not in a container) and orchestrates
+    work across all issues. It uses the main branch.
+    """
+    from agenttree.tmux import session_exists
+
+    tmux_manager = TmuxManager(config)
+    session_name = get_manager_session_name(config)
+
+    # Check if manager already running
+    if session_exists(session_name) and not force:
+        console.print("[yellow]Manager already running[/yellow]")
+        console.print(f"\nUse --force to restart, or attach with:")
+        console.print(f"  agenttree attach 0")
+        sys.exit(1)
+
+    tool_name = tool or config.default_tool
+    # Resolve model through standard chain: stage → role → default
+    # Manager has no stage, so this picks up the role model (e.g., sonnet)
+    model_name = config.model_for("manager", role="manager")
+
+    console.print(f"[green]Starting manager agent...[/green]")
+    console.print(f"[dim]Tool: {tool_name}[/dim]")
+    console.print(f"[dim]Model: {model_name}[/dim]")
+    console.print(f"[dim]Session: {session_name}[/dim]")
+
+    # Start manager on host (not in container)
+    tmux_manager.start_manager(
+        session_name=session_name,
+        repo_path=repo_path,
+        tool_name=tool_name,
+        model=model_name,
+    )
+
+    console.print(f"\n[bold]Manager ready[/bold]")
+    console.print(f"\n[dim]Commands:[/dim]")
+    console.print(f"  agenttree attach 0")
+    console.print(f"  agenttree send 0 'message'")
+    console.print(f"  agenttree stop 0")
+
+
+def _start_agents_background(config: "Config", repo_path: Path) -> None:
     """Start all agents in parallel (runs in a background thread)."""
     from agenttree.issues import list_issues
     from agenttree.state import get_active_agent
@@ -61,8 +109,7 @@ def _start_issues_background(config: "Config", repo_path: Path) -> None:
     manager_session = get_manager_session_name(config)
     if not session_exists(manager_session):
         console.print(f"\n[cyan]Starting manager agent...[/cyan]")
-        from agenttree.api import start_controller
-        start_controller(tool=None, force=False)
+        _start_manager(tool=None, force=False, config=config, repo_path=repo_path)
     else:
         console.print(f"[dim]Manager agent already running[/dim]")
 
@@ -72,7 +119,7 @@ def _start_issues_background(config: "Config", repo_path: Path) -> None:
 @click.option("--host", default="0.0.0.0", help="Host to bind to")
 @click.option("--port", default=None, type=int, help="Port to bind to (default: from port_range config)")
 @click.option("--tool", help="AI tool to use (default: from config)")
-@click.option("--role", default=DEFAULT_ROLE, help="Agent role (default: developer)")
+@click.option("--role", default="developer", help="Agent role (default: developer)")
 @click.option("--force", is_flag=True, help="Force start even if already running")
 @click.option("--skip-preflight", is_flag=True, help="Skip preflight environment checks")
 def start_all(
@@ -117,7 +164,7 @@ def start_all(
         port = config.server_port
 
     thread = threading.Thread(
-        target=_start_issues_background,
+        target=_start_agents_background,
         args=(config, repo_path),
         daemon=True,
     )

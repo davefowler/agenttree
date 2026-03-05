@@ -4,12 +4,12 @@ Based on planning discussions and research.
 
 ## Overview Changes
 
-### 1. Notes Structure: `agents/` Folder (Not `.agentree/`)
+### 1. Notes Structure: `_agenttree/` Folder (Not `.agentree/`)
 
-**Location:** `<project>/agents/` (separate git repo, gitignored by parent)
+**Location:** `<project>/_agenttree/` (separate git repo, gitignored by parent)
 
 **Key changes from current implementation:**
-- ✅ Folder named `agents/` not `.agentree/`
+- ✅ Folder named `_agenttree/` not `.agentree/`
 - ✅ Separate GitHub repo: `<project-name>-agents`
 - ✅ Auto-created and managed by AgentTree
 - ✅ Added to parent `.gitignore`
@@ -42,17 +42,17 @@ Based on planning discussions and research.
 # agenttree/agents_repo.py
 
 class AgentsRepository:
-    """Manages the agents/ git repository."""
+    """Manages the _agenttree/ git repository."""
 
     def __init__(self, project_path: Path):
         self.project_path = project_path
-        self.agents_path = project_path / "agents"
+        self.agents_path = project_path / "_agenttree"
         self.project_name = project_path.name
 
     def ensure_repo(self) -> None:
-        """Ensure agents/ repo exists, create if needed."""
+        """Ensure _agenttree/ repo exists, create if needed."""
 
-        # Check if agents/.git exists
+        # Check if _agenttree/.git exists
         if (self.agents_path / ".git").exists():
             return
 
@@ -182,19 +182,19 @@ class AgentsRepository:
         subprocess.run(["git", "push"], cwd=self.agents_path, check=True)
 
     def _add_to_gitignore(self) -> None:
-        """Add agents/ to parent .gitignore."""
+        """Add _agenttree/ to parent .gitignore."""
         gitignore = self.project_path / ".gitignore"
 
         if gitignore.exists():
             content = gitignore.read_text()
-            if "agents/" in content:
+            if "_agenttree/" in content:
                 return
 
             with open(gitignore, "a") as f:
                 f.write("\n# AgentTree AI notes (separate git repo)\n")
-                f.write("agents/\n")
+                f.write("_agenttree/\n")
         else:
-            gitignore.write_text("# AgentTree AI notes\nagents/\n")
+            gitignore.write_text("# AgentTree AI notes\n_agenttree/\n")
 ```
 
 #### 1.2 Folder Structure Creation
@@ -318,7 +318,7 @@ agenttree init
 # Checks:
 # 1. gh CLI installed and authenticated
 # 2. Creates .agenttree.yaml
-# 3. Creates agents/ GitHub repo
+# 3. Creates _agenttree/ GitHub repo
 # 4. Clones it locally
 # 5. Initializes structure
 # 6. Adds to .gitignore
@@ -327,13 +327,13 @@ agenttree init
 #### 4.2 Update `dispatch` Command
 
 ```bash
-agenttree dispatch 1 42
+agenttree start 1 42
 
 # New behavior:
 # 1. Fetches issue #42
 # 2. Creates TASK.md in worktree
-# 3. Creates agents/specs/issue-42.md (spec)
-# 4. Creates agents/tasks/agent-1/YYYY-MM-DD-issue-42.md (task log)
+# 3. Creates _agenttree/specs/issue-42.md (spec)
+# 4. Creates _agenttree/tasks/agent-1/YYYY-MM-DD-issue-42.md (task log)
 # 5. Starts agent
 ```
 
@@ -354,7 +354,7 @@ agenttree notes archive --days 90         # Archive old tasks
 
 When agent starts:
 ```markdown
-# agents/tasks/agent-1/2025-01-15-fix-login-bug.md
+# _agenttree/tasks/agent-1/2025-01-15-fix-login-bug.md
 
 # Task: Fix Login Bug
 
@@ -427,7 +427,7 @@ agenttree notes archive --days 90
 
 ### From Current Implementation
 
-1. Rename `.agentree/` → `agents/`
+1. Rename `.agentree/` → `_agenttree/`
 2. Update all references in code
 3. Update CLI commands
 4. Update documentation
@@ -441,8 +441,8 @@ Not needed - this is v0.1.0, breaking changes OK.
 - [ ] `agenttree init` creates agents repo on GitHub
 - [ ] `agenttree init` clones it locally
 - [ ] `agenttree init` adds to .gitignore
-- [ ] `agenttree dispatch` creates spec in agents/specs/
-- [ ] `agenttree dispatch` creates task log
+- [ ] `agenttree start` creates spec in _agenttree/specs/
+- [ ] `agenttree start` creates task log
 - [ ] Task log auto-updates with agent progress
 - [ ] `agenttree notes search` works across all files
 - [ ] Archival moves old tasks correctly
@@ -450,14 +450,14 @@ Not needed - this is v0.1.0, breaking changes OK.
 - [ ] Container mode works on Linux (Docker)
 - [ ] Container mode works on Windows (Docker Desktop)
 - [ ] gh CLI error messages are helpful
-- [ ] Works when agents/ already exists
+- [ ] Works when _agenttree/ already exists
 - [ ] Works when GitHub repo already exists
 
 ## Documentation Updates
 
 - [ ] Update README.md with new structure
 - [ ] Add "Getting Started" guide
-- [ ] Document agents/ folder structure
+- [ ] Document _agenttree/ folder structure
 - [ ] Document GitHub CLI requirements
 - [ ] Add examples of task logs, specs
 - [ ] Document archival strategy
