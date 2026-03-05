@@ -462,17 +462,17 @@ def check_custom_agent_stages(agents_dir: Path) -> int:
                 else:
                     needs_force = False
 
-            # Set guard BEFORE the slow start_agent call to prevent re-entry
+            # Set guard BEFORE the slow start_issue call to prevent re-entry
             issue.agent_ensured = f"{stage}:starting"
             issue.save()
 
             console.print(f"[cyan]Starting {role_name} agent for issue #{issue.id} at stage {stage}...[/cyan]")
 
             try:
-                from agenttree.api import start_agent
+                from agenttree.api import start_issue
 
-                start_agent(issue.id, host=role_name, skip_preflight=True, quiet=True, force=needs_force)
-                # Re-read — start_agent may have modified the yaml
+                start_issue(issue.id, host=role_name, skip_preflight=True, quiet=True, force=needs_force)
+                # Re-read — start_issue may have modified the yaml
                 issue = Issue.from_yaml(issue_yaml)
                 issue.agent_ensured = stage
                 console.print(f"[green]✓ Started {role_name} agent for issue #{issue.id}[/green]")
@@ -918,9 +918,9 @@ def check_ci_status(agents_dir: Path) -> int:
                 # Start the agent
                 console.print(f"[dim]Agent not running, starting agent for issue #{issue_id}...[/dim]")
                 try:
-                    from agenttree.api import start_agent
+                    from agenttree.api import start_issue
 
-                    agent = start_agent(issue_id, skip_preflight=True, quiet=True)
+                    agent = start_issue(issue_id, skip_preflight=True, quiet=True)
                     console.print(f"[green]✓ Started agent for issue #{issue_id}[/green]")
                     agent_running = tmux_manager.is_issue_running(agent.tmux_session)
                 except Exception as e:

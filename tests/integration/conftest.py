@@ -307,7 +307,7 @@ def mock_container() -> Generator[MagicMock, None, None]:
     mock.running_agents = {}
     mock.sent_messages = []
 
-    def start_agent(issue_id: int, worktree_path: Path) -> int:
+    def start_issue(issue_id: int, worktree_path: Path) -> int:
         agent_num = len(mock.running_agents) + 1
         mock.running_agents[agent_num] = {
             "issue_id": issue_id,
@@ -331,7 +331,7 @@ def mock_container() -> Generator[MagicMock, None, None]:
     def is_agent_running(agent_num: int) -> bool:
         return mock.running_agents.get(agent_num, {}).get("running", False)
 
-    mock.start_agent = start_agent
+    mock.start_issue = start_issue
     mock.stop_agent = stop_agent
     mock.send_message = send_message
     mock.is_agent_running = is_agent_running

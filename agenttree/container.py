@@ -379,8 +379,9 @@ def build_container_command(
             cmd.extend(["-p", f"{port}:{port}"])
 
     # === 8. Image ===
-    image = container_type.image or "agenttree-agent:latest"
-    cmd.append(image)
+    if not container_type.image:
+        raise ValueError("container_type.image must be set (check role/container config)")
+    cmd.append(container_type.image)
 
     # === 9. Entry command (from tool config) ===
     # Don't use -c (continue session) — Claude CLI exits with "No conversation
@@ -961,7 +962,7 @@ def start_container_detached(
     runtime: str,
     container_name: str,
     worktree_path: Path,
-    image: str = "agenttree-agent:latest",
+    image: str,
     port: int | None = None,
     api_key: str | None = None,
 ) -> bool:

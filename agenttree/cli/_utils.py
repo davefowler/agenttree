@@ -8,7 +8,7 @@ from rich.console import Console
 console = Console()
 
 # Re-export commonly used functions for consistent import paths
-from agenttree.config import load_config, Config
+from agenttree.config import load_config, Config, DEFAULT_ROLE
 from agenttree.issues import (
     get_issue as get_issue_func,
     get_issue_dir,
@@ -22,7 +22,7 @@ def normalize_issue_id(issue_id: str) -> int:
 
 def format_role_label(role: str) -> str:
     """Format role label for display (empty string if developer)."""
-    return f" ({role})" if role != "developer" else ""
+    return f" ({role})" if role != DEFAULT_ROLE else ""
 
 
 def get_manager_session_name(config: Config) -> str:

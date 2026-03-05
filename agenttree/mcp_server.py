@@ -197,13 +197,13 @@ def send_message(issue_id: int, message: str) -> str:
         elif result == "restarted":
             return f"Agent was restarted and message sent for issue #{issue_id}."
         elif result == "no_agent":
-            return f"No agent running for issue #{issue_id}. Use start_agent to start one."
+            return f"No agent running for issue #{issue_id}. Use start_issue to start one."
         else:
             return f"Failed to send message to issue #{issue_id}: {result}"
     except IssueNotFoundError:
         return f"Issue #{issue_id} not found."
     except ControllerNotRunningError:
-        return "Controller (issue 0) is not running. Start it with start_agent(0)."
+        return "Controller (issue 0) is not running. Start it with start_issue(0)."
 
 
 @mcp.tool()
@@ -214,7 +214,7 @@ def create_issue(title: str, description: str) -> str:
         title: Short title for the issue (at least 10 characters)
         description: Detailed description of what needs to be done (at least 50 characters)
     """
-    from agenttree.api import start_agent as api_start, AgentStartError
+    from agenttree.api import start_issue as api_start, AgentStartError
     from agenttree.issues import create_issue as _create_issue, Priority
 
     if len(title) < 10:
@@ -270,14 +270,14 @@ def approve(issue_id: int) -> str:
 
 
 @mcp.tool()
-def start_agent(issue_id: int) -> str:
+def start_issue(issue_id: int) -> str:
     """Start or restart an agent for an issue.
 
     Args:
         issue_id: The issue number
     """
     from agenttree.api import (
-        start_agent as api_start,
+        start_issue as api_start,
         start_controller,
         AgentStartError,
         IssueNotFoundError,
