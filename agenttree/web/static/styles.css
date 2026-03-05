@@ -1354,27 +1354,25 @@ button[disabled] {
     height: calc(100vh - 60px);
 }
 
-/* Flow row - one horizontal row per workflow */
+/* Flow row - one row per workflow with title above columns */
 .flow-row {
     display: flex;
-    align-items: flex-start;
+    flex-direction: column;
     gap: 10px;
-    min-height: 150px;
+    min-height: 450px;
 }
 
 .flow-row.parking-lot-row {
-    min-height: 120px;
+    min-height: 360px;
 }
 
 .flow-label {
-    flex: 0 0 80px;
     font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.5px;
     color: var(--text-tertiary);
-    padding-top: 12px;
-    writing-mode: horizontal-tb;
+    padding: 8px 0;
 }
 
 .flow-columns {
@@ -1390,7 +1388,7 @@ button[disabled] {
     min-width: 160px;
     display: flex;
     flex-direction: column;
-    max-height: 300px;
+    max-height: 900px;
 }
 
 .flow-row.hidden {

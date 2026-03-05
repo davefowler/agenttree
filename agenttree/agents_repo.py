@@ -572,22 +572,24 @@ def check_merged_prs(agents_dir: Path) -> int:
             merged_at = pr_data.get("mergedAt")
 
             if pr_state == "MERGED" or merged_at:
-                # PR was merged externally - advance to accepted
+                # PR was merged externally - advance to completion stage
                 # Note: This skips knowledge_base stage (can't run it — PR is
                 # already merged and the agent may not be running).
-                console.print(f"[green]PR #{pr_number} was merged externally (issue was at {stage}), advancing issue #{issue_id} to accepted[/green]")
+                completion_stage = config.get_completion_stage(issue.flow) or "accepted"
+                console.print(f"[green]PR #{pr_number} was merged externally (issue was at {stage}), advancing issue #{issue_id} to {completion_stage}[/green]")
                 from agenttree.issues import update_issue_stage
-                updated = update_issue_stage(issue_id, "accepted", skip_sync=True, _issue_dir=issue_dir)
+                updated = update_issue_stage(issue_id, completion_stage, skip_sync=True, _issue_dir=issue_dir)
                 if updated:
                     issues_advanced += 1
                     from agenttree.hooks import cleanup_issue_agent, check_and_start_blocked_issues
                     cleanup_issue_agent(updated)
                     check_and_start_blocked_issues(updated)
             elif pr_state == "CLOSED":
-                # PR was closed without merging - advance to not_doing
-                console.print(f"[yellow]PR #{pr_number} was closed without merge (issue was at {stage}), advancing issue #{issue_id} to not_doing[/yellow]")
+                # PR was closed without merging - advance to abandon stage
+                abandon_stage = config.get_abandon_stage(issue.flow) or "not_doing"
+                console.print(f"[yellow]PR #{pr_number} was closed without merge (issue was at {stage}), advancing issue #{issue_id} to {abandon_stage}[/yellow]")
                 from agenttree.issues import update_issue_stage
-                updated = update_issue_stage(issue_id, "not_doing", skip_sync=True, _issue_dir=issue_dir)
+                updated = update_issue_stage(issue_id, abandon_stage, skip_sync=True, _issue_dir=issue_dir)
                 if updated:
                     issues_advanced += 1
                     from agenttree.hooks import cleanup_issue_agent
@@ -906,10 +908,15 @@ def check_ci_status(agents_dir: Path) -> int:
 
             console.print(f"[yellow]CI failed for PR #{pr_number} (attempt {ci_bounce_count + 1}/{max_ci_bounces}), notifying issue #{issue_id}[/yellow]")
 
-            # Transition issue back to implement.debug stage for CI fix
-            from agenttree.issues import update_issue_stage
-            update_issue_stage(issue_id, "implement.debug", skip_sync=True, _issue_dir=issue_dir)
-            console.print(f"[yellow]Issue #{issue_id} moved back to implement.debug stage for CI fix[/yellow]")
+            # Use conditional flow logic to determine next stage
+            # Reload issue to get fresh state after feedback file was written
+            from agenttree.issues import update_issue_stage, get_issue_context
+            issue = Issue.from_yaml(issue_yaml)
+            issue_context = get_issue_context(issue)
+            next_stage, _ = config.get_next_stage("implement.code", issue.flow, issue_context)
+
+            update_issue_stage(issue_id, next_stage, skip_sync=True, _issue_dir=issue_dir)
+            console.print(f"[yellow]Issue #{issue_id} moved to {next_stage} stage for CI fix[/yellow]")
 
             # Ensure agent is running and notify it
             tmux_manager = TmuxManager(config)

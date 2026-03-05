@@ -12,9 +12,13 @@ from agenttree.config import Config, DEFAULT_ROLE
 from agenttree.ids import serve_session_name as get_serve_session_name
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from agenttree.container import ContainerRuntime
 
 log = logging.getLogger("agenttree.tmux")
+
+# Default timeout for tmux commands (seconds) - prevents indefinite hangs
+TMUX_COMMAND_TIMEOUT = 30
 
 
 @dataclass
@@ -48,16 +52,17 @@ def session_exists(session_name: str) -> bool:
         session_name: Name of the session
 
     Returns:
-        True if session exists
+        True if session exists, False if not or on timeout
     """
     try:
         subprocess.run(
             ["tmux", "has-session", "-t", session_name],
             check=True,
             capture_output=True,
+            timeout=TMUX_COMMAND_TIMEOUT,
         )
         return True
-    except subprocess.CalledProcessError:
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
         return False
 
 
@@ -85,14 +90,14 @@ def create_session(
         session_name,
         "-c",
         str(working_dir),
-        "-e", "DISABLE_AUTO_UPDATE=true",
+        "-e", "DISABLE_AUTOUPDATER=1",
     ]
     # Run startup command directly in tmux session creation so tmux launches
     # a non-interactive shell. This avoids user interactive shell rc files
     # (e.g. broken ~/.zshrc) from breaking agent startup.
     if start_command:
         cmd.append(start_command)
-    subprocess.run(cmd, check=True)
+    subprocess.run(cmd, check=True, timeout=TMUX_COMMAND_TIMEOUT)
 
 
 def kill_session(session_name: str) -> None:
@@ -106,9 +111,10 @@ def kill_session(session_name: str) -> None:
             ["tmux", "kill-session", "-t", session_name],
             check=True,
             capture_output=True,
+            timeout=TMUX_COMMAND_TIMEOUT,
         )
-    except subprocess.CalledProcessError:
-        # Session doesn't exist or already killed
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        # Session doesn't exist, already killed, or timeout
         pass
 
 
@@ -128,6 +134,7 @@ def send_keys(session_name: str, keys: str, submit: bool = True, interrupt: bool
         subprocess.run(
             ["tmux", "send-keys", "-t", session_name, "C-c"],
             check=True,
+            timeout=TMUX_COMMAND_TIMEOUT,
         )
         time.sleep(0.5)  # Wait for Claude to process the interrupt
 
@@ -135,6 +142,7 @@ def send_keys(session_name: str, keys: str, submit: bool = True, interrupt: bool
     subprocess.run(
         ["tmux", "send-keys", "-t", session_name, "-l", keys],
         check=True,
+        timeout=TMUX_COMMAND_TIMEOUT,
     )
     if submit:
         # Small delay to let the terminal process the text
@@ -144,6 +152,7 @@ def send_keys(session_name: str, keys: str, submit: bool = True, interrupt: bool
         subprocess.run(
             ["tmux", "send-keys", "-t", session_name, "Enter"],
             check=True,
+            timeout=TMUX_COMMAND_TIMEOUT,
         )
 
 
@@ -240,9 +249,10 @@ def capture_pane(session_name: str, lines: int = 50) -> str:
             capture_output=True,
             text=True,
             check=True,
+            timeout=TMUX_COMMAND_TIMEOUT,
         )
         return result.stdout
-    except subprocess.CalledProcessError:
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
         return ""
 
 
@@ -271,9 +281,10 @@ def save_tmux_history_to_file(session_name: str, output_path: Path, stage: str) 
             capture_output=True,
             text=True,
             check=True,
+            timeout=TMUX_COMMAND_TIMEOUT,
         )
         history = result.stdout
-    except subprocess.CalledProcessError:
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
         return False
 
     if not history.strip():
@@ -303,6 +314,7 @@ def wait_for_prompt(
     prompt_char: str = "❯",
     timeout: float = 30.0,
     poll_interval: float = 0.5,
+    progress_callback: "Callable[[float, float], None] | None" = None,
 ) -> bool:
     """Wait for a prompt to appear in a tmux session.
 
@@ -311,6 +323,7 @@ def wait_for_prompt(
         prompt_char: Character to look for (default: Claude CLI prompt)
         timeout: Maximum time to wait in seconds
         poll_interval: Time between checks in seconds
+        progress_callback: Optional callback(elapsed, timeout) called every 30s during wait
 
     Returns:
         True if prompt found, False if timeout
@@ -318,10 +331,21 @@ def wait_for_prompt(
     import time
 
     start = time.time()
+    last_progress_time = start
+    progress_interval = 30.0  # Report progress every 30 seconds
+
     while time.time() - start < timeout:
         pane_content = capture_pane(session_name, lines=20)
         if prompt_char in pane_content:
             return True
+
+        # Call progress callback periodically
+        current_time = time.time()
+        if progress_callback and (current_time - last_progress_time >= progress_interval):
+            elapsed = current_time - start
+            progress_callback(elapsed, timeout)
+            last_progress_time = current_time
+
         time.sleep(poll_interval)
     return False
 
@@ -338,6 +362,7 @@ def list_sessions() -> list[TmuxSession]:
             capture_output=True,
             text=True,
             check=True,
+            timeout=TMUX_COMMAND_TIMEOUT,
         )
 
         sessions = []
@@ -367,7 +392,7 @@ def list_sessions() -> list[TmuxSession]:
                 )
 
         return sessions
-    except subprocess.CalledProcessError:
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
         return []
 
 
@@ -554,8 +579,14 @@ class TmuxManager:
                 # Serve session failure should not block agent startup
                 log.warning("Could not start serve session: %s", e)
 
+        # Progress callback for long waits - print status every 30 seconds
+        def startup_progress(elapsed: float, timeout: float) -> None:
+            from rich.console import Console
+            console = Console()
+            console.print(f"[dim]Waiting for Claude CLI... {int(elapsed)}s/{int(timeout)}s[/dim]")
+
         # Wait for Claude CLI prompt before sending startup message
-        if wait_for_prompt(session_name, prompt_char="❯", timeout=180.0):
+        if wait_for_prompt(session_name, prompt_char="❯", timeout=180.0, progress_callback=startup_progress):
             # Build issue-specific startup prompt based on state
             if has_merge_conflicts:
                 startup_prompt = (
@@ -629,6 +660,110 @@ class TmuxManager:
                 send_keys(session_name, f"cat {legacy_prompt_path}")
             else:
                 send_keys(session_name, f"cat {role_prompt_path}")
+
+    def start_host_role_in_container(
+        self,
+        session_name: str,
+        repo_path: Path,
+        tool_name: str,
+        container_runtime: "ContainerRuntime",
+        role_name: str,
+        model: str | None = None,
+        skill_file: str | None = None,
+    ) -> bool:
+        """Start a host-level role agent in a container.
+
+        Generic method for starting any role that runs in a container.
+        The role's behavior is determined by its prompt file in _agenttree/roles/.
+
+        Args:
+            session_name: Tmux session name (e.g., "myproject-manager-000")
+            repo_path: Path to the repository root
+            tool_name: Name of the AI tool to use
+            container_runtime: Container runtime instance
+            role_name: Role name (e.g., "manager", "architect")
+            model: Model to use (e.g., "sonnet", "opus"). If None, uses tool default.
+            skill_file: Prompt file name (e.g., "manager.md").
+                        Looked up in _agenttree/roles/. If None, no initial prompt.
+
+        Returns:
+            True if agent started successfully, False if startup failed
+        """
+        import secrets
+        from agenttree.config import ContainerTypeConfig
+        from agenttree.container import build_container_command, cleanup_containers_by_prefix
+
+        # Kill existing session if it exists
+        if session_exists(session_name):
+            kill_session(session_name)
+
+        # Get tool config
+        tool_config = self.config.get_tool_config(tool_name)
+
+        # Ensure container system is running
+        container_runtime.ensure_system_running()
+
+        # Resolve model
+        resolved_model = model or self.config.default_model
+
+        # Get role config for container settings
+        role_config = self.config.roles.get(role_name)
+        if not role_config or not role_config.container:
+            log.warning("Role %s has no container config", role_name)
+            return False
+
+        container_cfg = role_config.container
+
+        # Container name with unique suffix for Apple Container mDNS
+        base_name = f"{self.config.project}-{role_name}"
+        if container_runtime.runtime:
+            cleanup_containers_by_prefix(container_runtime.runtime, base_name)
+        container_name = f"{base_name}-{secrets.token_hex(3)}"
+
+        # Build ContainerTypeConfig from role's ContainerConfig
+        container_type = ContainerTypeConfig(
+            image=container_cfg.image,
+            mounts=container_cfg.mounts,
+            env=container_cfg.env,
+            allow_dangerous=container_cfg.allow_dangerous,
+        )
+
+        # Build container command - use repo_path as workspace (not a worktree)
+        container_cmd = build_container_command(
+            runtime=container_runtime.runtime or "docker",
+            worktree_path=repo_path,  # Main repo, not worktree
+            container_type=container_type,
+            container_name=container_name,
+            tool_config=tool_config,
+            role=role_name,
+            issue_id=None,  # Host roles don't have an issue_id
+            ports=None,
+            model=resolved_model,
+        )
+
+        # Join command for shell execution
+        container_cmd_str = " ".join(container_cmd)
+
+        # Create tmux session running the container
+        create_session(session_name, repo_path, container_cmd_str)
+
+        # Wait for Claude CLI prompt before sending startup message
+        if wait_for_prompt(session_name, prompt_char="❯", timeout=180.0):
+            if skill_file:
+                role_prompt_path = f"_agenttree/roles/{skill_file}"
+                legacy_prompt_path = f"_agenttree/skills/{skill_file}"
+                if (repo_path / role_prompt_path).exists():
+                    send_keys(session_name, f"cat {role_prompt_path}")
+                elif (repo_path / legacy_prompt_path).exists():
+                    send_keys(session_name, f"cat {legacy_prompt_path}")
+                else:
+                    send_keys(session_name, f"cat {role_prompt_path}")
+            return True
+        else:
+            # Startup failed - clean up
+            if session_exists(session_name):
+                kill_session(session_name)
+            return False
 
     def stop_issue_agent(self, session_name: str) -> None:
         """Stop an issue-bound agent's tmux session.

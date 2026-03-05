@@ -61,11 +61,11 @@ Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5 → Phase 6
 #### CLI Foundation
 - `agenttree init` - Initialize project
 - `agenttree setup <agents>` - Create worktrees
-- `agenttree dispatch <agent> <issue>` - Assign work
+- `agenttree start <agent> <issue>` - Assign work
 - `agenttree status` - View all agents
 - `agenttree attach <agent>` - Connect to session
 - `agenttree send <agent> <message>` - Send command
-- `agenttree kill <agent>` - Terminate session
+- `agenttree stop <agent>` - Terminate session
 
 **Coverage:** 0% (Click integration tests needed)
 

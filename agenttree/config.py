@@ -145,11 +145,15 @@ class ToolConfig(BaseModel):
 class ContainerConfig(BaseModel):
     """Configuration for container settings.
 
-    Defines how a host runs in a container (or doesn't).
+    Defines how a role runs in a container (or doesn't).
+    Fields mirror ContainerTypeConfig for consistency.
     """
 
     enabled: bool = True  # Whether to run in a container
     image: str = "agenttree-agent:latest"  # Container image to use
+    mounts: list[str] = Field(default_factory=list)  # Additional mounts (host:container:mode)
+    env: dict[str, str] = Field(default_factory=dict)  # Environment variables
+    allow_dangerous: bool = True  # Allow --dangerously-skip-permissions
 
 
 class RoleConfig(BaseModel):
@@ -255,6 +259,8 @@ class StageConfig(BaseModel):
     model_tier: str | None = None
     human_review: bool = False
     is_parking_lot: bool = False  # No agent auto-starts here (backlog, accepted, not_doing)
+    is_completion: bool = False  # Marks work completion stage (e.g., accepted)
+    is_abandon: bool = False  # Marks abandoned work stage (e.g., not_doing)
     redirect_only: bool = False  # Only reachable via StageRedirect
     condition: str | None = None  # Jinja expression - skip stage when false
     role: str = DEFAULT_ROLE  # Who executes this stage
@@ -841,6 +847,120 @@ class Config(BaseModel):
     def get_parking_lot_stages(self) -> set[str]:
         """Get names of all parking lot stages."""
         return {name for name, stage in self.stages.items() if stage.is_parking_lot}
+
+    def get_first_stage(self, flow: str = "default") -> str:
+        """Get the first non-parking-lot stage in a flow.
+
+        Args:
+            flow: Flow name (default: "default")
+
+        Returns:
+            The first stage dot path that is not a parking lot.
+            Returns the first stage regardless if all are parking lots.
+        """
+        stages = self.get_flow_stage_names(flow)
+        for stage in stages:
+            if not self.is_parking_lot(stage):
+                return stage
+        # Fallback: return first stage even if it's a parking lot
+        return stages[0] if stages else ""
+
+    def has_hook(self, dot_path: str, hook_type: str) -> bool:
+        """Check if a stage has a specific hook type in pre_completion.
+
+        Args:
+            dot_path: Stage dot path (e.g., "implement.ci_wait")
+            hook_type: Hook type to check for (e.g., "ci_check", "create_pr")
+
+        Returns:
+            True if the stage has the specified hook type in pre_completion.
+        """
+        stage, substage = self.resolve_stage(dot_path)
+        if stage is None:
+            return False
+
+        # Check substage hooks first, then stage hooks
+        hooks = substage.pre_completion if substage is not None else stage.pre_completion
+        for hook in hooks:
+            if isinstance(hook, dict):
+                # Hook is {"hook_type": {...}} or {"hook_type": None}
+                if hook_type in hook:
+                    return True
+            elif hook == hook_type:
+                # Hook is just a string like "ci_check"
+                return True
+        return False
+
+    def is_completion_stage(self, dot_path: str) -> bool:
+        """Check if a dot path is a completion stage (work finished successfully).
+
+        Args:
+            dot_path: Stage dot path (e.g., "accepted")
+
+        Returns:
+            True if the stage has is_completion=True.
+        """
+        stage_name, _ = self.parse_stage(dot_path)
+        stage = self.get_stage(stage_name)
+        return stage.is_completion if stage else False
+
+    def is_abandon_stage(self, dot_path: str) -> bool:
+        """Check if a dot path is an abandon stage (work discarded).
+
+        Args:
+            dot_path: Stage dot path (e.g., "not_doing")
+
+        Returns:
+            True if the stage has is_abandon=True.
+        """
+        stage_name, _ = self.parse_stage(dot_path)
+        stage = self.get_stage(stage_name)
+        return stage.is_abandon if stage else False
+
+    def is_resumable_stage(self, dot_path: str) -> bool:
+        """Check if a stage is resumable (parking lot but not terminal).
+
+        A resumable stage is one where work can be paused and later resumed.
+        This includes stages like backlog but excludes completion/abandon stages.
+
+        Args:
+            dot_path: Stage dot path (e.g., "backlog")
+
+        Returns:
+            True if the stage is a parking lot but not completion/abandon.
+        """
+        if not self.is_parking_lot(dot_path):
+            return False
+        return not self.is_completion_stage(dot_path) and not self.is_abandon_stage(dot_path)
+
+    def get_completion_stage(self, flow: str = "default") -> str | None:
+        """Get the completion stage for a flow.
+
+        Args:
+            flow: Flow name (default: "default")
+
+        Returns:
+            The dot path of the completion stage, or None if not found.
+        """
+        stages = self.get_flow_stage_names(flow)
+        for stage in stages:
+            if self.is_completion_stage(stage):
+                return stage
+        return None
+
+    def get_abandon_stage(self, flow: str = "default") -> str | None:
+        """Get the abandon stage for a flow.
+
+        Args:
+            flow: Flow name (default: "default")
+
+        Returns:
+            The dot path of the abandon stage, or None if not found.
+        """
+        for stage_name in self.get_flow_stage_names(flow):
+            if self.is_abandon_stage(stage_name):
+                return stage_name
+        return None
 
     def get_flow(self, flow_name: str) -> FlowConfig | None:
         """Get configuration for a flow."""

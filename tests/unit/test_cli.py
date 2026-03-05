@@ -78,8 +78,9 @@ class TestSendCommand:
                         mock_tm.send_message_to_issue.return_value = "sent"
                         mock_tm_class.return_value = mock_tm
 
-                        with patch("agenttree.cli.agents.subprocess.run") as mock_run:
-                            mock_run.return_value = MagicMock(returncode=0, stderr="")
+                        # Mock the API start_issue function (used instead of subprocess)
+                        with patch("agenttree.api.start_issue") as mock_start:
+                            mock_start.return_value = mock_agent
                             result = cli_runner.invoke(main, ["send", "42", "hello"])
 
         assert result.exit_code == 0
@@ -719,6 +720,9 @@ class TestIssueCreateCommand:
         # Mock a dependency that is not yet accepted
         mock_dep_issue = MagicMock()
         mock_dep_issue.stage = "implement"  # Not accepted yet
+
+        # Configure mock to recognize "implement" is not a completion stage
+        mock_config.is_completion_stage.return_value = False
 
         problem = "This is a detailed problem statement that is at least 50 characters long for the test."
 

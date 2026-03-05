@@ -157,10 +157,11 @@ def issue_create(
             normalized_deps.append(f"{int(dep_num):03d}")
 
         # Check each dependency
+        config = load_config()
         unmet = []
         for dep_id in normalized_deps:
             dep_issue = get_issue_func(dep_id)
-            if dep_issue is None or dep_issue.stage != "accepted":
+            if dep_issue is None or not config.is_completion_stage(dep_issue.stage):
                 unmet.append(dep_id)
 
         if unmet:

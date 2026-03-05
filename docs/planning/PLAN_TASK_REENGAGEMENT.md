@@ -63,14 +63,14 @@ def reset_worktree(worktree_path: Path, base_branch: str = "main") -> None:
         task_file.unlink()
 ```
 
-**Behavior:** Every `agenttree dispatch` call completely wipes the worktree.
+**Behavior:** Every `agenttree start` call completely wipes the worktree.
 
 ### What We Currently Track
 
-In `agents/` repository:
-- ✅ **Task logs**: `agents/tasks/agent-1/2026-01-04-fix-auth.md`
-- ✅ **Specs**: `agents/specs/features/issue-42.md`
-- ✅ **Notes**: `agents/notes/agent-1/findings.md`
+In `_agenttree/` repository:
+- ✅ **Task logs**: `_agenttree/tasks/agent-1/2026-01-04-fix-auth.md`
+- ✅ **Specs**: `_agenttree/specs/features/issue-42.md`
+- ✅ **Notes**: `_agenttree/notes/agent-1/findings.md`
 - ❌ **Chat history**: Not saved
 - ❌ **Task state**: No branch/PR tracking
 - ❌ **Context dumps**: No conversation summaries
@@ -97,7 +97,7 @@ In `agents/` repository:
 **Workflow:**
 ```bash
 # First time working on issue #42
-agenttree dispatch task-42 --issue 42
+agenttree start task-42 --issue 42
 # Creates: task-42 worktree, task-42 tmux session
 # Agent works, creates PR #50, closes session
 
@@ -125,7 +125,7 @@ agenttree resume task-42
 ```bash
 # Auto-archive tasks when PR is merged
 agenttree archive task-42
-# Removes worktree, saves final state to agents/ repo
+# Removes worktree, saves final state to _agenttree/ repo
 ```
 
 ---
@@ -143,7 +143,7 @@ agenttree archive task-42
 ├── agent-2/
 └── agent-3/
 
-agents/
+_agenttree/
 ├── tasks/
 │   └── agent-1/
 │       ├── 2026-01-04-issue-42.md
@@ -161,21 +161,21 @@ agents/
   "branch": "agent-1/fix-auth-bug",
   "status": "pr_open",
   "last_active": "2026-01-04T10:30:00Z",
-  "chat_history_path": "agents/context/agent-1/issue-42-chat.md"
+  "chat_history_path": "_agenttree/context/agent-1/issue-42-chat.md"
 }
 ```
 
 **Workflow:**
 ```bash
 # First time working on issue #42
-agenttree dispatch 1 42
+agenttree start 1 42
 # Agent works, creates PR #50
 # On completion: saves task state + chat history
 
 # Days later, CI fails on PR #50
 agenttree resume 1 --task 42
 # Checks out PR branch: agent-1/fix-auth-bug
-# Loads chat history: agents/context/agent-1/issue-42-chat.md
+# Loads chat history: _agenttree/context/agent-1/issue-42-chat.md
 # Agent continues work
 ```
 
@@ -208,12 +208,12 @@ agenttree resume 1 --task 42
 **Agent assignment:**
 ```bash
 # Dispatch task to any available agent
-agenttree dispatch --issue 42
+agenttree start --issue 42
 # Finds available agent (agent-1), creates task-42 worktree
 # Records: task-42 is assigned to agent-1
 
 # Agent-1 can work on multiple tasks
-agenttree dispatch --issue 44
+agenttree start --issue 44
 # Creates task-44 worktree, also assigned to agent-1
 
 # Resume any task
@@ -286,13 +286,13 @@ agenttree resume --task 42
 1. Agent creates PR
 2. Agent appends summary to TASK.md
 3. Agent commits: "Add task completion summary"
-4. Save TASK.md to agents/context/agent-1/issue-42-context.md
+4. Save TASK.md to _agenttree/context/agent-1/issue-42-context.md
 ```
 
 **On resume:**
 ```bash
 # Load context into new TASK.md
-cat agents/context/agent-1/issue-42-context.md >> TASK.md
+cat _agenttree/context/agent-1/issue-42-context.md >> TASK.md
 echo "\n\n## Resume Task\n\nCI failed with error: ..." >> TASK.md
 ```
 
@@ -315,7 +315,7 @@ echo "\n\n## Resume Task\n\nCI failed with error: ..." >> TASK.md
 **For Claude Code:** Would need to:
 1. Hook into conversation API
 2. Export full transcript on session end
-3. Save to `agents/context/agent-1/issue-42-chat.json`
+3. Save to `_agenttree/context/agent-1/issue-42-chat.json`
 
 **On resume:**
 - Load chat history file
@@ -339,7 +339,7 @@ echo "\n\n## Resume Task\n\nCI failed with error: ..." >> TASK.md
 - Template enforces key sections
 
 **Manual:**
-- Agent adds notes/gotchas to agents/notes/ (optional)
+- Agent adds notes/gotchas to _agenttree/notes/ (optional)
 - Used for particularly tricky issues
 
 **Implementation:**
@@ -351,7 +351,7 @@ echo "\n\n## Resume Task\n\nCI failed with error: ..." >> TASK.md
    - Key files changed
    - Decisions made
    - How to resume
-3. CLI saves CONTEXT.md to agents/context/agent-1/issue-42.md
+3. CLI saves CONTEXT.md to _agenttree/context/agent-1/issue-42.md
 4. CLI saves task state JSON
 ```
 
@@ -377,10 +377,10 @@ echo "\n\n## Resume Task\n\nCI failed with error: ..." >> TASK.md
 ~/Projects/
 ├── myapp/
 │   ├── .agenttree.yaml
-│   └── agents/          # myapp-agents repo
+│   └── _agenttree/          # myapp-agents repo
 └── another-app/
     ├── .agenttree.yaml
-    └── agents/          # another-app-agents repo
+    └── _agenttree/          # another-app-agents repo
 
 ~/Projects/worktrees/
 ├── myapp/
@@ -394,7 +394,7 @@ echo "\n\n## Resume Task\n\nCI failed with error: ..." >> TASK.md
 **Pros:**
 - ✅ Simple isolation (no cross-contamination)
 - ✅ Project-specific setup scripts
-- ✅ Project-specific agents/ repository
+- ✅ Project-specific _agenttree/ repository
 - ✅ Clear ownership (myapp agents work on myapp)
 - ✅ Easier to understand and maintain
 
@@ -410,7 +410,7 @@ echo "\n\n## Resume Task\n\nCI failed with error: ..." >> TASK.md
 ```
 ~/.agenttree/
 ├── config.yaml
-├── agents/
+├── _agenttree/
 │   ├── agent-1/
 │   ├── agent-2/
 │   └── agent-3/
@@ -487,9 +487,9 @@ agents:
 - Agent can still work on multiple tasks (via state management)
 
 **Changes needed:**
-- Add task state tracking (`agents/tasks/agent-1/issue-42-state.json`)
+- Add task state tracking (`_agenttree/tasks/agent-1/issue-42-state.json`)
 - Add `agenttree resume` command
-- Save context summaries to `agents/context/`
+- Save context summaries to `_agenttree/context/`
 
 ---
 
@@ -503,7 +503,7 @@ agents:
 **Implementation:**
 - Add CONTEXT.md template
 - CLI asks agent to fill it on completion
-- Save to agents/context/ automatically
+- Save to _agenttree/context/ automatically
 
 ---
 
@@ -587,7 +587,7 @@ If you need to resume this task:
 
 **Changes:**
 - `cli.py:dispatch()` - On task completion, prompt agent to fill CONTEXT.md
-- Save to `agents/context/agent-{num}/issue-{num}.md`
+- Save to `_agenttree/context/agent-{num}/issue-{num}.md`
 
 ---
 
@@ -601,9 +601,9 @@ agenttree resume AGENT_NUM --pr PR_NUM
 ```
 
 **Behavior:**
-1. Load task state from `agents/tasks/agent-1/issue-42-state.json`
+1. Load task state from `_agenttree/tasks/agent-1/issue-42-state.json`
 2. Check out PR branch: `git checkout {branch}`
-3. Load context summary: `cat agents/context/agent-1/issue-42.md >> TASK.md`
+3. Load context summary: `cat _agenttree/context/agent-1/issue-42.md >> TASK.md`
 4. Append new instructions: "CI failed with: {error}"
 5. Restart tmux session with TASK.md
 
@@ -636,7 +636,7 @@ agenttree tasks cleanup        # Remove old archived tasks
 **Auto-archive on PR merge:**
 - When PR merges, archive task automatically
 - Move worktree to "archived" state (or remove)
-- Keep context in agents/ repo
+- Keep context in _agenttree/ repo
 
 ---
 
@@ -670,7 +670,7 @@ After implementation, the following should work:
 
 ```bash
 # Day 1: Agent-1 works on issue #42
-agenttree dispatch 1 42
+agenttree start 1 42
 # Agent creates PR #50, fills CONTEXT.md, closes
 
 # Day 3: CI fails on PR #50
@@ -712,12 +712,12 @@ agenttree resume 1 --task 42
 1. **Manual process:** Document in AGENT_GUIDE.md:
    ```
    When completing a task:
-   1. Create agents/context/agent-{num}/issue-{num}.md
+   1. Create _agenttree/context/agent-{num}/issue-{num}.md
    2. Document what you did, key files, decisions
-   3. Commit to agents/ repo
+   3. Commit to _agenttree/ repo
 
    When resuming:
-   1. Read agents/context/agent-{num}/issue-{num}.md
+   1. Read _agenttree/context/agent-{num}/issue-{num}.md
    2. Check out your PR branch
    3. Continue work
    ```

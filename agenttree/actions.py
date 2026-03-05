@@ -78,30 +78,17 @@ def list_actions() -> list[str]:
 @register_action("start_manager")
 def start_manager(agents_dir: Path, **kwargs: Any) -> None:
     """Start the manager agent (agent 0).
-    
+
     Args:
         agents_dir: Path to _agenttree directory
     """
-    import subprocess
-    from agenttree.config import load_config
-    from agenttree.tmux import session_exists
-    
-    config = load_config()
-    manager_session = config.get_manager_tmux_session()
-    
-    if session_exists(manager_session):
+    from agenttree.api import start_controller, AgentAlreadyRunningError
+
+    try:
+        start_controller(quiet=True)
+        console.print("[green]✓ Started manager agent[/green]")
+    except AgentAlreadyRunningError:
         console.print("[dim]Manager already running[/dim]")
-        return
-    
-    console.print("[cyan]Starting manager agent...[/cyan]")
-    subprocess.Popen(
-        ["uv", "run", "agenttree", "start", "0", "--skip-preflight"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        cwd=agents_dir.parent,  # Project root
-        start_new_session=True,
-    )
-    console.print("[green]✓ Started manager agent[/green]")
 
 
 @register_action("ensure_stage_agents")
@@ -967,23 +954,20 @@ def check_rate_limits(agents_dir: Path, **kwargs: Any) -> None:
                 mode = state.get("mode", "subscription")  # "subscription" or "api_key"
                 restarted = 0
                 
+                from agenttree.api import start_issue
+
                 for agent_info in stored_agents:
                     issue_id = agent_info.get("issue_id")
                     if not issue_id:
                         continue
-                    
-                    # Restart agent in subscription mode (without --api-key flag)
-                    result = subprocess.run(
-                        ["agenttree", "start", str(issue_id), "--skip-preflight", "--force"],
-                        capture_output=True,
-                        text=True,
-                        timeout=120,  # Container startup can be slow
-                    )
-                    if result.returncode == 0:
+
+                    # Restart agent in subscription mode (without force_api_key)
+                    try:
+                        start_issue(issue_id, force=True, skip_preflight=True, quiet=True)
                         restarted += 1
                         console.print(f"[green]✓ Restarted agent #{issue_id} in subscription mode[/green]")
-                    else:
-                        console.print(f"[yellow]Failed to restart agent #{issue_id}: {result.stderr[:100]}[/yellow]")
+                    except Exception as e:
+                        console.print(f"[yellow]Failed to restart agent #{issue_id}: {e}[/yellow]")
                 
                 # Clear state
                 clear_rate_limit_state(agents_dir)

@@ -115,6 +115,7 @@ def start_issue(
     force: bool = False,
     tool: str | None = None,
     quiet: bool = False,
+    force_api_key: bool = False,
 ) -> "ActiveAgent":
     """Start an agent for an issue.
 
@@ -127,6 +128,7 @@ def start_issue(
         force: Force restart if agent already running
         tool: AI tool to use (default: from config)
         quiet: Suppress console output if True
+        force_api_key: Force API key mode (skip OAuth subscription)
 
     Returns:
         ActiveAgent with agent details
@@ -182,12 +184,13 @@ def start_issue(
     if not issue:
         raise IssueNotFoundError(issue_id)
 
-    # If issue is in backlog, move it to first real stage
-    if issue.stage == "backlog":
+    # If issue is in a resumable parking lot (e.g., backlog), move it to first real stage
+    if config.is_resumable_stage(issue.stage):
+        first_stage = config.get_first_stage(issue.flow)
         if not quiet:
-            console.print(f"[cyan]Moving issue from backlog to explore.define...[/cyan]")
-        update_issue_stage(issue.id, "explore.define")
-        issue.stage = "explore.define"
+            console.print(f"[cyan]Moving issue from {issue.stage} to {first_stage}...[/cyan]")
+        update_issue_stage(issue.id, first_stage)
+        issue.stage = first_stage
 
     # Check if agent already running (tmux session check)
     existing_agent = get_active_agent(issue.id, host)
@@ -309,6 +312,7 @@ def start_issue(
         role=host,
         has_merge_conflicts=has_merge_conflicts,
         is_restart=is_restart,
+        force_api_key=force_api_key,
     )
 
     if not start_success:
@@ -390,13 +394,47 @@ def start_role(
         console.print(f"[green]Starting {role_name}...[/green]")
         console.print(f"[dim]Tool: {tool_name}, Model: {model}[/dim]")
 
-    tmux_manager.start_host_role(
-        session_name=session_name,
-        repo_path=repo_path,
-        tool_name=tool_name,
-        model=model,
-        skill_file=role_config.skill_file,
-    )
+    # Check if role should run in a container
+    if role_config.is_containerized():
+        from agenttree.container import get_container_runtime
+
+        container_runtime = get_container_runtime()
+        if not container_runtime.is_available():
+            if not quiet:
+                console.print("[yellow]Warning: No container runtime available, falling back to host[/yellow]")
+            # Fall back to host-based startup
+            tmux_manager.start_host_role(
+                session_name=session_name,
+                repo_path=repo_path,
+                tool_name=tool_name,
+                model=model,
+                skill_file=role_config.skill_file,
+            )
+        else:
+            # is_containerized() guarantees container is not None
+            assert role_config.container is not None
+            if not quiet:
+                console.print(f"[dim]Running in container: {role_config.container.image}[/dim]")
+            success = tmux_manager.start_host_role_in_container(
+                session_name=session_name,
+                repo_path=repo_path,
+                tool_name=tool_name,
+                container_runtime=container_runtime,
+                role_name=role_name,
+                model=model,
+                skill_file=role_config.skill_file,
+            )
+            if not success:
+                raise RuntimeError(f"Failed to start {role_name} in container")
+    else:
+        # Run directly on host (original behavior)
+        tmux_manager.start_host_role(
+            session_name=session_name,
+            repo_path=repo_path,
+            tool_name=tool_name,
+            model=model,
+            skill_file=role_config.skill_file,
+        )
 
     if not quiet:
         console.print(f"[green]✓ {role_name.capitalize()} started[/green]")
@@ -735,21 +773,21 @@ def stop_agent(issue_id: int, role: str = DEFAULT_ROLE, quiet: bool = False) -> 
         if not quiet:
             console.print(f"[yellow]  Warning: Could not stop tmux session: {e}[/yellow]")
 
-    # 3. Stop container by name (fast and reliable)
+    # 3. Stop containers by prefix (handles random suffixes from mDNS collision avoidance)
+    # Containers are created with random suffixes like "agenttree-myproject-042-abc123"
+    # so we use prefix-based cleanup to catch all of them
     try:
         runtime = get_container_runtime()
         if runtime.runtime:
-            # Use config method for consistent container naming
-            container_name = config.get_issue_container_name(issue_id)
+            from agenttree.container import cleanup_containers_by_prefix
+            # Use config method for consistent container naming prefix
+            container_prefix = config.get_issue_container_name(issue_id)
 
-            if runtime.stop(container_name):
+            cleaned = cleanup_containers_by_prefix(runtime.runtime, container_prefix)
+            if cleaned > 0:
                 stopped_something = True
                 if not quiet:
-                    console.print(f"[dim]  Stopped container: {container_name}[/dim]")
-
-            # Remove container (Apple Containers do NOT auto-remove, Docker needs explicit rm too)
-            if runtime.delete(container_name):
-                stopped_something = True
+                    console.print(f"[dim]  Stopped {cleaned} container(s) matching: {container_prefix}[/dim]")
     except Exception as e:
         if not quiet:
             console.print(f"[yellow]  Warning: Could not stop container: {e}[/yellow]")
