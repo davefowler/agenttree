@@ -29,6 +29,7 @@ class TestSessionExists:
             ["tmux", "has-session", "-t", "test-session"],
             check=True,
             capture_output=True,
+            timeout=30,
         )
 
     def test_session_exists_returns_false_when_not_found(self):
@@ -58,11 +59,13 @@ class TestCreateSession:
             ["tmux", "has-session", "-t", "test-session"],
             check=True,
             capture_output=True,
+            timeout=30,
         )
         mock_run.assert_any_call(
             ["tmux", "new-session", "-d", "-s", "test-session", "-c", str(tmp_path),
              "-e", "DISABLE_AUTO_UPDATE=true"],
             check=True,
+            timeout=30,
         )
 
     def test_create_session_with_command(self, tmp_path):
@@ -80,6 +83,7 @@ class TestCreateSession:
                 "-e", "DISABLE_AUTO_UPDATE=true", "echo hello",
             ],
             check=True,
+            timeout=30,
         )
 
 
@@ -97,6 +101,7 @@ class TestKillSession:
             ["tmux", "kill-session", "-t", "test-session"],
             check=True,
             capture_output=True,
+            timeout=30,
         )
 
     def test_kill_session_not_found(self):
@@ -125,11 +130,13 @@ class TestSendKeys:
         mock_run.assert_any_call(
             ["tmux", "send-keys", "-t", "test-session", "-l", "hello"],
             check=True,
+            timeout=30,
         )
         # Second call sends Enter
         mock_run.assert_any_call(
             ["tmux", "send-keys", "-t", "test-session", "Enter"],
             check=True,
+            timeout=30,
         )
 
     def test_send_keys_without_submit(self):
@@ -143,6 +150,7 @@ class TestSendKeys:
         mock_run.assert_called_once_with(
             ["tmux", "send-keys", "-t", "test-session", "-l", "hello"],
             check=True,
+            timeout=30,
         )
 
 
@@ -222,6 +230,7 @@ class TestCapturePane:
             capture_output=True,
             text=True,
             check=True,
+            timeout=30,
         )
 
     def test_capture_pane_failure(self):
