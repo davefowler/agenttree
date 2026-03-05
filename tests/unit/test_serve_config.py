@@ -85,6 +85,7 @@ class TestResolveContainerType:
         """Test that mounts accumulate through extends chain."""
         containers = {
             "_base": ContainerTypeConfig(
+                image="base:latest",
                 mounts=["~/.ssh:/home/agent/.ssh:ro"],
             ),
             "_with_git": ContainerTypeConfig(
@@ -108,6 +109,7 @@ class TestResolveContainerType:
         """Test that env vars merge with child overriding parent."""
         containers = {
             "_base": ContainerTypeConfig(
+                image="base:latest",
                 env={"NODE_ENV": "development", "DEBUG": "true"},
             ),
             "production": ContainerTypeConfig(
@@ -127,6 +129,7 @@ class TestResolveContainerType:
         """Test that allow_dangerous=False propagates."""
         containers = {
             "_secure": ContainerTypeConfig(
+                image="secure:latest",
                 allow_dangerous=False,
             ),
             "locked": ContainerTypeConfig(

@@ -138,7 +138,7 @@ async def voice_token(
         },
         {
             "type": "function",
-            "name": "start_agent",
+            "name": "start_issue",
             "description": "Start or restart an agent for an issue",
             "parameters": {
                 "type": "object",
@@ -208,7 +208,7 @@ async def voice_tool_call(
         get_agent_output as mcp_output,
         get_issue as mcp_get_issue,
         send_message as mcp_send,
-        start_agent as mcp_start,
+        start_issue as mcp_start,
         status as mcp_status,
         stop_agent as mcp_stop,
     )
@@ -225,7 +225,7 @@ async def voice_tool_call(
             "send_message": lambda a: mcp_send(a["issue_id"], a["message"]),
             "create_issue": lambda a: mcp_create(a["title"], a["description"]),
             "approve": lambda a: mcp_approve(a["issue_id"]),
-            "start_agent": lambda a: mcp_start(a["issue_id"]),
+            "start_issue": lambda a: mcp_start(a["issue_id"]),
             "stop_agent": lambda a: mcp_stop(a["issue_id"]),
         }
         fn = tools.get(name)

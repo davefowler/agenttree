@@ -198,7 +198,7 @@ class TUIApp(App):  # type: ignore[type-arg]
         Binding("q", "quit", "Quit"),
         Binding("a", "advance_stage", "Advance"),
         Binding("r", "reject", "Reject"),
-        Binding("s", "start_agent", "Start"),
+        Binding("s", "start_issue", "Start"),
         Binding("slash", "focus_filter", "Filter", key_display="/"),
         Binding("R", "refresh", "Refresh"),
         Binding("escape", "clear_filter", "Clear", show=False),
@@ -391,7 +391,7 @@ class TUIApp(App):  # type: ignore[type-arg]
         except Exception as e:
             status.show_message(f"Failed to reject: {e}")
 
-    def action_start_agent(self) -> None:
+    def action_start_issue(self) -> None:
         """Start an agent on the selected issue."""
         table = self.query_one(IssueTable)
         issue = table.get_selected_issue()

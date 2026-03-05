@@ -116,8 +116,8 @@ def issue_create(
         agenttree issue create "Feature B depends on A" --depends-on 053 --problem "This feature requires issue 053 to be completed first. It builds on that work."
         agenttree issue create "My feature title here" --problem "Description of the feature..." --no-start
     """
-    # Import start_agent here to avoid circular imports
-    from agenttree.cli.agents import start_agent
+    # Import start_issue here to avoid circular imports
+    from agenttree.cli.agents import start_issue
 
     # Validate title and problem length
     MIN_TITLE_LENGTH = 10
@@ -197,7 +197,7 @@ def issue_create(
             console.print(f"  2. Start agent: [cyan]agenttree start {issue.id}[/cyan]")
         else:
             console.print(f"\n[cyan]Auto-starting agent...[/cyan]")
-            ctx.invoke(start_agent, issue_id=issue.id)
+            ctx.invoke(start_issue, issue_id=issue.id)
 
     except Exception as e:
         console.print(f"[red]Error creating issue: {e}[/red]")
