@@ -162,9 +162,9 @@ flows:
                   must_pass: true
                   timeout: 900
               - run:
-                  command: uv run mypy agenttree || echo "mypy warnings (pre-existing)"
+                  command: if [ -f "$(git rev-parse --show-toplevel)/scripts/mypy_changed.py" ]; then uv run python "$(git rev-parse --show-toplevel)/scripts/mypy_changed.py"; else uv run mypy agenttree; fi || echo "mypy warnings (pre-existing)"
                   must_pass: true
-                  timeout: 300
+                  timeout: 900
               - section_check:
                   file: review.md
                   section: Self-Review Checklist

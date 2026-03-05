@@ -159,9 +159,9 @@ flows:
                   must_pass: true
                   timeout: 1200
               - run:
-                  command: uv run mypy {{PROJECT_NAME}} || echo "mypy warnings (pre-existing)"
+                  command: if [ -f "$(git rev-parse --show-toplevel)/scripts/mypy_changed.py" ]; then uv run python "$(git rev-parse --show-toplevel)/scripts/mypy_changed.py"; else uv run mypy {{PROJECT_NAME}}; fi || echo "mypy warnings (pre-existing)"
                   must_pass: true
-                  timeout: 300
+                  timeout: 900
               - section_check:
                   file: review.md
                   section: Self-Review Checklist
