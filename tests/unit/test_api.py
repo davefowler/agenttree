@@ -765,7 +765,7 @@ class TestContainerNamingConsistency:
     """Tests to verify API uses consistent container naming from config."""
 
     def test_container_naming_consistency(self):
-        """stop_agent should use same container name as config.get_issue_container_name()."""
+        """stop_agent should use cleanup_containers_by_prefix with config-derived prefix."""
         from agenttree.api import stop_agent
 
         mock_config = MagicMock()
@@ -775,22 +775,20 @@ class TestContainerNamingConsistency:
 
         mock_runtime = MagicMock()
         mock_runtime.runtime = "container"
-        mock_runtime.stop.return_value = True
-        mock_runtime.delete.return_value = True
 
         with patch("agenttree.config.load_config", return_value=mock_config), \
              patch("agenttree.tmux.session_exists", return_value=False), \
              patch("agenttree.tmux.kill_session"), \
-             patch("agenttree.container.get_container_runtime", return_value=mock_runtime):
+             patch("agenttree.container.get_container_runtime", return_value=mock_runtime), \
+             patch("agenttree.container.cleanup_containers_by_prefix", return_value=1) as mock_cleanup:
 
             stop_agent(123, "developer", quiet=True)
 
-        # Verify both config methods were called with same issue_id
+        # Verify config method was called with issue_id
         mock_config.get_issue_container_name.assert_called_with(123)
-        # Verify container operations used the config-derived name
-        expected_name = "agenttree-testproject-123"
-        mock_runtime.stop.assert_called_with(expected_name)
-        mock_runtime.delete.assert_called_with(expected_name)
+        # Verify cleanup_containers_by_prefix was called with prefix (handles random suffixes)
+        expected_prefix = "agenttree-testproject-123"
+        mock_cleanup.assert_called_with("container", expected_prefix)
 
 
 class TestTransitionIssue:
