@@ -457,7 +457,7 @@ def ping_architect(agents_dir: Path, **kwargs: Any) -> None:
     from agenttree.tmux import session_exists, send_message
 
     config = load_config()
-    session_name = config.get_architect_tmux_session()
+    session_name = config.get_role_tmux_session("architect")
 
     if not session_exists(session_name):
         return

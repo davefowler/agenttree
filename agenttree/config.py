@@ -553,10 +553,6 @@ class Config(BaseModel):
         """Get tmux session name for the manager agent."""
         return self.get_role_tmux_session("manager")
 
-    def get_architect_tmux_session(self) -> str:
-        """Get tmux session name for the architect agent."""
-        return self.get_role_tmux_session("architect")
-
     def get_role_tmux_session(self, role: str) -> str:
         """Get tmux session name for a host-level role agent.
 
