@@ -41,17 +41,23 @@ roles:
     description: "Human-driven manager"
     tool: claude
     model: sonnet
-    # Container config ready but disabled — runs on host for now.
-    # Enable with: enabled: true
     container:
-      enabled: false
+      enabled: true
       image: agenttree-host:latest
+      mounts:
+        - "~/.config/gh:/home/agent/.config/gh:ro"
+        - "~/.ssh:/home/agent/.ssh:ro"
+      allow_dangerous: true
     process: "agenttree start"
 
   developer:
     description: "Default AI agent"
     container:
       image: agenttree-agent:latest
+      mounts:
+        - "~/.config/gh:/home/agent/.config/gh:ro"
+        - "~/.ssh:/home/agent/.ssh:ro"
+      allow_dangerous: true
     tool: claude
     model: opus
 
@@ -59,6 +65,10 @@ roles:
     description: "Independent code reviewer using Claude"
     container:
       image: agenttree-agent:latest
+      mounts:
+        - "~/.config/gh:/home/agent/.config/gh:ro"
+        - "~/.ssh:/home/agent/.ssh:ro"
+      allow_dangerous: true
     tool: claude
     model: sonnet
     skill: independent_review.md
@@ -67,10 +77,13 @@ roles:
     description: "System supervisor - watches issues flow through the pipeline and fixes friction"
     tool: claude
     model: opus
-    # Container config ready but disabled — runs on host for now.
     container:
-      enabled: false
+      enabled: true
       image: agenttree-host:latest
+      mounts:
+        - "~/.config/gh:/home/agent/.config/gh:ro"
+        - "~/.ssh:/home/agent/.ssh:ro"
+      allow_dangerous: true
 
 # Workflow flows
 # The default flow defines stages inline (dict). Secondary flows reference

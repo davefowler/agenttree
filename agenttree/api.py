@@ -394,13 +394,47 @@ def start_role(
         console.print(f"[green]Starting {role_name}...[/green]")
         console.print(f"[dim]Tool: {tool_name}, Model: {model}[/dim]")
 
-    tmux_manager.start_host_role(
-        session_name=session_name,
-        repo_path=repo_path,
-        tool_name=tool_name,
-        model=model,
-        skill_file=role_config.skill_file,
-    )
+    # Check if role should run in a container
+    if role_config.is_containerized():
+        from agenttree.container import get_container_runtime
+
+        container_runtime = get_container_runtime()
+        if not container_runtime.is_available():
+            if not quiet:
+                console.print("[yellow]Warning: No container runtime available, falling back to host[/yellow]")
+            # Fall back to host-based startup
+            tmux_manager.start_host_role(
+                session_name=session_name,
+                repo_path=repo_path,
+                tool_name=tool_name,
+                model=model,
+                skill_file=role_config.skill_file,
+            )
+        else:
+            # is_containerized() guarantees container is not None
+            assert role_config.container is not None
+            if not quiet:
+                console.print(f"[dim]Running in container: {role_config.container.image}[/dim]")
+            success = tmux_manager.start_host_role_in_container(
+                session_name=session_name,
+                repo_path=repo_path,
+                tool_name=tool_name,
+                container_runtime=container_runtime,
+                role_name=role_name,
+                model=model,
+                skill_file=role_config.skill_file,
+            )
+            if not success:
+                raise RuntimeError(f"Failed to start {role_name} in container")
+    else:
+        # Run directly on host (original behavior)
+        tmux_manager.start_host_role(
+            session_name=session_name,
+            repo_path=repo_path,
+            tool_name=tool_name,
+            model=model,
+            skill_file=role_config.skill_file,
+        )
 
     if not quiet:
         console.print(f"[green]✓ {role_name.capitalize()} started[/green]")

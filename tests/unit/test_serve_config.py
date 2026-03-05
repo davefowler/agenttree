@@ -16,6 +16,7 @@ import pytest
 
 from agenttree.config import (
     Config,
+    ContainerConfig,
     ContainerTypeConfig,
     resolve_container_type,
     render_template,
@@ -52,6 +53,63 @@ class TestContainerTypeConfig:
         assert config.mounts == ["~/.ssh:/home/agent/.ssh:ro"]
         assert config.env == {"NODE_ENV": "development"}
         assert config.allow_dangerous is False
+
+
+class TestContainerConfig:
+    """Tests for ContainerConfig model (role-level container settings)."""
+
+    def test_container_config_defaults(self) -> None:
+        """Test ContainerConfig default values."""
+        config = ContainerConfig()
+        assert config.enabled is True
+        assert config.image == "agenttree-agent:latest"
+        assert config.mounts == []
+        assert config.env == {}
+        assert config.allow_dangerous is True
+
+    def test_container_config_with_mounts(self) -> None:
+        """Test ContainerConfig parses mounts list correctly."""
+        config = ContainerConfig(
+            mounts=[
+                "~/.config/gh:/home/agent/.config/gh:ro",
+                "~/.ssh:/home/agent/.ssh:ro",
+            ]
+        )
+        assert len(config.mounts) == 2
+        assert "~/.config/gh:/home/agent/.config/gh:ro" in config.mounts
+        assert "~/.ssh:/home/agent/.ssh:ro" in config.mounts
+
+    def test_container_config_with_env(self) -> None:
+        """Test ContainerConfig parses env dict correctly."""
+        config = ContainerConfig(
+            env={"GH_TOKEN": "test-token", "SSH_AUTH_SOCK": "/tmp/ssh-agent.sock"}
+        )
+        assert config.env == {"GH_TOKEN": "test-token", "SSH_AUTH_SOCK": "/tmp/ssh-agent.sock"}
+
+    def test_container_config_allow_dangerous_explicit(self) -> None:
+        """Test ContainerConfig with explicit allow_dangerous=False."""
+        config = ContainerConfig(allow_dangerous=False)
+        assert config.allow_dangerous is False
+
+    def test_container_config_disabled(self) -> None:
+        """Test ContainerConfig with enabled=False."""
+        config = ContainerConfig(enabled=False)
+        assert config.enabled is False
+
+    def test_container_config_full(self) -> None:
+        """Test ContainerConfig with all fields specified."""
+        config = ContainerConfig(
+            enabled=True,
+            image="agenttree-host:latest",
+            mounts=["~/.config/gh:/home/agent/.config/gh:ro"],
+            env={"CUSTOM_VAR": "value"},
+            allow_dangerous=True,
+        )
+        assert config.enabled is True
+        assert config.image == "agenttree-host:latest"
+        assert config.mounts == ["~/.config/gh:/home/agent/.config/gh:ro"]
+        assert config.env == {"CUSTOM_VAR": "value"}
+        assert config.allow_dangerous is True
 
 
 class TestResolveContainerType:
