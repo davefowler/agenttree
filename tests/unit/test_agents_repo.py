@@ -659,7 +659,7 @@ class TestCheckCiStatus:
 
         with patch("agenttree.github.get_pr_checks") as mock_get_checks, \
              patch("agenttree.state.get_active_agent", return_value=None), \
-             patch("agenttree.api.start_agent"), \
+             patch("agenttree.api.start_issue"), \
              patch("agenttree.tmux.TmuxManager"), \
              patch("agenttree.config.load_config") as mock_load_config, \
              patch("agenttree.issues.get_issue_context") as mock_get_context:
