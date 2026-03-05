@@ -766,7 +766,15 @@ def check_ci_status(agents_dir: Path) -> int:
             if issue.stage not in ("implement.ci_wait", "implement.review"):
                 continue
             if not issue.pr_number:
-                continue
+                # At ci_wait with no PR — try to create one (branch may have been pushed late)
+                if issue.stage == "implement.ci_wait" and issue.branch:
+                    from agenttree.pr_actions import ensure_pr_for_issue
+                    if ensure_pr_for_issue(issue.id):
+                        issue = Issue.from_yaml(issue_yaml)  # Reload to get pr_number
+                    if not issue.pr_number:
+                        continue
+                else:
+                    continue
             if issue.ci_notified:
                 continue
 
