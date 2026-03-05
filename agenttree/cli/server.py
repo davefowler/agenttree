@@ -142,10 +142,10 @@ def start_all(
         agenttree start --port 9000    # Use custom port for server
     """
     if issue_id is not None:
-        from agenttree.cli.agents import start_agent
+        from agenttree.cli.agents import start_issue
         ctx = click.get_current_context()
         ctx.invoke(
-            start_agent,
+            start_issue,
             issue_id=issue_id,
             tool=tool,
             role=role,
