@@ -613,6 +613,83 @@ class TmuxManager:
                 kill_session(session_name)
             return False
 
+    def start_issue_agent_direct(
+        self,
+        issue_id: int,
+        session_name: str,
+        worktree_path: Path,
+        tool_name: str,
+        model: str | None = None,
+        role: str = DEFAULT_ROLE,
+        has_merge_conflicts: bool = False,
+        is_restart: bool = False,
+    ) -> bool:
+        """Start an issue-bound agent directly (no container).
+
+        Used when agenttree itself is already running inside a container,
+        so agents just need a tmux session with the AI tool.
+
+        Args:
+            issue_id: Integer issue ID
+            session_name: Tmux session name
+            worktree_path: Path to the issue's worktree
+            tool_name: Name of the AI tool to use
+            model: Model to use
+            role: Agent role (e.g., "developer", "reviewer")
+            has_merge_conflicts: Whether there are unresolved merge conflicts
+            is_restart: Whether this is a restart
+
+        Returns:
+            True if agent started successfully, False if startup failed
+        """
+        # Kill existing session if it exists
+        if session_exists(session_name):
+            kill_session(session_name)
+
+        # Build AI tool command
+        tool_config = self.config.get_tool_config(tool_name)
+        resolved_model = model or self.config.default_model
+        entry_cmd = tool_config.container_entry_command(
+            model=resolved_model,
+            dangerous=True,
+            continue_session=False,
+        )
+        ai_command = " ".join(entry_cmd)
+
+        # Create tmux session running the AI tool directly
+        create_session(session_name, worktree_path, ai_command)
+
+        # Progress callback for long waits
+        def startup_progress(elapsed: float, timeout: float) -> None:
+            from rich.console import Console
+            console = Console()
+            console.print(f"[dim]Waiting for Claude CLI... {int(elapsed)}s/{int(timeout)}s[/dim]")
+
+        # Wait for Claude CLI prompt before sending startup message
+        if wait_for_prompt(session_name, prompt_char="❯", timeout=60.0, progress_callback=startup_progress):
+            if has_merge_conflicts:
+                startup_prompt = (
+                    f"You are working on issue #{issue_id}. "
+                    f"IMPORTANT: Your branch was rebased onto latest main and there are MERGE CONFLICTS. "
+                    f"Run 'git status' to see conflicted files and resolve them FIRST before any other work. "
+                    f"After resolving conflicts and committing, run: agenttree next"
+                )
+            elif is_restart:
+                startup_prompt = (
+                    f"SESSION RESTARTED - Issue #{issue_id}. "
+                    f"Your branch was rebased onto latest main to get CLI updates. "
+                    f"Any uncommitted work was auto-committed. "
+                    f"Run 'agenttree next' to see your current stage and resume work."
+                )
+            else:
+                startup_prompt = "Run 'agenttree next' to see your workflow instructions and current stage."
+            send_keys(session_name, startup_prompt)
+            return True
+        else:
+            if session_exists(session_name):
+                kill_session(session_name)
+            return False
+
     def start_host_role(
         self,
         session_name: str,

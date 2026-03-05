@@ -21,6 +21,12 @@ from agenttree.api import (
 class TestStartAgent:
     """Tests for start_issue() function."""
 
+    @pytest.fixture(autouse=True)
+    def _not_in_container(self):
+        """Ensure tests run as if on host (not inside a container)."""
+        with patch("agenttree.environment.is_running_in_container", return_value=False):
+            yield
+
     @pytest.fixture
     def mock_config(self):
         """Create a mock config."""
@@ -192,10 +198,11 @@ class TestStartAgent:
                                                 with patch("agenttree.issues.create_session"):
                                                     with patch("agenttree.issues.update_issue_metadata"):
                                                         with patch("agenttree.container.is_container_running", return_value=False):
-                                                            with patch("subprocess.run") as mock_run:
-                                                                mock_run.return_value = MagicMock(returncode=1)
-                                                                with pytest.raises(ContainerUnavailableError) as exc_info:
-                                                                    start_issue("042", quiet=True)
+                                                            with patch("agenttree.environment.is_running_in_container", return_value=False):
+                                                                with patch("subprocess.run") as mock_run:
+                                                                    mock_run.return_value = MagicMock(returncode=1)
+                                                                    with pytest.raises(ContainerUnavailableError) as exc_info:
+                                                                        start_issue("042", quiet=True)
 
         assert "Install Docker" in str(exc_info.value)
 

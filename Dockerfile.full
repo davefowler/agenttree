@@ -1,0 +1,20 @@
+# AgentTree Full Runtime
+# Single container that runs the entire agenttree system:
+# manager, architect, heartbeat, server, and all agent tmux sessions.
+# No per-agent containers needed — everything runs inside this one.
+#
+# Build:  container build -f Dockerfile.full -t agenttree-full:latest .
+#         (restart builder first if DNS fails: container builder stop && container builder start)
+#
+# Run:    container run -it --name agenttree-full \
+#           -v ~/Projects/myrepo:/workspace \
+#           -v ~/.config/gh:/home/agent/.config/gh:ro \
+#           -v ~/.ssh:/home/agent/.ssh:ro \
+#           agenttree-full:latest
+
+FROM agenttree-agent:latest
+
+# Install tmux (needed for managing agent sessions inside the container)
+USER root
+RUN apt-get update && apt-get install -y tmux && rm -rf /var/lib/apt/lists/*
+USER agent

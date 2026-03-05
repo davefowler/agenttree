@@ -50,13 +50,6 @@ roles:
     description: "Human-driven manager"
     tool: claude
     model: sonnet
-    container:
-      enabled: true
-      image: agenttree-agent:latest
-      mounts:
-        - "~/.config/gh:/home/agent/.config/gh:ro"
-        - "~/.ssh:/home/agent/.ssh:ro"
-      allow_dangerous: true
     process: "agenttree start"
 
   developer:
@@ -86,13 +79,6 @@ roles:
     description: "System supervisor - watches issues flow through the pipeline and fixes friction"
     tool: claude
     model: opus
-    container:
-      enabled: true
-      image: agenttree-agent:latest
-      mounts:
-        - "~/.config/gh:/home/agent/.config/gh:ro"
-        - "~/.ssh:/home/agent/.ssh:ro"
-      allow_dangerous: true
 
 # Workflow flows
 # The default flow defines stages inline (dict). Secondary flows reference

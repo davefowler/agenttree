@@ -200,17 +200,20 @@ def start_issue(
     # Check if container already running (catches orphaned containers without tmux sessions)
     # Only check for developer role — custom role agents (review etc.) coexist with
     # the developer container, and container names don't encode role.
-    from agenttree.container import is_container_running
-    container_name = config.get_issue_container_name(issue.id)
-    if host == DEFAULT_ROLE and is_container_running(container_name) and not force:
-        raise AgentAlreadyRunningError(issue.id, host)
+    # Skip container checks when already inside a container (no nested containers).
+    from agenttree.environment import is_running_in_container as _in_container
+    if not _in_container():
+        from agenttree.container import is_container_running
+        container_name = config.get_issue_container_name(issue.id)
+        if host == DEFAULT_ROLE and is_container_running(container_name) and not force:
+            raise AgentAlreadyRunningError(issue.id, host)
 
-    # If force, clean up existing container before proceeding
-    if force:
-        runtime = get_container_runtime()
-        if runtime.runtime:
-            from agenttree.container import cleanup_container
-            cleanup_container(runtime.runtime, container_name)
+        # If force, clean up existing container before proceeding
+        if force:
+            runtime = get_container_runtime()
+            if runtime.runtime:
+                from agenttree.container import cleanup_container
+                cleanup_container(runtime.runtime, container_name)
 
     # Initialize managers
     tmux_manager = TmuxManager(config)
@@ -290,37 +293,57 @@ def start_issue(
     # Create session for restart detection
     create_session(issue.id)
 
-    # Start agent in container
+    # Start agent
     tool_name = tool or config.default_tool
     model_name = config.model_for(issue.stage)
-    runtime = get_container_runtime()
 
-    if not runtime.is_available():
-        raise ContainerUnavailableError(runtime.get_recommended_action())
+    # If already inside a container, run agents directly (no nested containers)
+    from agenttree.environment import is_running_in_container
+    if is_running_in_container():
+        if not quiet:
+            console.print(f"[dim]Running direct (inside container)[/dim]")
+            console.print(f"[dim]Model: {model_name}[/dim]")
 
-    if not quiet:
-        console.print(f"[dim]Container runtime: {runtime.get_runtime_name()}[/dim]")
-        console.print(f"[dim]Model: {model_name}[/dim]")
+        start_success = tmux_manager.start_issue_agent_direct(
+            issue_id=issue.id,
+            session_name=agent.tmux_session,
+            worktree_path=worktree_path,
+            tool_name=tool_name,
+            model=model_name,
+            role=host,
+            has_merge_conflicts=has_merge_conflicts,
+            is_restart=is_restart,
+        )
+    else:
+        runtime = get_container_runtime()
 
-    start_success = tmux_manager.start_issue_agent_in_container(
-        issue_id=issue.id,
-        session_name=agent.tmux_session,
-        worktree_path=worktree_path,
-        tool_name=tool_name,
-        container_runtime=runtime,
-        model=model_name,
-        role=host,
-        has_merge_conflicts=has_merge_conflicts,
-        is_restart=is_restart,
-        force_api_key=force_api_key,
-    )
+        if not runtime.is_available():
+            raise ContainerUnavailableError(runtime.get_recommended_action())
+
+        if not quiet:
+            console.print(f"[dim]Container runtime: {runtime.get_runtime_name()}[/dim]")
+            console.print(f"[dim]Model: {model_name}[/dim]")
+
+        start_success = tmux_manager.start_issue_agent_in_container(
+            issue_id=issue.id,
+            session_name=agent.tmux_session,
+            worktree_path=worktree_path,
+            tool_name=tool_name,
+            container_runtime=runtime,
+            model=model_name,
+            role=host,
+            has_merge_conflicts=has_merge_conflicts,
+            is_restart=is_restart,
+            force_api_key=force_api_key,
+        )
 
     if not start_success:
         unregister_agent(issue.id, host)
         raise AgentStartError(issue.id, "Claude prompt not detected within timeout")
 
     if not quiet:
-        console.print(f"[green]✓ Started {tool_name} in container[/green]")
+        mode = "direct" if is_running_in_container() else "in container"
+        console.print(f"[green]✓ Started {tool_name} {mode}[/green]")
 
     if not quiet:
         console.print(f"\n[bold]Agent{role_label} ready for issue #{issue.id}[/bold]")
