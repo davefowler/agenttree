@@ -954,7 +954,7 @@ def check_rate_limits(agents_dir: Path, **kwargs: Any) -> None:
                 mode = state.get("mode", "subscription")  # "subscription" or "api_key"
                 restarted = 0
                 
-                from agenttree.api import start_issue, AgentStartError
+                from agenttree.api import start_issue
 
                 for agent_info in stored_agents:
                     issue_id = agent_info.get("issue_id")
@@ -966,8 +966,6 @@ def check_rate_limits(agents_dir: Path, **kwargs: Any) -> None:
                         start_issue(issue_id, force=True, skip_preflight=True, quiet=True)
                         restarted += 1
                         console.print(f"[green]✓ Restarted agent #{issue_id} in subscription mode[/green]")
-                    except AgentStartError as e:
-                        console.print(f"[yellow]Failed to restart agent #{issue_id}: {e}[/yellow]")
                     except Exception as e:
                         console.print(f"[yellow]Failed to restart agent #{issue_id}: {e}[/yellow]")
                 

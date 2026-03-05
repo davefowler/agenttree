@@ -234,7 +234,7 @@ class TestStartAgent:
         captured = capsys.readouterr()
         assert captured.out == ""
 
-    def test_start_agent_passes_force_api_key(
+    def test_start_issue_passes_force_api_key(
         self, mock_config, mock_issue, mock_agent, tmp_path, monkeypatch
     ):
         """Verify force_api_key=True is passed through to TmuxManager."""
@@ -272,7 +272,7 @@ class TestStartAgent:
         call_kwargs = mock_tm.start_issue_agent_in_container.call_args.kwargs
         assert call_kwargs.get("force_api_key") is True
 
-    def test_start_agent_default_force_api_key_false(
+    def test_start_issue_default_force_api_key_false(
         self, mock_config, mock_issue, mock_agent, tmp_path, monkeypatch
     ):
         """Verify default behavior doesn't enable force_api_key."""

@@ -8,7 +8,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException
 
 from agenttree.actions import load_rate_limit_state, save_rate_limit_state
-from agenttree.api import AgentStartError, start_issue
+from agenttree.api import start_issue
 from agenttree.config import load_config
 from agenttree.web.deps import get_current_user
 
@@ -104,8 +104,6 @@ async def switch_to_api_key_mode(
                 quiet=True,
             )
             restarted += 1
-        except AgentStartError as e:
-            failed.append({"issue_id": issue_id, "error": str(e)[:200]})
         except Exception as e:
             failed.append({"issue_id": issue_id, "error": str(e)[:200]})
 
