@@ -49,6 +49,20 @@ tools:
     startup_prompt: "Run 'agenttree next' for your current stage instructions."
 
 # ============================================================================
+# Containers
+# ============================================================================
+# Container types for `agenttree new <type> <name>` command.
+# Creates standalone containers for exploration, debugging, etc.
+
+containers:
+  sandbox:
+    image: agenttree-agent:latest
+    mounts:
+      - "~/.config/gh:/home/agent/.config/gh:ro"
+      - "~/.ssh:/home/agent/.ssh:ro"
+    allow_dangerous: true
+
+# ============================================================================
 # Roles
 # ============================================================================
 # Roles define who handles stages. Built-in roles: manager, developer.
