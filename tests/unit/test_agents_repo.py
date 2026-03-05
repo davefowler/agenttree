@@ -612,7 +612,7 @@ class TestCheckCiStatus:
 
         with patch("agenttree.github.get_pr_checks") as mock_get_checks, \
              patch("agenttree.state.get_active_agent", return_value=None), \
-             patch("agenttree.api.start_agent"), \
+             patch("agenttree.api.start_issue"), \
              patch("agenttree.tmux.TmuxManager"):
             mock_get_checks.return_value = [
                 CheckStatus(name="build", state="SUCCESS"),
@@ -639,7 +639,7 @@ class TestCheckCiStatus:
 
         with patch("agenttree.github.get_pr_checks") as mock_get_checks, \
              patch("agenttree.state.get_active_agent", return_value=None), \
-             patch("agenttree.api.start_agent"), \
+             patch("agenttree.api.start_issue"), \
              patch("agenttree.tmux.TmuxManager"):
             mock_get_checks.return_value = [
                 CheckStatus(name="test", state="FAILURE"),
@@ -725,7 +725,7 @@ class TestCheckCiStatus:
 
         with patch("agenttree.github.get_pr_checks") as mock_get_checks, \
              patch("agenttree.state.get_active_agent", return_value=None), \
-             patch("agenttree.api.start_agent"), \
+             patch("agenttree.api.start_issue"), \
              patch("agenttree.tmux.TmuxManager"):
             mock_get_checks.return_value = [
                 CheckStatus(name="test", state="FAILURE"),
@@ -746,7 +746,7 @@ class TestCheckCiStatus:
 
         with patch("agenttree.github.get_pr_checks") as mock_get_checks, \
              patch("agenttree.state.get_active_agent", return_value=None), \
-             patch("agenttree.api.start_agent"), \
+             patch("agenttree.api.start_issue"), \
              patch("agenttree.tmux.TmuxManager"):
             mock_get_checks.return_value = [
                 CheckStatus(name="test", state="FAILURE"),

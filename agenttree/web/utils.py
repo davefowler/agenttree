@@ -7,6 +7,8 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
+from agenttree.config import DEFAULT_ROLE
+
 logger = logging.getLogger(__name__)
 
 from agenttree import issues as issue_crud
@@ -103,7 +105,7 @@ def convert_issue_to_web(
         from agenttree.ids import parse_issue_id
 
         iid = parse_issue_id(str(issue.id))
-        dev_session = _config.get_issue_tmux_session(iid, "developer")
+        dev_session = _config.get_issue_tmux_session(iid, DEFAULT_ROLE)
         tmux_active = dev_session in agent_manager._get_active_sessions()
     else:
         tmux_active = agent_manager._check_issue_tmux_session(issue.id)
