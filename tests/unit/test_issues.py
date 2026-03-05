@@ -1568,6 +1568,91 @@ class TestNeedsUIReview:
 
         assert context["needs_ui_review"] is True
 
+    def test_ci_has_test_failures_true_when_pytest_errors(self, temp_agenttrees):
+        """ci_has_test_failures should be True when ci_feedback.md contains pytest errors."""
+        issue = create_issue("Test Issue")
+        issue_dir = temp_agenttrees / "issues" / "001"
+
+        # Write CI feedback with pytest failures
+        feedback = """## CI Failure Report
+
+### pytest
+
+FAILED tests/unit/test_foo.py::test_bar - AssertionError
+FAILED tests/unit/test_baz.py::test_qux - ValueError
+
+2 failed, 10 passed
+"""
+        (issue_dir / "ci_feedback.md").write_text(feedback)
+
+        context = get_issue_context(issue)
+
+        assert context["ci_has_test_failures"] is True
+        assert context["ci_feedback_exists"] is True
+
+    def test_ci_has_test_failures_true_when_mypy_errors(self, temp_agenttrees):
+        """ci_has_test_failures should be True when ci_feedback.md contains mypy errors."""
+        issue = create_issue("Test Issue")
+        issue_dir = temp_agenttrees / "issues" / "001"
+
+        # Write CI feedback with mypy errors
+        feedback = """## CI Failure Report
+
+### mypy
+
+agenttree/foo.py:42: error: Argument 1 has incompatible type
+agenttree/bar.py:10: error: Missing return statement
+"""
+        (issue_dir / "ci_feedback.md").write_text(feedback)
+
+        context = get_issue_context(issue)
+
+        assert context["ci_has_test_failures"] is True
+
+    def test_ci_has_test_failures_false_when_review_only(self, temp_agenttrees):
+        """ci_has_test_failures should be False when ci_feedback.md only has review comments."""
+        issue = create_issue("Test Issue")
+        issue_dir = temp_agenttrees / "issues" / "001"
+
+        # Write CI feedback with only review comments (no test failures)
+        feedback = """## CI Failure Report
+
+### Code Review Comments
+
+- Please add a docstring to this function
+- Consider renaming this variable for clarity
+- This could be simplified
+"""
+        (issue_dir / "ci_feedback.md").write_text(feedback)
+
+        context = get_issue_context(issue)
+
+        assert context["ci_has_test_failures"] is False
+        assert context["ci_has_review_failures"] is True
+
+    def test_ci_has_review_failures_true_when_feedback_exists(self, temp_agenttrees):
+        """ci_has_review_failures should be True when ci_feedback.md exists."""
+        issue = create_issue("Test Issue")
+        issue_dir = temp_agenttrees / "issues" / "001"
+
+        # Any feedback implies review failures
+        feedback = "Some CI feedback content"
+        (issue_dir / "ci_feedback.md").write_text(feedback)
+
+        context = get_issue_context(issue)
+
+        assert context["ci_has_review_failures"] is True
+
+    def test_ci_context_vars_false_when_no_feedback(self, temp_agenttrees):
+        """CI context variables should be False when ci_feedback.md doesn't exist."""
+        issue = create_issue("Test Issue")
+
+        context = get_issue_context(issue)
+
+        assert context["ci_feedback_exists"] is False
+        assert context["ci_has_test_failures"] is False
+        assert context["ci_has_review_failures"] is False
+
 
 class TestUpdateIssuePriority:
     """Tests for update_issue_priority function."""
