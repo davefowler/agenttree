@@ -369,7 +369,8 @@ def agents_status() -> None:
 def attach(issue_id: str, role: str) -> None:
     """Attach to an issue's agent tmux session.
 
-    ISSUE_ID is the issue number (e.g., "23" or "023"), or "0" for manager.
+    ISSUE_ID is the issue number (e.g., "23" or "023"), "0" for manager,
+    or a host role name (e.g., "manager", "architect").
     """
     from agenttree.state import get_active_agent
     from agenttree.tmux import session_exists, attach_session
@@ -377,8 +378,25 @@ def attach(issue_id: str, role: str) -> None:
     config = load_config()
     tmux_manager = TmuxManager(config)
 
+    # Host roles can be addressed directly by name (e.g., "manager", "architect")
+    if issue_id in config.roles:
+        session_name = config.get_role_tmux_session(issue_id)
+        if not session_exists(session_name):
+            console.print(f"[red]Error: {issue_id.capitalize()} not running[/red]")
+            console.print(f"[yellow]Start it with: agenttree start {issue_id}[/yellow]")
+            sys.exit(1)
+        console.print(f"Attaching to {issue_id} (Ctrl+B, D to detach)...")
+        attach_session(session_name)
+        return
+
     # Normalize issue ID
-    issue_id_normalized = normalize_issue_id(issue_id)
+    try:
+        issue_id_normalized = normalize_issue_id(issue_id)
+    except (SystemExit, ValueError):
+        available_roles = ", ".join(sorted(config.roles.keys()))
+        console.print(f"[red]Error: Invalid issue ID or role '{issue_id}'[/red]")
+        console.print(f"[yellow]Use an issue number, 0, or one of: {available_roles}[/yellow]")
+        sys.exit(1)
 
     # Special handling for manager (agent 0)
     if issue_id_normalized == 0:

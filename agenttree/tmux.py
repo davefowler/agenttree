@@ -636,7 +636,15 @@ class TmuxManager:
 
         # Wait for prompt before sending startup message
         if skill_file and wait_for_prompt(session_name, prompt_char="❯", timeout=30.0):
-            send_keys(session_name, f"cat _agenttree/roles/{skill_file}")
+            role_prompt_path = f"_agenttree/roles/{skill_file}"
+            legacy_prompt_path = f"_agenttree/skills/{skill_file}"
+            if (repo_path / role_prompt_path).exists():
+                send_keys(session_name, f"cat {role_prompt_path}")
+            elif (repo_path / legacy_prompt_path).exists():
+                # Existing checkouts may still keep role prompts under _agenttree/skills/.
+                send_keys(session_name, f"cat {legacy_prompt_path}")
+            else:
+                send_keys(session_name, f"cat {role_prompt_path}")
 
     def stop_issue_agent(self, session_name: str) -> None:
         """Stop an issue-bound agent's tmux session.
