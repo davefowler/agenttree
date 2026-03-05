@@ -66,25 +66,35 @@ class TestRoleConfig:
 class TestConfigWithRoles:
     """Tests for Config with roles section."""
 
-    def test_get_all_roles_includes_defaults(self):
-        """Test that get_all_roles includes built-in manager and developer."""
-        config = Config()
+    def test_get_all_roles_returns_configured_roles(self):
+        """Test that get_all_roles returns roles from config."""
+        config = Config(
+            roles={
+                "manager": RoleConfig(name="manager"),
+                "developer": RoleConfig(
+                    name="developer",
+                    container=ContainerConfig(enabled=True),
+                    tool="claude",
+                    model="opus",
+                ),
+            }
+        )
         all_roles = config.get_all_roles()
 
-        # Should have at least manager and developer
         assert "manager" in all_roles
         assert "developer" in all_roles
-
-        # Manager should not be containerized
         assert all_roles["manager"].is_containerized() is False
-
-        # Developer should be containerized
         assert all_roles["developer"].is_containerized() is True
 
     def test_get_all_roles_with_custom(self):
-        """Test that custom roles are merged with defaults."""
+        """Test that custom roles appear in get_all_roles."""
         config = Config(
             roles={
+                "manager": RoleConfig(name="manager"),
+                "developer": RoleConfig(
+                    name="developer",
+                    container=ContainerConfig(enabled=True),
+                ),
                 "reviewer": RoleConfig(
                     name="reviewer",
                     container=ContainerConfig(enabled=True),
@@ -95,14 +105,21 @@ class TestConfigWithRoles:
         )
         all_roles = config.get_all_roles()
 
-        # Should have defaults plus custom
         assert "manager" in all_roles
         assert "developer" in all_roles
         assert "reviewer" in all_roles
 
-    def test_get_role_returns_builtin(self):
-        """Test get_role returns built-in roles."""
-        config = Config()
+    def test_get_role_returns_configured_role(self):
+        """Test get_role returns roles from config."""
+        config = Config(
+            roles={
+                "manager": RoleConfig(name="manager"),
+                "developer": RoleConfig(
+                    name="developer",
+                    container=ContainerConfig(enabled=True),
+                ),
+            }
+        )
 
         mgr = config.get_role("manager")
         assert mgr is not None
@@ -116,6 +133,11 @@ class TestConfigWithRoles:
         """Test role_is_containerized method."""
         config = Config(
             roles={
+                "manager": RoleConfig(name="manager"),
+                "developer": RoleConfig(
+                    name="developer",
+                    container=ContainerConfig(enabled=True),
+                ),
                 "reviewer": RoleConfig(
                     name="reviewer",
                     container=ContainerConfig(enabled=True)

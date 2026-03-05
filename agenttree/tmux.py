@@ -508,8 +508,15 @@ class TmuxManager:
         # Build container command using generic builder
         from agenttree.config import ContainerTypeConfig
         from agenttree.container import build_container_command
+
+        # Get image from role's container config
+        role_config = self.config.roles.get(role)
+        if role_config and role_config.container:
+            image = role_config.container.image
+        else:
+            image = self.config.default_container_image
         container_type = ContainerTypeConfig(
-            image="agenttree-agent:latest",
+            image=image,
             allow_dangerous=True,
         )
         container_cmd = build_container_command(
@@ -582,54 +589,35 @@ class TmuxManager:
         tool_name: str,
         model: str | None = None,
     ) -> None:
-        """Start the manager agent on the host (not in a container).
+        """Start the manager agent. Delegates to start_host_role."""
+        self.start_host_role(
+            session_name=session_name,
+            repo_path=repo_path,
+            tool_name=tool_name,
+            model=model,
+            skill_file="manager.md",
+        )
 
-        The manager runs on the main branch and orchestrates other agents.
-
-        Args:
-            session_name: Tmux session name (typically {project}-manager-000)
-            repo_path: Path to the repository root
-            tool_name: Name of the AI tool to use
-            model: Model to use (e.g., "sonnet", "opus"). If None, uses tool default.
-        """
-        # Kill existing session if it exists
-        if session_exists(session_name):
-            kill_session(session_name)
-
-        # Get tool config
-        tool_config = self.config.get_tool_config(tool_name)
-
-        # Build command to run the AI tool directly (not in container)
-        # Manager runs on the host with full access
-        ai_command = tool_config.command
-        if model:
-            ai_command = f"{ai_command} --model {model}"
-
-        # Create tmux session running the AI tool
-        create_session(session_name, repo_path, ai_command)
-
-        # Wait for prompt before sending startup message
-        if wait_for_prompt(session_name, prompt_char="❯", timeout=30.0):
-            # Load manager instructions
-            send_keys(session_name, "cat _agenttree/skills/manager.md")
-
-    def start_architect(
+    def start_host_role(
         self,
         session_name: str,
         repo_path: Path,
         tool_name: str,
         model: str | None = None,
+        skill_file: str | None = None,
     ) -> None:
-        """Start the architect agent on the host (not in a container).
+        """Start a host-level role agent (not in a container).
 
-        The architect supervises the system — watching issues flow through
-        the pipeline, fixing friction, and resetting issues that get stuck.
+        Generic method for starting any role that runs directly on the host.
+        The role's behavior is determined by its prompt file in _agenttree/roles/.
 
         Args:
-            session_name: Tmux session name (typically {project}-architect-000)
+            session_name: Tmux session name (e.g., "myproject-manager-000")
             repo_path: Path to the repository root
             tool_name: Name of the AI tool to use
             model: Model to use (e.g., "sonnet", "opus"). If None, uses tool default.
+            skill_file: Prompt file name (e.g., "manager.md").
+                        Looked up in _agenttree/roles/. If None, no initial prompt.
         """
         # Kill existing session if it exists
         if session_exists(session_name):
@@ -638,7 +626,7 @@ class TmuxManager:
         # Get tool config
         tool_config = self.config.get_tool_config(tool_name)
 
-        # Build command to run the AI tool directly (not in container)
+        # Build command to run the AI tool directly on host
         ai_command = tool_config.command
         if model:
             ai_command = f"{ai_command} --model {model}"
@@ -647,9 +635,8 @@ class TmuxManager:
         create_session(session_name, repo_path, ai_command)
 
         # Wait for prompt before sending startup message
-        if wait_for_prompt(session_name, prompt_char="❯", timeout=30.0):
-            # Load architect instructions
-            send_keys(session_name, "cat _agenttree/skills/architect.md")
+        if skill_file and wait_for_prompt(session_name, prompt_char="❯", timeout=30.0):
+            send_keys(session_name, f"cat _agenttree/roles/{skill_file}")
 
     def stop_issue_agent(self, session_name: str) -> None:
         """Stop an issue-bound agent's tmux session.

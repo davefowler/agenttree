@@ -39,6 +39,13 @@ tools:
 roles:
   manager:
     description: "Human-driven manager"
+    tool: claude
+    model: sonnet
+    # Container config ready but disabled — runs on host for now.
+    # Enable with: enabled: true
+    container:
+      enabled: false
+      image: agenttree-host:latest
     process: "agenttree start"
 
   developer:
@@ -60,6 +67,10 @@ roles:
     description: "System supervisor - watches issues flow through the pipeline and fixes friction"
     tool: claude
     model: opus
+    # Container config ready but disabled — runs on host for now.
+    container:
+      enabled: false
+      image: agenttree-host:latest
 
 # Workflow flows
 # The default flow defines stages inline (dict). Secondary flows reference

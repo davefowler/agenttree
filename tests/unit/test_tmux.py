@@ -540,12 +540,20 @@ class TestServeSession:
     @pytest.fixture
     def mock_config(self):
         """Create a mock config with serve command."""
+        from agenttree.config import RoleConfig, ContainerConfig
         config = MagicMock()
         config.project = "myproject"
         config.default_model = "claude-sonnet"
+        config.default_container_image = "agenttree-agent:latest"
         config.commands = {"serve": "uv run uvicorn app:app --port $PORT"}
         config.get_port_for_issue.return_value = 9135
         config.get_issue_container_name.return_value = "myproject-issue-135"
+        config.roles = {
+            "developer": RoleConfig(
+                name="developer",
+                container=ContainerConfig(enabled=True, image="agenttree-agent:latest"),
+            ),
+        }
         tool_config = MagicMock()
         tool_config.command = "claude"
         tool_config.container_entry_command.return_value = ["claude", "--dangerously-skip-permissions"]

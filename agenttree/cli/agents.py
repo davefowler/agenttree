@@ -115,23 +115,31 @@ def start_agent(
             sys.exit(1)
         console.print("[green]✓ Preflight checks passed[/green]\n")
 
-    # Special handling for architect (before normalize which expects digits)
-    if issue_id == "architect":
-        from agenttree.api import start_architect, AgentAlreadyRunningError
+    # Check if issue_id is a role name (e.g., "manager", "architect")
+    # or "0" which is the legacy alias for "manager"
+    is_role = issue_id in config.roles
+    if not is_role:
         try:
-            start_architect(tool=tool, force=force)
+            if normalize_issue_id(issue_id) == 0:
+                is_role = True
+                issue_id = "manager"
+        except (ValueError, SystemExit):
+            pass
+
+    if is_role:
+        from agenttree.api import start_role, AgentAlreadyRunningError
+        try:
+            start_role(issue_id, tool=tool, force=force)
         except AgentAlreadyRunningError:
-            console.print("[yellow]Architect already running. Use --force to restart.[/yellow]")
+            console.print(f"[yellow]{issue_id.capitalize()} already running. Use --force to restart.[/yellow]")
+            sys.exit(1)
+        except ValueError as e:
+            console.print(f"[red]{e}[/red]")
             sys.exit(1)
         return
 
     # Normalize issue ID (strip leading zeros for lookup, keep for display)
     issue_id_normalized = normalize_issue_id(issue_id)
-
-    # Special handling for manager (agent 0)
-    if issue_id_normalized == 0:
-        _start_manager(tool, force, config, repo_path)
-        return
 
     # Load issue from local _agenttree/issues/
     issue = get_issue_func(issue_id_normalized)

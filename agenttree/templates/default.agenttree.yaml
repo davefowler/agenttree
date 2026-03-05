@@ -4,6 +4,8 @@
 
 default_tool: claude
 default_model: opus
+default_role: developer
+default_container_image: agenttree-agent:latest
 port_range: 9000-9100
 project: "{{PROJECT_NAME}}"
 worktrees_dir: .worktrees

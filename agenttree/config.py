@@ -169,10 +169,15 @@ class RoleConfig(BaseModel):
     tool: str | None = None  # AI tool to use (e.g., "claude", "codex")
     model: str | None = None  # Explicit model (e.g., "opus"). Overrides model_tier.
     model_tier: str | None = None  # Tier name (e.g., "high", "medium", "low") → resolved via model_tiers
-    skill: str | None = None  # Skill file path for custom agents
+    skill: str | None = None  # Skill file in _agenttree/skills/. Defaults to {name}.md.
 
     # Process to run (for manager, this could be "agenttree watch")
     process: str | None = None
+
+    @property
+    def skill_file(self) -> str:
+        """Resolved skill file path. Convention: {role_name}.md if not explicitly set."""
+        return self.skill or f"{self.name}.md"
 
     def is_containerized(self) -> bool:
         """Check if this role runs in a container."""
@@ -391,12 +396,13 @@ def resolve_container_type(
         result_env.update(cfg.env)
 
     # Apply defaults for any values still None
-    final_image = result_image if result_image is not None else "agenttree-agent:latest"
+    if result_image is None:
+        raise ValueError(f"Container type '{name}' has no image configured (check extends chain)")
     final_allow_dangerous = result_allow_dangerous if result_allow_dangerous is not None else True
 
     return ContainerTypeConfig(
         extends=None,  # Resolved config has no extends
-        image=final_image,
+        image=result_image,
         mounts=result_mounts,
         env=result_env,
         allow_dangerous=final_allow_dangerous,
@@ -449,6 +455,8 @@ class Config(BaseModel):
     port_range: str = "9000-9100"  # Manager on 9000, issues 9001-9100
     default_tool: str = "claude"
     default_model: str = "opus"
+    default_role: str = "developer"
+    default_container_image: str = "agenttree-agent:latest"
     model_tiers: dict[str, str] = Field(default_factory=dict)
     refresh_interval: int = 10
     tools: dict[str, ToolConfig] = Field(default_factory=dict)
@@ -540,12 +548,22 @@ class Config(BaseModel):
 
     def get_manager_tmux_session(self) -> str:
         """Get tmux session name for the manager agent."""
-        from agenttree.ids import manager_session_name
-        return manager_session_name(self.project)
+        return self.get_role_tmux_session("manager")
 
     def get_architect_tmux_session(self) -> str:
         """Get tmux session name for the architect agent."""
-        return f"{self.project}-architect-000"
+        return self.get_role_tmux_session("architect")
+
+    def get_role_tmux_session(self, role: str) -> str:
+        """Get tmux session name for a host-level role agent.
+
+        Args:
+            role: Role name (e.g., "manager", "architect")
+
+        Returns:
+            Session name (e.g., "myproject-manager-000")
+        """
+        return f"{self.project}-{role}-000"
 
     def get_issue_session_patterns(self, issue_id: int) -> list[str]:
         """Get all possible tmux session names for an issue."""
@@ -670,29 +688,12 @@ class Config(BaseModel):
         return result
 
     def get_all_roles(self) -> dict[str, RoleConfig]:
-        """Get all roles including built-in defaults."""
-        all_roles: dict[str, RoleConfig] = {
-            "manager": RoleConfig(
-                name="manager",
-                description="Human-driven manager (runs on host)",
-                container=None,
-                process=None,
-                model_tier="low",
-            ),
-            "developer": RoleConfig(
-                name="developer",
-                description="Default AI agent that writes code",
-                container=ContainerConfig(enabled=True),
-                tool=self.default_tool,
-                model=self.default_model,
-            ),
-        }
-        all_roles.update(self.roles)
-        return all_roles
+        """Get all roles from config."""
+        return self.roles
 
     def get_role(self, role_name: str) -> RoleConfig | None:
-        """Get configuration for a role (including built-in defaults)."""
-        return self.get_all_roles().get(role_name)
+        """Get configuration for a role."""
+        return self.roles.get(role_name)
 
     def get_custom_role_stages(self) -> list[str]:
         """Get list of dot paths that use custom roles."""
@@ -737,7 +738,7 @@ class Config(BaseModel):
         role = self.get_role(role_name)
         if role:
             return role.is_containerized()
-        return role_name != "manager"
+        return False
 
     def role_for(self, dot_path: str) -> str:
         """Get the effective role for a dot path."""
@@ -746,7 +747,7 @@ class Config(BaseModel):
             return sub.role
         if stage:
             return stage.role
-        return "developer"
+        return self.default_role
 
     def substages_for(self, stage_name: str) -> list[str]:
         """Get ordered list of substage names for a stage."""

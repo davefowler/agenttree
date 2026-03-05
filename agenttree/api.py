@@ -33,6 +33,7 @@ __all__ = [
     "start_agent",
     "send_message",
     "start_controller",
+    "start_role",
     "stop_agent",
     "stop_all_agents_for_issue",
     "transition_issue",
@@ -328,74 +329,31 @@ def start_controller(
     force: bool = False,
     quiet: bool = False,
 ) -> None:
-    """Start the controller agent (issue 0).
-
-    The controller runs on the host (not in a container) and orchestrates
-    other agents.
-
-    Args:
-        tool: AI tool to use (default: from config)
-        force: Force restart if already running
-        quiet: Suppress console output if True
-
-    Raises:
-        AgentAlreadyRunningError: If controller already running (without force)
-    """
-    from agenttree.config import load_config
-    from agenttree.tmux import TmuxManager, session_exists, kill_session
-
-    if not quiet:
-        from rich.console import Console
-        console = Console()
-
-    repo_path = Path.cwd()
-    config = load_config(repo_path)
-    tmux_manager = TmuxManager(config)
-
-    session_name = config.get_manager_tmux_session()
-    tool_name = tool or config.default_tool
-
-    # Check if already running
-    if session_exists(session_name):
-        if not force:
-            raise AgentAlreadyRunningError("0", "controller")
-        if not quiet:
-            console.print("[dim]Killing existing controller session...[/dim]")
-        kill_session(session_name)
-
-    if not quiet:
-        console.print("[green]✓ Starting controller...[/green]")
-
-    tmux_manager.start_manager(
-        session_name=session_name,
-        repo_path=repo_path,
-        tool_name=tool_name,
-    )
-
-    if not quiet:
-        console.print(f"[green]✓ Controller started[/green]")
-        console.print(f"\n[bold]Controller ready[/bold]")
-        console.print(f"[dim]Attach with: agenttree attach 0[/dim]")
+    """Start the controller agent (issue 0). Delegates to start_role("manager")."""
+    start_role("manager", tool=tool, force=force, quiet=quiet)
 
 
-def start_architect(
+def start_role(
+    role_name: str,
     *,
     tool: str | None = None,
     force: bool = False,
     quiet: bool = False,
 ) -> None:
-    """Start the architect agent on the host.
+    """Start a host-level role agent (e.g., manager, architect).
 
-    The architect supervises the whole system — watching issues flow through
-    the pipeline, fixing friction, and resetting stuck issues.
+    Reads all configuration (tool, model, skill file, container settings)
+    from the role's config in .agenttree.yaml. No role-specific logic here.
 
     Args:
-        tool: AI tool to use (default: from config)
+        role_name: Role name as defined in config roles (e.g., "manager", "architect")
+        tool: AI tool override (default: from role config or global default)
         force: Force restart if already running
         quiet: Suppress console output if True
 
     Raises:
-        AgentAlreadyRunningError: If architect already running (without force)
+        AgentAlreadyRunningError: If role agent already running (without force)
+        ValueError: If role not found in config
     """
     from agenttree.config import load_config
     from agenttree.tmux import TmuxManager, session_exists, kill_session
@@ -406,36 +364,42 @@ def start_architect(
 
     repo_path = Path.cwd()
     config = load_config(repo_path)
+
+    # Look up role config
+    role_config = config.roles.get(role_name)
+    if not role_config:
+        raise ValueError(f"Unknown role: '{role_name}'. Available: {', '.join(config.roles.keys())}")
+
     tmux_manager = TmuxManager(config)
+    session_name = config.get_role_tmux_session(role_name)
 
-    session_name = config.get_architect_tmux_session()
-    tool_name = tool or config.default_tool
-
-    # Get model from architect role config
-    architect_role = config.roles.get("architect")
-    model = architect_role.model if architect_role else config.default_model
+    # Resolve tool and model from role config, falling back to global defaults
+    tool_name = tool or role_config.tool or config.default_tool
+    model = role_config.model or config.default_model
 
     # Check if already running
     if session_exists(session_name):
         if not force:
-            raise AgentAlreadyRunningError("architect", "architect")
+            raise AgentAlreadyRunningError(role_name, role_name)
         if not quiet:
-            console.print("[dim]Killing existing architect session...[/dim]")
+            console.print(f"[dim]Killing existing {role_name} session...[/dim]")
         kill_session(session_name)
 
     if not quiet:
-        console.print("[green]✓ Starting architect...[/green]")
+        console.print(f"[green]Starting {role_name}...[/green]")
+        console.print(f"[dim]Tool: {tool_name}, Model: {model}[/dim]")
 
-    tmux_manager.start_architect(
+    tmux_manager.start_host_role(
         session_name=session_name,
         repo_path=repo_path,
         tool_name=tool_name,
         model=model,
+        skill_file=role_config.skill_file,
     )
 
     if not quiet:
-        console.print(f"[green]✓ Architect started[/green]")
-        console.print(f"[dim]Attach with: tmux attach -t {session_name}[/dim]")
+        console.print(f"[green]✓ {role_name.capitalize()} started[/green]")
+        console.print(f"[dim]Attach with: agenttree attach {role_name}[/dim]")
 
 
 def send_message(

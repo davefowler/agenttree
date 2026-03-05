@@ -356,10 +356,14 @@ class TestStartController:
     @pytest.fixture
     def mock_config(self):
         """Create a mock config."""
+        from agenttree.config import RoleConfig
         config = MagicMock()
         config.project = "testproj"
         config.default_tool = "claude"
-        config.get_manager_tmux_session.return_value = "testproj-controller-000"
+        config.default_model = "opus"
+        manager_role = RoleConfig(name="manager", tool="claude", model="sonnet")
+        config.roles = {"manager": manager_role}
+        config.get_role_tmux_session.return_value = "testproj-controller-000"
         return config
 
     def test_start_controller_creates_session(self, mock_config, tmp_path, monkeypatch):
@@ -374,8 +378,8 @@ class TestStartController:
 
                     start_controller(quiet=True)
 
-        mock_tm.start_manager.assert_called_once()
-        call_args = mock_tm.start_manager.call_args
+        mock_tm.start_host_role.assert_called_once()
+        call_args = mock_tm.start_host_role.call_args
         assert call_args.kwargs["session_name"] == "testproj-controller-000"
 
     def test_start_controller_not_in_container(self, mock_config, tmp_path, monkeypatch):
@@ -390,8 +394,8 @@ class TestStartController:
 
                     start_controller(quiet=True)
 
-        # Verify start_manager was called (not start_issue_agent_in_container)
-        mock_tm.start_manager.assert_called_once()
+        # Verify start_host_role was called (not start_issue_agent_in_container)
+        mock_tm.start_host_role.assert_called_once()
         mock_tm.start_issue_agent_in_container.assert_not_called()
 
     def test_start_controller_already_running_raises(self, mock_config, tmp_path, monkeypatch):
@@ -403,7 +407,7 @@ class TestStartController:
                 with pytest.raises(AgentAlreadyRunningError) as exc_info:
                     start_controller(quiet=True)
 
-        assert exc_info.value.issue_id == "0"
+        assert exc_info.value.issue_id == "manager"
 
     def test_start_controller_force_restarts(self, mock_config, tmp_path, monkeypatch):
         """With force=True, restarts controller."""
@@ -419,7 +423,7 @@ class TestStartController:
                         start_controller(force=True, quiet=True)
 
         mock_kill.assert_called_once_with("testproj-controller-000")
-        mock_tm.start_manager.assert_called_once()
+        mock_tm.start_host_role.assert_called_once()
 
 
 class TestControllerMessages:
