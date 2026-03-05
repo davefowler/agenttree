@@ -995,7 +995,16 @@ def push_pending_branches(agents_dir: Path) -> int:
                 text=True,
                 timeout=10,
             )
-            if check_result.returncode != 0 or not check_result.stdout.strip():
+            if check_result.returncode != 0:
+                # origin/{branch} doesn't exist yet — check if branch has local commits beyond main
+                has_commits = subprocess.run(
+                    ["git", "-C", str(worktree_path), "log", "main..HEAD", "--oneline", "-1"],
+                    capture_output=True, text=True, timeout=10,
+                )
+                if has_commits.returncode != 0 or not has_commits.stdout.strip():
+                    continue
+                # Branch has commits but was never pushed — needs initial push
+            elif not check_result.stdout.strip():
                 continue
 
             console.print(f"[dim]Pushing branch {branch} for issue #{issue_id}...[/dim]")
