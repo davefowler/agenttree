@@ -582,22 +582,6 @@ class TmuxManager:
                 kill_session(session_name)
             return False
 
-    def start_manager(
-        self,
-        session_name: str,
-        repo_path: Path,
-        tool_name: str,
-        model: str | None = None,
-    ) -> None:
-        """Start the manager agent. Delegates to start_host_role."""
-        self.start_host_role(
-            session_name=session_name,
-            repo_path=repo_path,
-            tool_name=tool_name,
-            model=model,
-            skill_file="manager.md",
-        )
-
     def start_host_role(
         self,
         session_name: str,
