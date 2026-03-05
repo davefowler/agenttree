@@ -177,11 +177,13 @@ async def get_agent_status(
         )
 
     processing = issue.processing if issue else None
+    stage = issue.stage if issue else None
 
     return {
         "tmux_active": tmux_active,
         "status": "running" if tmux_active else "off",
         "processing": processing,
+        "stage": stage,
     }
 
 
