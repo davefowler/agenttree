@@ -876,7 +876,7 @@ class Config(BaseModel):
             return False
 
         # Check substage hooks first, then stage hooks
-        hooks = (substage.pre_completion if substage else []) or stage.pre_completion
+        hooks = substage.pre_completion if substage is not None else stage.pre_completion
         for hook in hooks:
             if isinstance(hook, dict):
                 # Hook is {"hook_type": {...}} or {"hook_type": None}
