@@ -941,18 +941,16 @@ def update_issue_stage(
     Returns:
         Updated Issue object or None if not found
     """
-    # Validate stage exists in config to catch renames/typos early
+    # Load config for stage validation and semantic checks
     from agenttree.config import load_config
-    config = None
-    try:
-        config = load_config()
-        group = config.stage_group_name(stage)
-        stage_names = config.get_stage_names()
-        if group not in stage_names:
-            log.warning("Stage '%s' (group '%s') does not exist in config — "
-                        "issue #%s may become invisible on kanban board", stage, group, issue_id)
-    except (FileNotFoundError, ValueError, yaml.YAMLError) as e:
-        log.debug("Stage validation skipped (config unavailable): %s", e)
+    config = load_config()
+
+    # Validate stage exists in config to catch renames/typos early
+    group = config.stage_group_name(stage)
+    stage_names = config.get_stage_names()
+    if group not in stage_names:
+        log.warning("Stage '%s' (group '%s') does not exist in config — "
+                    "issue #%s may become invisible on kanban board", stage, group, issue_id)
 
     if not skip_sync:
         agents_path = get_agenttree_path()
@@ -975,17 +973,16 @@ def update_issue_stage(
     issue.updated = now
 
     # Clear ci_escalated when leaving a human review stage
-    if config is not None:
-        old_stage_cfg, old_substage_cfg = config.resolve_stage(old_stage)
-        old_is_human_review = (old_substage_cfg.human_review if old_substage_cfg
-                               else old_stage_cfg.human_review if old_stage_cfg else False)
-        if old_is_human_review and old_stage != stage:
-            issue.ci_escalated = False
+    old_stage_cfg, old_substage_cfg = config.resolve_stage(old_stage)
+    old_is_human_review = (old_substage_cfg.human_review if old_substage_cfg
+                           else old_stage_cfg.human_review if old_stage_cfg else False)
+    if old_is_human_review and old_stage != stage:
+        issue.ci_escalated = False
 
-        # Clear ci_notified when entering a CI wait stage so new CI runs get detected
-        # (save() uses exclude_none=True, so setting to None omits the field)
-        if config.has_hook(stage, "ci_check"):
-            issue.ci_notified = None
+    # Clear ci_notified when entering a CI wait stage so new CI runs get detected
+    # (save() uses exclude_none=True, so setting to None omits the field)
+    if config.has_hook(stage, "ci_check"):
+        issue.ci_notified = None
 
     # Explicit overrides from caller
     if ci_escalated is not None:

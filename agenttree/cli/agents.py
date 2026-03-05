@@ -148,12 +148,14 @@ def start_issue(
         console.print(f"[yellow]Create it with: agenttree issue create 'title'[/yellow]")
         sys.exit(1)
 
-    # If issue is in backlog, move it to explore.define stage first
-    if issue.stage == "backlog":
+    # If issue is in a resumable parking lot (e.g., backlog), move it to first real stage
+    config = load_config()
+    if config.is_resumable_stage(issue.stage):
         from agenttree.issues import update_issue_stage
-        console.print(f"[cyan]Moving issue from backlog to explore.define...[/cyan]")
-        update_issue_stage(issue.id, "explore.define")
-        issue.stage = "explore.define"  # Update local reference
+        first_stage = config.get_first_stage(issue.flow)
+        console.print(f"[cyan]Moving issue from {issue.stage} to {first_stage}...[/cyan]")
+        update_issue_stage(issue.id, first_stage)
+        issue.stage = first_stage  # Update local reference
 
     # Check if issue already has an active agent for this role
     existing_agent = get_active_agent(issue.id, role)
