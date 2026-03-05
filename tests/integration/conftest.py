@@ -307,7 +307,7 @@ def mock_container() -> Generator[MagicMock, None, None]:
     mock.running_agents = {}
     mock.sent_messages = []
 
-    def start_issue(issue_id: int, worktree_path: Path) -> int:
+    def start_issue(issue_id: int | str, worktree_path: Path) -> int:
         agent_num = len(mock.running_agents) + 1
         mock.running_agents[agent_num] = {
             "issue_id": issue_id,
@@ -389,7 +389,7 @@ def workflow_issue(workflow_repo: Path, mock_sync: MagicMock) -> dict[str, Any]:
                 description="This is a test issue for integration testing."
             )
 
-            issue_dir = workflow_repo / "_agenttree" / "issues" / f"{issue.id:03d}"
+            issue_dir = workflow_repo / "_agenttree" / "issues" / format_issue_id(issue.id)
 
             return {
                 "id": issue.id,

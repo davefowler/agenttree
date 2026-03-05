@@ -21,7 +21,7 @@ class TestContainerEnvironment:
 
     def test_container_env_detected(self, monkeypatch):
         """Test that container environment is properly detected."""
-        from agenttree.environment import is_running_in_container
+        from agenttree.hooks import is_running_in_container
 
         monkeypatch.setenv("AGENTTREE_CONTAINER", "1")
         assert is_running_in_container() is True
@@ -98,7 +98,7 @@ class TestHostEnvironment:
 
     def test_host_env_detected(self, host_environment):
         """Test that host environment is properly detected."""
-        from agenttree.environment import is_running_in_container
+        from agenttree.hooks import is_running_in_container
 
         assert is_running_in_container() is False
 
@@ -130,7 +130,7 @@ class TestHostEnvironment:
     @pytest.mark.skip(reason="rebase_issue_branch signature changed - takes Path not issue_id")
     def test_rebase_runs_on_host(self, workflow_repo: Path, host_environment, mock_sync: MagicMock):
         """Test that rebase hook runs on host."""
-        from agenttree.git_utils import rebase_issue_branch
+        from agenttree.hooks import rebase_issue_branch
 
         with patch("agenttree.hooks.subprocess.run") as mock_run:
             mock_result = MagicMock()
@@ -162,7 +162,8 @@ class TestPRCreationBoundary:
     @pytest.mark.skip(reason="ensure_pr_for_issue/create_pull_request not yet implemented")
     def test_host_sync_creates_pr_for_container_issues(self, workflow_repo: Path, host_environment, mock_sync: MagicMock):
         """Test that host sync creates PRs for issues at implement.review."""
-        from agenttree.pr_actions import ensure_pr_for_issue
+        from agenttree.hooks import ensure_pr_for_issue
+        from agenttree.ids import format_issue_id
         from agenttree.issues import create_issue, update_issue_stage
 
         agenttree_path = workflow_repo / "_agenttree"
@@ -171,7 +172,7 @@ class TestPRCreationBoundary:
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
                 with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
                     issue = create_issue(title="Test PR Creation")
-                    issue_dir = agenttree_path / "issues" / issue.dir_name
+                    issue_dir = agenttree_path / "issues" / format_issue_id(issue.id)
 
                     # Create necessary content
                     create_valid_spec_md(issue_dir)
@@ -230,7 +231,7 @@ class TestHookContextAwareness:
         with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
                 issue = create_issue(title="Test Section Check")
-                issue_dir = agenttree_path / "issues" / issue.dir_name
+                issue_dir = agenttree_path / "issues" / format_issue_id(issue.id)
 
                 create_valid_problem_md(issue_dir)
 
@@ -304,7 +305,7 @@ class TestApprovalBoundary:
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
                 with patch("agenttree.issues.get_agenttree_path", return_value=agenttree_path):
                     issue = create_issue(title="Test Host Approval")
-                    issue_dir = agenttree_path / "issues" / issue.dir_name
+                    issue_dir = agenttree_path / "issues" / format_issue_id(issue.id)
 
                     # Create valid content for plan.review
                     create_valid_spec_md(issue_dir)
@@ -351,7 +352,7 @@ class TestApprovalBoundary:
             with patch("agenttree.config.find_config_file", return_value=workflow_repo / ".agenttree.yaml"):
                 # Create issue and simulate agent reaching plan.review
                 issue = create_issue(title="Test Agent Reorient After Approval")
-                issue_dir = agenttree_path / "issues" / issue.dir_name
+                issue_dir = agenttree_path / "issues" / format_issue_id(issue.id)
 
                 # Agent creates session and works through to plan.review
                 session = create_session(issue.id)
@@ -472,7 +473,7 @@ class TestStartBlockedIssuesBoundary:
 
                 # Add dependency (manually for test)
                 import yaml
-                yaml_path = agenttree_path / "issues" / blocked_issue.dir_name / "issue.yaml"
+                yaml_path = agenttree_path / "issues" / format_issue_id(blocked_issue.id) / "issue.yaml"
                 with open(yaml_path) as f:
                     data = yaml.safe_load(f)
                 data["dependencies"] = [dep_issue.id]
