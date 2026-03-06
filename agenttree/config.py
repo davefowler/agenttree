@@ -145,15 +145,11 @@ class ToolConfig(BaseModel):
 class ContainerConfig(BaseModel):
     """Configuration for container settings.
 
-    Defines how a role runs in a container (or doesn't).
-    Fields mirror ContainerTypeConfig for consistency.
+    Defines how a host runs in a container (or doesn't).
     """
 
     enabled: bool = True  # Whether to run in a container
     image: str = "agenttree-agent:latest"  # Container image to use
-    mounts: list[str] = Field(default_factory=list)  # Additional mounts (host:container:mode)
-    env: dict[str, str] = Field(default_factory=dict)  # Environment variables
-    allow_dangerous: bool = True  # Allow --dangerously-skip-permissions
 
 
 class RoleConfig(BaseModel):

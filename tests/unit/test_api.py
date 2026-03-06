@@ -7,7 +7,6 @@ import pytest
 from agenttree.api import (
     start_issue,
     start_controller,
-    start_role,
     send_message,
     IssueNotFoundError,
     AgentStartError,
@@ -467,102 +466,6 @@ class TestStartController:
 
         mock_kill.assert_called_once_with("testproj-controller-000")
         mock_tm.start_host_role.assert_called_once()
-
-
-class TestStartRoleContainerized:
-    """Tests for start_role() with containerized roles."""
-
-    @pytest.fixture
-    def mock_containerized_config(self):
-        """Create a mock config with containerized manager role."""
-        from agenttree.config import RoleConfig, ContainerConfig
-        config = MagicMock()
-        config.project = "testproj"
-        config.default_tool = "claude"
-        config.default_model = "opus"
-        # Manager role with container enabled
-        container_cfg = ContainerConfig(
-            enabled=True,
-            image="agenttree-host:latest",
-            mounts=["~/.config/gh:/home/agent/.config/gh:ro"],
-            allow_dangerous=True,
-        )
-        manager_role = RoleConfig(name="manager", tool="claude", model="sonnet", container=container_cfg)
-        config.roles = {"manager": manager_role}
-        config.get_role_tmux_session.return_value = "testproj-manager-000"
-        return config
-
-    @pytest.fixture
-    def mock_non_containerized_config(self):
-        """Create a mock config with non-containerized manager role."""
-        from agenttree.config import RoleConfig, ContainerConfig
-        config = MagicMock()
-        config.project = "testproj"
-        config.default_tool = "claude"
-        config.default_model = "opus"
-        # Manager role with container disabled
-        container_cfg = ContainerConfig(enabled=False, image="agenttree-host:latest")
-        manager_role = RoleConfig(name="manager", tool="claude", model="sonnet", container=container_cfg)
-        config.roles = {"manager": manager_role}
-        config.get_role_tmux_session.return_value = "testproj-manager-000"
-        return config
-
-    def test_start_role_uses_container_when_containerized(self, mock_containerized_config, tmp_path, monkeypatch):
-        """Uses container startup when role is containerized."""
-        monkeypatch.chdir(tmp_path)
-
-        mock_runtime = MagicMock()
-        mock_runtime.is_available.return_value = True
-
-        with patch("agenttree.config.load_config", return_value=mock_containerized_config):
-            with patch("agenttree.tmux.session_exists", return_value=False):
-                with patch("agenttree.container.get_container_runtime", return_value=mock_runtime):
-                    with patch("agenttree.tmux.TmuxManager") as mock_tm_class:
-                        mock_tm = MagicMock()
-                        mock_tm.start_host_role_in_container.return_value = True
-                        mock_tm_class.return_value = mock_tm
-
-                        start_role("manager", quiet=True)
-
-        # Verify container startup was called
-        mock_tm.start_host_role_in_container.assert_called_once()
-        mock_tm.start_host_role.assert_not_called()
-
-    def test_start_role_uses_host_when_not_containerized(self, mock_non_containerized_config, tmp_path, monkeypatch):
-        """Uses host startup when role is not containerized."""
-        monkeypatch.chdir(tmp_path)
-
-        with patch("agenttree.config.load_config", return_value=mock_non_containerized_config):
-            with patch("agenttree.tmux.session_exists", return_value=False):
-                with patch("agenttree.tmux.TmuxManager") as mock_tm_class:
-                    mock_tm = MagicMock()
-                    mock_tm_class.return_value = mock_tm
-
-                    start_role("manager", quiet=True)
-
-        # Verify host startup was called
-        mock_tm.start_host_role.assert_called_once()
-        mock_tm.start_host_role_in_container.assert_not_called()
-
-    def test_start_role_falls_back_to_host_when_no_runtime(self, mock_containerized_config, tmp_path, monkeypatch):
-        """Falls back to host startup when no container runtime available."""
-        monkeypatch.chdir(tmp_path)
-
-        mock_runtime = MagicMock()
-        mock_runtime.is_available.return_value = False
-
-        with patch("agenttree.config.load_config", return_value=mock_containerized_config):
-            with patch("agenttree.tmux.session_exists", return_value=False):
-                with patch("agenttree.container.get_container_runtime", return_value=mock_runtime):
-                    with patch("agenttree.tmux.TmuxManager") as mock_tm_class:
-                        mock_tm = MagicMock()
-                        mock_tm_class.return_value = mock_tm
-
-                        start_role("manager", quiet=True)
-
-        # Verify host startup was called as fallback
-        mock_tm.start_host_role.assert_called_once()
-        mock_tm.start_host_role_in_container.assert_not_called()
 
 
 class TestControllerMessages:
