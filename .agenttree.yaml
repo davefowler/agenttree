@@ -8,15 +8,6 @@ port_range: 9000-9100
 project: "agenttree"
 worktrees_dir: .worktrees
 
-# Container types for `agenttree new <type> <name>`
-containers:
-  sandbox:
-    image: agenttree-agent:latest
-    mounts:
-      - "~/.config/gh:/home/agent/.config/gh:ro"
-      - "~/.ssh:/home/agent/.ssh:ro"
-    allow_dangerous: true
-
 # Allow approving own PRs (skips PR approval check - for solo projects)
 allow_self_approval: true
 
@@ -52,7 +43,7 @@ roles:
     model: sonnet
     container:
       enabled: true
-      image: agenttree-agent:latest
+      image: agenttree-host:latest
       mounts:
         - "~/.config/gh:/home/agent/.config/gh:ro"
         - "~/.ssh:/home/agent/.ssh:ro"
@@ -88,7 +79,7 @@ roles:
     model: opus
     container:
       enabled: true
-      image: agenttree-agent:latest
+      image: agenttree-host:latest
       mounts:
         - "~/.config/gh:/home/agent/.config/gh:ro"
         - "~/.ssh:/home/agent/.ssh:ro"
