@@ -18,6 +18,7 @@ Built-in Actions:
 Naming convention: Action names match function names exactly.
 """
 
+import re
 from collections.abc import Callable
 from pathlib import Path
 import shlex
@@ -466,10 +467,211 @@ def ping_architect(agents_dir: Path, **kwargs: Any) -> None:
         console.print(f"[dim]Pinged architect[/dim]")
 
 
+# =============================================================================
+# Permission Prompt Detection
+# =============================================================================
+
+# Patterns that indicate Claude is waiting for permission approval.
+# Claude Code shows tool name + command + "Allow" prompt when permissions needed.
+PERMISSION_PROMPT_PATTERNS = [
+    re.compile(r"Allow\s+(tool|this)\s+(call|action)", re.IGNORECASE),
+    re.compile(r"\bAllow\?\s*\(?\s*[yYnNaA]", re.IGNORECASE),
+    re.compile(r"Do you want to (allow|run|execute)", re.IGNORECASE),
+    re.compile(r"Yes\s*/\s*No\s*/\s*Always", re.IGNORECASE),
+    re.compile(r"\[y/n(/a)?\]", re.IGNORECASE),
+    re.compile(r"\(y\s*=\s*yes", re.IGNORECASE),
+]
+
+# Commands that are safe to auto-approve (read-only or agenttree management).
+# Each pattern is matched against the full command string.
+SAFE_COMMAND_PATTERNS = [
+    # Read-only git commands
+    re.compile(r"^git\s+(status|log|diff|branch|show|rev-parse|ls-files|ls-tree|shortlog|describe|remote\s+-v)\b"),
+    # Read-only file inspection
+    re.compile(r"^(ls|cat|head|tail|find|grep|rg|wc|file|stat|du|tree)\b"),
+    # Agenttree CLI (read-only commands)
+    re.compile(r"^agenttree\s+(status|output|next|list|show)\b"),
+    # Python/uv test and lint (safe, sandboxed)
+    re.compile(r"^(uv\s+run\s+(pytest|mypy|ruff|pylint|flake8))\b"),
+    # Read tool
+    re.compile(r"^Read\b", re.IGNORECASE),
+    # Glob/Grep tools
+    re.compile(r"^(Glob|Grep)\b", re.IGNORECASE),
+]
+
+# Commands that are never safe to auto-approve.
+UNSAFE_COMMAND_PATTERNS = [
+    re.compile(r"\brm\s+-rf?\b"),
+    re.compile(r"^git\s+(push\s+--force|reset\s+--hard|clean\s+-f)"),
+    re.compile(r"^git\s+push\b.*--force"),
+    re.compile(r"\b(curl|wget)\b.*\b(POST|PUT|DELETE|PATCH)\b", re.IGNORECASE),
+]
+
+
+def detect_permission_prompt(tmux_output: str) -> str | None:
+    """Check if tmux output shows a permission prompt.
+
+    Scans the last 20 lines for permission-related patterns.
+
+    Args:
+        tmux_output: Captured tmux pane content
+
+    Returns:
+        The matched line if a permission prompt is detected, None otherwise
+    """
+    lines = tmux_output.strip().split("\n")
+    # Only check the last 20 lines (permission prompts appear at the bottom)
+    recent_lines = lines[-20:]
+
+    for line in reversed(recent_lines):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        for pattern in PERMISSION_PROMPT_PATTERNS:
+            if pattern.search(stripped):
+                return stripped
+
+    return None
+
+
+def extract_command_from_output(tmux_output: str) -> str | None:
+    """Extract the command/tool being requested from tmux output near a permission prompt.
+
+    Looks for tool names and commands in the lines preceding the permission prompt.
+
+    Args:
+        tmux_output: Captured tmux pane content
+
+    Returns:
+        The extracted command string, or None if not found
+    """
+    lines = tmux_output.strip().split("\n")
+    recent_lines = lines[-30:]
+
+    # Look for common Claude Code patterns showing the tool/command
+    tool_pattern = re.compile(r"(?:Bash|Command|Tool)[\s:]+(.+)", re.IGNORECASE)
+    # Also match lines that look like shell commands (indented or after a box border)
+    cmd_pattern = re.compile(r"^\s*[│|]\s*(.+?)\s*[│|]?\s*$")
+
+    for line in reversed(recent_lines):
+        stripped = line.strip()
+        if not stripped:
+            continue
+
+        # Skip the permission prompt line itself
+        is_prompt = False
+        for pattern in PERMISSION_PROMPT_PATTERNS:
+            if pattern.search(stripped):
+                is_prompt = True
+                break
+        if is_prompt:
+            continue
+
+        # Try tool/command pattern
+        match = tool_pattern.search(stripped)
+        if match:
+            return match.group(1).strip()
+
+        # Try box-style command display
+        match = cmd_pattern.match(stripped)
+        if match:
+            cmd = match.group(1).strip()
+            # Verify it looks like an actual command (not decoration)
+            if cmd and not all(c in "─═╭╮╰╯┌┐└┘" for c in cmd):
+                return cmd
+
+    return None
+
+
+def is_safe_command(command: str) -> bool:
+    """Determine if a command is safe to auto-approve.
+
+    Checks against allowlist of safe (read-only) commands and blocklist
+    of dangerous commands.
+
+    Args:
+        command: The command string to evaluate
+
+    Returns:
+        True if the command matches a safe pattern and no unsafe pattern
+    """
+    # Check unsafe patterns first — these always block
+    for pattern in UNSAFE_COMMAND_PATTERNS:
+        if pattern.search(command):
+            return False
+
+    # Check safe patterns
+    for pattern in SAFE_COMMAND_PATTERNS:
+        if pattern.search(command):
+            return True
+
+    return False
+
+
+@register_action("check_permission_prompts")
+def check_permission_prompts(agents_dir: Path, **kwargs: Any) -> None:
+    """Check if manager or architect is stuck at a permission prompt.
+
+    Deterministic heartbeat action that:
+    1. Captures manager's tmux output
+    2. Detects permission prompt patterns
+    3. Extracts the requested command
+    4. If safe: auto-approves by sending 'y' to the session
+    5. If unsafe/unknown: pings architect to review and approve
+
+    Args:
+        agents_dir: Path to _agenttree directory
+    """
+    from agenttree.config import load_config
+    from agenttree.tmux import session_exists, capture_pane, send_keys, send_message
+
+    config = load_config()
+    manager_session = config.get_role_tmux_session("manager")
+    architect_session = config.get_role_tmux_session("architect")
+
+    if not session_exists(manager_session):
+        return
+
+    # Capture manager's recent output
+    output = capture_pane(manager_session, lines=40)
+    if not output:
+        return
+
+    # Check for permission prompt
+    prompt_line = detect_permission_prompt(output)
+    if not prompt_line:
+        return
+
+    # Extract what command is being requested
+    command = extract_command_from_output(output)
+    command_desc = command or "unknown command"
+
+    if command and is_safe_command(command):
+        # Safe command — auto-approve by sending 'y'
+        send_keys(manager_session, "y", submit=True, interrupt=False)
+        console.print(f"[green]Auto-approved safe command for manager: {command_desc}[/green]")
+    else:
+        # Unsafe or unknown — ping architect to review
+        if not session_exists(architect_session):
+            console.print(f"[yellow]Manager stuck at permission prompt ({command_desc}) but architect not running[/yellow]")
+            return
+
+        message = (
+            f"[PERMISSION CHECK] Manager is stuck at a permission prompt.\n"
+            f"Command: {command_desc}\n"
+            f"This command was NOT auto-approved (not in safe allowlist).\n"
+            f"Please review: attach to manager with `agenttree attach manager` "
+            f"and approve or deny the action."
+        )
+        result = send_message(architect_session, message)
+        if result == "sent":
+            console.print(f"[dim]Notified architect about manager permission prompt: {command_desc}[/dim]")
+
+
 @register_action("check_ci_status")
 def check_ci_status(agents_dir: Path, **kwargs: Any) -> None:
     """Check CI status for PRs and notify agents on failure.
-    
+
     Args:
         agents_dir: Path to _agenttree directory
     """
@@ -674,7 +876,6 @@ This is an automated cleanup issue created after {len(issue_ids)} issues were ac
 # Rate Limit Fallback
 # =============================================================================
 
-import re
 from datetime import datetime, timezone, timedelta
 
 # Pattern to detect rate limit message in tmux output
