@@ -377,7 +377,7 @@ HOOK_TYPES = {
     "title_set", "server_running",
     "checkbox_checked",  # Review loop: check if checkbox is marked
     # Actions (perform side effects)
-    "create_file", "create_pr", "merge_pr", "run", "rebase",
+    "create_file", "create_pr", "merge_pr", "close_pr", "run", "rebase",
     "cleanup_agent", "start_blocked_issues", "cleanup_resources", "trigger_cleanup",
     "rollback",  # Review loop: programmatic rollback to earlier stage (with optional max_rollbacks limit)
     # Manager hooks (run on post-sync)
@@ -919,6 +919,23 @@ def run_builtin_validator(
             raise  # Let redirect propagate to caller
         except Exception as e:
             errors.append(f"Failed to merge PR: {e}")
+
+    elif hook_type == "close_pr":
+        # Close PR when issue transitions to not_doing (abandoned)
+        if pr_number is None:
+            console.print("[dim]No PR to close (pr_number not set)[/dim]")
+        else:
+            from agenttree.github import close_pr
+            try:
+                comment = params.get("comment", "Issue abandoned")
+                close_pr(pr_number, comment=comment)
+                console.print(f"[green]✓ PR #{pr_number} closed[/green]")
+            except Exception as e:
+                error_msg = str(e).lower()
+                if "already closed" in error_msg or "already merged" in error_msg:
+                    console.print(f"[dim]PR #{pr_number} already closed/merged[/dim]")
+                else:
+                    console.print(f"[yellow]Warning: Failed to close PR #{pr_number}: {e}[/yellow]")
 
     elif hook_type == "cleanup_agent":
         # Clean up agent resources (container, tmux, port)
