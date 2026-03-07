@@ -4,6 +4,8 @@ import pytest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch, MagicMock
 from datetime import datetime
+from pathlib import Path
+import inspect
 
 # Skip all tests if web dependencies aren't installed
 pytest.importorskip("fastapi")
@@ -1548,3 +1550,74 @@ class TestCreateIssueAPI:
 
         assert response.status_code == 400
         assert "problem description" in response.json()["detail"].lower()
+
+    @patch("agenttree.api.start_issue")
+    @patch("agenttree.web.app.issue_crud")
+    def test_create_issue_trims_fields_and_defaults_title(self, mock_crud, mock_start, client):
+        """Problem/solutions are trimmed and blank title uses placeholder."""
+        mock_issue = Mock()
+        mock_issue.id = "003"
+        mock_issue.title = "(untitled)"
+        mock_crud.create_issue.return_value = mock_issue
+        mock_start.return_value = None
+
+        response = client.post(
+            "/api/issues",
+            data={
+                "problem": "  Needs cleanup  ",
+                "solutions": "  Maybe do X  ",
+                "title": "   ",
+            },
+        )
+
+        assert response.status_code == 200
+        call_kwargs = mock_crud.create_issue.call_args.kwargs
+        assert call_kwargs["problem"] == "Needs cleanup"
+        assert call_kwargs["solutions"] == "Maybe do X"
+        assert call_kwargs["title"] == "(untitled)"
+
+    @patch("agenttree.api.start_issue", side_effect=RuntimeError("start failed"))
+    @patch("agenttree.web.app.issue_crud")
+    def test_create_issue_returns_success_when_auto_start_fails(self, mock_crud, mock_start, client):
+        """Issue creation should succeed even if auto-start fails."""
+        mock_issue = Mock()
+        mock_issue.id = "004"
+        mock_issue.title = "Created issue"
+        mock_crud.create_issue.return_value = mock_issue
+
+        response = client.post(
+            "/api/issues",
+            data={
+                "problem": "Create the issue even when agent startup fails.",
+                "title": "Created issue",
+            },
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["ok"] is True
+        assert data["issue_id"] == "004"
+        mock_crud.create_issue.assert_called_once()
+
+
+class TestIssueFormContract:
+    """Regression checks for modal form -> API field alignment."""
+
+    def test_create_issue_api_accepts_modal_field_names(self):
+        """API must keep form field names used by the new issue modal."""
+        from agenttree.web.app import create_issue_api
+
+        params = inspect.signature(create_issue_api).parameters
+        assert "problem" in params
+        assert "solutions" in params
+        assert "title" in params
+
+    def test_new_issue_modal_uses_expected_field_names(self):
+        """Modal should keep posting fields the API accepts."""
+        repo_root = Path(__file__).resolve().parents[2]
+        modal_template = repo_root / "agenttree" / "web" / "templates" / "partials" / "new_issue_modal.html"
+        content = modal_template.read_text()
+
+        assert 'name="problem"' in content
+        assert 'name="solutions"' in content
+        assert 'name="title"' in content
