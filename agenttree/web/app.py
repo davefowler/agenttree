@@ -1245,11 +1245,13 @@ async def get_agent_status(
         tmux_active = await asyncio.to_thread(agent_manager._check_issue_tmux_session, parsed_id)
 
     processing = issue.processing if issue else None
+    stage = issue.stage if issue else None
 
     return {
         "tmux_active": tmux_active,
         "status": "running" if tmux_active else "off",
         "processing": processing,
+        "stage": stage,
     }
 
 

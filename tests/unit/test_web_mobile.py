@@ -192,7 +192,6 @@ class TestMobileEndpoint:
         """Test mobile with nonexistent issue falls back to first issue."""
         mock_crud.list_issues.return_value = [mock_issue]
         mock_crud.get_issue.return_value = mock_issue
-        mock_crud.get_issue.return_value = mock_issue
         mock_agent_mgr.clear_session_cache = Mock()
         mock_agent_mgr._check_issue_tmux_session = Mock(return_value=False)
 

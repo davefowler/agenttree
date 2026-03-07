@@ -310,13 +310,16 @@ def init(worktrees_dir: str | None, project: str | None) -> None:
     console.print("\n[bold cyan]Next steps:[/bold cyan]")
     console.print("""
 ```bash
-# 1. Create a test issue to verify setup
+# 1. (Optional) Run interactive setup to configure your project
+agenttree start setup
+
+# 2. Create a test issue to verify setup
 agenttree issue create "Verify setup" --problem "Run the app and fix any setup issues in _agenttree/scripts/worktree-setup.sh. Commit your fixes so future agents benefit."
 
-# 2. Start an agent on it
+# 3. Start an agent on it
 agenttree start 001
 
-# 3. Once working, create real issues and start agents
+# 4. Once working, create real issues and start agents
 agenttree issue create "Your first real issue" --problem "Description of what needs to be done..."
 agenttree start 002
 ```
