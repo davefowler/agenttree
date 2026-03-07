@@ -9,6 +9,9 @@ from io import BytesIO
 pytest.importorskip("fastapi")
 pytest.importorskip("httpx")
 
+# Mark entire module as local_only - requires _agenttree/issues directory which doesn't exist in CI
+pytestmark = pytest.mark.local_only
+
 
 class TestCreateIssueApiWithAttachments:
     """Tests for create_issue_api with file uploads."""
