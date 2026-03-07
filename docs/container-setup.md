@@ -15,7 +15,16 @@ AgentTree runs AI coding agents in isolated containers for security. This guide 
    docker build -t agenttree-agent .
    ```
 
-3. **Start an agent**
+3. **Build the host image** (optional, for reference only)
+   ```bash
+   docker build -f Dockerfile.host -t agenttree-host .
+   ```
+
+   > **Note:** The host image includes tmux and Docker CLI for host-level roles.
+   > However, **architect and manager roles cannot run in containers** because they
+   > need direct access to host tmux sessions. See [Host-Level Roles](#host-level-roles) below.
+
+4. **Start an agent**
    ```bash
    agenttree start 23  # Creates container for issue #23
    ```
@@ -55,6 +64,26 @@ When the issue moves to `accepted`, everything is automatically cleaned up.
 │  .git/ (main repo)                      │
 │  ~/.claude/ (optional - for API key)    │
 └─────────────────────────────────────────┘
+```
+
+## Host-Level Roles
+
+**Architect and manager roles cannot run in containers.** These roles use agenttree CLI commands (`agenttree status`, `agenttree output`, `agenttree start`, etc.) that manage tmux sessions on the host machine.
+
+When agents run in containers, their tmux sessions exist on the HOST (wrapping the `container run` command). A containerized architect/manager cannot access these host tmux sessions due to container isolation.
+
+**Current behavior:**
+- Developer and reviewer roles run in containers (configured via `.agenttree.yaml`)
+- Architect and manager roles run directly on the host machine
+- Attempting to enable container mode for architect/manager will trigger a warning
+
+**Configuration in `.agenttree.yaml`:**
+```yaml
+roles:
+  architect:
+    container:
+      enabled: false  # Must be false - needs host tmux access
+      image: agenttree-host:latest
 ```
 
 ## Dockerfile Requirements
