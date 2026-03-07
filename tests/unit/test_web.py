@@ -4,6 +4,8 @@ import pytest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch, MagicMock
 from datetime import datetime
+from pathlib import Path
+import inspect
 
 # Skip all tests if web dependencies aren't installed
 pytest.importorskip("fastapi")
@@ -97,8 +99,8 @@ class TestRootRedirect:
 class TestKanbanEndpoint:
     """Tests for kanban board endpoint."""
 
-    @patch("agenttree.web.routes.pages.issue_crud")
-    @patch("agenttree.web.routes.pages.agent_manager")
+    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.app.agent_manager")
     def test_kanban_returns_html(self, mock_agent_mgr, mock_crud, client):
         """Test kanban endpoint returns HTML."""
         mock_crud.list_issues.return_value = []
@@ -109,17 +111,15 @@ class TestKanbanEndpoint:
         assert response.status_code == 200
         assert "text/html" in response.headers["content-type"]
 
-    @patch("agenttree.web.utils.agent_manager")
-    @patch("agenttree.web.routes.pages.issue_crud")
-    @patch("agenttree.web.routes.pages.agent_manager")
-    def test_kanban_with_issue_param(self, mock_agent_mgr, mock_crud, mock_utils_agent_mgr, client, mock_issue):
+    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.app.agent_manager")
+    def test_kanban_with_issue_param(self, mock_agent_mgr, mock_crud, client, mock_issue):
         """Test kanban with issue parameter loads issue detail."""
         mock_crud.list_issues.return_value = [mock_issue]
         mock_crud.get_issue.return_value = mock_issue
         mock_crud.get_issue_dir.return_value = None
         mock_agent_mgr.clear_session_cache = Mock()
         mock_agent_mgr._check_issue_tmux_session = Mock(return_value=False)
-        mock_utils_agent_mgr._check_issue_tmux_session = Mock(return_value=False)
 
         response = client.get("/kanban?issue=001")
 
@@ -130,8 +130,8 @@ class TestKanbanEndpoint:
 class TestFlowEndpoint:
     """Tests for flow view endpoint."""
 
-    @patch("agenttree.web.utils.issue_crud")
-    @patch("agenttree.web.utils.agent_manager")
+    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.app.agent_manager")
     def test_flow_returns_html(self, mock_agent_mgr, mock_crud, client):
         """Test flow endpoint returns HTML."""
         mock_crud.list_issues.return_value = []
@@ -142,8 +142,8 @@ class TestFlowEndpoint:
         assert response.status_code == 200
         assert "text/html" in response.headers["content-type"]
 
-    @patch("agenttree.web.utils.issue_crud")
-    @patch("agenttree.web.utils.agent_manager")
+    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.app.agent_manager")
     def test_flow_accepts_sort_param(self, mock_agent_mgr, mock_crud, client):
         """Test flow endpoint accepts sort parameter."""
         mock_crud.list_issues.return_value = []
@@ -154,8 +154,8 @@ class TestFlowEndpoint:
         assert response.status_code == 200
         assert "text/html" in response.headers["content-type"]
 
-    @patch("agenttree.web.utils.issue_crud")
-    @patch("agenttree.web.utils.agent_manager")
+    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.app.agent_manager")
     def test_flow_accepts_filter_param(self, mock_agent_mgr, mock_crud, client):
         """Test flow endpoint accepts filter parameter."""
         mock_crud.list_issues.return_value = []
@@ -166,8 +166,8 @@ class TestFlowEndpoint:
         assert response.status_code == 200
         assert "text/html" in response.headers["content-type"]
 
-    @patch("agenttree.web.utils.issue_crud")
-    @patch("agenttree.web.utils.agent_manager")
+    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.app.agent_manager")
     def test_flow_sort_and_filter_combined(self, mock_agent_mgr, mock_crud, client):
         """Test flow can sort and filter at the same time."""
         mock_crud.list_issues.return_value = []
@@ -347,7 +347,7 @@ class TestFlowSortingFunctions:
 class TestAgentStatusEndpoint:
     """Tests for agent status endpoint."""
 
-    @patch("agenttree.web.routes.issues.agent_manager")
+    @patch("agenttree.web.app.agent_manager")
     def test_agent_status_running(self, mock_agent_mgr, client):
         """Test agent status when tmux session is active."""
         mock_agent_mgr._check_issue_tmux_session.return_value = True
@@ -359,7 +359,7 @@ class TestAgentStatusEndpoint:
         assert data["tmux_active"] is True
         assert data["status"] == "running"
 
-    @patch("agenttree.web.routes.issues.agent_manager")
+    @patch("agenttree.web.app.agent_manager")
     def test_agent_status_off(self, mock_agent_mgr, client):
         """Test agent status when tmux session is not active."""
         mock_agent_mgr._check_issue_tmux_session.return_value = False
@@ -371,11 +371,12 @@ class TestAgentStatusEndpoint:
         assert data["tmux_active"] is False
         assert data["status"] == "off"
 
-    @patch("agenttree.web.routes.issues.issue_crud")
-    @patch("agenttree.web.routes.issues.agent_manager")
-    def test_agent_status_returns_stage(self, mock_agent_mgr, mock_crud, client, mock_issue):
-        """Test agent status returns the issue's current stage."""
+    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.app.agent_manager")
+    def test_agent_status_running_includes_processing_state(self, mock_agent_mgr, mock_crud, client, mock_issue):
+        """Test running status includes processing state for the issue."""
         mock_issue.stage = "implement.code"
+        mock_issue.processing = "exit"
         mock_crud.get_issue.return_value = mock_issue
         mock_agent_mgr._check_issue_tmux_session.return_value = True
 
@@ -383,7 +384,7 @@ class TestAgentStatusEndpoint:
 
         assert response.status_code == 200
         data = response.json()
-        assert data["stage"] == "implement.code"
+        assert data["processing"] == "exit"
         assert data["tmux_active"] is True
         assert data["status"] == "running"
 
@@ -418,7 +419,7 @@ class TestMoveIssueEndpoint:
     """Tests for move issue endpoint."""
 
     @patch("agenttree.hooks.cleanup_issue_agent")
-    @patch("agenttree.web.routes.issues.issue_crud")
+    @patch("agenttree.web.app.issue_crud")
     def test_move_issue_to_backlog(self, mock_crud, mock_cleanup, client, mock_issue):
         """Test moving issue to backlog succeeds."""
         mock_crud.get_issue.return_value = mock_issue
@@ -435,7 +436,7 @@ class TestMoveIssueEndpoint:
         assert data["stage"] == "backlog"
 
     @patch("agenttree.hooks.cleanup_issue_agent")
-    @patch("agenttree.web.routes.issues.issue_crud")
+    @patch("agenttree.web.app.issue_crud")
     def test_move_issue_to_not_doing(self, mock_crud, mock_cleanup, client, mock_issue):
         """Test moving issue to not_doing succeeds."""
         mock_crud.get_issue.return_value = mock_issue
@@ -450,7 +451,7 @@ class TestMoveIssueEndpoint:
         data = response.json()
         assert data["stage"] == "not_doing"
 
-    @patch("agenttree.web.routes.issues.issue_crud")
+    @patch("agenttree.web.app.issue_crud")
     def test_move_issue_to_implement_rejected(self, mock_crud, client, mock_issue):
         """Test moving issue directly to implement is rejected."""
         mock_crud.get_issue.return_value = mock_issue
@@ -464,7 +465,7 @@ class TestMoveIssueEndpoint:
         data = response.json()
         assert "only allowed to" in data["detail"].lower()
 
-    @patch("agenttree.web.routes.issues.issue_crud")
+    @patch("agenttree.web.app.issue_crud")
     def test_move_issue_not_found(self, mock_crud, client):
         """Test moving non-existent issue."""
         mock_crud.get_issue.return_value = None
@@ -483,7 +484,7 @@ class TestApproveIssueEndpoint:
     @patch("agenttree.state.get_active_agent")
     @patch("agenttree.api.transition_issue")
     @patch("agenttree.config.load_config")
-    @patch("agenttree.web.routes.issues.issue_crud")
+    @patch("agenttree.web.app.issue_crud")
     def test_approve_issue_at_implementation_review(
         self, mock_crud, mock_config, mock_transition, mock_get_agent,
         client, mock_review_issue
@@ -511,7 +512,7 @@ class TestApproveIssueEndpoint:
     @patch("agenttree.state.get_active_agent")
     @patch("agenttree.api.transition_issue")
     @patch("agenttree.config.load_config")
-    @patch("agenttree.web.routes.issues.issue_crud")
+    @patch("agenttree.web.app.issue_crud")
     def test_approve_issue_at_plan_review(
         self, mock_crud, mock_config, mock_transition, mock_get_agent,
         client, mock_issue
@@ -532,7 +533,7 @@ class TestApproveIssueEndpoint:
         assert response.status_code == 200
         assert response.json()["ok"] is True
 
-    @patch("agenttree.web.routes.issues.issue_crud")
+    @patch("agenttree.web.app.issue_crud")
     def test_approve_issue_not_at_review_stage(self, mock_crud, client, mock_issue):
         """Test approving issue that's not at review stage."""
         mock_issue.stage = "implement"  # Not a review stage
@@ -543,7 +544,7 @@ class TestApproveIssueEndpoint:
         assert response.status_code == 400
         assert "Not at review stage" in response.json()["detail"]
 
-    @patch("agenttree.web.routes.issues.issue_crud")
+    @patch("agenttree.web.app.issue_crud")
     def test_approve_issue_not_found(self, mock_crud, client):
         """Test approving non-existent issue."""
         mock_crud.get_issue.return_value = None
@@ -554,7 +555,7 @@ class TestApproveIssueEndpoint:
 
     @patch("agenttree.api.transition_issue")
     @patch("agenttree.config.load_config")
-    @patch("agenttree.web.routes.issues.issue_crud")
+    @patch("agenttree.web.app.issue_crud")
     def test_approve_issue_exit_hook_validation_fails(
         self, mock_crud, mock_config, mock_transition, client, mock_review_issue
     ):
@@ -572,7 +573,7 @@ class TestApproveIssueEndpoint:
 
     @patch("agenttree.api.transition_issue")
     @patch("agenttree.config.load_config")
-    @patch("agenttree.web.routes.issues.issue_crud")
+    @patch("agenttree.web.app.issue_crud")
     def test_approve_issue_update_fails(
         self, mock_crud, mock_config, mock_transition, client, mock_review_issue
     ):
@@ -587,8 +588,8 @@ class TestApproveIssueEndpoint:
 
     @patch("agenttree.state.get_active_agent")
     @patch("agenttree.api.transition_issue")
-    @patch("agenttree.web.routes.issues.load_config")
-    @patch("agenttree.web.routes.issues.issue_crud")
+    @patch("agenttree.config.load_config")
+    @patch("agenttree.web.app.issue_crud")
     def test_approve_issue_calls_transition(
         self, mock_crud, mock_config, mock_transition, mock_get_agent,
         client, mock_review_issue
@@ -618,8 +619,8 @@ class TestRebaseIssueEndpoint:
 
     @patch("agenttree.tmux.session_exists")
     @patch("agenttree.tmux.send_message")
-    @patch("agenttree.hooks.rebase_issue_branch")
-    @patch("agenttree.web.routes.issues.issue_crud")
+    @patch("agenttree.git_utils.rebase_issue_branch")
+    @patch("agenttree.web.app.issue_crud")
     def test_rebase_issue_success(self, mock_crud, mock_rebase, mock_send, mock_session_exists, client, mock_review_issue):
         """Test rebase issue succeeds."""
         mock_crud.get_issue.return_value = mock_review_issue
@@ -631,8 +632,8 @@ class TestRebaseIssueEndpoint:
         assert response.status_code == 200
         assert response.json()["ok"] is True
 
-    @patch("agenttree.hooks.rebase_issue_branch")
-    @patch("agenttree.web.routes.issues.issue_crud")
+    @patch("agenttree.git_utils.rebase_issue_branch")
+    @patch("agenttree.web.app.issue_crud")
     def test_rebase_issue_fails(self, mock_crud, mock_rebase, client, mock_review_issue):
         """Test rebase issue when rebase fails."""
         mock_crud.get_issue.return_value = mock_review_issue
@@ -643,7 +644,7 @@ class TestRebaseIssueEndpoint:
         assert response.status_code == 400
         assert "Merge conflicts" in response.json()["detail"]
 
-    @patch("agenttree.web.routes.issues.issue_crud")
+    @patch("agenttree.web.app.issue_crud")
     def test_rebase_issue_not_found(self, mock_crud, client):
         """Test rebase non-existent issue."""
         mock_crud.get_issue.return_value = None
@@ -658,7 +659,7 @@ class TestAgentTmuxEndpoint:
 
     @patch("agenttree.tmux.is_claude_running")
     @patch("agenttree.tmux.capture_pane")
-    @patch("agenttree.web.routes.agents.load_config")
+    @patch("agenttree.web.app.load_config")
     def test_agent_tmux_returns_output(self, mock_config, mock_capture, mock_is_running, client):
         """Test getting tmux output for agent."""
         mock_config.return_value.project = "test"
@@ -676,7 +677,7 @@ class TestAgentTmuxEndpoint:
         assert response.headers["etag"].endswith('"')
 
     @patch("agenttree.tmux.capture_pane")
-    @patch("agenttree.web.routes.agents.load_config")
+    @patch("agenttree.web.app.load_config")
     def test_agent_tmux_session_not_active(self, mock_config, mock_capture, client):
         """Test getting tmux output when session not active."""
         mock_config.return_value.project = "test"
@@ -693,7 +694,7 @@ class TestAgentTmuxEndpoint:
 
     @patch("agenttree.tmux.is_claude_running")
     @patch("agenttree.tmux.capture_pane")
-    @patch("agenttree.web.routes.agents.load_config")
+    @patch("agenttree.web.app.load_config")
     def test_agent_tmux_returns_etag_header(self, mock_config, mock_capture, mock_is_running, client):
         """Test that /agent/{num}/tmux returns ETag header."""
         mock_config.return_value.project = "test"
@@ -714,7 +715,7 @@ class TestAgentTmuxEndpoint:
 
     @patch("agenttree.tmux.is_claude_running")
     @patch("agenttree.tmux.capture_pane")
-    @patch("agenttree.web.routes.agents.load_config")
+    @patch("agenttree.web.app.load_config")
     def test_agent_tmux_304_when_unchanged(self, mock_config, mock_capture, mock_is_running, client):
         """Test that endpoint returns 304 when content unchanged."""
         mock_config.return_value.project = "test"
@@ -735,7 +736,7 @@ class TestAgentTmuxEndpoint:
 
     @patch("agenttree.tmux.is_claude_running")
     @patch("agenttree.tmux.capture_pane")
-    @patch("agenttree.web.routes.agents.load_config")
+    @patch("agenttree.web.app.load_config")
     def test_agent_tmux_200_when_changed(self, mock_config, mock_capture, mock_is_running, client):
         """Test that endpoint returns 200 with new ETag when content changed."""
         mock_config.return_value.project = "test"
@@ -759,7 +760,7 @@ class TestAgentTmuxEndpoint:
 
     @patch("agenttree.tmux.is_claude_running")
     @patch("agenttree.tmux.capture_pane")
-    @patch("agenttree.web.routes.agents.load_config")
+    @patch("agenttree.web.app.load_config")
     def test_agent_tmux_uses_capture_pane(self, mock_config, mock_capture, mock_is_running, client):
         """Test that endpoint uses capture_pane() from tmux module."""
         mock_config.return_value.project = "test"
@@ -791,7 +792,7 @@ class TestAgentTmuxEndpoint:
 
     @patch("agenttree.tmux.is_claude_running")
     @patch("agenttree.tmux.capture_pane")
-    @patch("agenttree.web.routes.agents.load_config")
+    @patch("agenttree.web.app.load_config")
     def test_agent_tmux_strips_prompt_before_hash(self, mock_config, mock_capture, mock_is_running, client):
         """Test that ETag is computed after stripping Claude prompt separator."""
         mock_config.return_value.project = "test"
@@ -819,7 +820,7 @@ class TestSendToAgentEndpoint:
 
     @patch("agenttree.tmux.session_exists")
     @patch("agenttree.tmux.send_message")
-    @patch("agenttree.web.routes.agents.load_config")
+    @patch("agenttree.web.app.load_config")
     def test_send_to_agent(self, mock_config, mock_send, mock_session_exists, client):
         """Test sending message to agent."""
         mock_config.return_value.project = "test"
@@ -1126,8 +1127,8 @@ class TestKanbanUnrecognizedStage:
 class TestKanbanBoardPartialEndpoint:
     """Tests for kanban board partial endpoint used for htmx polling."""
 
-    @patch("agenttree.web.routes.pages.issue_crud")
-    @patch("agenttree.web.routes.pages.agent_manager")
+    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.app.agent_manager")
     def test_kanban_board_returns_html_partial(self, mock_agent_mgr, mock_crud, client):
         """Test /kanban/board returns HTML partial (not full page)."""
         mock_crud.list_issues.return_value = []
@@ -1143,8 +1144,8 @@ class TestKanbanBoardPartialEndpoint:
         # Should contain kanban column structure
         assert b"kanban-column" in response.content or b"mini-dropzones" in response.content
 
-    @patch("agenttree.web.routes.pages.issue_crud")
-    @patch("agenttree.web.routes.pages.agent_manager")
+    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.app.agent_manager")
     def test_kanban_board_with_search_param(self, mock_agent_mgr, mock_crud, client, mock_issue):
         """Test /kanban/board respects search parameter."""
         mock_crud.list_issues.return_value = [mock_issue]
@@ -1156,17 +1157,16 @@ class TestKanbanBoardPartialEndpoint:
         assert response.status_code == 200
         assert "text/html" in response.headers["content-type"]
 
-    @patch("agenttree.web.utils.issue_crud")
-    @patch("agenttree.web.utils.agent_manager")
-    @patch("agenttree.web.routes.pages.agent_manager")
+    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.app.agent_manager")
     def test_kanban_board_contains_issues(
-        self, mock_page_agent_mgr, mock_utils_agent_mgr, mock_crud, client, mock_issue
+        self, mock_agent_mgr, mock_crud, client, mock_issue
     ):
         """Test /kanban/board includes issue items."""
         mock_crud.list_issues.return_value = [mock_issue]
-        mock_page_agent_mgr.clear_session_cache = Mock()
-        mock_utils_agent_mgr._check_issue_tmux_session = Mock(return_value=False)
-        mock_utils_agent_mgr._get_active_sessions = Mock(return_value=set())
+        mock_agent_mgr.clear_session_cache = Mock()
+        mock_agent_mgr._check_issue_tmux_session = Mock(return_value=False)
+        mock_agent_mgr._get_active_sessions = Mock(return_value=set())
 
         response = client.get("/kanban/board")
 
@@ -1178,8 +1178,8 @@ class TestKanbanBoardPartialEndpoint:
 class TestKanbanSearchEndpoint:
     """Tests for kanban board search functionality."""
 
-    @patch("agenttree.web.routes.pages.issue_crud")
-    @patch("agenttree.web.routes.pages.agent_manager")
+    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.app.agent_manager")
     def test_kanban_with_search_param(self, mock_agent_mgr, mock_crud, client, mock_issue):
         """Test kanban with search parameter filters issues."""
         mock_crud.list_issues.return_value = [mock_issue]
@@ -1191,21 +1191,15 @@ class TestKanbanSearchEndpoint:
         assert response.status_code == 200
         assert "text/html" in response.headers["content-type"]
 
-    @patch("agenttree.web.utils.agent_manager")
-    @patch("agenttree.web.utils.issue_crud")
-    @patch("agenttree.web.routes.pages.issue_crud")
-    @patch("agenttree.web.routes.pages.agent_manager")
-    def test_kanban_search_preserves_other_params(self, mock_agent_mgr, mock_crud, mock_utils_crud, mock_utils_agent_mgr, client, mock_issue):
+    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.app.agent_manager")
+    def test_kanban_search_preserves_other_params(self, mock_agent_mgr, mock_crud, client, mock_issue):
         """Test kanban search works with other URL params."""
         mock_crud.list_issues.return_value = [mock_issue]
         mock_crud.get_issue.return_value = mock_issue
         mock_crud.get_issue_dir.return_value = None
         mock_agent_mgr.clear_session_cache = Mock()
         mock_agent_mgr._check_issue_tmux_session = Mock(return_value=False)
-        # Also mock at utils level for convert_issue_to_web
-        mock_utils_crud.list_issues.return_value = [mock_issue]
-        mock_utils_agent_mgr.clear_session_cache = Mock()
-        mock_utils_agent_mgr._check_issue_tmux_session = Mock(return_value=False)
 
         response = client.get("/kanban?search=test&issue=001")
 
@@ -1215,8 +1209,8 @@ class TestKanbanSearchEndpoint:
 class TestFlowSearchEndpoint:
     """Tests for flow view search functionality."""
 
-    @patch("agenttree.web.utils.issue_crud")
-    @patch("agenttree.web.utils.agent_manager")
+    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.app.agent_manager")
     def test_flow_with_search_param(self, mock_agent_mgr, mock_crud, client):
         """Test flow with search parameter filters issues."""
         mock_crud.list_issues.return_value = []
@@ -1246,7 +1240,7 @@ class TestSettingsPage:
         # Page should contain form fields for settings
         assert b"default_model" in response.content or b"Default Model" in response.content
 
-    @patch("agenttree.web.routes.settings.load_config")
+    @patch("agenttree.web.app.load_config")
     def test_settings_page_shows_available_tools(self, mock_load_config, client):
         """Test settings page shows available tools from config."""
         mock_config = mock_load_config.return_value
@@ -1479,7 +1473,7 @@ class TestCreateIssueAPI:
     """Tests for the create issue API endpoint."""
 
     @patch("agenttree.api.start_issue")
-    @patch("agenttree.web.routes.issues.issue_crud")
+    @patch("agenttree.web.app.issue_crud")
     def test_create_issue_with_problem_and_solutions(self, mock_crud, mock_start, client):
         """Test creating issue with both problem and solutions fields."""
         mock_issue = Mock()
@@ -1509,7 +1503,7 @@ class TestCreateIssueAPI:
         assert call_kwargs["solutions"] == "This is a possible solution"
 
     @patch("agenttree.api.start_issue")
-    @patch("agenttree.web.routes.issues.issue_crud")
+    @patch("agenttree.web.app.issue_crud")
     def test_create_issue_with_problem_only_no_solutions(self, mock_crud, mock_start, client):
         """Test creating issue with problem only, no solutions."""
         mock_issue = Mock()
@@ -1535,7 +1529,7 @@ class TestCreateIssueAPI:
         assert call_kwargs["problem"] == "This is just the problem, no solutions yet"
         assert call_kwargs["solutions"] is None
 
-    @patch("agenttree.web.routes.issues.issue_crud")
+    @patch("agenttree.web.app.issue_crud")
     def test_create_issue_validation_empty_problem(self, mock_crud, client):
         """Test that empty problem returns 400 error."""
         response = client.post(
@@ -1548,3 +1542,74 @@ class TestCreateIssueAPI:
 
         assert response.status_code == 400
         assert "problem description" in response.json()["detail"].lower()
+
+    @patch("agenttree.api.start_issue")
+    @patch("agenttree.web.app.issue_crud")
+    def test_create_issue_trims_fields_and_defaults_title(self, mock_crud, mock_start, client):
+        """Problem/solutions are trimmed and blank title uses placeholder."""
+        mock_issue = Mock()
+        mock_issue.id = "003"
+        mock_issue.title = "(untitled)"
+        mock_crud.create_issue.return_value = mock_issue
+        mock_start.return_value = None
+
+        response = client.post(
+            "/api/issues",
+            data={
+                "problem": "  Needs cleanup  ",
+                "solutions": "  Maybe do X  ",
+                "title": "   ",
+            },
+        )
+
+        assert response.status_code == 200
+        call_kwargs = mock_crud.create_issue.call_args.kwargs
+        assert call_kwargs["problem"] == "Needs cleanup"
+        assert call_kwargs["solutions"] == "Maybe do X"
+        assert call_kwargs["title"] == "(untitled)"
+
+    @patch("agenttree.api.start_issue", side_effect=RuntimeError("start failed"))
+    @patch("agenttree.web.app.issue_crud")
+    def test_create_issue_returns_success_when_auto_start_fails(self, mock_crud, mock_start, client):
+        """Issue creation should succeed even if auto-start fails."""
+        mock_issue = Mock()
+        mock_issue.id = "004"
+        mock_issue.title = "Created issue"
+        mock_crud.create_issue.return_value = mock_issue
+
+        response = client.post(
+            "/api/issues",
+            data={
+                "problem": "Create the issue even when agent startup fails.",
+                "title": "Created issue",
+            },
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["ok"] is True
+        assert data["issue_id"] == "004"
+        mock_crud.create_issue.assert_called_once()
+
+
+class TestIssueFormContract:
+    """Regression checks for modal form -> API field alignment."""
+
+    def test_create_issue_api_accepts_modal_field_names(self):
+        """API must keep form field names used by the new issue modal."""
+        from agenttree.web.app import create_issue_api
+
+        params = inspect.signature(create_issue_api).parameters
+        assert "problem" in params
+        assert "solutions" in params
+        assert "title" in params
+
+    def test_new_issue_modal_uses_expected_field_names(self):
+        """Modal should keep posting fields the API accepts."""
+        repo_root = Path(__file__).resolve().parents[2]
+        modal_template = repo_root / "agenttree" / "web" / "templates" / "partials" / "new_issue_modal.html"
+        content = modal_template.read_text()
+
+        assert 'name="problem"' in content
+        assert 'name="solutions"' in content
+        assert 'name="title"' in content
