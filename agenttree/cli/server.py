@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import click
 
-from agenttree.cli._utils import console, load_config
+from agenttree.cli._utils import console, get_manager_session_name, load_config
 
 if TYPE_CHECKING:
     from agenttree.config import Config
