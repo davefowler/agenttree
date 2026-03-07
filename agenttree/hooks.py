@@ -922,6 +922,9 @@ def run_builtin_validator(
 
     elif hook_type == "close_pr":
         # Close PR when issue transitions to not_doing (abandoned)
+        # Note: Unlike merge_pr, errors here are non-fatal. When abandoning an issue,
+        # the transition to not_doing should succeed even if PR close fails. The PR
+        # being open isn't critical for an abandoned issue.
         if pr_number is None:
             console.print("[dim]No PR to close (pr_number not set)[/dim]")
         else:
@@ -935,6 +938,7 @@ def run_builtin_validator(
                 if "already closed" in error_msg or "already merged" in error_msg:
                     console.print(f"[dim]PR #{pr_number} already closed/merged[/dim]")
                 else:
+                    # Non-fatal: log warning but don't block transition to not_doing
                     console.print(f"[yellow]Warning: Failed to close PR #{pr_number}: {e}[/yellow]")
 
     elif hook_type == "cleanup_agent":
