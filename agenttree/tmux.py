@@ -641,7 +641,11 @@ class TmuxManager:
         # Get tool config
         tool_config = self.config.get_tool_config(tool_name)
 
-        # Build command to run the AI tool directly on host
+        # Build command to run the AI tool directly on host.
+        # Host roles (manager, architect) intentionally run WITHOUT
+        # --dangerously-skip-permissions so Claude asks for permission
+        # before executing tools. The heartbeat's check_permission_prompts
+        # action handles auto-approving safe commands.
         ai_command = tool_config.command
         if model:
             ai_command = f"{ai_command} --model {model}"

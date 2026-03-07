@@ -337,6 +337,7 @@ on:
       - check_manager_stages
       - ensure_review_branches
       - check_custom_agent_stages
+      - check_permission_prompts: { min_interval_s: 15 }
       - ping_architect: { min_interval_s: 300 }
 
 # Controller hooks for dogfooding

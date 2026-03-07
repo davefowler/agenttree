@@ -15,6 +15,10 @@ from agenttree.actions import (
     ACTION_REGISTRY,
     get_default_event_config,
     check_stalled_agents,
+    detect_permission_prompt,
+    extract_command_from_output,
+    is_safe_command,
+    check_permission_prompts,
 )
 
 
@@ -510,3 +514,201 @@ class TestCheckStalledAgents:
 
         # Should NOT have called save_event_state (dispatcher does it)
         mock_save.assert_not_called()
+
+
+class TestDetectPermissionPrompt:
+    """Tests for detect_permission_prompt()."""
+
+    def test_detects_allow_yn_prompt(self) -> None:
+        output = "Some output\n  Allow? [y/n]\n"
+        assert detect_permission_prompt(output) is not None
+
+    def test_detects_allow_yna_prompt(self) -> None:
+        output = "Some output\n  Allow? [y/n/a]\n"
+        assert detect_permission_prompt(output) is not None
+
+    def test_detects_yes_no_always(self) -> None:
+        output = "Tool: Bash\ngit status\nYes / No / Always\n"
+        assert detect_permission_prompt(output) is not None
+
+    def test_detects_allow_tool_call(self) -> None:
+        output = "  git status\n  Allow tool call? (y = yes, n = no)\n"
+        assert detect_permission_prompt(output) is not None
+
+    def test_detects_do_you_want_to_allow(self) -> None:
+        output = "  Do you want to allow this action?\n"
+        assert detect_permission_prompt(output) is not None
+
+    def test_returns_none_for_normal_output(self) -> None:
+        output = "Running tests...\nAll 42 tests passed.\n❯ \n"
+        assert detect_permission_prompt(output) is None
+
+    def test_returns_none_for_empty_output(self) -> None:
+        assert detect_permission_prompt("") is None
+        assert detect_permission_prompt("\n\n\n") is None
+
+
+class TestExtractCommand:
+    """Tests for extract_command_from_output()."""
+
+    def test_extracts_bash_command(self) -> None:
+        output = "  Tool: Bash\n  Command: git status\n  Allow? [y/n]\n"
+        cmd = extract_command_from_output(output)
+        assert cmd == "git status"
+
+    def test_extracts_from_box_style(self) -> None:
+        output = "  ── Bash ──────\n  │ git log --oneline │\n  Allow? [y/n]\n"
+        cmd = extract_command_from_output(output)
+        assert cmd == "git log --oneline"
+
+    def test_returns_none_for_no_command(self) -> None:
+        output = "  Allow? [y/n]\n"
+        cmd = extract_command_from_output(output)
+        assert cmd is None
+
+
+class TestIsSafeCommand:
+    """Tests for is_safe_command()."""
+
+    def test_git_status_is_safe(self) -> None:
+        assert is_safe_command("git status") is True
+
+    def test_git_log_is_safe(self) -> None:
+        assert is_safe_command("git log --oneline") is True
+
+    def test_git_diff_is_safe(self) -> None:
+        assert is_safe_command("git diff main...HEAD") is True
+
+    def test_ls_is_safe(self) -> None:
+        assert is_safe_command("ls -la") is True
+
+    def test_cat_is_safe(self) -> None:
+        assert is_safe_command("cat README.md") is True
+
+    def test_agenttree_status_is_safe(self) -> None:
+        assert is_safe_command("agenttree status") is True
+
+    def test_agenttree_output_is_safe(self) -> None:
+        assert is_safe_command("agenttree output 42") is True
+
+    def test_pytest_is_safe(self) -> None:
+        assert is_safe_command("uv run pytest tests/unit") is True
+
+    def test_mypy_is_safe(self) -> None:
+        assert is_safe_command("uv run mypy agenttree") is True
+
+    def test_read_tool_is_safe(self) -> None:
+        assert is_safe_command("Read /path/to/file") is True
+
+    def test_rm_rf_is_unsafe(self) -> None:
+        assert is_safe_command("rm -rf /") is False
+
+    def test_git_push_force_is_unsafe(self) -> None:
+        assert is_safe_command("git push --force origin main") is False
+
+    def test_git_reset_hard_is_unsafe(self) -> None:
+        assert is_safe_command("git reset --hard HEAD~1") is False
+
+    def test_unknown_command_is_not_safe(self) -> None:
+        assert is_safe_command("some_random_script.sh") is False
+
+    def test_curl_post_is_unsafe(self) -> None:
+        assert is_safe_command("curl -X POST http://example.com") is False
+
+
+class TestCheckPermissionPrompts:
+    """Tests for check_permission_prompts heartbeat action."""
+
+    @patch("agenttree.tmux.send_keys")
+    @patch("agenttree.tmux.capture_pane")
+    @patch("agenttree.tmux.session_exists", return_value=True)
+    @patch("agenttree.config.load_config")
+    def test_auto_approves_safe_command(
+        self,
+        mock_config: MagicMock,
+        mock_exists: MagicMock,
+        mock_capture: MagicMock,
+        mock_send_keys: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Safe commands are auto-approved by sending 'y'."""
+        cfg = MagicMock()
+        cfg.get_role_tmux_session.side_effect = lambda r: f"proj-{r}-000"
+        mock_config.return_value = cfg
+
+        mock_capture.return_value = (
+            "  Tool: Bash\n  Command: git status\n  Allow? [y/n]\n"
+        )
+
+        check_permission_prompts(tmp_path)
+
+        mock_send_keys.assert_called_once_with(
+            "proj-manager-000", "y", submit=True, interrupt=False
+        )
+
+    @patch("agenttree.tmux.send_message")
+    @patch("agenttree.tmux.capture_pane")
+    @patch("agenttree.tmux.session_exists", return_value=True)
+    @patch("agenttree.config.load_config")
+    def test_notifies_architect_for_unsafe_command(
+        self,
+        mock_config: MagicMock,
+        mock_exists: MagicMock,
+        mock_capture: MagicMock,
+        mock_send_msg: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Unsafe commands trigger architect notification."""
+        cfg = MagicMock()
+        cfg.get_role_tmux_session.side_effect = lambda r: f"proj-{r}-000"
+        mock_config.return_value = cfg
+
+        mock_capture.return_value = (
+            "  Tool: Bash\n  Command: rm -rf /tmp/stuff\n  Allow? [y/n]\n"
+        )
+        mock_send_msg.return_value = "sent"
+
+        check_permission_prompts(tmp_path)
+
+        mock_send_msg.assert_called_once()
+        call_args = mock_send_msg.call_args
+        assert call_args[0][0] == "proj-architect-000"
+        assert "PERMISSION CHECK" in call_args[0][1]
+
+    @patch("agenttree.tmux.capture_pane")
+    @patch("agenttree.tmux.session_exists")
+    @patch("agenttree.config.load_config")
+    def test_no_action_when_no_permission_prompt(
+        self,
+        mock_config: MagicMock,
+        mock_exists: MagicMock,
+        mock_capture: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """No action taken when manager has no permission prompt."""
+        cfg = MagicMock()
+        cfg.get_role_tmux_session.side_effect = lambda r: f"proj-{r}-000"
+        mock_config.return_value = cfg
+        mock_exists.return_value = True
+
+        mock_capture.return_value = "Working on task...\n❯ \n"
+
+        # Should not raise and should not call any send functions
+        check_permission_prompts(tmp_path)
+
+    @patch("agenttree.tmux.session_exists")
+    @patch("agenttree.config.load_config")
+    def test_skips_when_manager_not_running(
+        self,
+        mock_config: MagicMock,
+        mock_exists: MagicMock,
+        tmp_path: Path,
+    ) -> None:
+        """Skips silently when manager is not running."""
+        cfg = MagicMock()
+        cfg.get_role_tmux_session.side_effect = lambda r: f"proj-{r}-000"
+        mock_config.return_value = cfg
+        mock_exists.return_value = False
+
+        # Should not raise
+        check_permission_prompts(tmp_path)
