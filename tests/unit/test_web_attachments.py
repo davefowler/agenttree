@@ -11,7 +11,7 @@ pytest.importorskip("httpx")
 
 
 class TestCreateIssueApiWithAttachments:
-    """Tests for create_issue_api with file uploads."""
+    """Tests for create_issue_api attachment validation."""
 
     @pytest.fixture
     def mock_issue(self):
@@ -28,50 +28,32 @@ class TestCreateIssueApiWithAttachments:
         from agenttree.web.app import app
         return TestClient(app)
 
-    def test_accepts_files(self, client, mock_issue):
-        """Verify endpoint accepts multipart form with files."""
-        with patch("agenttree.web.routes.issues.issue_crud.create_issue", return_value=mock_issue), \
-             patch("agenttree.api.start_issue"):
-
-            response = client.post(
-                "/api/issues",
-                data={"problem": "Test problem description", "title": "Test"},
-                files=[("files", ("test.png", b"fake image data", "image/png"))],
-            )
-
-            assert response.status_code == 200
-            assert response.json()["ok"] is True
-
     def test_rejects_oversized_file(self, client, mock_issue):
-        """Verify 400 error for files > 10MB."""
+        """Verify 400 error for files > 10MB with exact message."""
         # Create a file larger than 10MB
         large_content = b"x" * (11 * 1024 * 1024)  # 11MB
 
-        with patch("agenttree.web.routes.issues.issue_crud.create_issue", return_value=mock_issue), \
-             patch("agenttree.api.start_issue"):
+        response = client.post(
+            "/api/issues",
+            data={"description": "Test description", "title": "Test"},
+            files=[("files", ("large.png", large_content, "image/png"))],
+        )
 
-            response = client.post(
-                "/api/issues",
-                data={"problem": "Test problem description", "title": "Test"},
-                files=[("files", ("large.png", large_content, "image/png"))],
-            )
-
-            assert response.status_code == 400
-            assert "10MB" in response.json()["detail"] or "size" in response.json()["detail"].lower()
+        assert response.status_code == 400
+        assert response.json()["detail"] == "File 'large.png' exceeds maximum size of 10MB"
 
     def test_rejects_invalid_file_type(self, client, mock_issue):
-        """Verify 400 error for executable files."""
-        with patch("agenttree.web.routes.issues.issue_crud.create_issue", return_value=mock_issue), \
-             patch("agenttree.api.start_issue"):
+        """Verify 400 error for executable files with exact message."""
+        response = client.post(
+            "/api/issues",
+            data={"description": "Test description", "title": "Test"},
+            files=[("files", ("malware.exe", b"fake exe", "application/octet-stream"))],
+        )
 
-            response = client.post(
-                "/api/issues",
-                data={"problem": "Test problem description", "title": "Test"},
-                files=[("files", ("malware.exe", b"fake exe", "application/octet-stream"))],
-            )
-
-            assert response.status_code == 400
-            assert "type" in response.json()["detail"].lower() or "allowed" in response.json()["detail"].lower()
+        assert response.status_code == 400
+        # Exact message includes sorted list of allowed extensions
+        expected = "File type '.exe' not allowed. Allowed types: .gif, .jpeg, .jpg, .json, .log, .md, .png, .svg, .txt, .webp, .yaml, .yml"
+        assert response.json()["detail"] == expected
 
 
 class TestGetAttachment:

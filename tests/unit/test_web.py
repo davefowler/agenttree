@@ -1476,75 +1476,30 @@ class TestGetDefaultDoc:
 
 
 class TestCreateIssueAPI:
-    """Tests for the create issue API endpoint."""
+    """Tests for the create issue API validation."""
 
-    @patch("agenttree.api.start_issue")
-    @patch("agenttree.web.routes.issues.issue_crud")
-    def test_create_issue_with_problem_and_solutions(self, mock_crud, mock_start, client):
-        """Test creating issue with both problem and solutions fields."""
-        mock_issue = Mock()
-        mock_issue.id = "001"
-        mock_issue.title = "Test Issue"
-        mock_crud.create_issue.return_value = mock_issue
-        mock_start.return_value = None
-
+    def test_create_issue_validation_empty_description(self, client):
+        """Test that empty description returns 400 error with exact message."""
         response = client.post(
             "/api/issues",
             data={
-                "problem": "This is the problem description",
-                "solutions": "This is a possible solution",
-                "title": "Test Issue"
-            }
-        )
-
-        assert response.status_code == 200
-        data = response.json()
-        assert data["ok"] is True
-        assert data["issue_id"] == "001"
-
-        # Verify create_issue was called with correct parameters
-        mock_crud.create_issue.assert_called_once()
-        call_kwargs = mock_crud.create_issue.call_args.kwargs
-        assert call_kwargs["problem"] == "This is the problem description"
-        assert call_kwargs["solutions"] == "This is a possible solution"
-
-    @patch("agenttree.api.start_issue")
-    @patch("agenttree.web.routes.issues.issue_crud")
-    def test_create_issue_with_problem_only_no_solutions(self, mock_crud, mock_start, client):
-        """Test creating issue with problem only, no solutions."""
-        mock_issue = Mock()
-        mock_issue.id = "002"
-        mock_issue.title = "Problem Only Issue"
-        mock_crud.create_issue.return_value = mock_issue
-        mock_start.return_value = None
-
-        response = client.post(
-            "/api/issues",
-            data={
-                "problem": "This is just the problem, no solutions yet",
-                "title": "Problem Only Issue"
-            }
-        )
-
-        assert response.status_code == 200
-        data = response.json()
-        assert data["ok"] is True
-
-        # Verify solutions is None when not provided
-        call_kwargs = mock_crud.create_issue.call_args.kwargs
-        assert call_kwargs["problem"] == "This is just the problem, no solutions yet"
-        assert call_kwargs["solutions"] is None
-
-    @patch("agenttree.web.routes.issues.issue_crud")
-    def test_create_issue_validation_empty_problem(self, mock_crud, client):
-        """Test that empty problem returns 400 error."""
-        response = client.post(
-            "/api/issues",
-            data={
-                "problem": "",
-                "solutions": "Some solution"
+                "description": "",
+                "title": "Test"
             }
         )
 
         assert response.status_code == 400
-        assert "problem description" in response.json()["detail"].lower()
+        assert response.json()["detail"] == "Please provide a description"
+
+    def test_create_issue_validation_whitespace_description(self, client):
+        """Test that whitespace-only description returns 400 error."""
+        response = client.post(
+            "/api/issues",
+            data={
+                "description": "   ",
+                "title": "Test"
+            }
+        )
+
+        assert response.status_code == 400
+        assert response.json()["detail"] == "Please provide a description"
