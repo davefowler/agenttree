@@ -604,6 +604,140 @@ def check_merged_prs(agents_dir: Path) -> int:
     return issues_advanced
 
 
+def check_pr_health(agents_dir: Path, **kwargs: Any) -> int:
+    """Check PR health for issues outside implement.ci_wait/implement.review stages.
+
+    Monitors PRs that exist at earlier stages (e.g., plan.review, implement.code)
+    for CI failures and merge conflicts. The existing check_ci_status handles
+    implement.ci_wait and implement.review with stage-specific transitions.
+
+    This function provides informational monitoring and notifications:
+    - CI failures: Notify owning agent/manager
+    - Merge conflicts: Notify about divergence from main
+
+    Uses event state for rate limiting to avoid notification spam.
+
+    Args:
+        agents_dir: Path to _agenttree directory
+        **kwargs: Additional arguments (for action compatibility)
+
+    Returns:
+        Number of issues with health issues detected
+    """
+    from agenttree.environment import is_running_in_container
+    if is_running_in_container():
+        return 0
+
+    issues_dir = agents_dir / "issues"
+    if not issues_dir.exists():
+        return 0
+
+    from agenttree.api import _notify_agent
+    from agenttree.config import load_config
+    from agenttree.events import load_event_state, save_event_state
+    from agenttree.github import get_pr_checks, is_pr_mergeable
+    from agenttree.issues import Issue
+
+    config = load_config()
+
+    # Stages where the issue is already done - no need to check PR
+    parking_lot_stages = {name for name, s in config.stages.items() if s.is_parking_lot}
+
+    # Stages handled by check_ci_status - skip to avoid duplicate handling
+    ci_handled_stages = {"implement.ci_wait", "implement.review"}
+
+    # Load state for rate limiting
+    state = load_event_state(agents_dir)
+    pr_health_state = state.get("pr_health_notifications", {})
+
+    issues_with_problems = 0
+
+    for issue_dir in issues_dir.iterdir():
+        if not issue_dir.is_dir():
+            continue
+
+        issue_yaml = issue_dir / "issue.yaml"
+        if not issue_yaml.exists():
+            continue
+
+        try:
+            issue = Issue.from_yaml(issue_yaml)
+
+            # Skip parking lot stages
+            if issue.stage in parking_lot_stages:
+                continue
+
+            # Skip stages handled by check_ci_status
+            if issue.stage in ci_handled_stages:
+                continue
+
+            # Skip issues without PR
+            if not issue.pr_number:
+                continue
+
+            issue_id = str(issue.id)
+            pr_number = issue.pr_number
+
+            # Check if already notified for this issue+PR combination
+            issue_state = pr_health_state.get(issue_id, {})
+            notified_pr = issue_state.get("pr_number")
+            notified_ci_failure = issue_state.get("ci_failure_notified", False)
+            notified_conflict = issue_state.get("conflict_notified", False)
+
+            # If PR changed, reset state
+            if notified_pr != pr_number:
+                issue_state = {"pr_number": pr_number}
+                notified_ci_failure = False
+                notified_conflict = False
+
+            # Check CI status
+            checks = get_pr_checks(pr_number)
+            has_failure = any(c.state == "FAILURE" for c in checks)
+            all_pending = all(c.state == "PENDING" for c in checks) if checks else True
+
+            # Check mergeability
+            mergeable = is_pr_mergeable(pr_number)
+            has_conflict = mergeable is False
+
+            # Send notifications if needed
+            notified_this_run = False
+
+            if has_failure and not notified_ci_failure and not all_pending:
+                failed_checks = [c.name for c in checks if c.state == "FAILURE"]
+                message = f"[PR Health] CI failing for issue #{issue_id} (PR #{pr_number}): {', '.join(failed_checks)}"
+                _notify_agent(issue.id, message)
+                issue_state["ci_failure_notified"] = True
+                issues_with_problems += 1
+                notified_this_run = True
+
+            if has_conflict and not notified_conflict:
+                message = f"[PR Health] Merge conflict detected for issue #{issue_id} (PR #{pr_number}). Branch needs rebase."
+                _notify_agent(issue.id, message)
+                issue_state["conflict_notified"] = True
+                if not notified_this_run:  # Don't double-count if we already counted CI failure
+                    issues_with_problems += 1
+                notified_this_run = True
+
+            # Reset notification state if problems are resolved
+            if not has_failure and notified_ci_failure:
+                issue_state["ci_failure_notified"] = False
+            if not has_conflict and notified_conflict:
+                issue_state["conflict_notified"] = False
+
+            # Update state
+            pr_health_state[issue_id] = issue_state
+
+        except Exception as e:
+            console.print(f"[yellow]Error checking PR health for issue: {e}[/yellow]")
+            continue
+
+    # Save updated state
+    state["pr_health_notifications"] = pr_health_state
+    save_event_state(agents_dir, state)
+
+    return issues_with_problems
+
+
 def _generate_escalation_report(
     ci_bounce_count: int,
     pr_number: int,

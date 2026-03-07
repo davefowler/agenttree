@@ -434,6 +434,36 @@ def is_pr_approved(pr_number: int) -> bool:
     return approvals > 0
 
 
+def is_pr_mergeable(pr_number: int) -> bool | None:
+    """Check if a PR is mergeable (no merge conflicts).
+
+    Args:
+        pr_number: PR number
+
+    Returns:
+        True if mergeable, False if has conflicts, None if unknown/pending
+    """
+    try:
+        output = gh_command([
+            "pr",
+            "view",
+            str(pr_number),
+            "--json",
+            "mergeable",
+        ])
+        data = json.loads(output)
+        mergeable = data.get("mergeable")
+        if mergeable == "MERGEABLE":
+            return True
+        elif mergeable == "CONFLICTING":
+            return False
+        else:
+            # UNKNOWN or other state
+            return None
+    except RuntimeError:
+        return None
+
+
 def merge_pr(pr_number: int, method: str = "squash") -> None:
     """Merge a pull request.
 

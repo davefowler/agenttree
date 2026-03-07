@@ -1404,3 +1404,265 @@ class TestCiEscalationReport:
 
         # Should still have log content
         assert "specific test failure" in content
+
+
+@pytest.mark.usefixtures("host_environment")
+class TestCheckPrHealth:
+    """Tests for check_pr_health function."""
+
+    @pytest.fixture
+    def agents_dir(self, tmp_path):
+        """Create a temporary _agenttree directory with issues subfolder."""
+        agents_dir = tmp_path / "_agenttree"
+        agents_dir.mkdir()
+        (agents_dir / "issues").mkdir()
+        return agents_dir
+
+    @pytest.fixture
+    def issue_at_plan_review_with_pr(self, agents_dir):
+        """Create an issue at plan.review stage with a PR."""
+        import yaml
+        issue_dir = agents_dir / "issues" / "042"
+        issue_dir.mkdir(parents=True)
+        issue_yaml = issue_dir / "issue.yaml"
+        data = {
+            "id": 42,
+            "title": "Test issue",
+            "stage": "plan.review",
+            "pr_number": 123,
+            "branch": "issue-42",
+        }
+        with open(issue_yaml, "w") as f:
+            yaml.dump(data, f)
+        return issue_dir, data
+
+    def test_check_pr_health_skips_in_container(self, agents_dir):
+        """Verify hook bails early when running in container."""
+        from agenttree.agents_repo import check_pr_health
+
+        with patch("agenttree.environment.is_running_in_container", return_value=True):
+            result = check_pr_health(agents_dir)
+            assert result == 0
+
+    @patch("agenttree.environment.is_running_in_container", return_value=False)
+    def test_check_pr_health_skips_issues_without_pr(self, mock_container, agents_dir):
+        """Verify issues without pr_number are skipped."""
+        import yaml
+        from agenttree.agents_repo import check_pr_health
+
+        issue_dir = agents_dir / "issues" / "042"
+        issue_dir.mkdir(parents=True)
+        issue_yaml = issue_dir / "issue.yaml"
+        data = {
+            "id": 42,
+            "title": "Test issue",
+            "stage": "plan.review",
+            # No pr_number
+        }
+        with open(issue_yaml, "w") as f:
+            yaml.dump(data, f)
+
+        with patch("agenttree.github.get_pr_checks") as mock_get_checks:
+            result = check_pr_health(agents_dir)
+            mock_get_checks.assert_not_called()
+            assert result == 0
+
+    @patch("agenttree.config.load_config")
+    @patch("agenttree.environment.is_running_in_container", return_value=False)
+    def test_check_pr_health_skips_implement_stages(self, mock_container, mock_config, agents_dir):
+        """Verify issues at implement.ci_wait and implement.review are skipped (handled by check_ci_status)."""
+        import yaml
+        from agenttree.agents_repo import check_pr_health
+        from agenttree.config import Config, StageConfig
+
+        mock_config.return_value = Config(stages={
+            "implement.ci_wait": StageConfig(name="implement.ci_wait"),
+            "implement.review": StageConfig(name="implement.review"),
+            "accepted": StageConfig(name="accepted", is_parking_lot=True),
+        })
+
+        # Create issue at implement.ci_wait
+        issue_dir = agents_dir / "issues" / "042"
+        issue_dir.mkdir(parents=True)
+        issue_yaml = issue_dir / "issue.yaml"
+        data = {
+            "id": 42,
+            "title": "Test issue",
+            "stage": "implement.ci_wait",
+            "pr_number": 123,
+        }
+        with open(issue_yaml, "w") as f:
+            yaml.dump(data, f)
+
+        with patch("agenttree.github.get_pr_checks") as mock_get_checks:
+            result = check_pr_health(agents_dir)
+            # Should not check CI since implement stages are handled elsewhere
+            mock_get_checks.assert_not_called()
+            assert result == 0
+
+    @patch("agenttree.config.load_config")
+    @patch("agenttree.environment.is_running_in_container", return_value=False)
+    def test_check_pr_health_skips_parking_lots(self, mock_container, mock_config, agents_dir):
+        """Verify issues in parking-lot stages are skipped."""
+        import yaml
+        from agenttree.agents_repo import check_pr_health
+        from agenttree.config import Config, StageConfig
+
+        mock_config.return_value = Config(stages={
+            "accepted": StageConfig(name="accepted", is_parking_lot=True),
+        })
+
+        issue_dir = agents_dir / "issues" / "042"
+        issue_dir.mkdir(parents=True)
+        issue_yaml = issue_dir / "issue.yaml"
+        data = {
+            "id": 42,
+            "title": "Test issue",
+            "stage": "accepted",
+            "pr_number": 123,
+        }
+        with open(issue_yaml, "w") as f:
+            yaml.dump(data, f)
+
+        with patch("agenttree.github.get_pr_checks") as mock_get_checks:
+            result = check_pr_health(agents_dir)
+            mock_get_checks.assert_not_called()
+            assert result == 0
+
+    @patch("agenttree.config.load_config")
+    @patch("agenttree.environment.is_running_in_container", return_value=False)
+    def test_check_pr_health_ci_passing_no_notification(self, mock_container, mock_config, agents_dir, issue_at_plan_review_with_pr):
+        """Verify no notification when CI passes."""
+        from agenttree.agents_repo import check_pr_health
+        from agenttree.github import CheckStatus
+        from agenttree.config import Config, StageConfig
+
+        mock_config.return_value = Config(stages={
+            "plan.review": StageConfig(name="plan.review"),
+            "accepted": StageConfig(name="accepted", is_parking_lot=True),
+        })
+
+        with patch("agenttree.github.get_pr_checks") as mock_get_checks, \
+             patch("agenttree.github.is_pr_mergeable", return_value=True), \
+             patch("agenttree.api._notify_agent") as mock_notify:
+            mock_get_checks.return_value = [
+                CheckStatus(name="build", state="SUCCESS"),
+                CheckStatus(name="test", state="SUCCESS"),
+            ]
+            result = check_pr_health(agents_dir)
+
+            # Should not notify when CI passes
+            mock_notify.assert_not_called()
+            assert result == 0
+
+    @patch("agenttree.config.load_config")
+    @patch("agenttree.environment.is_running_in_container", return_value=False)
+    def test_check_pr_health_ci_failure_sends_notification(self, mock_container, mock_config, agents_dir, issue_at_plan_review_with_pr):
+        """Verify notification is sent when CI fails."""
+        from agenttree.agents_repo import check_pr_health
+        from agenttree.github import CheckStatus
+        from agenttree.config import Config, StageConfig
+
+        mock_config.return_value = Config(stages={
+            "plan.review": StageConfig(name="plan.review"),
+            "accepted": StageConfig(name="accepted", is_parking_lot=True),
+        })
+
+        with patch("agenttree.github.get_pr_checks") as mock_get_checks, \
+             patch("agenttree.github.is_pr_mergeable", return_value=True), \
+             patch("agenttree.api._notify_agent") as mock_notify:
+            mock_get_checks.return_value = [
+                CheckStatus(name="build", state="SUCCESS"),
+                CheckStatus(name="test", state="FAILURE"),
+            ]
+            result = check_pr_health(agents_dir)
+
+            # Should notify about CI failure
+            mock_notify.assert_called_once()
+            call_args = mock_notify.call_args
+            assert "42" in str(call_args[0][0]) or call_args[0][0] == 42
+            assert "CI" in call_args[0][1] or "failed" in call_args[0][1].lower()
+            assert result == 1
+
+    @patch("agenttree.config.load_config")
+    @patch("agenttree.environment.is_running_in_container", return_value=False)
+    def test_check_pr_health_rate_limiting(self, mock_container, mock_config, agents_dir, issue_at_plan_review_with_pr):
+        """Verify duplicate notifications are prevented using event state."""
+        from agenttree.agents_repo import check_pr_health
+        from agenttree.github import CheckStatus
+        from agenttree.config import Config, StageConfig
+
+        mock_config.return_value = Config(stages={
+            "plan.review": StageConfig(name="plan.review"),
+            "accepted": StageConfig(name="accepted", is_parking_lot=True),
+        })
+
+        with patch("agenttree.github.get_pr_checks") as mock_get_checks, \
+             patch("agenttree.github.is_pr_mergeable", return_value=True), \
+             patch("agenttree.api._notify_agent") as mock_notify:
+            mock_get_checks.return_value = [
+                CheckStatus(name="test", state="FAILURE"),
+            ]
+
+            # First call - should notify
+            result1 = check_pr_health(agents_dir)
+            assert result1 == 1
+            assert mock_notify.call_count == 1
+
+            # Second call - should NOT notify (already notified)
+            result2 = check_pr_health(agents_dir)
+            assert result2 == 0
+            # Still only one call
+            assert mock_notify.call_count == 1
+
+    @patch("agenttree.config.load_config")
+    @patch("agenttree.environment.is_running_in_container", return_value=False)
+    def test_check_pr_health_merge_conflict_notification(self, mock_container, mock_config, agents_dir, issue_at_plan_review_with_pr):
+        """Verify notification is sent when PR has merge conflicts."""
+        from agenttree.agents_repo import check_pr_health
+        from agenttree.github import CheckStatus
+        from agenttree.config import Config, StageConfig
+
+        mock_config.return_value = Config(stages={
+            "plan.review": StageConfig(name="plan.review"),
+            "accepted": StageConfig(name="accepted", is_parking_lot=True),
+        })
+
+        with patch("agenttree.github.get_pr_checks") as mock_get_checks, \
+             patch("agenttree.github.is_pr_mergeable", return_value=False), \
+             patch("agenttree.api._notify_agent") as mock_notify:
+            mock_get_checks.return_value = [
+                CheckStatus(name="build", state="SUCCESS"),
+            ]
+            result = check_pr_health(agents_dir)
+
+            # Should notify about merge conflict
+            mock_notify.assert_called_once()
+            call_args = mock_notify.call_args
+            assert "conflict" in call_args[0][1].lower() or "merge" in call_args[0][1].lower()
+            assert result == 1
+
+    @patch("agenttree.config.load_config")
+    @patch("agenttree.environment.is_running_in_container", return_value=False)
+    def test_check_pr_health_ci_pending_no_notification(self, mock_container, mock_config, agents_dir, issue_at_plan_review_with_pr):
+        """Verify no notification when CI is still running (pending)."""
+        from agenttree.agents_repo import check_pr_health
+        from agenttree.github import CheckStatus
+        from agenttree.config import Config, StageConfig
+
+        mock_config.return_value = Config(stages={
+            "plan.review": StageConfig(name="plan.review"),
+            "accepted": StageConfig(name="accepted", is_parking_lot=True),
+        })
+
+        with patch("agenttree.github.get_pr_checks") as mock_get_checks, \
+             patch("agenttree.github.is_pr_mergeable", return_value=True), \
+             patch("agenttree.api._notify_agent") as mock_notify:
+            mock_get_checks.return_value = [
+                CheckStatus(name="build", state="PENDING"),
+            ]
+            result = check_pr_health(agents_dir)
+
+            # Should not notify while CI is still running
+            mock_notify.assert_not_called()
+            assert result == 0
