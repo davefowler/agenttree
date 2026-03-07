@@ -298,6 +298,9 @@ flows:
         is_abandon: true
         redirect_only: true
         color: "#6b7280"
+        post_start:
+          - close_pr:
+          - cleanup_agent:
 
   # Quick flow for small issues that skip research and planning stages
   quick:

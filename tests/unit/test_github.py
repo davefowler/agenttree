@@ -15,6 +15,7 @@ from agenttree.github import (
     get_pr_checks,
     wait_for_ci,
     close_issue,
+    close_pr,
     is_pr_approved,
     merge_pr,
     auto_merge_if_ready,
@@ -302,6 +303,49 @@ class TestCloseIssue:
         assert "issue" in args
         assert "close" in args
         assert "42" in args
+
+
+class TestClosePr:
+    """Tests for close_pr function."""
+
+    @patch("agenttree.github.gh_command")
+    def test_close_pr_success(self, mock_gh: Mock) -> None:
+        """Test closing a PR."""
+        mock_gh.return_value = ""  # Success
+
+        # Should not raise
+        close_pr(123)
+
+        mock_gh.assert_called_once()
+        args = mock_gh.call_args[0][0]
+        assert "pr" in args
+        assert "close" in args
+        assert "123" in args
+
+    @patch("agenttree.github.gh_command")
+    def test_close_pr_with_comment(self, mock_gh: Mock) -> None:
+        """Test closing a PR with a comment."""
+        mock_gh.return_value = ""  # Success
+
+        close_pr(123, comment="Issue abandoned")
+
+        mock_gh.assert_called_once()
+        args = mock_gh.call_args[0][0]
+        assert "pr" in args
+        assert "close" in args
+        assert "123" in args
+        assert "--comment" in args
+        assert "Issue abandoned" in args
+
+    @patch("agenttree.github.gh_command")
+    def test_close_pr_without_comment(self, mock_gh: Mock) -> None:
+        """Test closing a PR without a comment."""
+        mock_gh.return_value = ""  # Success
+
+        close_pr(456)
+
+        args = mock_gh.call_args[0][0]
+        assert "--comment" not in args
 
 
 class TestModels:

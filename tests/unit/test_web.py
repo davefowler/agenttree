@@ -11,6 +11,9 @@ import inspect
 pytest.importorskip("fastapi")
 pytest.importorskip("httpx")
 
+# Mark entire module as local_only - requires _agenttree/issues directory which doesn't exist in CI
+pytestmark = pytest.mark.local_only
+
 from starlette.testclient import TestClient
 
 from agenttree.web.app import app
