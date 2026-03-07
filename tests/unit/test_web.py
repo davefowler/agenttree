@@ -1479,7 +1479,7 @@ class TestCreateIssueAPI:
     """Tests for the create issue API endpoint."""
 
     @patch("agenttree.api.start_issue")
-    @patch("agenttree.web.routes.issues.issue_crud")
+    @patch("agenttree.web.app.issue_crud")
     def test_create_issue_with_problem_and_solutions(self, mock_crud, mock_start, client):
         """Test creating issue with both problem and solutions fields."""
         mock_issue = Mock()
@@ -1509,7 +1509,7 @@ class TestCreateIssueAPI:
         assert call_kwargs["solutions"] == "This is a possible solution"
 
     @patch("agenttree.api.start_issue")
-    @patch("agenttree.web.routes.issues.issue_crud")
+    @patch("agenttree.web.app.issue_crud")
     def test_create_issue_with_problem_only_no_solutions(self, mock_crud, mock_start, client):
         """Test creating issue with problem only, no solutions."""
         mock_issue = Mock()
@@ -1535,7 +1535,7 @@ class TestCreateIssueAPI:
         assert call_kwargs["problem"] == "This is just the problem, no solutions yet"
         assert call_kwargs["solutions"] is None
 
-    @patch("agenttree.web.routes.issues.issue_crud")
+    @patch("agenttree.web.app.issue_crud")
     def test_create_issue_validation_empty_problem(self, mock_crud, client):
         """Test that empty problem returns 400 error."""
         response = client.post(
