@@ -51,6 +51,11 @@ roles:
     model: sonnet
     skill: independent_review.md
 
+  setup:
+    description: "Interactive project setup agent"
+    tool: claude
+    model: opus
+
 # Workflow flows
 # The default flow defines stages inline (dict). Secondary flows reference
 # stages by dot path (list). A bare stage name like "implement" expands to
