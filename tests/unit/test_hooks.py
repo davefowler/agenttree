@@ -3028,3 +3028,77 @@ class TestGetCodeDirectory:
         result = get_code_directory(None, issue_dir)
 
         assert result == Path("/workspace")
+
+
+class TestClosePrHook:
+    """Tests for close_pr hook action."""
+
+    def test_close_pr_in_hook_types(self):
+        """close_pr should be registered in HOOK_TYPES."""
+        from agenttree.hooks import HOOK_TYPES
+
+        assert "close_pr" in HOOK_TYPES
+
+    @patch('agenttree.hooks.console')
+    def test_close_pr_skips_when_no_pr_number(self, mock_console, tmp_path):
+        """Should skip gracefully when pr_number is None."""
+        from agenttree.hooks import run_builtin_validator
+
+        hook = {"close_pr": {}}
+        errors = run_builtin_validator(tmp_path, hook, pr_number=None)
+
+        assert errors == []
+        # Should print a message about no PR
+        mock_console.print.assert_called()
+        call_args = str(mock_console.print.call_args)
+        assert "No PR to close" in call_args
+
+    @patch('agenttree.github.close_pr')
+    @patch('agenttree.hooks.console')
+    def test_close_pr_success(self, mock_console, mock_close_pr, tmp_path):
+        """Should close PR successfully."""
+        from agenttree.hooks import run_builtin_validator
+
+        hook = {"close_pr": {}}
+        errors = run_builtin_validator(tmp_path, hook, pr_number=123)
+
+        assert errors == []
+        mock_close_pr.assert_called_once_with(123, comment="Issue abandoned")
+
+    @patch('agenttree.github.close_pr')
+    @patch('agenttree.hooks.console')
+    def test_close_pr_with_custom_comment(self, mock_console, mock_close_pr, tmp_path):
+        """Should use custom comment when provided."""
+        from agenttree.hooks import run_builtin_validator
+
+        hook = {"close_pr": {"comment": "Custom reason"}}
+        errors = run_builtin_validator(tmp_path, hook, pr_number=456)
+
+        assert errors == []
+        mock_close_pr.assert_called_once_with(456, comment="Custom reason")
+
+    @patch('agenttree.github.close_pr')
+    @patch('agenttree.hooks.console')
+    def test_close_pr_handles_already_closed(self, mock_console, mock_close_pr, tmp_path):
+        """Should handle already closed PR gracefully."""
+        from agenttree.hooks import run_builtin_validator
+
+        mock_close_pr.side_effect = RuntimeError("PR already closed")
+        hook = {"close_pr": {}}
+        errors = run_builtin_validator(tmp_path, hook, pr_number=123)
+
+        # Should not return errors for already closed PRs
+        assert errors == []
+
+    @patch('agenttree.github.close_pr')
+    @patch('agenttree.hooks.console')
+    def test_close_pr_handles_already_merged(self, mock_console, mock_close_pr, tmp_path):
+        """Should handle already merged PR gracefully."""
+        from agenttree.hooks import run_builtin_validator
+
+        mock_close_pr.side_effect = RuntimeError("PR already merged")
+        hook = {"close_pr": {}}
+        errors = run_builtin_validator(tmp_path, hook, pr_number=123)
+
+        # Should not return errors for already merged PRs
+        assert errors == []

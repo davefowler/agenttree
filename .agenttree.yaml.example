@@ -63,6 +63,17 @@ roles:
     model: sonnet
     skill: independent_review.md
 
+  # Optional: architect supervisor role (host-level, no container)
+  # Uncomment to enable. `agenttree init` also creates _agenttree/skills/architect.md.
+  # architect:
+  #   description: "System supervisor for pipeline health and flow"
+  #   tool: claude
+  #   model: opus
+  #   container:
+  #     enabled: false
+  #     image: agenttree-host:latest
+  #   skill: architect.md
+
 # ============================================================================
 # Flows
 # ============================================================================

@@ -995,3 +995,126 @@ class TestNotifyAgent:
 
         with patch("agenttree.state.get_active_agent", side_effect=Exception("boom")):
             _notify_agent("42", "Test message")  # Should not raise
+
+
+class TestStartRole:
+    """Tests for start_role() function."""
+
+    @pytest.fixture
+    def mock_config(self):
+        """Create a mock config for role tests."""
+        config = MagicMock()
+        config.project = "testproj"
+        config.default_tool = "claude"
+        config.default_model = "sonnet"
+        config.get_role_tmux_session.return_value = "testproj-architect-000"
+        return config
+
+    @pytest.fixture
+    def mock_role_containerized(self):
+        """Create a mock role config with container enabled."""
+        role = MagicMock()
+        role.tool = "claude"
+        role.model = "opus"
+        role.skill_file = "architect.md"
+        role.is_containerized.return_value = True
+        role.container = MagicMock()
+        role.container.enabled = True
+        return role
+
+    @pytest.fixture
+    def mock_role_host(self):
+        """Create a mock role config running on host (no container)."""
+        role = MagicMock()
+        role.tool = "claude"
+        role.model = "opus"
+        role.skill_file = "architect.md"
+        role.is_containerized.return_value = False
+        role.container = None
+        return role
+
+    def test_start_role_warns_on_container_mode_architect(
+        self, mock_config, mock_role_containerized, tmp_path, monkeypatch, caplog
+    ):
+        """Warning logged when architect has container.enabled=true."""
+        from agenttree.api import start_role, HOST_TMUX_ROLES
+        import logging
+
+        monkeypatch.chdir(tmp_path)
+        mock_config.roles = {"architect": mock_role_containerized}
+
+        with caplog.at_level(logging.WARNING):
+            with patch("agenttree.config.load_config", return_value=mock_config), \
+                 patch("agenttree.tmux.session_exists", return_value=False), \
+                 patch("agenttree.tmux.TmuxManager") as mock_tm_class:
+                mock_tm = MagicMock()
+                mock_tm_class.return_value = mock_tm
+
+                start_role("architect", quiet=True)
+
+        assert "architect" in HOST_TMUX_ROLES
+        assert any("container mode" in record.message.lower() for record in caplog.records)
+
+    def test_start_role_warns_on_container_mode_manager(
+        self, mock_config, mock_role_containerized, tmp_path, monkeypatch, caplog
+    ):
+        """Warning logged when manager has container.enabled=true."""
+        from agenttree.api import start_role, HOST_TMUX_ROLES
+        import logging
+
+        monkeypatch.chdir(tmp_path)
+        mock_config.roles = {"manager": mock_role_containerized}
+
+        with caplog.at_level(logging.WARNING):
+            with patch("agenttree.config.load_config", return_value=mock_config), \
+                 patch("agenttree.tmux.session_exists", return_value=False), \
+                 patch("agenttree.tmux.TmuxManager") as mock_tm_class:
+                mock_tm = MagicMock()
+                mock_tm_class.return_value = mock_tm
+
+                start_role("manager", quiet=True)
+
+        assert "manager" in HOST_TMUX_ROLES
+        assert any("container mode" in record.message.lower() for record in caplog.records)
+
+    def test_start_role_no_warn_for_host_mode(
+        self, mock_config, mock_role_host, tmp_path, monkeypatch, caplog
+    ):
+        """No warning when container.enabled=false (running on host)."""
+        from agenttree.api import start_role
+        import logging
+
+        monkeypatch.chdir(tmp_path)
+        mock_config.roles = {"architect": mock_role_host}
+
+        with caplog.at_level(logging.WARNING):
+            with patch("agenttree.config.load_config", return_value=mock_config), \
+                 patch("agenttree.tmux.session_exists", return_value=False), \
+                 patch("agenttree.tmux.TmuxManager") as mock_tm_class:
+                mock_tm = MagicMock()
+                mock_tm_class.return_value = mock_tm
+
+                start_role("architect", quiet=True)
+
+        assert not any("container mode" in record.message.lower() for record in caplog.records)
+
+    def test_start_role_no_warn_for_developer(
+        self, mock_config, mock_role_containerized, tmp_path, monkeypatch, caplog
+    ):
+        """No warning for developer role with container enabled (designed for containers)."""
+        from agenttree.api import start_role
+        import logging
+
+        monkeypatch.chdir(tmp_path)
+        mock_config.roles = {"developer": mock_role_containerized}
+
+        with caplog.at_level(logging.WARNING):
+            with patch("agenttree.config.load_config", return_value=mock_config), \
+                 patch("agenttree.tmux.session_exists", return_value=False), \
+                 patch("agenttree.tmux.TmuxManager") as mock_tm_class:
+                mock_tm = MagicMock()
+                mock_tm_class.return_value = mock_tm
+
+                start_role("developer", quiet=True)
+
+        assert not any("container mode" in record.message.lower() for record in caplog.records)

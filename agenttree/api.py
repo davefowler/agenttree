@@ -49,7 +49,15 @@ __all__ = [
     "PreflightError",
     "ContainerUnavailableError",
     "ControllerNotRunningError",
+    "HOST_TMUX_ROLES",
 ]
+
+
+# Roles that require direct host tmux access and cannot run in containers.
+# These roles (architect, manager) use agenttree CLI commands that manage
+# tmux sessions on the HOST machine. Running them in containers doesn't work
+# because containers can't access host tmux sessions due to isolation.
+HOST_TMUX_ROLES: set[str] = {"manager", "architect"}
 
 
 # Custom exceptions for API errors
@@ -374,6 +382,17 @@ def start_role(
     role_config = config.roles.get(role_name)
     if not role_config:
         raise ValueError(f"Unknown role: '{role_name}'. Available: {', '.join(config.roles.keys())}")
+
+    # Warn if a host-tmux role is configured to run in a container
+    # These roles need direct access to host tmux sessions which is not possible from a container
+    if role_config.is_containerized() and role_name in HOST_TMUX_ROLES:
+        log.warning(
+            "Role '%s' has container mode enabled but requires host tmux access. "
+            "Container mode will not work correctly for this role because it cannot "
+            "access host tmux sessions due to container isolation. "
+            "Set container.enabled: false in .agenttree.yaml to run on host.",
+            role_name,
+        )
 
     tmux_manager = TmuxManager(config)
     session_name = config.get_role_tmux_session(role_name)

@@ -41,8 +41,9 @@ roles:
     description: "Human-driven manager"
     tool: claude
     model: sonnet
-    # Container config ready but disabled — runs on host for now.
-    # Enable with: enabled: true
+    # Container mode CANNOT be enabled for manager.
+    # Manager uses agenttree CLI commands that manage tmux sessions on the host.
+    # Running in a container would isolate it from host tmux sessions.
     container:
       enabled: false
       image: agenttree-host:latest
@@ -67,7 +68,9 @@ roles:
     description: "System supervisor - watches issues flow through the pipeline and fixes friction"
     tool: claude
     model: opus
-    # Container config ready but disabled — runs on host for now.
+    # Container mode CANNOT be enabled for architect.
+    # Architect uses agenttree CLI commands that manage tmux sessions on the host.
+    # Running in a container would isolate it from host tmux sessions.
     container:
       enabled: false
       image: agenttree-host:latest
@@ -298,6 +301,9 @@ flows:
         is_abandon: true
         redirect_only: true
         color: "#6b7280"
+        post_start:
+          - close_pr:
+          - cleanup_agent:
 
   # Quick flow for small issues that skip research and planning stages
   quick:

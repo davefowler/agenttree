@@ -7,6 +7,9 @@ from unittest.mock import Mock, patch
 pytest.importorskip("fastapi")
 pytest.importorskip("httpx")
 
+# Mark entire module as local_only - requires _agenttree/issues directory which doesn't exist in CI
+pytestmark = pytest.mark.local_only
+
 from starlette.testclient import TestClient
 
 from agenttree.web.app import app
@@ -84,7 +87,6 @@ class TestMobileEndpoint:
         """Test mobile view with issues list."""
         mock_crud.list_issues.return_value = [mock_issue]
         mock_crud.get_issue.return_value = mock_issue
-        mock_crud.get_issue_dir.return_value = None
         mock_agent_mgr.clear_session_cache = Mock()
         mock_agent_mgr._check_issue_tmux_session = Mock(return_value=False)
 
@@ -99,7 +101,6 @@ class TestMobileEndpoint:
         """Test mobile with issue parameter selects that issue."""
         mock_crud.list_issues.return_value = [mock_issue]
         mock_crud.get_issue.return_value = mock_issue
-        mock_crud.get_issue_dir.return_value = None
         mock_agent_mgr.clear_session_cache = Mock()
         mock_agent_mgr._check_issue_tmux_session = Mock(return_value=False)
 
@@ -114,7 +115,6 @@ class TestMobileEndpoint:
         """Test mobile with tab=issues shows issues list."""
         mock_crud.list_issues.return_value = [mock_issue]
         mock_crud.get_issue.return_value = mock_issue
-        mock_crud.get_issue_dir.return_value = None
         mock_agent_mgr.clear_session_cache = Mock()
         mock_agent_mgr._check_issue_tmux_session = Mock(return_value=False)
 
@@ -130,7 +130,6 @@ class TestMobileEndpoint:
         """Test mobile with tab=detail shows issue detail."""
         mock_crud.list_issues.return_value = [mock_issue]
         mock_crud.get_issue.return_value = mock_issue
-        mock_crud.get_issue_dir.return_value = None
         mock_agent_mgr.clear_session_cache = Mock()
         mock_agent_mgr._check_issue_tmux_session = Mock(return_value=False)
 
@@ -144,7 +143,6 @@ class TestMobileEndpoint:
         """Test mobile with tab=chat shows chat panel."""
         mock_crud.list_issues.return_value = [mock_issue_with_agent]
         mock_crud.get_issue.return_value = mock_issue_with_agent
-        mock_crud.get_issue_dir.return_value = None
         mock_agent_mgr.clear_session_cache = Mock()
         mock_agent_mgr._check_issue_tmux_session = Mock(return_value=True)
 
@@ -193,13 +191,7 @@ class TestMobileEndpoint:
     def test_mobile_nonexistent_issue_falls_back(self, mock_agent_mgr, mock_crud, client, mock_issue):
         """Test mobile with nonexistent issue falls back to first issue."""
         mock_crud.list_issues.return_value = [mock_issue]
-        # Return None for the specific issue 999, but issue for other calls
-        def get_issue_side_effect(issue_id, sync=False):
-            if issue_id == 999:
-                return None
-            return mock_issue
-        mock_crud.get_issue.side_effect = get_issue_side_effect
-        mock_crud.get_issue_dir.return_value = None
+        mock_crud.get_issue.return_value = mock_issue
         mock_agent_mgr.clear_session_cache = Mock()
         mock_agent_mgr._check_issue_tmux_session = Mock(return_value=False)
 

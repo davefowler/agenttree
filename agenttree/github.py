@@ -401,6 +401,19 @@ def close_issue(issue_number: int) -> None:
     gh_command(["issue", "close", str(issue_number)])
 
 
+def close_pr(pr_number: int, comment: str | None = None) -> None:
+    """Close a pull request.
+
+    Args:
+        pr_number: PR number
+        comment: Optional comment to leave when closing
+    """
+    args = ["pr", "close", str(pr_number)]
+    if comment:
+        args.extend(["--comment", comment])
+    gh_command(args)
+
+
 def is_pr_approved(pr_number: int) -> bool:
     """Check if a PR has been approved.
 
