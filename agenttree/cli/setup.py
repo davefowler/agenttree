@@ -227,6 +227,23 @@ their research files.
         console.print("  [cyan]agenttree migrate-docs[/cyan]")
 
 
+def _ensure_optional_architect_skill(repo_path: Path) -> None:
+    """Ensure optional architect skill exists in _agenttree/skills."""
+    import importlib.resources
+
+    skills_dir = repo_path / "_agenttree" / "skills"
+    if not skills_dir.exists():
+        return
+
+    architect_skill = skills_dir / "architect.md"
+    if architect_skill.exists():
+        return
+
+    template_path = importlib.resources.files("agenttree.templates").joinpath("architect.md")
+    architect_skill.write_text(template_path.read_text())
+    console.print("[green]✓ Added optional architect skill template (_agenttree/skills/architect.md)[/green]")
+
+
 @click.command()
 @click.option(
     "--worktrees-dir",
@@ -274,6 +291,7 @@ def init(worktrees_dir: str | None, project: str | None) -> None:
         agents_repo = AgentsRepository(repo_path)
         agents_repo.ensure_repo()
         console.print("[green]✓ _agenttree/ repository created[/green]")
+        _ensure_optional_architect_skill(repo_path)
 
         # Always create knowledge base population issue
         _create_knowledge_issue(repo_path)
