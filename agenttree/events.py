@@ -79,6 +79,97 @@ def save_event_state(agents_dir: Path, state: dict[str, Any]) -> None:
         console.print(f"[yellow]Warning: Could not save event state: {e}[/yellow]")
 
 
+def prune_stale_ci_state(agents_dir: Path) -> None:
+    """Remove stale CI check entries from heartbeat state.
+
+    Prunes ci_checks and stall_notifications entries for issues that are
+    no longer at stages where CI monitoring is relevant (ci_wait, review, code).
+
+    Args:
+        agents_dir: Path to _agenttree directory
+    """
+    state = load_event_state(agents_dir)
+
+    ci_checks = state.get("ci_checks", {})
+    stall_notifications = state.get("stall_notifications", {})
+
+    if not ci_checks and not stall_notifications:
+        return
+
+    # Get current issue stages
+    issues_dir = agents_dir / "issues"
+    if not issues_dir.exists():
+        return
+
+    # Stages where we keep CI check state
+    active_stages = {
+        "implement.ci_wait",
+        "implement.review",
+        "implement.code",
+        "implement.code_review",
+        "implement.debug",
+    }
+
+    # Terminal stages where we prune all state
+    terminal_stages = {"accepted", "not_doing"}
+
+    # Load issue stages
+    issue_stages: dict[int, str] = {}
+    for issue_dir in issues_dir.iterdir():
+        if not issue_dir.is_dir():
+            continue
+        issue_yaml = issue_dir / "issue.yaml"
+        if not issue_yaml.exists():
+            continue
+        try:
+            import yaml as yaml_lib
+            with open(issue_yaml) as f:
+                data = yaml_lib.safe_load(f)
+                if data and "id" in data:
+                    issue_id = int(data["id"])
+                    issue_stages[issue_id] = data.get("stage", "")
+        except Exception:
+            continue
+
+    # Prune ci_checks for issues not at CI-relevant stages
+    pruned_ci = False
+    ci_keys_to_remove = []
+    for issue_id in ci_checks:
+        try:
+            issue_id_int = int(issue_id)
+        except (ValueError, TypeError):
+            continue
+        stage = issue_stages.get(issue_id_int, "")
+        if stage not in active_stages or stage in terminal_stages or issue_id_int not in issue_stages:
+            ci_keys_to_remove.append(issue_id)
+            pruned_ci = True
+
+    for key in ci_keys_to_remove:
+        del ci_checks[key]
+
+    # Prune stall_notifications for terminal issues
+    pruned_stall = False
+    stall_keys_to_remove = []
+    for issue_id in stall_notifications:
+        try:
+            issue_id_int = int(issue_id)
+        except (ValueError, TypeError):
+            continue
+        stage = issue_stages.get(issue_id_int, "")
+        if stage in terminal_stages or issue_id_int not in issue_stages:
+            stall_keys_to_remove.append(issue_id)
+            pruned_stall = True
+
+    for key in stall_keys_to_remove:
+        del stall_notifications[key]
+
+    # Save if anything was pruned
+    if pruned_ci or pruned_stall:
+        state["ci_checks"] = ci_checks
+        state["stall_notifications"] = stall_notifications
+        save_event_state(agents_dir, state)
+
+
 def check_action_rate_limit(
     action_name: str,
     action_config: dict[str, Any],
