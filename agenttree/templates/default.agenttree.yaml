@@ -51,6 +51,17 @@ roles:
     model: sonnet
     skill: independent_review.md
 
+  # Optional: architect supervisor role (host-level, no container)
+  # Uncomment to enable a system supervisor that watches pipeline flow.
+  # architect:
+  #   description: "System supervisor for pipeline health and flow"
+  #   tool: claude
+  #   model: opus
+  #   container:
+  #     enabled: false
+  #     image: agenttree-host:latest
+  #   skill: architect.md
+
 # Workflow flows
 # The default flow defines stages inline (dict). Secondary flows reference
 # stages by dot path (list). A bare stage name like "implement" expands to

@@ -7,68 +7,36 @@ from typing import TYPE_CHECKING
 
 import click
 
-from agenttree.cli._utils import console, load_config, get_manager_session_name
-from agenttree.tmux import TmuxManager
+from agenttree.cli._utils import console, get_manager_session_name, load_config
 
 if TYPE_CHECKING:
     from agenttree.config import Config
 
 
-def _start_manager(
-    tool: str | None,
-    force: bool,
-    config: "Config",
-    repo_path: Path,
-) -> None:
-    """Start the manager agent (agent 0).
+def _host_roles_to_auto_start(config: "Config") -> list[str]:
+    """Return host-level AI roles that should auto-start with `agenttree start`."""
+    roles_to_start: list[str] = []
 
-    The manager runs on the host (not in a container) and orchestrates
-    work across all issues. It uses the main branch.
-    """
-    from agenttree.tmux import session_exists
+    for role_name, role_config in config.get_all_roles().items():
+        if role_name == config.default_role:
+            continue
+        if role_config.is_containerized():
+            continue
+        if not role_config.is_agent():
+            continue
+        roles_to_start.append(role_name)
 
-    tmux_manager = TmuxManager(config)
-    session_name = get_manager_session_name(config)
-
-    # Check if manager already running
-    if session_exists(session_name) and not force:
-        console.print("[yellow]Manager already running[/yellow]")
-        console.print(f"\nUse --force to restart, or attach with:")
-        console.print(f"  agenttree attach 0")
-        sys.exit(1)
-
-    tool_name = tool or config.default_tool
-    # Resolve model through standard chain: stage → role → default
-    # Manager has no stage, so this picks up the role model (e.g., sonnet)
-    model_name = config.model_for("manager", role="manager")
-
-    console.print(f"[green]Starting manager agent...[/green]")
-    console.print(f"[dim]Tool: {tool_name}[/dim]")
-    console.print(f"[dim]Model: {model_name}[/dim]")
-    console.print(f"[dim]Session: {session_name}[/dim]")
-
-    # Start manager on host (not in container)
-    tmux_manager.start_manager(
-        session_name=session_name,
-        repo_path=repo_path,
-        tool_name=tool_name,
-        model=model_name,
-    )
-
-    console.print(f"\n[bold]Manager ready[/bold]")
-    console.print(f"\n[dim]Commands:[/dim]")
-    console.print(f"  agenttree attach 0")
-    console.print(f"  agenttree send 0 'message'")
-    console.print(f"  agenttree stop 0")
+    # Keep manager first for predictable startup output.
+    roles_to_start.sort(key=lambda name: (0 if name == "manager" else 1, name))
+    return roles_to_start
 
 
 def _start_agents_background(config: "Config", repo_path: Path) -> None:
     """Start all agents in parallel (runs in a background thread)."""
     from concurrent.futures import ThreadPoolExecutor, as_completed
-    from agenttree.api import start_issue
+    from agenttree.api import AgentAlreadyRunningError, start_issue, start_role
     from agenttree.issues import list_issues
     from agenttree.state import get_active_agent
-    from agenttree.tmux import session_exists
 
     parking_lot_stages = config.get_parking_lot_stages()
     issues = list_issues(sync=True)
@@ -110,13 +78,15 @@ def _start_agents_background(config: "Config", repo_path: Path) -> None:
 
     console.print(f"\n[bold]Agents: {started_count} started, {skipped_count} in parking lot[/bold]")
 
-    # Start manager agent (agent 0) if not already running
-    manager_session = get_manager_session_name(config)
-    if not session_exists(manager_session):
-        console.print(f"\n[cyan]Starting manager agent...[/cyan]")
-        _start_manager(tool=None, force=False, config=config, repo_path=repo_path)
-    else:
-        console.print(f"[dim]Manager agent already running[/dim]")
+    # Start host-level roles (e.g., manager, architect)
+    for role_name in _host_roles_to_auto_start(config):
+        try:
+            start_role(role_name, quiet=True)
+            console.print(f"[green]✓ Started {role_name}[/green]")
+        except AgentAlreadyRunningError:
+            console.print(f"[dim]{role_name.capitalize()} already running[/dim]")
+        except ValueError as e:
+            console.print(f"[yellow]Could not start {role_name}: {e}[/yellow]")
 
 
 @click.command(name="start")
@@ -138,7 +108,7 @@ def start_all(
 ) -> None:
     """Start AgentTree or a specific agent.
 
-    With no arguments, starts everything: server + agents + manager.
+    With no arguments, starts everything: server + issue agents + host roles.
     With an ISSUE_ID, starts a single agent for that issue.
 
     Examples:

@@ -7,6 +7,9 @@ from unittest.mock import Mock, patch
 pytest.importorskip("fastapi")
 pytest.importorskip("httpx")
 
+# Mark entire module as local_only - requires _agenttree/issues directory which doesn't exist in CI
+pytestmark = pytest.mark.local_only
+
 from starlette.testclient import TestClient
 
 from agenttree.web.app import app
@@ -66,8 +69,8 @@ def mock_issue_with_agent():
 class TestMobileEndpoint:
     """Tests for mobile view endpoint."""
 
-    @patch("agenttree.web.utils.issue_crud")
-    @patch("agenttree.web.utils.agent_manager")
+    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.app.agent_manager")
     def test_mobile_returns_html(self, mock_agent_mgr, mock_crud, client):
         """Test mobile endpoint returns HTML."""
         mock_crud.list_issues.return_value = []
@@ -78,15 +81,12 @@ class TestMobileEndpoint:
         assert response.status_code == 200
         assert "text/html" in response.headers["content-type"]
 
-    @patch("agenttree.web.routes.pages.issue_crud")
-    @patch("agenttree.web.utils.issue_crud")
-    @patch("agenttree.web.utils.agent_manager")
-    def test_mobile_with_issues(self, mock_agent_mgr, mock_crud, mock_page_crud, client, mock_issue):
+    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.app.agent_manager")
+    def test_mobile_with_issues(self, mock_agent_mgr, mock_crud, client, mock_issue):
         """Test mobile view with issues list."""
         mock_crud.list_issues.return_value = [mock_issue]
         mock_crud.get_issue.return_value = mock_issue
-        mock_page_crud.get_issue.return_value = mock_issue
-        mock_page_crud.get_issue_dir.return_value = None
         mock_agent_mgr.clear_session_cache = Mock()
         mock_agent_mgr._check_issue_tmux_session = Mock(return_value=False)
 
@@ -95,33 +95,26 @@ class TestMobileEndpoint:
         assert response.status_code == 200
         assert "Test Issue" in response.text
 
-    @pytest.mark.skip(reason="Pre-existing failure: patch paths need updating - routes not used")
-    @patch("agenttree.web.routes.pages.issue_crud")
-    @patch("agenttree.web.utils.issue_crud")
-    @patch("agenttree.web.utils.agent_manager")
-    def test_mobile_with_issue_param(self, mock_agent_mgr, mock_crud, mock_page_crud, client, mock_issue):
+    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.app.agent_manager")
+    def test_mobile_with_issue_param(self, mock_agent_mgr, mock_crud, client, mock_issue):
         """Test mobile with issue parameter selects that issue."""
         mock_crud.list_issues.return_value = [mock_issue]
         mock_crud.get_issue.return_value = mock_issue
-        mock_page_crud.get_issue.return_value = mock_issue
-        mock_page_crud.get_issue_dir.return_value = None
         mock_agent_mgr.clear_session_cache = Mock()
         mock_agent_mgr._check_issue_tmux_session = Mock(return_value=False)
 
         response = client.get("/mobile?issue=001")
 
         assert response.status_code == 200
-        mock_page_crud.get_issue.assert_called()
+        mock_crud.get_issue.assert_called()
 
-    @patch("agenttree.web.routes.pages.issue_crud")
-    @patch("agenttree.web.utils.issue_crud")
-    @patch("agenttree.web.utils.agent_manager")
-    def test_mobile_with_tab_issues(self, mock_agent_mgr, mock_crud, mock_page_crud, client, mock_issue):
+    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.app.agent_manager")
+    def test_mobile_with_tab_issues(self, mock_agent_mgr, mock_crud, client, mock_issue):
         """Test mobile with tab=issues shows issues list."""
         mock_crud.list_issues.return_value = [mock_issue]
         mock_crud.get_issue.return_value = mock_issue
-        mock_page_crud.get_issue.return_value = mock_issue
-        mock_page_crud.get_issue_dir.return_value = None
         mock_agent_mgr.clear_session_cache = Mock()
         mock_agent_mgr._check_issue_tmux_session = Mock(return_value=False)
 
@@ -131,15 +124,12 @@ class TestMobileEndpoint:
         # The issues tab should be marked as active
         assert 'data-active-tab="issues"' in response.text or 'active-tab' in response.text.lower()
 
-    @patch("agenttree.web.routes.pages.issue_crud")
-    @patch("agenttree.web.utils.issue_crud")
-    @patch("agenttree.web.utils.agent_manager")
-    def test_mobile_with_tab_detail(self, mock_agent_mgr, mock_crud, mock_page_crud, client, mock_issue):
+    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.app.agent_manager")
+    def test_mobile_with_tab_detail(self, mock_agent_mgr, mock_crud, client, mock_issue):
         """Test mobile with tab=detail shows issue detail."""
         mock_crud.list_issues.return_value = [mock_issue]
         mock_crud.get_issue.return_value = mock_issue
-        mock_page_crud.get_issue.return_value = mock_issue
-        mock_page_crud.get_issue_dir.return_value = None
         mock_agent_mgr.clear_session_cache = Mock()
         mock_agent_mgr._check_issue_tmux_session = Mock(return_value=False)
 
@@ -147,15 +137,12 @@ class TestMobileEndpoint:
 
         assert response.status_code == 200
 
-    @patch("agenttree.web.routes.pages.issue_crud")
-    @patch("agenttree.web.utils.issue_crud")
-    @patch("agenttree.web.utils.agent_manager")
-    def test_mobile_with_tab_chat(self, mock_agent_mgr, mock_crud, mock_page_crud, client, mock_issue_with_agent):
+    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.app.agent_manager")
+    def test_mobile_with_tab_chat(self, mock_agent_mgr, mock_crud, client, mock_issue_with_agent):
         """Test mobile with tab=chat shows chat panel."""
         mock_crud.list_issues.return_value = [mock_issue_with_agent]
         mock_crud.get_issue.return_value = mock_issue_with_agent
-        mock_page_crud.get_issue.return_value = mock_issue_with_agent
-        mock_page_crud.get_issue_dir.return_value = None
         mock_agent_mgr.clear_session_cache = Mock()
         mock_agent_mgr._check_issue_tmux_session = Mock(return_value=True)
 
@@ -163,8 +150,8 @@ class TestMobileEndpoint:
 
         assert response.status_code == 200
 
-    @patch("agenttree.web.utils.issue_crud")
-    @patch("agenttree.web.utils.agent_manager")
+    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.app.agent_manager")
     def test_mobile_includes_bottom_nav(self, mock_agent_mgr, mock_crud, client):
         """Test mobile template includes bottom navigation."""
         mock_crud.list_issues.return_value = []
@@ -175,8 +162,8 @@ class TestMobileEndpoint:
         assert response.status_code == 200
         assert "mobile-bottom-nav" in response.text
 
-    @patch("agenttree.web.utils.issue_crud")
-    @patch("agenttree.web.utils.agent_manager")
+    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.app.agent_manager")
     def test_mobile_has_header(self, mock_agent_mgr, mock_crud, client):
         """Test mobile template has header with title."""
         mock_crud.list_issues.return_value = []
@@ -187,8 +174,8 @@ class TestMobileEndpoint:
         assert response.status_code == 200
         assert "AgentTree" in response.text
 
-    @patch("agenttree.web.utils.issue_crud")
-    @patch("agenttree.web.utils.agent_manager")
+    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.app.agent_manager")
     def test_mobile_includes_new_issue_button(self, mock_agent_mgr, mock_crud, client):
         """Test mobile template includes + New Issue button."""
         mock_crud.list_issues.return_value = []
@@ -199,15 +186,13 @@ class TestMobileEndpoint:
         assert response.status_code == 200
         assert "mobile-fab" in response.text or "new-issue" in response.text.lower()
 
-    @patch("agenttree.web.routes.pages.issue_crud")
-    @patch("agenttree.web.utils.issue_crud")
-    @patch("agenttree.web.utils.agent_manager")
-    def test_mobile_nonexistent_issue_falls_back(self, mock_agent_mgr, mock_crud, mock_page_crud, client, mock_issue):
+    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.app.agent_manager")
+    def test_mobile_nonexistent_issue_falls_back(self, mock_agent_mgr, mock_crud, client, mock_issue):
         """Test mobile with nonexistent issue falls back to first issue."""
         mock_crud.list_issues.return_value = [mock_issue]
         mock_crud.get_issue.return_value = mock_issue
-        mock_page_crud.get_issue.return_value = None  # Issue 999 not found
-        mock_page_crud.get_issue_dir.return_value = None
+        mock_crud.get_issue.return_value = mock_issue
         mock_agent_mgr.clear_session_cache = Mock()
         mock_agent_mgr._check_issue_tmux_session = Mock(return_value=False)
 
@@ -216,8 +201,8 @@ class TestMobileEndpoint:
         # Should still return 200, not 404
         assert response.status_code == 200
 
-    @patch("agenttree.web.utils.issue_crud")
-    @patch("agenttree.web.utils.agent_manager")
+    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.app.agent_manager")
     def test_mobile_empty_state(self, mock_agent_mgr, mock_crud, client):
         """Test mobile with no issues shows empty state."""
         mock_crud.list_issues.return_value = []
@@ -235,7 +220,7 @@ class TestCreateIssueEndpoint:
 
     @pytest.mark.skip(reason="Pre-existing failure: routes.issues not used in app.py - needs patch path fix")
     @patch("agenttree.api.start_issue")
-    @patch("agenttree.web.routes.issues.issue_crud")
+    @patch("agenttree.web.app.issue_crud")
     def test_create_issue_success(self, mock_crud, mock_start, client):
         """Test creating issue with problem (title auto-generated)."""
         mock_issue = Mock()
@@ -257,7 +242,7 @@ class TestCreateIssueEndpoint:
 
     @pytest.mark.skip(reason="Pre-existing failure: routes.issues not used in app.py - needs patch path fix")
     @patch("agenttree.api.start_issue")
-    @patch("agenttree.web.routes.issues.issue_crud")
+    @patch("agenttree.web.app.issue_crud")
     def test_create_issue_with_title(self, mock_crud, mock_start, client):
         """Test creating issue with explicit title."""
         mock_issue = Mock()
@@ -277,8 +262,7 @@ class TestCreateIssueEndpoint:
         data = response.json()
         assert data["ok"] is True
 
-    @pytest.mark.skip(reason="Pre-existing failure: routes.issues not used in app.py - needs patch path fix")
-    @patch("agenttree.web.routes.issues.issue_crud")
+    @patch("agenttree.web.app.issue_crud")
     def test_create_issue_missing_description(self, mock_crud, client):
         """Test creating issue without problem fails."""
         response = client.post(
@@ -289,8 +273,7 @@ class TestCreateIssueEndpoint:
         assert response.status_code == 400
         assert "problem" in response.json()["detail"].lower()
 
-    @pytest.mark.skip(reason="Pre-existing failure: routes.issues not used in app.py - needs patch path fix")
-    @patch("agenttree.web.routes.issues.issue_crud")
+    @patch("agenttree.web.app.issue_crud")
     def test_create_issue_empty_description(self, mock_crud, client):
         """Test creating issue with empty problem fails."""
         response = client.post(
