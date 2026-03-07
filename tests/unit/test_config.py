@@ -715,6 +715,36 @@ class TestSaveTmuxHistoryConfig:
         assert config.save_tmux_history is False
 
 
+class TestAutoStartOnCreateConfig:
+    """Tests for auto_start_on_create config option."""
+
+    def test_auto_start_on_create_defaults_true(self) -> None:
+        """auto_start_on_create should default to True."""
+        config = Config()
+        assert config.auto_start_on_create is True
+
+    def test_auto_start_on_create_can_be_disabled(self) -> None:
+        """auto_start_on_create should be configurable to False."""
+        config = Config(auto_start_on_create=False)
+        assert config.auto_start_on_create is False
+
+    def test_auto_start_on_create_from_yaml(self, tmp_path: Path) -> None:
+        """auto_start_on_create should be loadable from YAML config."""
+        config_file = tmp_path / ".agenttree.yaml"
+        config_file.write_text("auto_start_on_create: false")
+
+        config = load_config(tmp_path)
+        assert config.auto_start_on_create is False
+
+    def test_auto_start_on_create_true_from_yaml(self, tmp_path: Path) -> None:
+        """auto_start_on_create: true should be loadable from YAML config."""
+        config_file = tmp_path / ".agenttree.yaml"
+        config_file.write_text("auto_start_on_create: true")
+
+        config = load_config(tmp_path)
+        assert config.auto_start_on_create is True
+
+
 class TestConditionalStages:
     """Tests for conditional stage execution."""
 

@@ -479,6 +479,7 @@ class Config(BaseModel):
     on: OnConfig | None = None
     rate_limit_fallback: RateLimitFallbackConfig = Field(default_factory=RateLimitFallbackConfig)
     allow_self_approval: bool = False
+    auto_start_on_create: bool = True
     containers: dict[str, ContainerTypeConfig] = Field(default_factory=dict)
 
     # ── Port / path helpers ──────────────────────────────────────────

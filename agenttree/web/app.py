@@ -1190,11 +1190,11 @@ async def start_issue(
 ) -> dict:
     """Start an agent to work on an issue."""
     import asyncio
-    from agenttree.api import start_agent, IssueNotFoundError, AgentStartError
+    from agenttree.api import start_issue, IssueNotFoundError, AgentStartError
 
     try:
         # Use force=True to restart stalled agents (tmux dead but state exists)
-        await asyncio.to_thread(start_agent, issue_id, force=True, quiet=True)
+        await asyncio.to_thread(start_issue, issue_id, force=True, quiet=True)
         return {"ok": True, "status": f"Started agent for issue #{issue_id}"}
     except IssueNotFoundError:
         raise HTTPException(status_code=404, detail=f"Issue #{issue_id} not found")
@@ -1458,7 +1458,7 @@ async def create_issue_api(
         attachments.append((file.filename, content))
 
     import asyncio
-    from agenttree.api import start_agent
+    from agenttree.api import start_issue
 
     try:
         issue = issue_crud.create_issue(
@@ -1468,12 +1468,13 @@ async def create_issue_api(
             attachments=attachments or None,
         )
 
-        # Auto-start agent for the new issue
-        try:
-            await asyncio.to_thread(start_agent, issue.id, quiet=True)
-        except Exception as e:
-            # Log but don't fail - issue was created, agent start is optional
-            logger.warning("Could not auto-start agent for issue #%s: %s", issue.id, e)
+        # Auto-start agent for the new issue (if enabled in config)
+        if _config.auto_start_on_create:
+            try:
+                await asyncio.to_thread(start_issue, issue.id, quiet=True)
+            except Exception as e:
+                # Log but don't fail - issue was created, agent start is optional
+                logger.warning("Could not auto-start agent for issue #%s: %s", issue.id, e)
 
         return {"ok": True, "issue_id": issue.id, "title": issue.title}
     except Exception as e:
@@ -1752,7 +1753,7 @@ async def voice_tool_call(
         create_issue as mcp_create,
         approve as mcp_approve,
         get_agent_output as mcp_output,
-        start_agent as mcp_start,
+        start_issue as mcp_start,
         stop_agent as mcp_stop,
     )
 

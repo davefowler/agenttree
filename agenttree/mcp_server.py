@@ -215,6 +215,7 @@ def create_issue(title: str, description: str) -> str:
         description: Detailed description of what needs to be done (at least 50 characters)
     """
     from agenttree.api import start_issue as api_start, AgentStartError
+    from agenttree.config import load_config
     from agenttree.issues import create_issue as _create_issue, Priority
 
     if len(title) < 10:
@@ -227,7 +228,11 @@ def create_issue(title: str, description: str) -> str:
     except (RuntimeError, ValueError, OSError) as e:
         return f"Failed to create issue: {e}"
 
-    # Auto-start agent
+    # Auto-start agent (if enabled in config)
+    config = load_config()
+    if not config.auto_start_on_create:
+        return f"Created issue #{issue.id}: {issue.title}. Use 'agenttree start {issue.id}' to start an agent."
+
     try:
         api_start(issue.id, quiet=True)
         return f"Created issue #{issue.id}: {issue.title}. Agent started and working."

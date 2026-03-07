@@ -765,6 +765,66 @@ class TestIssueCreateCommand:
         assert "agenttree start" in result.output
         mock_start_issue.assert_not_called()
 
+    def test_issue_create_respects_config_auto_start_disabled(self, cli_runner, mock_config, tmp_path):
+        """Should skip auto-start when config.auto_start_on_create is False."""
+        from agenttree.cli import main
+
+        mock_config.agents_dir = tmp_path / "_agenttree"
+        mock_config.agents_dir.mkdir()
+        (mock_config.agents_dir / "issues").mkdir()
+        (mock_config.agents_dir / "skills").mkdir()
+        mock_config.auto_start_on_create = False
+
+        mock_issue = MagicMock()
+        mock_issue.id = "42"
+        mock_issue.title = "A valid issue title here"
+        mock_issue.slug = "a-valid-issue-title-here"
+        mock_issue.stage = "explore.define"
+        mock_issue.dependencies = None
+
+        problem = "This is a detailed problem statement that is at least 50 characters long for the test."
+
+        with patch("agenttree.cli.issues.load_config", return_value=mock_config):
+            with patch("agenttree.cli.issues.create_issue_func", return_value=mock_issue):
+                with patch("agenttree.cli.agents.start_issue") as mock_start_issue:
+                    result = cli_runner.invoke(main, ["issue", "create", "A valid issue title here", "--problem", problem])
+
+        assert result.exit_code == 0
+        # Should show "Next steps" message, not auto-start
+        assert "Next steps" in result.output
+        assert "agenttree start" in result.output
+        mock_start_issue.assert_not_called()
+
+    def test_issue_create_no_start_flag_overrides_config(self, cli_runner, mock_config, tmp_path):
+        """--no-start flag should work even when config.auto_start_on_create is True."""
+        from agenttree.cli import main
+
+        mock_config.agents_dir = tmp_path / "_agenttree"
+        mock_config.agents_dir.mkdir()
+        (mock_config.agents_dir / "issues").mkdir()
+        (mock_config.agents_dir / "skills").mkdir()
+        mock_config.auto_start_on_create = True  # Config says auto-start
+
+        mock_issue = MagicMock()
+        mock_issue.id = "42"
+        mock_issue.title = "A valid issue title here"
+        mock_issue.slug = "a-valid-issue-title-here"
+        mock_issue.stage = "explore.define"
+        mock_issue.dependencies = None
+
+        problem = "This is a detailed problem statement that is at least 50 characters long for the test."
+
+        with patch("agenttree.cli.issues.load_config", return_value=mock_config):
+            with patch("agenttree.cli.issues.create_issue_func", return_value=mock_issue):
+                with patch("agenttree.cli.agents.start_issue") as mock_start_issue:
+                    result = cli_runner.invoke(main, ["issue", "create", "A valid issue title here", "--problem", problem, "--no-start"])
+
+        assert result.exit_code == 0
+        # Should show "Next steps" message, not auto-start
+        assert "Next steps" in result.output
+        assert "agenttree start" in result.output
+        mock_start_issue.assert_not_called()
+
 
 class TestStatusCommand:
     """Tests for the status command."""
