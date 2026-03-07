@@ -7,7 +7,7 @@
 
 ## Overview
 
-Replace GitHub-centric workflow with a custom kanban board backed by a separate `agents/` repository. Each issue moves through well-defined stages with automated scripts handling busy work and stage-specific skills guiding agents.
+Replace GitHub-centric workflow with a custom kanban board backed by a separate `_agenttree/` repository. Each issue moves through well-defined stages with automated scripts handling busy work and stage-specific skills guiding agents.
 
 ---
 
@@ -79,10 +79,10 @@ Replace GitHub-centric workflow with a custom kanban board backed by a separate 
 
 ## Repository Structure
 
-### agents/ Repository
+### _agenttree/ Repository
 
 ```
-agents/
+_agenttree/
 ├── .git/                      # Separate git repo
 ├── issues/                    # One dir per issue
 │   ├── 001-login-bug/
@@ -121,14 +121,14 @@ myproject/
 ├── .git/
 ├── src/
 ├── tests/
-├── agents/                   # Git submodule → agents repo
+├── _agenttree/                   # Git submodule → agents repo
 ├── scripts/
 │   ├── quick_ci.sh          # Fast checks (lint, format)
 │   ├── ci.sh                # Standard test suite
 │   └── extensive_ci.sh      # Full integration tests
 └── .agenttree/
     ├── config.yaml
-    └── skills/              # Symlink to agents/skills/
+    └── skills/              # Symlink to _agenttree/skills/
 ```
 
 ---
@@ -151,7 +151,7 @@ No task switching, no "pick up work later". Simplifies everything:
 agenttree assign 1 42
 
 # Creates:
-# 1. agents/issues/042-title/ directory
+# 1. _agenttree/issues/042-title/ directory
 # 2. Worktree at ~/Projects/worktrees/agent-1/
 # 3. Starts agent in tmux with stage 1 instructions
 ```
@@ -159,7 +159,7 @@ agenttree assign 1 42
 ### Stage Transitions
 
 Each stage transition:
-1. Pulls agents/ repo
+1. Pulls _agenttree/ repo
 2. Updates `issue.yaml` with new stage
 3. Commits and pushes
 4. Loads new stage-specific skills
@@ -185,7 +185,7 @@ agenttree next-stage
 
 - **Backend:** FastAPI (already using)
 - **Frontend:** HTMX + minimal JS for drag-drop
-- **State:** agents/ git repo (backend pulls latest on each request)
+- **State:** _agenttree/ git repo (backend pulls latest on each request)
 
 ### Features
 
@@ -235,9 +235,9 @@ agenttree next-stage
 
 ```bash
 #!/bin/bash
-# Create a new issue in agents/ repo
+# Create a new issue in _agenttree/ repo
 
-cd agents/
+cd _agenttree/
 git pull origin main
 
 ISSUE_NUM=$(find issues/ -maxdepth 1 -type d | wc -l)
@@ -271,7 +271,7 @@ echo "Created issue #$ISSUE_NUM"
 ISSUE_NUM=$1
 NEW_STAGE=$2
 
-cd agents/
+cd _agenttree/
 git pull origin main
 
 ISSUE_DIR=$(find issues/ -name "$ISSUE_NUM-*" -type d)
@@ -304,7 +304,7 @@ echo "Moved to stage: $NEW_STAGE"
 ISSUE_NUM=$1
 DOC=$2  # e.g., "problem.md" or "plan.md"
 
-cd agents/
+cd _agenttree/
 git pull origin main
 
 ISSUE_DIR=$(find issues/ -name "$ISSUE_NUM-*" -type d)
@@ -419,7 +419,7 @@ echo "✅ Extensive CI passed!"
 
 Each stage loads different instructions/tools for the agent.
 
-### agents/skills/1-problem/understand-problem.md
+### _agenttree/skills/1-problem/understand-problem.md
 
 ```markdown
 # Skill: Understand the Problem
@@ -476,7 +476,7 @@ Create `problem.md` in your issue directory:
 Run: `agenttree next-stage` to move to Problem Review
 ```
 
-### agents/skills/5-implement/tdd-workflow.md
+### _agenttree/skills/5-implement/tdd-workflow.md
 
 ```markdown
 # Skill: TDD Implementation
@@ -577,7 +577,7 @@ Replace PR reviews with direct API calls.
 
 ISSUE_NUM=$1
 
-cd agents/
+cd _agenttree/
 ISSUE_DIR=$(find issues/ -name "$ISSUE_NUM-*" -type d)
 
 # Get diff
@@ -616,7 +616,7 @@ Format as markdown with specific line references."""
 review = response.content[0].text
 
 # Save to review.md
-with open("agents/$ISSUE_DIR/review.md", "w") as f:
+with open("_agenttree/$ISSUE_DIR/review.md", "w") as f:
     f.write("# Code Review\n\n")
     f.write(review)
 
@@ -624,7 +624,7 @@ print(review)
 EOF
 
 # Commit review
-cd agents/
+cd _agenttree/
 git add "$ISSUE_DIR/review.md"
 git commit -m "Add Claude review for issue #$ISSUE_NUM"
 git push origin main
@@ -639,7 +639,7 @@ echo "Review saved to $ISSUE_DIR/review.md"
 ### Phase 1: Repository Setup (Week 1)
 
 **Tasks:**
-- [ ] Create agents/ git repository
+- [ ] Create _agenttree/ git repository
 - [ ] Setup directory structure (issues/, templates/, scripts/, skills/)
 - [ ] Create helper scripts (new-issue.sh, move-stage.sh, edit-issue.sh)
 - [ ] Write stage templates (problem.md, plan.md, review.md)
@@ -647,7 +647,7 @@ echo "Review saved to $ISSUE_DIR/review.md"
 
 **CLI commands:**
 ```bash
-agenttree init-agents-repo     # Creates agents/ repo
+agenttree init-agents-repo     # Creates _agenttree/ repo
 agenttree new-issue "title"    # Wraps scripts/new-issue.sh
 agenttree move-stage 42 3      # Wraps scripts/move-stage.sh
 ```
@@ -662,7 +662,7 @@ agenttree move-stage 42 3      # Wraps scripts/move-stage.sh
   - `PUT /api/issues/{id}/docs/{doc}` - Update document
   - `POST /api/issues/{id}/review` - Trigger Claude review
 
-- [ ] Add state sync: Pull agents/ repo before each request
+- [ ] Add state sync: Pull _agenttree/ repo before each request
 
 **Frontend:**
 - [ ] Create kanban.html template
@@ -701,7 +701,7 @@ agenttree move-stage 42 3      # Wraps scripts/move-stage.sh
 **Commands:**
 ```bash
 agenttree assign <agent_num> <issue_num>
-# - Creates issue dir in agents/
+# - Creates issue dir in _agenttree/
 # - Creates worktree for agent
 # - Starts agent with stage 1 skills
 # - Agent works until completion
@@ -724,7 +724,7 @@ agenttree assign <agent_num> <issue_num>
 - Need to sync if want GitHub visibility
 - One more repo to manage
 
-**Decision:** Use separate repo. Optionally sync to GitHub Issues for visibility, but agents/ is source of truth.
+**Decision:** Use separate repo. Optionally sync to GitHub Issues for visibility, but _agenttree/ is source of truth.
 
 ### 2. Why One Agent Per Task?
 
@@ -775,7 +775,7 @@ agenttree assign <agent_num> <issue_num>
 
 ```bash
 agenttree new-issue "fix-login-bug" "Login fails with empty password"
-# Creates: agents/issues/042-fix-login-bug/issue.yaml
+# Creates: _agenttree/issues/042-fix-login-bug/issue.yaml
 # Stage: backlog
 ```
 
@@ -828,19 +828,19 @@ agenttree assign 1 42
 **Stage 7: Accepted**
 - Issue complete!
 - Agent worktree freed
-- Issue moved to agents/issues/archive/
+- Issue moved to _agenttree/issues/archive/
 
 ---
 
 ## FAQ
 
 **Q: Do we still use GitHub Issues?**
-A: Optional. You can sync agents/ issues to GitHub for visibility, or just use agents/ as single source of truth.
+A: Optional. You can sync _agenttree/ issues to GitHub for visibility, or just use _agenttree/ as single source of truth.
 
 **Q: What if multiple people work on the codebase?**
-A: agents/ repo syncs like any git repo. Pull before editing, push after. Helper scripts do this automatically.
+A: _agenttree/ repo syncs like any git repo. Pull before editing, push after. Helper scripts do this automatically.
 
-**Q: How do we handle merge conflicts in agents/?**
+**Q: How do we handle merge conflicts in _agenttree/?**
 A: Rare (each issue in own dir). If it happens, resolve like normal git conflict.
 
 **Q: Can users edit issues directly in web UI?**
@@ -857,7 +857,7 @@ A: issue.yaml has timestamps. Can add time tracking fields if needed.
 ## Next Steps
 
 1. **Review this plan** - Does it address your needs?
-2. **Decide on repo name** - agents/ or something else?
+2. **Decide on repo name** - _agenttree/ or something else?
 3. **Start Phase 1** - Setup repository structure
 4. **Build kanban UI** - Start with static HTML, add interactivity
 5. **Test with one issue** - Walk through full lifecycle

@@ -285,6 +285,7 @@ flows:
 
       accepted:
         is_parking_lot: true
+        is_completion: true
         color: "#6b7280"
         role: manager
         post_start:
@@ -294,6 +295,7 @@ flows:
 
       not_doing:
         is_parking_lot: true
+        is_abandon: true
         redirect_only: true
         color: "#6b7280"
 

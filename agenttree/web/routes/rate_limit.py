@@ -1,13 +1,14 @@
 """Rate limit API routes."""
 
+import asyncio
 import os
-import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
 
 from agenttree.actions import load_rate_limit_state, save_rate_limit_state
+from agenttree.api import start_issue
 from agenttree.config import load_config
 from agenttree.web.deps import get_current_user
 
@@ -83,33 +84,28 @@ async def switch_to_api_key_mode(
     if state.get("mode") == "api_key":
         raise HTTPException(status_code=400, detail="Already running in API key mode")
 
-    # Restart all affected agents with --api-key flag
+    # Restart all affected agents with force_api_key=True
     affected_agents = state.get("affected_agents", [])
     restarted = 0
-    failed = []
+    failed: list[dict[str, object]] = []
 
     for agent_info in affected_agents:
         issue_id = agent_info.get("issue_id")
         if not issue_id:
             continue
 
-        result = subprocess.run(
-            [
-                "agenttree",
-                "start",
-                str(issue_id),
-                "--api-key",
-                "--skip-preflight",
-                "--force",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=120,  # Container startup can be slow
-        )
-        if result.returncode == 0:
+        try:
+            await asyncio.to_thread(
+                start_issue,
+                issue_id,
+                force=True,
+                skip_preflight=True,
+                force_api_key=True,
+                quiet=True,
+            )
             restarted += 1
-        else:
-            failed.append({"issue_id": issue_id, "error": result.stderr[:200]})
+        except Exception as e:
+            failed.append({"issue_id": issue_id, "error": str(e)[:200]})
 
     # Update state to reflect API key mode
     state["mode"] = "api_key"

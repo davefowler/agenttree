@@ -8,7 +8,7 @@ This document summarizes the planning decisions for AgentTree implementation.
 
 ### 1. Agents Repository Structure
 
-**Decision:** Use `agents/` folder (not `.agentree/`)
+**Decision:** Use `_agenttree/` folder (not `.agentree/`)
 - Separate git repository, ignored by parent
 - Created as GitHub repo: `<project-name>-agents`
 - Managed automatically by AgentTree
@@ -43,7 +43,7 @@ This document summarizes the planning decisions for AgentTree implementation.
 Based on research (see `docs/agent-notes-research.md`):
 
 ```
-agents/
+_agenttree/
 ├── templates/          # Consistency templates
 ├── specs/              # Living documentation
 │   ├── architecture/

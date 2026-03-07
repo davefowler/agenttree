@@ -13,6 +13,9 @@ from agenttree.dependencies import GH_CLI_INSTALL_INSTRUCTIONS
 
 log = logging.getLogger("agenttree.github")
 
+# Default timeout for gh CLI commands (seconds) - network calls can hang indefinitely without this
+GH_COMMAND_TIMEOUT = 60
+
 
 @dataclass
 class Issue:
@@ -73,11 +76,18 @@ def ensure_gh_cli() -> None:
         )
 
     # Check if authenticated
-    result = subprocess.run(
-        ["gh", "auth", "status"],
-        capture_output=True,
-        text=True
-    )
+    try:
+        result = subprocess.run(
+            ["gh", "auth", "status"],
+            capture_output=True,
+            text=True,
+            timeout=GH_COMMAND_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(
+            "GitHub CLI auth check timed out.\n\n"
+            "This may indicate network issues or gh CLI problems.\n"
+        )
 
     if result.returncode != 0:
         raise RuntimeError(
@@ -87,26 +97,31 @@ def ensure_gh_cli() -> None:
         )
 
 
-def gh_command(args: List[str]) -> str:
+def gh_command(args: List[str], timeout: int | None = None) -> str:
     """Run a gh (GitHub CLI) command.
 
     Args:
         args: Command arguments
+        timeout: Command timeout in seconds (defaults to GH_COMMAND_TIMEOUT)
 
     Returns:
         Command output
 
     Raises:
-        RuntimeError: If gh command fails
+        RuntimeError: If gh command fails or times out
     """
+    cmd_timeout = timeout if timeout is not None else GH_COMMAND_TIMEOUT
     try:
         result = subprocess.run(
             ["gh"] + args,
             capture_output=True,
             text=True,
             check=True,
+            timeout=cmd_timeout,
         )
         return result.stdout.strip()
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"GitHub CLI command timed out after {cmd_timeout}s: gh {' '.join(args)}")
     except subprocess.CalledProcessError as e:
         raise RuntimeError(f"GitHub CLI command failed: {e.stderr}") from e
 

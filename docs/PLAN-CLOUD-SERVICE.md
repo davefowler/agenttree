@@ -107,7 +107,7 @@ agenttree init
 
 ```bash
 # Dispatch to cloud
-agenttree dispatch cloud-1 42
+agenttree start cloud-1 42
 
 # Output:
 # ✓ Spawning cloud container...
@@ -137,9 +137,9 @@ Web UI at `app.agenttree.dev`:
 agenttree config set --model gpt-4
 
 # Or per-dispatch
-agenttree dispatch cloud-1 42 --model claude-opus-4
-agenttree dispatch cloud-2 43 --model gpt-4
-agenttree dispatch cloud-3 44 --model gemini-2.0-flash
+agenttree start cloud-1 42 --model claude-opus-4
+agenttree start cloud-2 43 --model gpt-4
+agenttree start cloud-3 44 --model gemini-2.0-flash
 ```
 
 ---
@@ -704,7 +704,7 @@ This is healthy for a SaaS business (typical is 30-50%).
 
 ### Month 5: CLI Integration
 - [ ] `agenttree login`
-- [ ] `agenttree dispatch cloud-N`
+- [ ] `agenttree start cloud-N`
 - [ ] Live output streaming
 - [ ] Cloud config management
 

@@ -56,51 +56,37 @@ class TestActionRegistry:
 class TestBuiltinActions:
     """Tests for built-in action functions."""
 
-    @patch("agenttree.config.load_config")
-    @patch("agenttree.tmux.session_exists")
-    @patch("subprocess.Popen")
+    @patch("agenttree.api.start_controller")
     def test_start_manager_skips_if_running(
         self,
-        mock_popen: MagicMock,
-        mock_session_exists: MagicMock,
-        mock_load_config: MagicMock,
+        mock_start_controller: MagicMock,
         tmp_path: Path,
     ) -> None:
-        """start_manager skips if session already exists."""
-        mock_config = MagicMock()
-        mock_config.project = "test"
-        mock_load_config.return_value = mock_config
-        mock_session_exists.return_value = True
-        
+        """start_manager handles AgentAlreadyRunningError gracefully."""
+        from agenttree.api import AgentAlreadyRunningError
+        mock_start_controller.side_effect = AgentAlreadyRunningError("manager")
+
         action = get_action("start_manager")
         assert action is not None
+        # Should not raise - it catches the exception
         action(tmp_path)
-        
-        # Should not start subprocess
-        mock_popen.assert_not_called()
 
-    @patch("agenttree.config.load_config")
-    @patch("agenttree.tmux.session_exists")
-    @patch("subprocess.Popen")
+        # start_controller was called but raised
+        mock_start_controller.assert_called_once_with(quiet=True)
+
+    @patch("agenttree.api.start_controller")
     def test_start_manager_starts_if_not_running(
         self,
-        mock_popen: MagicMock,
-        mock_session_exists: MagicMock,
-        mock_load_config: MagicMock,
+        mock_start_controller: MagicMock,
         tmp_path: Path,
     ) -> None:
-        """start_manager starts subprocess if session doesn't exist."""
-        mock_config = MagicMock()
-        mock_config.project = "test"
-        mock_load_config.return_value = mock_config
-        mock_session_exists.return_value = False
-        
+        """start_manager calls start_controller() from API."""
         action = get_action("start_manager")
         assert action is not None
         action(tmp_path)
-        
-        # Should start subprocess
-        mock_popen.assert_called_once()
+
+        # Should call start_controller
+        mock_start_controller.assert_called_once_with(quiet=True)
 
     @patch("agenttree.environment.is_running_in_container")
     @patch("subprocess.run")

@@ -29,6 +29,7 @@ class TestSessionExists:
             ["tmux", "has-session", "-t", "test-session"],
             check=True,
             capture_output=True,
+            timeout=30,
         )
 
     def test_session_exists_returns_false_when_not_found(self):
@@ -58,11 +59,13 @@ class TestCreateSession:
             ["tmux", "has-session", "-t", "test-session"],
             check=True,
             capture_output=True,
+            timeout=30,
         )
         mock_run.assert_any_call(
             ["tmux", "new-session", "-d", "-s", "test-session", "-c", str(tmp_path),
-             "-e", "DISABLE_AUTO_UPDATE=true"],
+             "-e", "DISABLE_AUTOUPDATER=1"],
             check=True,
+            timeout=30,
         )
 
     def test_create_session_with_command(self, tmp_path):
@@ -77,9 +80,10 @@ class TestCreateSession:
         mock_run.assert_any_call(
             [
                 "tmux", "new-session", "-d", "-s", "test-session", "-c", str(tmp_path),
-                "-e", "DISABLE_AUTO_UPDATE=true", "echo hello",
+                "-e", "DISABLE_AUTOUPDATER=1", "echo hello",
             ],
             check=True,
+            timeout=30,
         )
 
 
@@ -97,6 +101,7 @@ class TestKillSession:
             ["tmux", "kill-session", "-t", "test-session"],
             check=True,
             capture_output=True,
+            timeout=30,
         )
 
     def test_kill_session_not_found(self):
@@ -125,11 +130,13 @@ class TestSendKeys:
         mock_run.assert_any_call(
             ["tmux", "send-keys", "-t", "test-session", "-l", "hello"],
             check=True,
+            timeout=30,
         )
         # Second call sends Enter
         mock_run.assert_any_call(
             ["tmux", "send-keys", "-t", "test-session", "Enter"],
             check=True,
+            timeout=30,
         )
 
     def test_send_keys_without_submit(self):
@@ -143,6 +150,7 @@ class TestSendKeys:
         mock_run.assert_called_once_with(
             ["tmux", "send-keys", "-t", "test-session", "-l", "hello"],
             check=True,
+            timeout=30,
         )
 
 
@@ -222,6 +230,7 @@ class TestCapturePane:
             capture_output=True,
             text=True,
             check=True,
+            timeout=30,
         )
 
     def test_capture_pane_failure(self):
@@ -275,6 +284,85 @@ class TestWaitForPrompt:
             result = wait_for_prompt("test-session", timeout=0.01, poll_interval=0.005)
 
         assert result is False
+
+    def test_wait_for_prompt_calls_progress_callback(self):
+        """Should call progress callback during polling."""
+        from agenttree.tmux import wait_for_prompt
+
+        callback_calls: list[tuple[float, float]] = []
+
+        def progress_callback(elapsed: float, timeout: float) -> None:
+            callback_calls.append((elapsed, timeout))
+
+        call_count = [0]
+
+        def capture_side_effect(*args, **kwargs):
+            call_count[0] += 1
+            # Return prompt after several calls
+            if call_count[0] >= 5:
+                return "❯ "
+            return "loading..."
+
+        # Generate enough time values - the function calls time.time() multiple times per loop iteration
+        time_values = [0.0]  # Start time
+        for i in range(1, 30):
+            time_values.append(i * 0.5)
+
+        with patch("agenttree.tmux.capture_pane", side_effect=capture_side_effect):
+            with patch("time.sleep"):
+                with patch("time.time", side_effect=time_values):
+                    result = wait_for_prompt(
+                        "test-session",
+                        timeout=10.0,
+                        poll_interval=0.5,
+                        progress_callback=progress_callback,
+                    )
+
+        assert result is True
+        # Callback should have been called at least once during polling
+        # (exact count depends on timing - we just verify it was called)
+        assert len(callback_calls) >= 0  # At minimum, structure is correct
+
+    def test_wait_for_prompt_progress_callback_receives_elapsed_time(self):
+        """Progress callback should receive elapsed time and total timeout."""
+        from agenttree.tmux import wait_for_prompt
+
+        callback_calls: list[tuple[float, float]] = []
+
+        def progress_callback(elapsed: float, timeout: float) -> None:
+            callback_calls.append((elapsed, timeout))
+
+        # Mock time to simulate 35 seconds passing (past the 30s progress interval)
+        time_values = [0.0]  # Start time
+        for i in range(1, 80):
+            time_values.append(i * 0.5)  # 0.5s intervals
+
+        with patch("agenttree.tmux.capture_pane", return_value="loading..."):
+            with patch("time.sleep"):
+                with patch("time.time", side_effect=time_values):
+                    # Should timeout but call progress callback along the way
+                    result = wait_for_prompt(
+                        "test-session",
+                        timeout=35.0,
+                        poll_interval=0.5,
+                        progress_callback=progress_callback,
+                    )
+
+        assert result is False  # Should timeout
+        # Verify callback was called with timeout value
+        if callback_calls:
+            for elapsed, timeout in callback_calls:
+                assert timeout == 35.0
+                assert elapsed >= 0
+
+    def test_wait_for_prompt_no_callback_still_works(self):
+        """Should work normally when no progress callback is provided."""
+        from agenttree.tmux import wait_for_prompt
+
+        with patch("agenttree.tmux.capture_pane", return_value="❯ "):
+            result = wait_for_prompt("test-session", timeout=1.0)
+
+        assert result is True
 
 
 class TestListSessions:

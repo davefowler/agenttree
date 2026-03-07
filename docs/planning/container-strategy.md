@@ -276,7 +276,7 @@ runtime.run(
 
 ```bash
 # Dispatch with container
-agenttree dispatch 1 42 --container
+agenttree start 1 42 --container
 
 # Behind the scenes:
 # - Detects runtime (container on macOS, docker on Linux)

@@ -1,8 +1,8 @@
-"""CLI for AgentTree - main group and document commands.
+"""CLI for AgentTree - main CLI group definition.
 
-This module contains the core CLI group and document creation commands
-that haven't been moved to submodules yet. Over time, these will be
-migrated to appropriate submodules.
+This module defines the root Click group and registers document creation
+commands. The main group is imported by cli/__init__.py and serves as
+the entry point for all agenttree CLI commands.
 """
 
 import click

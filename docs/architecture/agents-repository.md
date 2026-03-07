@@ -81,13 +81,13 @@ Example: `2026-01-15-container-abstraction.md`
 When `agenttree init` runs:
 
 ```python
-# Check if agents/.git exists
-if not (project_path / "agents" / ".git").exists():
+# Check if _agenttree/.git exists
+if not (project_path / "_agenttree" / ".git").exists():
     # Create GitHub repo: {project-name}-agents
     gh repo create {project}-agents --private
 
     # Clone locally
-    git clone git@github.com:user/{project}-agents.git agents/
+    git clone git@github.com:user/{project}-agents.git _agenttree/
 
     # Initialize structure
     create_folder_structure()
@@ -95,12 +95,12 @@ if not (project_path / "agents" / ".git").exists():
     create_knowledge_files()
 
     # Add to .gitignore
-    echo "agents/" >> .gitignore
+    echo "_agenttree/" >> .gitignore
 ```
 
 ### 2. Task Dispatch
 
-When `agenttree dispatch 1 42` runs:
+When `agenttree start 1 42` runs:
 
 ```python
 # Create/update spec from issue
@@ -224,7 +224,7 @@ agenttree init
   → AgentsRepository.ensure_repo()
 
 # Dispatch creates spec + task log
-agenttree dispatch 1 42
+agenttree start 1 42
   → AgentsRepository.create_spec_file(42, ...)
   → AgentsRepository.create_task_file(1, 42, ...)
 

@@ -371,6 +371,22 @@ class TestAgentStatusEndpoint:
         assert data["tmux_active"] is False
         assert data["status"] == "off"
 
+    @patch("agenttree.web.routes.issues.issue_crud")
+    @patch("agenttree.web.routes.issues.agent_manager")
+    def test_agent_status_returns_stage(self, mock_agent_mgr, mock_crud, client, mock_issue):
+        """Test agent status returns the issue's current stage."""
+        mock_issue.stage = "implement.code"
+        mock_crud.get_issue.return_value = mock_issue
+        mock_agent_mgr._check_issue_tmux_session.return_value = True
+
+        response = client.get("/api/issues/001/agent-status")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["stage"] == "implement.code"
+        assert data["tmux_active"] is True
+        assert data["status"] == "running"
+
 
 class TestStartIssueEndpoint:
     """Tests for start issue endpoint."""
@@ -1457,3 +1473,78 @@ class TestGetDefaultDoc:
         # Should work without ci_escalated parameter
         result = get_default_doc("plan.review")
         assert result == "spec.md"
+
+
+class TestCreateIssueAPI:
+    """Tests for the create issue API endpoint."""
+
+    @patch("agenttree.api.start_issue")
+    @patch("agenttree.web.routes.issues.issue_crud")
+    def test_create_issue_with_problem_and_solutions(self, mock_crud, mock_start, client):
+        """Test creating issue with both problem and solutions fields."""
+        mock_issue = Mock()
+        mock_issue.id = "001"
+        mock_issue.title = "Test Issue"
+        mock_crud.create_issue.return_value = mock_issue
+        mock_start.return_value = None
+
+        response = client.post(
+            "/api/issues",
+            data={
+                "problem": "This is the problem description",
+                "solutions": "This is a possible solution",
+                "title": "Test Issue"
+            }
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["ok"] is True
+        assert data["issue_id"] == "001"
+
+        # Verify create_issue was called with correct parameters
+        mock_crud.create_issue.assert_called_once()
+        call_kwargs = mock_crud.create_issue.call_args.kwargs
+        assert call_kwargs["problem"] == "This is the problem description"
+        assert call_kwargs["solutions"] == "This is a possible solution"
+
+    @patch("agenttree.api.start_issue")
+    @patch("agenttree.web.routes.issues.issue_crud")
+    def test_create_issue_with_problem_only_no_solutions(self, mock_crud, mock_start, client):
+        """Test creating issue with problem only, no solutions."""
+        mock_issue = Mock()
+        mock_issue.id = "002"
+        mock_issue.title = "Problem Only Issue"
+        mock_crud.create_issue.return_value = mock_issue
+        mock_start.return_value = None
+
+        response = client.post(
+            "/api/issues",
+            data={
+                "problem": "This is just the problem, no solutions yet",
+                "title": "Problem Only Issue"
+            }
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["ok"] is True
+
+        # Verify solutions is None when not provided
+        call_kwargs = mock_crud.create_issue.call_args.kwargs
+        assert call_kwargs["problem"] == "This is just the problem, no solutions yet"
+        assert call_kwargs["solutions"] is None
+
+    @patch("agenttree.web.routes.issues.issue_crud")
+    def test_create_issue_validation_empty_problem(self, mock_crud, client):
+        """Test that empty problem returns 400 error."""
+        response = client.post(
+            "/api/issues",
+            data={
+                "problem": "",
+                "solutions": "Some solution"
+            }
+        )
+
+        assert response.status_code == 400
+        assert "problem description" in response.json()["detail"].lower()

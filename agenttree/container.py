@@ -346,6 +346,7 @@ def build_container_command(
 
     # === 4. System env vars ===
     cmd.extend(["-e", "AGENTTREE_CONTAINER=1"])
+    cmd.extend(["-e", "DISABLE_AUTOUPDATER=1"])
     cmd.extend(["-e", f"AGENTTREE_ROLE={role}"])
 
     if issue_id is not None:

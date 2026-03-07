@@ -435,6 +435,9 @@ from agenttree import environment
 from agenttree.git_utils import has_commits_to_push, get_git_diff_stats, rebase_issue_branch
 from agenttree.pr_actions import get_pr_approval_status, _action_create_pr, _action_merge_pr
 
+# Default timeout for subprocess calls (seconds) - prevents indefinite hangs
+GIT_COMMAND_TIMEOUT = 30
+
 # =============================================================================
 # Hook Parsing
 # =============================================================================
@@ -1179,7 +1182,8 @@ def run_command_hook(
             cwd=issue_dir,
             capture_output=True,
             text=True,
-            timeout=timeout
+            timeout=timeout,
+            stdin=subprocess.DEVNULL,
         )
 
         if result.returncode != 0:
@@ -1580,12 +1584,14 @@ def get_current_branch() -> str:
 
     Raises:
         subprocess.CalledProcessError: If git command fails
+        subprocess.TimeoutExpired: If git command times out
     """
     result = subprocess.run(
         ["git", "rev-parse", "--abbrev-ref", "HEAD"],
         capture_output=True,
         text=True,
         check=True,
+        timeout=GIT_COMMAND_TIMEOUT,
     )
     return result.stdout.strip()
 
@@ -1601,6 +1607,7 @@ def has_uncommitted_changes() -> bool:
         capture_output=True,
         text=True,
         check=True,
+        timeout=GIT_COMMAND_TIMEOUT,
     )
     return bool(result.stdout.strip())
 
@@ -1614,27 +1621,35 @@ def get_default_branch() -> str:
         Default branch name (e.g., 'main' or 'master')
     """
     # Try to get from origin/HEAD symbolic ref
-    result = subprocess.run(
-        ["git", "symbolic-ref", "refs/remotes/origin/HEAD"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode == 0:
-        # Output is like "refs/remotes/origin/main"
-        ref = result.stdout.strip()
-        if ref.startswith("refs/remotes/origin/"):
-            return ref.replace("refs/remotes/origin/", "")
+    try:
+        result = subprocess.run(
+            ["git", "symbolic-ref", "refs/remotes/origin/HEAD"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=GIT_COMMAND_TIMEOUT,
+        )
+        if result.returncode == 0:
+            # Output is like "refs/remotes/origin/main"
+            ref = result.stdout.strip()
+            if ref.startswith("refs/remotes/origin/"):
+                return ref.replace("refs/remotes/origin/", "")
+    except subprocess.TimeoutExpired:
+        pass
 
     # Fallback: check if origin/main exists
-    result = subprocess.run(
-        ["git", "rev-parse", "--verify", "origin/main"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode == 0:
-        return "main"
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--verify", "origin/main"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=GIT_COMMAND_TIMEOUT,
+        )
+        if result.returncode == 0:
+            return "main"
+    except subprocess.TimeoutExpired:
+        pass
 
     # Last resort: try master
     return "master"
@@ -1652,6 +1667,7 @@ def push_branch_to_remote(branch: str) -> None:
 
     Raises:
         subprocess.CalledProcessError: If push fails
+        subprocess.TimeoutExpired: If push times out
     """
     # Explicitly specify source:destination to avoid pushing to tracked branch
     # e.g., "git push -u origin mybranch:mybranch" ensures we create/update
@@ -1661,6 +1677,7 @@ def push_branch_to_remote(branch: str) -> None:
         check=True,
         capture_output=True,
         text=True,
+        timeout=120,  # Network operation needs longer timeout
     )
 
 
@@ -1725,6 +1742,7 @@ def get_repo_remote_name() -> str:
 
     Raises:
         subprocess.CalledProcessError: If git command fails
+        subprocess.TimeoutExpired: If git command times out
         ValueError: If URL format is unrecognized
     """
     result = subprocess.run(
@@ -1732,6 +1750,7 @@ def get_repo_remote_name() -> str:
         capture_output=True,
         text=True,
         check=True,
+        timeout=GIT_COMMAND_TIMEOUT,
     )
     url = result.stdout.strip()
 
@@ -1829,12 +1848,13 @@ def auto_commit_changes(issue: Issue, stage: str) -> bool:
     message = generate_commit_message(issue, stage)
 
     # Stage all changes
-    subprocess.run(["git", "add", "-A"], check=True)
+    subprocess.run(["git", "add", "-A"], check=True, timeout=GIT_COMMAND_TIMEOUT)
 
     # Commit with generated message
     subprocess.run(
         ["git", "commit", "-m", message],
         check=True,
+        timeout=GIT_COMMAND_TIMEOUT,
     )
     return True
 
@@ -1978,6 +1998,7 @@ def run_resource_cleanup(dry_run: bool = False, log_file: str | None = None) -> 
                         cwd=wt_path,
                         capture_output=True,
                         text=True,
+                        timeout=GIT_COMMAND_TIMEOUT,
                     )
                     if not status_result.stdout.strip():
                         reason = "backlogged with no changes"
@@ -2005,6 +2026,7 @@ def run_resource_cleanup(dry_run: bool = False, log_file: str | None = None) -> 
             cwd=repo_path,
             capture_output=True,
             text=True,
+            timeout=GIT_COMMAND_TIMEOUT,
         )
         local_branches = [b.strip().lstrip("* ") for b in result.stdout.strip().split("\n") if b.strip()]
 
@@ -2013,6 +2035,7 @@ def run_resource_cleanup(dry_run: bool = False, log_file: str | None = None) -> 
             cwd=repo_path,
             capture_output=True,
             text=True,
+            timeout=GIT_COMMAND_TIMEOUT,
         )
         merged_branches = {b.strip().lstrip("* ") for b in result.stdout.strip().split("\n") if b.strip()}
 
@@ -2048,10 +2071,11 @@ def run_resource_cleanup(dry_run: bool = False, log_file: str | None = None) -> 
                             cwd=repo_path,
                             check=True,
                             capture_output=True,
+                            timeout=GIT_COMMAND_TIMEOUT,
                         )
                         cleaned.append({"type": "branch", "name": branch, "reason": reason})
                         console.print(f"[green]✓ Deleted branch: {branch}[/green]")
-                    except subprocess.CalledProcessError as e:
+                    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
                         errors.append(f"Failed to delete branch {branch}: {e}")
                 else:
                     cleaned.append({"type": "branch", "name": branch, "reason": reason})

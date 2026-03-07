@@ -84,7 +84,7 @@
                     {% endif %}
                     {% if issue.is_review %}
                     <button class="btn btn-approve"
-                            onclick="approveIssue('{{ issue.number }}', this)"
+                            onclick="approveIssue('{{ issue.number }}', '{{ issue.stage }}', this)"
                             {% if issue.processing %}disabled{% endif %}>
                         {% if issue.processing %}Processing...{% else %}Approve{% endif %}
                     </button>
@@ -245,7 +245,7 @@ async function updatePriority(issueNumber, priority, selectEl) {
 }
 
 // Action handlers for this issue detail
-async function approveIssue(issueNumber, btn) {
+async function approveIssue(issueNumber, originalStage, btn) {
     // Immediately show processing state
     btn.disabled = true;
     btn.textContent = 'Processing...';
@@ -259,36 +259,18 @@ async function approveIssue(issueNumber, btn) {
         agentLight.title = 'Processing hooks...';
     }
 
-    try {
-        const response = await fetch(`/api/issues/${issueNumber}/approve`, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'}
-        });
-
-        if (response.ok) {
-            btn.textContent = 'Approved!';
-            // Move to next issue or reload
-            if (typeof goToNextIssue === 'function') {
-                goToNextIssue();
-            } else {
-                setTimeout(afterAction, 500);
-            }
+    // Helper to handle successful approval
+    function handleSuccess() {
+        btn.textContent = 'Approved!';
+        if (typeof goToNextIssue === 'function') {
+            goToNextIssue();
         } else {
-            const data = await response.json();
-            alert(`Cannot approve: ${data.detail || 'Unknown error'}`);
-            // Re-enable button and restore state
-            btn.disabled = false;
-            btn.textContent = 'Approve';
-            if (agentLight) {
-                agentLight.classList.remove('processing');
-                agentLight.classList.add('off');
-                agentLight.title = 'Click to start agent';
-            }
+            setTimeout(afterAction, 500);
         }
-    } catch (error) {
-        console.error('Error approving:', error);
-        alert(`Error approving issue: ${error.message || error}`);
-        // Re-enable button and restore state
+    }
+
+    // Helper to restore button state on error
+    function restoreButton() {
         btn.disabled = false;
         btn.textContent = 'Approve';
         if (agentLight) {
@@ -296,6 +278,43 @@ async function approveIssue(issueNumber, btn) {
             agentLight.classList.add('off');
             agentLight.title = 'Click to start agent';
         }
+    }
+
+    try {
+        const response = await fetch(`/api/issues/${issueNumber}/approve`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'}
+        });
+
+        if (response.ok) {
+            handleSuccess();
+        } else {
+            const data = await response.json();
+            alert(`Cannot approve: ${data.detail || 'Unknown error'}`);
+            restoreButton();
+        }
+    } catch (error) {
+        // Network error or timeout - check if the approve actually succeeded
+        // by verifying if the stage has advanced
+        console.error('Approve fetch failed, checking if stage advanced:', error);
+        try {
+            const statusResponse = await fetch(`/api/issues/${issueNumber}/agent-status`);
+            if (statusResponse.ok) {
+                const statusData = await statusResponse.json();
+                if (statusData.stage && statusData.stage !== originalStage) {
+                    // Stage advanced - approve succeeded despite the error
+                    console.log('Stage advanced from', originalStage, 'to', statusData.stage, '- treating as success');
+                    handleSuccess();
+                    return;
+                }
+            }
+        } catch (recheckError) {
+            // Re-check also failed, fall through to show original error
+            console.error('Stage re-check also failed:', recheckError);
+        }
+        // Stage didn't change or re-check failed - show the original error
+        alert(`Error approving issue: ${error.message || error}`);
+        restoreButton();
     }
 }
 
