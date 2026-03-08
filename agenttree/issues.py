@@ -975,6 +975,11 @@ def update_issue_stage(
     issue.stage = stage
     issue.updated = now
 
+    # Clear agent_ensured on every stage change so re-entering a custom agent
+    # stage (e.g., bouncing back to independent_review) triggers re-notification.
+    if old_stage != stage:
+        issue.agent_ensured = None
+
     # Clear ci_escalated when leaving a human review stage
     old_stage_cfg, old_substage_cfg = config.resolve_stage(old_stage)
     old_is_human_review = (old_substage_cfg.human_review if old_substage_cfg
