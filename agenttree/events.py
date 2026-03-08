@@ -122,9 +122,8 @@ def prune_stale_ci_state(agents_dir: Path) -> None:
         if not issue_yaml.exists():
             continue
         try:
-            import yaml as yaml_lib
             with open(issue_yaml) as f:
-                data = yaml_lib.safe_load(f)
+                data = yaml.safe_load(f)
                 if data and "id" in data:
                     issue_id = int(data["id"])
                     issue_stages[issue_id] = data.get("stage", "")
@@ -140,7 +139,7 @@ def prune_stale_ci_state(agents_dir: Path) -> None:
         except (ValueError, TypeError):
             continue
         stage = issue_stages.get(issue_id_int, "")
-        if stage not in active_stages or stage in terminal_stages or issue_id_int not in issue_stages:
+        if stage not in active_stages:
             ci_keys_to_remove.append(issue_id)
             pruned_ci = True
 

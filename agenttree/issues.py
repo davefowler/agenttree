@@ -155,9 +155,10 @@ class Issue(BaseModel):
     # Set when CI fails too many times and issue is escalated to human review
     ci_escalated: bool = False
 
-    # DEPRECATED: Use fingerprint-based deduplication in heartbeat_state.yaml ci_checks instead.
-    # Only checked for backward compatibility with already-escalated issues (ci_escalated=True).
-    # New deduplication uses fingerprints stored in _agenttree/.heartbeat_state.yaml.
+    # Tracks whether CI escalation notification has been sent (set when ci_escalated=True).
+    # Used alongside ci_escalated to prevent duplicate escalation notifications.
+    # Note: Fingerprint-based deduplication in heartbeat_state prevents most duplicate
+    # notifications, but this field ensures already-escalated issues aren't re-notified.
     ci_notified: bool | None = None
 
     # Guard for manager hook re-entry (e.g., "implement.review", "implement.review:running")
