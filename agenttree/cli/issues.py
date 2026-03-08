@@ -189,10 +189,10 @@ def issue_create(
         if issue.dependencies:
             console.print(f"[dim]  Dependencies: {', '.join(str(d) for d in issue.dependencies)}[/dim]")
 
-        # Auto-start agent unless blocked or --no-start specified
+        # Auto-start agent unless blocked, --no-start specified, or config disables it
         if has_unmet_deps:
             console.print(f"\n[yellow]Issue blocked by dependencies - will auto-start when deps complete[/yellow]")
-        elif no_start or effective_stage == "backlog":
+        elif no_start or not config.auto_start_on_create or effective_stage == "backlog":
             console.print(f"\n[bold]Next steps:[/bold]")
             console.print(f"  1. Fill in problem.md: [cyan]_agenttree/issues/{issue.id}-{issue.slug}/problem.md[/cyan]")
             console.print(f"  2. Start agent: [cyan]agenttree start {issue.id}[/cyan]")

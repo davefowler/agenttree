@@ -1402,7 +1402,6 @@ async def approve_issue(
         # Always clear processing state
         issue_crud.set_processing(issue_id, None)
 
-
 @app.get("/api/issues/{issue_id}/attachments/{filename:path}")
 async def get_attachment(
     issue_id: str,
