@@ -190,7 +190,6 @@ def stop_all_agents(agents_dir: Path, **kwargs: Any) -> None:
         agents_dir: Path to _agenttree directory
     """
     import subprocess
-    import re
     import time
     from agenttree.config import load_config
     from agenttree.tmux import kill_session
@@ -502,8 +501,7 @@ SAFE_COMMAND_PATTERNS = [
 # Commands that are never safe to auto-approve.
 UNSAFE_COMMAND_PATTERNS = [
     re.compile(r"\brm\s+-rf?\b"),
-    re.compile(r"^git\s+(push\s+--force|reset\s+--hard|clean\s+-f)"),
-    re.compile(r"^git\s+push\b.*--force"),
+    re.compile(r"^git\s+(push\b.*--force|reset\s+--hard|clean\s+-f)"),
     re.compile(r"\b(curl|wget)\b.*\b(POST|PUT|DELETE|PATCH)\b", re.IGNORECASE),
 ]
 
@@ -610,7 +608,7 @@ def is_safe_command(command: str) -> bool:
 
 @register_action("check_permission_prompts")
 def check_permission_prompts(agents_dir: Path, **kwargs: Any) -> None:
-    """Check if manager or architect is stuck at a permission prompt.
+    """Check if manager is stuck at a permission prompt.
 
     Deterministic heartbeat action that:
     1. Captures manager's tmux output
