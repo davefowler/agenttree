@@ -138,6 +138,20 @@ def start_issue(
             sys.exit(1)
         return
 
+    # Check if --role specifies a host-level role (e.g., architect, manager)
+    # These roles must run on host, not in container, regardless of issue_id
+    from agenttree.api import HOST_TMUX_ROLES, start_role, AgentAlreadyRunningError
+    if role in HOST_TMUX_ROLES:
+        try:
+            start_role(role, tool=tool, force=force)
+        except AgentAlreadyRunningError:
+            console.print(f"[yellow]{role.capitalize()} already running. Use --force to restart.[/yellow]")
+            sys.exit(1)
+        except ValueError as e:
+            console.print(f"[red]{e}[/red]")
+            sys.exit(1)
+        return
+
     # Normalize issue ID (strip leading zeros for lookup, keep for display)
     issue_id_normalized = normalize_issue_id(issue_id)
 
