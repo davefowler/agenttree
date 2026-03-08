@@ -43,6 +43,33 @@ STARTUP = "startup"
 SHUTDOWN = "shutdown"
 HEARTBEAT = "heartbeat"
 
+# Idle detection: skip most actions after N consecutive idle heartbeats
+# 6 rounds at 10s interval = 60s before entering idle mode
+IDLE_THRESHOLD = 6
+
+
+def has_active_issues(agents_dir: Path) -> bool:
+    """Check if there are any active issues (not in parking lot stages).
+
+    Active issues are those not in backlog, accepted, or not_doing stages.
+
+    Args:
+        agents_dir: Path to _agenttree directory
+
+    Returns:
+        True if at least one issue is in an active (non-parking-lot) stage
+    """
+    from agenttree.config import load_config
+    from agenttree.issues import list_issues
+
+    config = load_config()
+    issues = list_issues(sync=False)
+
+    for issue in issues:
+        if not config.is_parking_lot(issue.stage):
+            return True
+    return False
+
 
 def load_event_state(agents_dir: Path) -> dict[str, Any]:
     """Load event/hook state from _agenttree/.heartbeat_state.yaml.
@@ -350,22 +377,42 @@ def fire_event(
     
     # Load state for rate limiting
     state = load_event_state(agents_dir)
-    
+
     # Use caller-provided heartbeat count (web app tracks its own),
     # otherwise increment from persisted state
     if event == HEARTBEAT and heartbeat_count is None:
         heartbeat_count = state.get("_heartbeat_count", 0) + 1
         state["_heartbeat_count"] = heartbeat_count
-    
+
+    # Idle detection: skip most heartbeat actions when no active issues
+    idle_mode = False
+    if event == HEARTBEAT:
+        if has_active_issues(agents_dir):
+            # Active issues exist - reset idle counter
+            state["_idle_count"] = 0
+        else:
+            # No active issues - increment idle counter
+            idle_count = state.get("_idle_count", 0) + 1
+            state["_idle_count"] = idle_count
+            if idle_count >= IDLE_THRESHOLD:
+                idle_mode = True
+                if verbose:
+                    console.print("[dim]Idle mode: skipping heartbeat actions[/dim]")
+
     # Execute each action
     for entry in actions:
         action_name, action_config = parse_action_entry(entry)
-        
+
+        # In idle mode, only run sync to detect remote changes
+        if idle_mode and action_name != "sync":
+            results["actions_skipped"] += 1
+            continue
+
         # Check rate limit
         should_run, reason = check_action_rate_limit(
             action_name, action_config, state, heartbeat_count
         )
-        
+
         if not should_run:
             if verbose:
                 console.print(f"[dim]{action_name}: {reason}[/dim]")
