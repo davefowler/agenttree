@@ -1539,7 +1539,7 @@ class TestCreateIssueAPI:
 
     @patch("agenttree.web.routes.issues.issue_crud")
     def test_create_issue_validation_empty_problem(self, mock_crud, client):
-        """Test that empty problem returns 400 error."""
+        """Test that empty problem returns 400 error with exact message."""
         response = client.post(
             "/api/issues",
             data={
@@ -1549,7 +1549,21 @@ class TestCreateIssueAPI:
         )
 
         assert response.status_code == 400
-        assert "problem description" in response.json()["detail"].lower()
+        assert response.json()["detail"] == "Please provide a problem description"
+
+    @patch("agenttree.web.routes.issues.issue_crud")
+    def test_create_issue_validation_whitespace_problem(self, mock_crud, client):
+        """Test that whitespace-only problem returns 400 error with exact message."""
+        response = client.post(
+            "/api/issues",
+            data={
+                "problem": "   \t\n  ",
+                "solutions": "Some solution"
+            }
+        )
+
+        assert response.status_code == 400
+        assert response.json()["detail"] == "Please provide a problem description"
 
     @patch("agenttree.web.routes.issues._config")
     @patch("agenttree.api.start_issue")
@@ -1627,6 +1641,45 @@ class TestCreateIssueAPI:
         assert data["ok"] is True
         assert data["issue_id"] == "004"
         mock_crud.create_issue.assert_called_once()
+
+    @patch("agenttree.api.start_issue")
+    @patch("agenttree.web.routes.issues.issue_crud")
+    def test_create_issue_rejects_oversized_file(self, mock_crud, mock_start, client):
+        """Verify 400 error for files > 10MB with exact message."""
+        mock_issue = Mock()
+        mock_issue.id = "005"
+        mock_issue.title = "Test Issue"
+        mock_crud.create_issue.return_value = mock_issue
+
+        # Create a file larger than 10MB
+        large_content = b"x" * (11 * 1024 * 1024)  # 11MB
+
+        response = client.post(
+            "/api/issues",
+            data={"problem": "Test problem description", "title": "Test"},
+            files=[("files", ("large.png", large_content, "image/png"))],
+        )
+
+        assert response.status_code == 400
+        assert response.json()["detail"] == "File 'large.png' exceeds maximum size of 10MB"
+
+    @patch("agenttree.api.start_issue")
+    @patch("agenttree.web.routes.issues.issue_crud")
+    def test_create_issue_rejects_invalid_file_type(self, mock_crud, mock_start, client):
+        """Verify 400 error for executable files with exact message."""
+        mock_issue = Mock()
+        mock_issue.id = "006"
+        mock_issue.title = "Test Issue"
+        mock_crud.create_issue.return_value = mock_issue
+
+        response = client.post(
+            "/api/issues",
+            data={"problem": "Test problem description", "title": "Test"},
+            files=[("files", ("malware.exe", b"fake exe", "application/octet-stream"))],
+        )
+
+        assert response.status_code == 400
+        assert response.json()["detail"] == "File type '.exe' not allowed. Allowed types: .gif, .jpeg, .jpg, .json, .log, .md, .png, .svg, .txt, .webp, .yaml, .yml"
 
 
 class TestIssueFormContract:
