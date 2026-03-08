@@ -77,6 +77,7 @@ class TestStartAgentHostRoleRouting:
         # start_role should NOT have been called (developer is not HOST_TMUX_ROLE)
         mock_start_role.assert_not_called()
         # We expect non-zero exit since container path is not fully mocked
+        assert result.exit_code != 0
 
     def test_start_with_role_architect_and_force(self, cli_runner, mock_config):
         """When --role architect --force is passed, should call start_role with force=True."""
