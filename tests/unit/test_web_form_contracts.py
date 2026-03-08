@@ -82,7 +82,7 @@ class TestCreateIssueFormContract:
 
     def test_create_issue_form_matches_api_params(self) -> None:
         """Verify new_issue_modal.html form fields match /api/issues params."""
-        from agenttree.web.app import create_issue_api
+        from agenttree.web.routes.issues import create_issue_api
 
         # Read the template
         template_path = get_template_path("partials/new_issue_modal.html")

@@ -34,6 +34,7 @@ _config: Config = load_config()
 from agenttree import issues as issue_crud
 from agenttree.agents_repo import sync_agents_repo
 from agenttree.web.models import KanbanBoard, FlowKanbanRow, Issue as WebIssue, IssueMoveRequest, PriorityUpdateRequest
+from agenttree.web.routes.issues import router as issues_router
 
 from rich.console import Console
 
@@ -174,6 +175,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="AgentTree Dashboard", lifespan=lifespan)
+
+# Include route modules
+app.include_router(issues_router)
 
 
 class NoCacheMiddleware(BaseHTTPMiddleware):
@@ -1397,90 +1401,6 @@ async def approve_issue(
     finally:
         # Always clear processing state
         issue_crud.set_processing(issue_id, None)
-
-
-# Allowed file extensions for attachments
-ALLOWED_ATTACHMENT_EXTENSIONS = {
-    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg",  # Images
-    ".txt", ".log", ".md", ".json", ".yaml", ".yml",   # Text files
-}
-MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024  # 10MB
-
-
-@app.post("/api/issues")
-async def create_issue_api(
-    request: Request,
-    problem: str = Form(""),
-    solutions: str = Form(""),
-    title: str = Form(""),
-    files: list[UploadFile] = File(default=[]),
-    user: Optional[str] = Depends(get_current_user)
-) -> dict:
-    """Create a new issue via the web UI.
-
-    Creates a new issue with the default starting stage.
-    If no title is provided, one is auto-generated from the problem description.
-    Accepts optional file attachments.
-    """
-    from agenttree.issues import Priority
-
-    problem_text = problem.strip()
-    solutions_text = solutions.strip()
-    title = title.strip()
-
-    # Require a problem description
-    if not problem_text:
-        raise HTTPException(status_code=400, detail="Please provide a problem description")
-
-    # Use placeholder if no title - agent will fill it in during define stage
-    if not title:
-        title = "(untitled)"
-
-    # Validate and read attachments
-    attachments: list[tuple[str, bytes]] = []
-    for file in files:
-        if not file.filename:
-            continue
-
-        # Check file extension
-        ext = Path(file.filename).suffix.lower()
-        if ext not in ALLOWED_ATTACHMENT_EXTENSIONS:
-            raise HTTPException(
-                status_code=400,
-                detail=f"File type '{ext}' not allowed. Allowed types: {', '.join(sorted(ALLOWED_ATTACHMENT_EXTENSIONS))}"
-            )
-
-        # Read and check size
-        content = await file.read()
-        if len(content) > MAX_ATTACHMENT_SIZE:
-            raise HTTPException(
-                status_code=400,
-                detail=f"File '{file.filename}' exceeds maximum size of 10MB"
-            )
-
-        attachments.append((file.filename, content))
-
-    from agenttree.api import start_issue
-
-    try:
-        issue = issue_crud.create_issue(
-            title=title,
-            priority=Priority.MEDIUM,
-            problem=problem_text,
-            solutions=solutions_text or None,
-            attachments=attachments or None,
-        )
-
-        # Auto-start agent for the new issue
-        try:
-            await asyncio.to_thread(start_issue, issue.id, quiet=True)
-        except Exception as e:
-            # Log but don't fail - issue was created, agent start is optional
-            logger.warning("Could not auto-start agent for issue #%s: %s", issue.id, e)
-
-        return {"ok": True, "issue_id": issue.id, "title": issue.title}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/api/issues/{issue_id}/attachments/{filename:path}")

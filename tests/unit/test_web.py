@@ -1476,7 +1476,7 @@ class TestCreateIssueAPI:
     """Tests for the create issue API endpoint."""
 
     @patch("agenttree.api.start_issue")
-    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.routes.issues.issue_crud")
     def test_create_issue_with_problem_and_solutions(self, mock_crud, mock_start, client):
         """Test creating issue with both problem and solutions fields."""
         mock_issue = Mock()
@@ -1506,7 +1506,7 @@ class TestCreateIssueAPI:
         assert call_kwargs["solutions"] == "This is a possible solution"
 
     @patch("agenttree.api.start_issue")
-    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.routes.issues.issue_crud")
     def test_create_issue_with_problem_only_no_solutions(self, mock_crud, mock_start, client):
         """Test creating issue with problem only, no solutions."""
         mock_issue = Mock()
@@ -1532,7 +1532,7 @@ class TestCreateIssueAPI:
         assert call_kwargs["problem"] == "This is just the problem, no solutions yet"
         assert call_kwargs["solutions"] is None
 
-    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.routes.issues.issue_crud")
     def test_create_issue_validation_empty_problem(self, mock_crud, client):
         """Test that empty problem returns 400 error."""
         response = client.post(
@@ -1547,7 +1547,7 @@ class TestCreateIssueAPI:
         assert "problem description" in response.json()["detail"].lower()
 
     @patch("agenttree.api.start_issue")
-    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.routes.issues.issue_crud")
     def test_create_issue_trims_fields_and_defaults_title(self, mock_crud, mock_start, client):
         """Problem/solutions are trimmed and blank title uses placeholder."""
         mock_issue = Mock()
@@ -1572,7 +1572,7 @@ class TestCreateIssueAPI:
         assert call_kwargs["title"] == "(untitled)"
 
     @patch("agenttree.api.start_issue", side_effect=RuntimeError("start failed"))
-    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.routes.issues.issue_crud")
     def test_create_issue_returns_success_when_auto_start_fails(self, mock_crud, mock_start, client):
         """Issue creation should succeed even if auto-start fails."""
         mock_issue = Mock()
@@ -1600,7 +1600,7 @@ class TestIssueFormContract:
 
     def test_create_issue_api_accepts_modal_field_names(self):
         """API must keep form field names used by the new issue modal."""
-        from agenttree.web.app import create_issue_api
+        from agenttree.web.routes.issues import create_issue_api
 
         params = inspect.signature(create_issue_api).parameters
         assert "problem" in params

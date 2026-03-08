@@ -33,7 +33,7 @@ class TestCreateIssueApiWithAttachments:
 
     def test_accepts_files(self, client, mock_issue):
         """Verify endpoint accepts multipart form with files."""
-        with patch("agenttree.web.app.issue_crud.create_issue", return_value=mock_issue), \
+        with patch("agenttree.web.routes.issues.issue_crud.create_issue", return_value=mock_issue), \
              patch("agenttree.api.start_issue"):
 
             response = client.post(
@@ -50,7 +50,7 @@ class TestCreateIssueApiWithAttachments:
         # Create a file larger than 10MB
         large_content = b"x" * (11 * 1024 * 1024)  # 11MB
 
-        with patch("agenttree.web.app.issue_crud.create_issue", return_value=mock_issue), \
+        with patch("agenttree.web.routes.issues.issue_crud.create_issue", return_value=mock_issue), \
              patch("agenttree.api.start_issue"):
 
             response = client.post(
@@ -64,7 +64,7 @@ class TestCreateIssueApiWithAttachments:
 
     def test_rejects_invalid_file_type(self, client, mock_issue):
         """Verify 400 error for executable files."""
-        with patch("agenttree.web.app.issue_crud.create_issue", return_value=mock_issue), \
+        with patch("agenttree.web.routes.issues.issue_crud.create_issue", return_value=mock_issue), \
              patch("agenttree.api.start_issue"):
 
             response = client.post(
@@ -75,6 +75,112 @@ class TestCreateIssueApiWithAttachments:
 
             assert response.status_code == 400
             assert "type" in response.json()["detail"].lower() or "allowed" in response.json()["detail"].lower()
+
+    def test_combined_problem_solutions_and_files(self, client, mock_issue):
+        """Verify endpoint accepts combined problem, solutions, and files in one request."""
+        with patch("agenttree.web.routes.issues.issue_crud.create_issue", return_value=mock_issue) as mock_create, \
+             patch("agenttree.api.start_issue"):
+
+            response = client.post(
+                "/api/issues",
+                data={
+                    "problem": "This is the problem description",
+                    "solutions": "Here is a possible solution",
+                    "title": "Combined Test"
+                },
+                files=[("files", ("screenshot.png", b"image data", "image/png"))],
+            )
+
+            assert response.status_code == 200
+            assert response.json()["ok"] is True
+
+            # Verify all parameters were passed to create_issue
+            mock_create.assert_called_once()
+            call_kwargs = mock_create.call_args.kwargs
+            assert call_kwargs["problem"] == "This is the problem description"
+            assert call_kwargs["solutions"] == "Here is a possible solution"
+            assert call_kwargs["title"] == "Combined Test"
+            assert call_kwargs["attachments"] is not None
+            assert len(call_kwargs["attachments"]) == 1
+            assert call_kwargs["attachments"][0][0] == "screenshot.png"
+
+    def test_whitespace_only_title_uses_untitled(self, client, mock_issue):
+        """Verify whitespace-only title falls back to '(untitled)'."""
+        with patch("agenttree.web.routes.issues.issue_crud.create_issue", return_value=mock_issue) as mock_create, \
+             patch("agenttree.api.start_issue"):
+
+            response = client.post(
+                "/api/issues",
+                data={
+                    "problem": "Valid problem description",
+                    "title": "   "  # whitespace only
+                },
+            )
+
+            assert response.status_code == 200
+            assert response.json()["ok"] is True
+
+            # Verify title was set to "(untitled)"
+            mock_create.assert_called_once()
+            call_kwargs = mock_create.call_args.kwargs
+            assert call_kwargs["title"] == "(untitled)"
+
+    def test_whitespace_only_solutions_passed_as_none(self, client, mock_issue):
+        """Verify whitespace-only solutions is passed as None."""
+        with patch("agenttree.web.routes.issues.issue_crud.create_issue", return_value=mock_issue) as mock_create, \
+             patch("agenttree.api.start_issue"):
+
+            response = client.post(
+                "/api/issues",
+                data={
+                    "problem": "Valid problem description",
+                    "solutions": "   "  # whitespace only
+                },
+            )
+
+            assert response.status_code == 200
+            assert response.json()["ok"] is True
+
+            # Verify solutions was passed as None
+            mock_create.assert_called_once()
+            call_kwargs = mock_create.call_args.kwargs
+            assert call_kwargs["solutions"] is None
+
+    def test_files_without_problem_rejected(self, client, mock_issue):
+        """Verify submitting files without problem field returns 400."""
+        with patch("agenttree.web.routes.issues.issue_crud.create_issue", return_value=mock_issue), \
+             patch("agenttree.api.start_issue"):
+
+            response = client.post(
+                "/api/issues",
+                data={"title": "Title Only"},
+                files=[("files", ("test.png", b"image data", "image/png"))],
+            )
+
+            assert response.status_code == 400
+            assert "problem" in response.json()["detail"].lower()
+
+    def test_empty_files_array_with_valid_data(self, client, mock_issue):
+        """Verify request with empty files array succeeds with attachments=None."""
+        with patch("agenttree.web.routes.issues.issue_crud.create_issue", return_value=mock_issue) as mock_create, \
+             patch("agenttree.api.start_issue"):
+
+            response = client.post(
+                "/api/issues",
+                data={
+                    "problem": "Valid problem description",
+                    "solutions": "Some solution ideas"
+                },
+                files=[],  # empty files array
+            )
+
+            assert response.status_code == 200
+            assert response.json()["ok"] is True
+
+            # Verify attachments was passed as None
+            mock_create.assert_called_once()
+            call_kwargs = mock_create.call_args.kwargs
+            assert call_kwargs["attachments"] is None
 
 
 class TestGetAttachment:

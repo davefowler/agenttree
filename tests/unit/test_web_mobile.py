@@ -218,7 +218,7 @@ class TestCreateIssueEndpoint:
     """Tests for create issue API endpoint."""
 
     @patch("agenttree.api.start_issue")
-    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.routes.issues.issue_crud")
     def test_create_issue_success(self, mock_crud, mock_start, client):
         """Test creating issue with problem (title auto-generated)."""
         mock_issue = Mock()
@@ -239,7 +239,7 @@ class TestCreateIssueEndpoint:
         assert data["issue_id"] == "042"
 
     @patch("agenttree.api.start_issue")
-    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.routes.issues.issue_crud")
     def test_create_issue_with_title(self, mock_crud, mock_start, client):
         """Test creating issue with explicit title."""
         mock_issue = Mock()
@@ -259,7 +259,7 @@ class TestCreateIssueEndpoint:
         data = response.json()
         assert data["ok"] is True
 
-    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.routes.issues.issue_crud")
     def test_create_issue_missing_description(self, mock_crud, client):
         """Test creating issue without problem fails."""
         response = client.post(
@@ -270,7 +270,7 @@ class TestCreateIssueEndpoint:
         assert response.status_code == 400
         assert "problem" in response.json()["detail"].lower()
 
-    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.routes.issues.issue_crud")
     def test_create_issue_empty_description(self, mock_crud, client):
         """Test creating issue with empty problem fails."""
         response = client.post(
