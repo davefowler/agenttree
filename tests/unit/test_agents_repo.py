@@ -721,13 +721,13 @@ class TestCheckCiStatus:
                     assert "CI" in call_args[1] or "failed" in call_args[1].lower()
 
     @patch("agenttree.environment.is_running_in_container", return_value=False)
-    def test_check_ci_status_skips_already_notified(self, mock_container, agents_dir):
-        """Verify duplicate notifications are prevented using ci_notified flag."""
+    def test_check_ci_status_skips_already_notified_and_escalated(self, mock_container, agents_dir):
+        """Verify escalated issues with ci_notified skip re-notification."""
         import yaml
         from agenttree.agents_repo import check_ci_status
         from agenttree.github import CheckStatus
 
-        # Create issue with ci_notified already set
+        # Create escalated issue with ci_notified already set
         issue_dir = agents_dir / "issues" / "042-test-issue"
         issue_dir.mkdir()
         issue_yaml = issue_dir / "issue.yaml"
@@ -737,6 +737,7 @@ class TestCheckCiStatus:
             "stage": "implement.review",
             "pr_number": 123,
             "ci_notified": True,  # Already notified
+            "ci_escalated": True,  # Escalated to human review
         }
         with open(issue_yaml, "w") as f:
             yaml.dump(data, f)
@@ -747,7 +748,55 @@ class TestCheckCiStatus:
             ]
             result = check_ci_status(agents_dir)
 
-            # Should skip because already notified
+            # Should skip because escalated and already notified
+            assert result == 0
+            # Stage should remain implement.review
+            with open(issue_yaml) as f:
+                new_data = yaml.safe_load(f)
+            assert new_data["stage"] == "implement.review"
+
+    @patch("agenttree.environment.is_running_in_container", return_value=False)
+    def test_check_ci_status_skips_unchanged_fingerprint(self, mock_container, agents_dir):
+        """Verify duplicate notifications are prevented using fingerprint deduplication."""
+        import yaml
+        from agenttree.agents_repo import check_ci_status, _compute_ci_fingerprint
+        from agenttree.github import CheckStatus
+
+        # Create issue at review stage
+        issue_dir = agents_dir / "issues" / "042-test-issue"
+        issue_dir.mkdir()
+        issue_yaml = issue_dir / "issue.yaml"
+        data = {
+            "id": "42",
+            "title": "Test issue",
+            "stage": "implement.review",
+            "pr_number": 123,
+        }
+        with open(issue_yaml, "w") as f:
+            yaml.dump(data, f)
+
+        # Pre-compute fingerprint for same check state
+        checks = [CheckStatus(name="test", state="FAILURE")]
+        fingerprint = _compute_ci_fingerprint(checks)
+
+        # Create heartbeat state with existing fingerprint
+        heartbeat_state = {
+            "ci_checks": {
+                42: {
+                    "fingerprint": fingerprint,
+                    "last_status": "failure",
+                }
+            }
+        }
+        heartbeat_file = agents_dir / ".heartbeat_state.yaml"
+        with open(heartbeat_file, "w") as f:
+            yaml.dump(heartbeat_state, f)
+
+        with patch("agenttree.github.get_pr_checks") as mock_get_checks:
+            mock_get_checks.return_value = checks
+            result = check_ci_status(agents_dir)
+
+            # Should skip because fingerprint unchanged
             assert result == 0
             # Stage should remain implement.review
             with open(issue_yaml) as f:

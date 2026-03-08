@@ -155,8 +155,11 @@ class Issue(BaseModel):
     # Set when CI fails too many times and issue is escalated to human review
     ci_escalated: bool = False
 
-    # Tracks whether CI notification was sent for current PR check run
-    ci_notified: Optional[bool] = None
+    # Tracks whether CI escalation notification has been sent (set when ci_escalated=True).
+    # Used alongside ci_escalated to prevent duplicate escalation notifications.
+    # Note: Fingerprint-based deduplication in heartbeat_state prevents most duplicate
+    # notifications, but this field ensures already-escalated issues aren't re-notified.
+    ci_notified: bool | None = None
 
     # Guard for manager hook re-entry (e.g., "implement.review", "implement.review:running")
     manager_hooks_executed: Optional[str] = None
@@ -979,8 +982,9 @@ def update_issue_stage(
     if old_is_human_review and old_stage != stage:
         issue.ci_escalated = False
 
-    # Clear ci_notified when entering a CI wait stage so new CI runs get detected
-    # (save() uses exclude_none=True, so setting to None omits the field)
+    # DEPRECATED: Clear ci_notified when entering a CI wait stage.
+    # New code uses fingerprint-based deduplication in heartbeat_state.yaml ci_checks.
+    # This is kept for backward compatibility with already-escalated issues.
     if config.has_hook(stage, "ci_check"):
         issue.ci_notified = None
 

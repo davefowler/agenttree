@@ -1755,7 +1755,7 @@ async def voice_tool_call(
         create_issue as mcp_create,
         approve as mcp_approve,
         get_agent_output as mcp_output,
-        start_agent as mcp_start,
+        start_issue as mcp_start,
         stop_agent as mcp_stop,
     )
 
