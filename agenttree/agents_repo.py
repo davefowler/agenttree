@@ -851,6 +851,36 @@ def _generate_escalation_report(
     return content
 
 
+def _compute_ci_fingerprint(checks: list["CheckStatus"]) -> str:
+    """Compute a fingerprint for CI check results.
+
+    The fingerprint is a hash of sorted check names and their states.
+    This enables deterministic deduplication - if the fingerprint hasn't
+    changed, no notification is needed.
+
+    Args:
+        checks: List of CheckStatus objects from GitHub API
+
+    Returns:
+        A hash string representing the CI check state. Empty string for
+        empty check list.
+    """
+    import hashlib
+
+    if not checks:
+        return ""
+
+    # Sort by name for deterministic ordering
+    sorted_checks = sorted(checks, key=lambda c: c.name)
+
+    # Build canonical representation: "name1:state1|name2:state2|..."
+    parts = [f"{check.name}:{check.state}" for check in sorted_checks]
+    canonical = "|".join(parts)
+
+    # Hash for compact representation
+    return hashlib.sha256(canonical.encode()).hexdigest()[:16]
+
+
 def check_ci_status(agents_dir: Path) -> int:
     """Check CI status for issues at ci_wait or review and handle results.
 
@@ -884,9 +914,15 @@ def check_ci_status(agents_dir: Path) -> int:
     from agenttree.config import load_config
     from agenttree.tmux import TmuxManager
     from agenttree.issues import Issue
+    from agenttree.events import load_event_state, save_event_state, prune_stale_ci_state
 
     config = load_config()
     issues_notified = 0
+
+    # Load heartbeat state for fingerprint tracking
+    heartbeat_state = load_event_state(agents_dir)
+    ci_checks_state = heartbeat_state.get("ci_checks", {})
+    state_modified = False
 
     for issue_dir in issues_dir.iterdir():
         if not issue_dir.is_dir():
@@ -911,7 +947,9 @@ def check_ci_status(agents_dir: Path) -> int:
                         continue
                 else:
                     continue
-            if issue.ci_notified:
+            # ci_notified is deprecated in favor of fingerprinting, but we still
+            # check it for backward compatibility with existing escalated issues
+            if issue.ci_notified and issue.ci_escalated:
                 continue
 
             issue_id = issue.id
@@ -924,10 +962,24 @@ def check_ci_status(agents_dir: Path) -> int:
                 # No checks yet, skip
                 continue
 
+            # Compute fingerprint for current check state
+            current_fingerprint = _compute_ci_fingerprint(checks)
+
+            # Get stored fingerprint state for this issue
+            stored_state = ci_checks_state.get(issue_id, {})
+            stored_fingerprint = stored_state.get("fingerprint", "")
+            stored_status = stored_state.get("last_status", "")
+
             # Check if any check is still pending
             any_pending = any(check.state == "PENDING" for check in checks)
             if any_pending:
-                # CI still running, wait
+                # CI still running - update fingerprint if changed, but don't notify
+                if current_fingerprint != stored_fingerprint:
+                    ci_checks_state[issue_id] = {
+                        "fingerprint": current_fingerprint,
+                        "last_status": "pending",
+                    }
+                    state_modified = True
                 continue
 
             # Check if any check failed
@@ -936,8 +988,22 @@ def check_ci_status(agents_dir: Path) -> int:
                 if check.state == "FAILURE"
             ]
 
+            # Determine current status for fingerprint
+            current_status = "failure" if failed_checks else "success"
+
+            # Check if fingerprint changed - if not, skip notification
+            if current_fingerprint == stored_fingerprint and current_status == stored_status:
+                # No change in CI state, skip notification
+                continue
+
             if not failed_checks:
-                # All checks passed
+                # All checks passed - update fingerprint state
+                ci_checks_state[issue_id] = {
+                    "fingerprint": current_fingerprint,
+                    "last_status": "success",
+                }
+                state_modified = True
+
                 if stage == "implement.ci_wait":
                     # Advance ci_wait → review and notify agent
                     console.print(f"[green]CI passed for issue #{issue_id}, advancing to review[/green]")
@@ -954,6 +1020,13 @@ def check_ci_status(agents_dir: Path) -> int:
                     issues_notified += 1
                 # For implement.review with passing CI, nothing to do
                 continue
+
+            # CI failed - update fingerprint state
+            ci_checks_state[issue_id] = {
+                "fingerprint": current_fingerprint,
+                "last_status": "failure",
+            }
+            state_modified = True
 
             # CI failed - create feedback file with logs and review comments
             feedback_content = "# CI Failure Report\n\n"
@@ -1084,6 +1157,14 @@ def check_ci_status(agents_dir: Path) -> int:
         except Exception as e:
             console.print(f"[yellow]Error checking CI status: {e}[/yellow]")
             continue
+
+    # Save updated fingerprint state
+    if state_modified:
+        heartbeat_state["ci_checks"] = ci_checks_state
+        save_event_state(agents_dir, heartbeat_state)
+
+    # Prune stale CI state entries
+    prune_stale_ci_state(agents_dir)
 
     return issues_notified
 
