@@ -454,6 +454,44 @@ class TestCheckCustomAgentStages:
                                 170, host="reviewer", skip_preflight=True, quiet=True, force=False
                             )
 
+    def test_restarts_custom_agent_when_ensured_but_session_missing(self, tmp_path):
+        """Ensured custom stage should recover if the tmux session is gone."""
+        from agenttree.agents_repo import check_custom_agent_stages
+
+        issues_dir = tmp_path / "issues"
+        issues_dir.mkdir()
+        issue_dir = issues_dir / "171-test"
+        issue_dir.mkdir()
+
+        issue_data = {
+            "id": "171",
+            "slug": "test",
+            "title": "Test Issue",
+            "created": "2024-01-01",
+            "updated": "2024-01-01",
+            "stage": "implement.independent_review",
+            "agent_ensured": "implement.independent_review",
+        }
+        (issue_dir / "issue.yaml").write_text(yaml.safe_dump(issue_data))
+
+        mock_config = MagicMock()
+        mock_config.project = "testproj"
+        mock_config.get_custom_role_stages.return_value = ["implement.independent_review"]
+        mock_config.role_for.return_value = "reviewer"
+        mock_agent_config = MagicMock()
+        mock_config.get_custom_role.return_value = mock_agent_config
+
+        with patch("agenttree.environment.is_running_in_container", return_value=False):
+            with patch("agenttree.config.load_config", return_value=mock_config):
+                with patch("agenttree.tmux.session_exists", return_value=False):
+                    with patch("agenttree.container.is_container_running", return_value=False):
+                        with patch("agenttree.api.start_issue") as mock_start:
+                            result = check_custom_agent_stages(tmp_path)
+                            assert result == 1
+                            mock_start.assert_called_once_with(
+                                171, host="reviewer", skip_preflight=True, quiet=True, force=False
+                            )
+
 
 class TestContainerAgentHost:
     """Tests for container runtime setting AGENTTREE_ROLE."""

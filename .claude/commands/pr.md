@@ -52,10 +52,43 @@ Use `RECOMMENDED_BASE` from preflight script output. If preflight defaulted to `
 git push --force-with-lease -u origin HEAD
 ```
 
-Determine the issue number from the branch name (branches are named `issue-XXX`):
+Resolve issue metadata from `_agenttree/issues/*/issue.yaml` by exact branch match.
+Only fall back to parsing digits from the branch name if no match is found:
 ```bash
-ISSUE_NUM=$(git branch --show-current | grep -oE '[0-9]+' | head -1)
-ISSUE_TITLE=$(agenttree issue show "$ISSUE_NUM" --field title 2>/dev/null || echo "")
+CURRENT_BRANCH=$(git branch --show-current)
+read -r ISSUE_NUM ISSUE_TITLE <<EOF
+$(uv run python - <<'PY'
+from pathlib import Path
+import yaml
+import subprocess
+
+branch = subprocess.check_output(
+    ["git", "branch", "--show-current"],
+    text=True,
+).strip()
+
+issues_dir = Path("_agenttree/issues")
+for issue_yaml in sorted(issues_dir.glob("*/issue.yaml")):
+    try:
+        data = yaml.safe_load(issue_yaml.read_text()) or {}
+    except Exception:
+        continue
+    if data.get("branch") == branch:
+        issue_id = data.get("id")
+        title = (data.get("title") or "").strip()
+        if issue_id:
+            print(f"{issue_id} {title}")
+            break
+else:
+    print("")
+PY
+)
+EOF
+
+if [ -z "$ISSUE_NUM" ]; then
+  ISSUE_NUM=$(echo "$CURRENT_BRANCH" | grep -oE '[0-9]+' | head -1)
+  echo "WARN: Could not map branch to _agenttree issue metadata; falling back to branch digits ($ISSUE_NUM)."
+fi
 ```
 
 Create the PR using `gh` with the base you determined. **PR titles MUST use the `[Issue X]` prefix format:**

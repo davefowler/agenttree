@@ -422,10 +422,6 @@ def check_custom_agent_stages(agents_dir: Path) -> int:
 
             stage = issue.stage
 
-            # Re-entry guard: skip if we're already spawning/spawned for this stage
-            if issue.agent_ensured == stage or issue.agent_ensured == f"{stage}:starting":
-                continue
-
             role_name = config.role_for(stage)
             agent_config = config.get_custom_role(role_name)
             if not agent_config:
@@ -436,6 +432,20 @@ def check_custom_agent_stages(agents_dir: Path) -> int:
             custom_agent_session = f"{config.project}-{role_name}-{issue_id}"
 
             from agenttree.tmux import is_claude_running, send_message
+
+            # Re-entry guard for in-progress starts only.
+            # If agent_ensured matches stage but the session died, we must recover.
+            if issue.agent_ensured == f"{stage}:starting":
+                continue
+
+            if issue.agent_ensured == stage:
+                if session_exists(custom_agent_session) and is_claude_running(custom_agent_session):
+                    continue
+                console.print(
+                    f"[yellow]{role_name} agent for issue #{issue_id} is not running despite ensured stage; restarting...[/yellow]"
+                )
+                issue.agent_ensured = None
+                issue.save()
 
             if session_exists(custom_agent_session):
                 if is_claude_running(custom_agent_session):
