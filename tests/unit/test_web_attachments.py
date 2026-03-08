@@ -46,9 +46,8 @@ class TestCreateIssueApiWithAttachments:
             assert response.status_code == 200
             assert response.json()["ok"] is True
 
-    @pytest.mark.skip(reason="Pre-existing failure: routes.issues not used in app.py - needs patch path fix")
     def test_rejects_oversized_file(self, client, mock_issue):
-        """Verify 400 error for files > 10MB."""
+        """Verify 400 error for files > 10MB with exact message."""
         # Create a file larger than 10MB
         large_content = b"x" * (11 * 1024 * 1024)  # 11MB
 
@@ -62,11 +61,10 @@ class TestCreateIssueApiWithAttachments:
             )
 
             assert response.status_code == 400
-            assert "10MB" in response.json()["detail"] or "size" in response.json()["detail"].lower()
+            assert response.json()["detail"] == "File 'large.png' exceeds maximum size of 10MB"
 
-    @pytest.mark.skip(reason="Pre-existing failure: routes.issues not used in app.py - needs patch path fix")
     def test_rejects_invalid_file_type(self, client, mock_issue):
-        """Verify 400 error for executable files."""
+        """Verify 400 error for executable files with exact message."""
         with patch("agenttree.web.routes.issues.issue_crud.create_issue", return_value=mock_issue), \
              patch("agenttree.api.start_issue"):
 
@@ -77,7 +75,7 @@ class TestCreateIssueApiWithAttachments:
             )
 
             assert response.status_code == 400
-            assert "type" in response.json()["detail"].lower() or "allowed" in response.json()["detail"].lower()
+            assert response.json()["detail"] == "File type '.exe' not allowed. Allowed types: .gif, .jpeg, .jpg, .json, .log, .md, .png, .svg, .txt, .webp, .yaml, .yml"
 
     def test_combined_problem_solutions_and_files(self, client, mock_issue):
         """Verify endpoint accepts combined problem, solutions, and files in one request."""
