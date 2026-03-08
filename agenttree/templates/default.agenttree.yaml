@@ -51,6 +51,11 @@ roles:
     model: sonnet
     skill: independent_review.md
 
+  setup:
+    description: "Interactive project setup agent"
+    tool: claude
+    model: opus
+
   # Optional: architect supervisor role (host-level, no container)
   # Uncomment to enable a system supervisor that watches pipeline flow.
   # architect:

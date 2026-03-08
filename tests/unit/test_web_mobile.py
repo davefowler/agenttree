@@ -192,7 +192,6 @@ class TestMobileEndpoint:
         """Test mobile with nonexistent issue falls back to first issue."""
         mock_crud.list_issues.return_value = [mock_issue]
         mock_crud.get_issue.return_value = mock_issue
-        mock_crud.get_issue.return_value = mock_issue
         mock_agent_mgr.clear_session_cache = Mock()
         mock_agent_mgr._check_issue_tmux_session = Mock(return_value=False)
 
@@ -220,7 +219,7 @@ class TestCreateIssueEndpoint:
 
     @pytest.mark.skip(reason="Pre-existing failure: routes.issues not used in app.py - needs patch path fix")
     @patch("agenttree.api.start_issue")
-    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.routes.issues.issue_crud")
     def test_create_issue_success(self, mock_crud, mock_start, client):
         """Test creating issue with problem (title auto-generated)."""
         mock_issue = Mock()
@@ -242,7 +241,7 @@ class TestCreateIssueEndpoint:
 
     @pytest.mark.skip(reason="Pre-existing failure: routes.issues not used in app.py - needs patch path fix")
     @patch("agenttree.api.start_issue")
-    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.routes.issues.issue_crud")
     def test_create_issue_with_title(self, mock_crud, mock_start, client):
         """Test creating issue with explicit title."""
         mock_issue = Mock()
@@ -262,7 +261,7 @@ class TestCreateIssueEndpoint:
         data = response.json()
         assert data["ok"] is True
 
-    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.routes.issues.issue_crud")
     def test_create_issue_missing_description(self, mock_crud, client):
         """Test creating issue without problem fails."""
         response = client.post(
@@ -273,7 +272,7 @@ class TestCreateIssueEndpoint:
         assert response.status_code == 400
         assert "problem" in response.json()["detail"].lower()
 
-    @patch("agenttree.web.app.issue_crud")
+    @patch("agenttree.web.routes.issues.issue_crud")
     def test_create_issue_empty_description(self, mock_crud, client):
         """Test creating issue with empty problem fails."""
         response = client.post(

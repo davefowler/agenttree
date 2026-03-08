@@ -483,15 +483,35 @@ def check_ci_status(agents_dir: Path, **kwargs: Any) -> None:
 @register_action("check_merged_prs")
 def check_merged_prs(agents_dir: Path, **kwargs: Any) -> None:
     """Detect and handle externally merged PRs.
-    
+
     Args:
         agents_dir: Path to _agenttree directory
     """
     from agenttree.agents_repo import check_merged_prs as do_check_merged
-    
+
     count = do_check_merged(agents_dir)
     if count > 0:
         console.print(f"[dim]Processed {count} merged PR(s)[/dim]")
+
+
+@register_action("check_pr_health")
+def check_pr_health(agents_dir: Path, **kwargs: Any) -> None:
+    """Check PR health for issues outside implement.ci_wait/implement.review stages.
+
+    Monitors PRs at earlier stages (plan.review, implement.code, etc.) for:
+    - CI failures
+    - Merge conflicts
+
+    Sends notifications to owning agent/manager with rate limiting.
+
+    Args:
+        agents_dir: Path to _agenttree directory
+    """
+    from agenttree.agents_repo import check_pr_health as do_check_pr_health
+
+    count = do_check_pr_health(agents_dir, **kwargs)
+    if count > 0:
+        console.print(f"[dim]Found {count} PR health issue(s)[/dim]")
 
 
 @register_action("push_pending_branches")
@@ -1057,6 +1077,7 @@ DEFAULT_EVENT_CONFIGS: dict[str, list[str] | dict[str, Any]] = {
             {"check_stalled_agents": {"min_interval_s": 180}},
             {"check_ci_status": {"min_interval_s": 60}},
             {"check_merged_prs": {"min_interval_s": 30}},
+            {"check_pr_health": {"min_interval_s": 60}},  # Monitor PR health at all stages
         ],
     },
 }

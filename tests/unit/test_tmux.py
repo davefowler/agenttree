@@ -814,6 +814,146 @@ class TestServeSession:
         assert call_count[0] >= 1
 
 
+class TestImageSelectionForIssueAgent:
+    """Tests for container image selection in start_issue_agent_in_container."""
+
+    @pytest.fixture
+    def base_mock_config(self):
+        """Create a base mock config for testing."""
+        config = MagicMock()
+        config.project = "testproject"
+        config.default_model = "claude-sonnet"
+        config.default_container_image = "agenttree-agent:latest"
+        config.commands = {}
+        config.get_port_for_issue.return_value = None
+        config.get_issue_container_name.return_value = "testproject-issue-42"
+        tool_config = MagicMock()
+        tool_config.command = "claude"
+        tool_config.container_entry_command.return_value = ["claude"]
+        tool_config.container_env.return_value = {}
+        tool_config.container_mounts.return_value = []
+        config.get_tool_config.return_value = tool_config
+        return config
+
+    @pytest.fixture
+    def mock_container_runtime(self):
+        """Create a mock container runtime."""
+        runtime = MagicMock()
+        runtime.runtime = "docker"
+        return runtime
+
+    def test_role_with_container_enabled_uses_custom_image(
+        self, base_mock_config, mock_container_runtime, tmp_path
+    ):
+        """Role with container.enabled=true should use its custom image."""
+        from agenttree.config import RoleConfig, ContainerConfig
+        from agenttree.tmux import TmuxManager
+
+        # Configure role with container enabled
+        base_mock_config.roles = {
+            "developer": RoleConfig(
+                name="developer",
+                container=ContainerConfig(enabled=True, image="custom-dev:latest"),
+            ),
+        }
+
+        manager = TmuxManager(base_mock_config)
+
+        with patch("agenttree.tmux.session_exists", return_value=False):
+            with patch("agenttree.tmux.create_session"):
+                with patch("agenttree.tmux.wait_for_prompt", return_value=False):
+                    with patch("agenttree.container.build_container_command") as mock_build:
+                        with patch("agenttree.container.cleanup_containers_by_prefix"):
+                            mock_build.return_value = ["docker", "run", "test"]
+                            manager.start_issue_agent_in_container(
+                                issue_id=42,
+                                session_name="testproject-developer-042",
+                                worktree_path=tmp_path,
+                                tool_name="claude",
+                                container_runtime=mock_container_runtime,
+                                role="developer",
+                            )
+
+        # Verify custom image was used
+        mock_build.assert_called_once()
+        call_kwargs = mock_build.call_args
+        container_type = call_kwargs.kwargs.get("container_type") or call_kwargs[1].get("container_type")
+        assert container_type.image == "custom-dev:latest"
+
+    def test_role_with_container_disabled_uses_default_image(
+        self, base_mock_config, mock_container_runtime, tmp_path
+    ):
+        """Role with container.enabled=false should fall back to default image."""
+        from agenttree.config import RoleConfig, ContainerConfig
+        from agenttree.tmux import TmuxManager
+
+        # Configure role with container disabled (like architect)
+        base_mock_config.roles = {
+            "architect": RoleConfig(
+                name="architect",
+                container=ContainerConfig(enabled=False, image="agenttree-host:latest"),
+            ),
+        }
+
+        manager = TmuxManager(base_mock_config)
+
+        with patch("agenttree.tmux.session_exists", return_value=False):
+            with patch("agenttree.tmux.create_session"):
+                with patch("agenttree.tmux.wait_for_prompt", return_value=False):
+                    with patch("agenttree.container.build_container_command") as mock_build:
+                        with patch("agenttree.container.cleanup_containers_by_prefix"):
+                            mock_build.return_value = ["docker", "run", "test"]
+                            manager.start_issue_agent_in_container(
+                                issue_id=42,
+                                session_name="testproject-architect-042",
+                                worktree_path=tmp_path,
+                                tool_name="claude",
+                                container_runtime=mock_container_runtime,
+                                role="architect",
+                            )
+
+        # Verify default image was used (not the disabled role's image)
+        mock_build.assert_called_once()
+        call_kwargs = mock_build.call_args
+        container_type = call_kwargs.kwargs.get("container_type") or call_kwargs[1].get("container_type")
+        assert container_type.image == "agenttree-agent:latest"
+
+    def test_role_with_no_container_config_uses_default_image(
+        self, base_mock_config, mock_container_runtime, tmp_path
+    ):
+        """Role with no container config should fall back to default image."""
+        from agenttree.config import RoleConfig
+        from agenttree.tmux import TmuxManager
+
+        # Configure role without container config
+        base_mock_config.roles = {
+            "custom": RoleConfig(name="custom"),
+        }
+
+        manager = TmuxManager(base_mock_config)
+
+        with patch("agenttree.tmux.session_exists", return_value=False):
+            with patch("agenttree.tmux.create_session"):
+                with patch("agenttree.tmux.wait_for_prompt", return_value=False):
+                    with patch("agenttree.container.build_container_command") as mock_build:
+                        with patch("agenttree.container.cleanup_containers_by_prefix"):
+                            mock_build.return_value = ["docker", "run", "test"]
+                            manager.start_issue_agent_in_container(
+                                issue_id=42,
+                                session_name="testproject-custom-042",
+                                worktree_path=tmp_path,
+                                tool_name="claude",
+                                container_runtime=mock_container_runtime,
+                                role="custom",
+                            )
+
+        # Verify default image was used
+        mock_build.assert_called_once()
+        call_kwargs = mock_build.call_args
+        container_type = call_kwargs.kwargs.get("container_type") or call_kwargs[1].get("container_type")
+        assert container_type.image == "agenttree-agent:latest"
+
+
 class TestSaveTmuxHistoryToFile:
     """Tests for save_tmux_history_to_file function."""
 

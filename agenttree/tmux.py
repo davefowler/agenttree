@@ -534,9 +534,10 @@ class TmuxManager:
         from agenttree.config import ContainerTypeConfig
         from agenttree.container import build_container_command
 
-        # Get image from role's container config
+        # Get image from role's container config (only if container is enabled)
         role_config = self.config.roles.get(role)
-        if role_config and role_config.container:
+        if role_config and role_config.is_containerized():
+            assert role_config.container is not None  # is_containerized() guarantees this
             image = role_config.container.image
         else:
             image = self.config.default_container_image

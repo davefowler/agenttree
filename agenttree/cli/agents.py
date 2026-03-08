@@ -126,12 +126,22 @@ def start_issue(
         except (ValueError, SystemExit):
             pass
 
+    # Determine if we should route to start_role() for a host-level role
+    # This handles both: issue_id being a role name, and --role specifying a HOST_TMUX_ROLE
+    from agenttree.api import HOST_TMUX_ROLES, start_role, AgentAlreadyRunningError
+
     if is_role:
-        from agenttree.api import start_role, AgentAlreadyRunningError
+        target_role = issue_id
+    elif role in HOST_TMUX_ROLES:
+        target_role = role
+    else:
+        target_role = None
+
+    if target_role:
         try:
-            start_role(issue_id, tool=tool, force=force)
+            start_role(target_role, tool=tool, force=force)
         except AgentAlreadyRunningError:
-            console.print(f"[yellow]{issue_id.capitalize()} already running. Use --force to restart.[/yellow]")
+            console.print(f"[yellow]{target_role.capitalize()} already running. Use --force to restart.[/yellow]")
             sys.exit(1)
         except ValueError as e:
             console.print(f"[red]{e}[/red]")

@@ -765,6 +765,41 @@ class TestIssueCreateCommand:
         assert "agenttree start" in result.output
         mock_start_issue.assert_not_called()
 
+    def test_issue_create_auto_start_converts_int_id_to_string(self, cli_runner, mock_config, tmp_path):
+        """Should convert integer issue.id to string when invoking start_issue.
+
+        Regression test for: 'int' object has no attribute 'strip' crash.
+        The Issue model has id: int, but start_issue expects issue_id: str.
+        """
+        from agenttree.cli import main
+
+        mock_config.agents_dir = tmp_path / "_agenttree"
+        mock_config.agents_dir.mkdir()
+        (mock_config.agents_dir / "issues").mkdir()
+        (mock_config.agents_dir / "skills").mkdir()
+
+        mock_issue = MagicMock()
+        mock_issue.id = 42  # Integer, not string - matches real Issue model
+        mock_issue.title = "A valid issue title here"
+        mock_issue.slug = "a-valid-issue-title-here"
+        mock_issue.stage = "explore.define"
+        mock_issue.dependencies = None
+
+        problem = "This is a detailed problem statement that is at least 50 characters long for the test."
+
+        with patch("agenttree.cli.issues.load_config", return_value=mock_config):
+            with patch("agenttree.cli.issues.create_issue_func", return_value=mock_issue):
+                with patch("agenttree.cli.agents.start_issue") as mock_start_issue:
+                    result = cli_runner.invoke(main, ["issue", "create", "A valid issue title here", "--problem", problem])
+
+        assert result.exit_code == 0
+        assert "Auto-starting agent" in result.output
+        mock_start_issue.assert_called_once()
+        # Verify the issue_id argument was converted to string
+        call_kwargs = mock_start_issue.call_args[1]
+        assert call_kwargs["issue_id"] == "42"
+        assert isinstance(call_kwargs["issue_id"], str)
+
 
 class TestStatusCommand:
     """Tests for the status command."""

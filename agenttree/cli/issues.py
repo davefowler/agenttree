@@ -198,7 +198,7 @@ def issue_create(
             console.print(f"  2. Start agent: [cyan]agenttree start {issue.id}[/cyan]")
         else:
             console.print(f"\n[cyan]Auto-starting agent...[/cyan]")
-            ctx.invoke(start_issue, issue_id=issue.id)
+            ctx.invoke(start_issue, issue_id=str(issue.id))
 
     except Exception as e:
         console.print(f"[red]Error creating issue: {e}[/red]")
