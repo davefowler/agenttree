@@ -982,9 +982,9 @@ def update_issue_stage(
     if old_is_human_review and old_stage != stage:
         issue.ci_escalated = False
 
-    # DEPRECATED: Clear ci_notified when entering a CI wait stage.
-    # New code uses fingerprint-based deduplication in heartbeat_state.yaml ci_checks.
-    # This is kept for backward compatibility with already-escalated issues.
+    # Clear ci_notified when entering a CI wait stage to allow new escalation cycle.
+    # Fingerprint-based deduplication handles normal notifications; this flag
+    # specifically tracks if the current escalation (ci_escalated=True) has been notified.
     if config.has_hook(stage, "ci_check"):
         issue.ci_notified = None
 
