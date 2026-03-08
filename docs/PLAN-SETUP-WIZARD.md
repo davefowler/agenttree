@@ -374,3 +374,9 @@ The docs would have the full instructions. This is the absolute minimum viable v
 The key is: **We generate instructions, the user's AI does the integration.**
 
 Much simpler, faster to ship, and actually more robust than trying to auto-detect everything.
+
+---
+
+## Related Analysis
+
+For current pipeline state and triage recommendations, see Issue #231 blocker report in `_agenttree/issues/231/problem.md`.
