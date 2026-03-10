@@ -30,16 +30,11 @@ def get_manager_session_name(config: Config) -> str:
     return f"{config.project}-manager-000"
 
 
-def get_role_session_name(config: Config, role_name: str) -> str:
-    """Get tmux session name for a host role."""
-    return config.get_role_tmux_session(role_name)
-
-
 def require_role_running(config: Config, role_name: str, hint: bool = True) -> str:
     """Require that a named host role session is running."""
     from agenttree.tmux import session_exists
 
-    session_name = get_role_session_name(config, role_name)
+    session_name = config.get_role_tmux_session(role_name)
     if not session_exists(session_name):
         console.print(f"[red]Error: {role_name.capitalize()} not running[/red]")
         if hint:
@@ -52,7 +47,7 @@ def get_role_session_if_running(config: Config, role_name: str) -> str | None:
     """Get host role session name if it's running."""
     from agenttree.tmux import session_exists
 
-    session_name = get_role_session_name(config, role_name)
+    session_name = config.get_role_tmux_session(role_name)
     if session_exists(session_name):
         return session_name
     return None
@@ -91,12 +86,7 @@ def get_manager_session_if_running(config: Config) -> str | None:
     Returns:
         Session name if manager is running, None otherwise
     """
-    from agenttree.tmux import session_exists
-
-    session_name = get_manager_session_name(config)
-    if session_exists(session_name):
-        return session_name
-    return None
+    return get_role_session_if_running(config, "manager")
 
 
 __all__ = [
@@ -108,7 +98,6 @@ __all__ = [
     "normalize_issue_id",
     "format_role_label",
     "get_manager_session_name",
-    "get_role_session_name",
     "require_role_running",
     "get_role_session_if_running",
     "require_manager_running",

@@ -96,6 +96,7 @@ class TestGetManagerSessionIfRunning:
         mock_session_exists.return_value = True
         config = MagicMock()
         config.project = "myproject"
+        config.get_role_tmux_session.return_value = "myproject-manager-000"
 
         result = get_manager_session_if_running(config)
         assert result == "myproject-manager-000"
