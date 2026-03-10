@@ -161,7 +161,11 @@ def start_issue(
     )
     from agenttree.tmux import TmuxManager
     from agenttree.issues import create_session
-    from agenttree.worktree import create_worktree, update_worktree_with_main
+    from agenttree.worktree import (
+        create_worktree,
+        sync_local_agenttree_config,
+        update_worktree_with_main,
+    )
     import subprocess
     import time
 
@@ -273,6 +277,8 @@ def start_issue(
             if not quiet:
                 console.print(f"[dim]Creating worktree: {worktree_path.name}[/dim]")
             create_worktree(repo_path, worktree_path, names["branch"])
+
+    sync_local_agenttree_config(repo_path, worktree_path)
 
     # Get deterministic port using config method
     port = config.get_port_for_issue(issue.id)

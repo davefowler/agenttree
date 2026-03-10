@@ -1,5 +1,6 @@
 """Git worktree management for AgentTree."""
 
+import shutil
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -218,6 +219,76 @@ def create_worktree(
     )
 
 
+def sync_local_agenttree_config(repo_path: Path, worktree_path: Path) -> None:
+    """Copy local `.agenttree.yaml` into a worktree when needed.
+
+    Freshly initialized repos often have `.agenttree.yaml` as an uncommitted local
+    file. Git worktrees do not include untracked files, so issue worktrees can
+    miss the workflow config entirely until the user commits it. That breaks
+    in-worktree commands like `agenttree next`.
+    """
+    source = repo_path / ".agenttree.yaml"
+    if not source.exists() or not worktree_path.exists():
+        return
+
+    destination = worktree_path / ".agenttree.yaml"
+    if destination.exists() and destination.read_text() == source.read_text():
+        _sync_worktree_exclude_for_agenttree_config(repo_path, worktree_path)
+        return
+
+    shutil.copy2(source, destination)
+    _sync_worktree_exclude_for_agenttree_config(repo_path, worktree_path)
+
+
+def _sync_worktree_exclude_for_agenttree_config(repo_path: Path, worktree_path: Path) -> None:
+    """Hide copied config from git when the source config is still untracked."""
+    exclude_path = _get_worktree_exclude_path(worktree_path)
+    if exclude_path is None:
+        return
+
+    entry = ".agenttree.yaml"
+    lines: list[str] = []
+    if exclude_path.exists():
+        lines = exclude_path.read_text().splitlines()
+
+    filtered = [line for line in lines if line.strip() != entry]
+    if _is_git_tracked(repo_path, entry):
+        if filtered != lines:
+            exclude_path.write_text("\n".join(filtered) + ("\n" if filtered else ""))
+        return
+
+    if entry not in filtered:
+        filtered.append(entry)
+    exclude_path.parent.mkdir(parents=True, exist_ok=True)
+    exclude_path.write_text("\n".join(filtered) + "\n")
+
+
+def _get_worktree_exclude_path(worktree_path: Path) -> Path | None:
+    """Return the worktree-local git exclude path."""
+    result = subprocess.run(
+        ["git", "rev-parse", "--git-path", "info/exclude"],
+        cwd=worktree_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return None
+    return Path(result.stdout.strip())
+
+
+def _is_git_tracked(repo_path: Path, relative_path: str) -> bool:
+    """Return True if a path is tracked in git."""
+    result = subprocess.run(
+        ["git", "ls-files", "--error-unmatch", relative_path],
+        cwd=repo_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return result.returncode == 0
+
+
 def remove_worktree(repo_path: Path, worktree_path: Path) -> None:
     """Remove a git worktree.
 
@@ -250,19 +321,21 @@ def update_worktree_with_main(worktree_path: Path, base_branch: str = "main") ->
     Returns:
         True if update succeeded, False if there are conflicts to resolve
     """
-    # 1. Commit any uncommitted work
+    # 1. Preserve any uncommitted work without triggering repo hooks
     status = subprocess.run(
         ["git", "status", "--porcelain"],
         cwd=worktree_path,
         capture_output=True,
         text=True,
     )
-    if status.stdout.strip():
-        subprocess.run(["git", "add", "-A"], cwd=worktree_path, check=True)
+    had_uncommitted = bool(status.stdout.strip())
+    if had_uncommitted:
         subprocess.run(
-            ["git", "commit", "-m", "WIP: uncommitted work before restart"],
+            ["git", "stash", "push", "--all", "-m", "agenttree restart autostash"],
             cwd=worktree_path,
             check=True,
+            capture_output=True,
+            text=True,
         )
 
     # 2. Fetch latest from origin
@@ -282,7 +355,7 @@ def update_worktree_with_main(worktree_path: Path, base_branch: str = "main") ->
         capture_output=True,
     )
     if result.returncode == 0:
-        return True
+        return _restore_autostash(worktree_path, had_uncommitted)
 
     # 5. Rebase failed - abort and try merge instead
     subprocess.run(
@@ -297,10 +370,24 @@ def update_worktree_with_main(worktree_path: Path, base_branch: str = "main") ->
         capture_output=True,
     )
     if result.returncode == 0:
-        return True
+        return _restore_autostash(worktree_path, had_uncommitted)
 
     # 6. Merge also has conflicts - agent will need to resolve
     return False
+
+
+def _restore_autostash(worktree_path: Path, had_uncommitted: bool) -> bool:
+    """Restore stashed work after a successful worktree update."""
+    if not had_uncommitted:
+        return True
+
+    result = subprocess.run(
+        ["git", "stash", "pop"],
+        cwd=worktree_path,
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode == 0
 
 
 def reset_worktree(worktree_path: Path, base_branch: str = "main") -> None:

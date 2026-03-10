@@ -149,6 +149,45 @@ class TestStartAgent:
 
         assert result == mock_agent
 
+    def test_start_issue_syncs_local_agenttree_config_into_worktree(
+        self, mock_config, mock_issue, mock_agent, tmp_path, monkeypatch
+    ):
+        """Issue start should copy local workflow config into the worktree."""
+        monkeypatch.chdir(tmp_path)
+
+        mock_runtime = MagicMock()
+        mock_runtime.is_available.return_value = True
+        mock_runtime.get_runtime_name.return_value = "container"
+
+        with patch("agenttree.config.load_config", return_value=mock_config):
+            with patch("agenttree.preflight.run_preflight", return_value=[]):
+                with patch("agenttree.issues.get_issue", return_value=mock_issue):
+                    with patch("agenttree.state.get_active_agent", return_value=None):
+                        with patch("agenttree.tmux.TmuxManager") as mock_tm_class:
+                            mock_tm = MagicMock()
+                            mock_tm.start_issue_agent_in_container.return_value = True
+                            mock_tm_class.return_value = mock_tm
+
+                            with patch("agenttree.state.create_agent_for_issue", return_value=mock_agent):
+                                with patch("agenttree.container.get_container_runtime", return_value=mock_runtime):
+                                    with patch("agenttree.worktree.create_worktree"):
+                                        with patch("agenttree.worktree.sync_local_agenttree_config") as mock_sync:
+                                            with patch("agenttree.state.get_issue_names", return_value={
+                                                "branch": "issue-042-test-issue",
+                                                "session": "testproj-issue-042",
+                                            }):
+                                                with patch("agenttree.issues.create_session"):
+                                                    with patch("agenttree.issues.update_issue_metadata"):
+                                                        with patch("agenttree.container.is_container_running", return_value=False):
+                                                            with patch("subprocess.run") as mock_run:
+                                                                mock_run.return_value = MagicMock(returncode=1)
+                                                                start_issue("042", quiet=True)
+
+        mock_sync.assert_called_once_with(
+            tmp_path,
+            mock_config.get_issue_worktree_path.return_value,
+        )
+
     def test_start_issue_preflight_failure(self, mock_config, tmp_path, monkeypatch):
         """PreflightError when checks fail."""
         monkeypatch.chdir(tmp_path)

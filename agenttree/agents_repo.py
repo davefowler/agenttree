@@ -1409,8 +1409,35 @@ class AgentsRepository:
             capture_output=True,
         )
 
+        # Some GitHub template repos can appear empty immediately after creation.
+        # If that happens, seed local/remote main from upstream so init gets the
+        # expected skills, templates, and scripts on the first run.
+        if not self._has_template_content():
+            console.print("[dim]Seeding _agenttree from upstream template...[/dim]")
+            subprocess.run(
+                ["git", "-C", str(self.agents_path), "checkout", "-B", "main", "upstream/main"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            subprocess.run(
+                ["git", "-C", str(self.agents_path), "push", "-u", "origin", "main"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+
         console.print("[green]✓ _agenttree/ repository initialized from template[/green]")
         console.print("[dim]  Run 'agenttree upgrade' later to pull template updates[/dim]")
+
+    def _has_template_content(self) -> bool:
+        """Return True if _agenttree already contains seeded template content."""
+        expected_paths = [
+            self.agents_path / "skills",
+            self.agents_path / "templates",
+            self.agents_path / "knowledge",
+        ]
+        return any(path.exists() for path in expected_paths)
 
     def _initialize_structure(self) -> None:
         """Create initial folder structure and templates."""

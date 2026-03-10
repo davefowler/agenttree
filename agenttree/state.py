@@ -220,7 +220,7 @@ def list_active_agents() -> list[ActiveAgent]:
         parsed = _parse_tmux_session_name(session_name, project)
         if parsed:
             issue_id, role = parsed
-            if role == "manager":
+            if issue_id == 0:
                 continue
             try:
                 agents.append(_build_agent_from_session(issue_id, role, session_name, created, project))

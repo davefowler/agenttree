@@ -13,6 +13,8 @@ from agenttree.worktree import (
     remove_worktree,
     reset_worktree,
     list_worktrees,
+    sync_local_agenttree_config,
+    update_worktree_with_main,
 )
 from agenttree.config import Config
 
@@ -114,6 +116,81 @@ class TestCreateWorktree:
         assert mock_run.call_count == 2
 
 
+class TestSyncLocalAgenttreeConfig:
+    """Tests for syncing local workflow config into worktrees."""
+
+    def test_copies_local_agenttree_yaml_when_missing(self, tmp_path: Path) -> None:
+        """Worktree should receive local config even if it's untracked."""
+        repo_path = tmp_path / "repo"
+        worktree_path = tmp_path / "worktree"
+        repo_path.mkdir()
+        worktree_path.mkdir()
+
+        source = repo_path / ".agenttree.yaml"
+        source.write_text("project: annote\n")
+
+        sync_local_agenttree_config(repo_path, worktree_path)
+
+        assert (worktree_path / ".agenttree.yaml").read_text() == "project: annote\n"
+
+    def test_skips_when_worktree_config_matches(self, tmp_path: Path) -> None:
+        """No-op if the worktree already has the same config."""
+        repo_path = tmp_path / "repo"
+        worktree_path = tmp_path / "worktree"
+        repo_path.mkdir()
+        worktree_path.mkdir()
+
+        source = repo_path / ".agenttree.yaml"
+        destination = worktree_path / ".agenttree.yaml"
+        source.write_text("project: annote\n")
+        destination.write_text("project: annote\n")
+
+        sync_local_agenttree_config(repo_path, worktree_path)
+
+        assert destination.read_text() == "project: annote\n"
+
+    @patch("agenttree.worktree._get_worktree_exclude_path")
+    @patch("agenttree.worktree._is_git_tracked")
+    def test_excludes_copied_config_when_source_untracked(
+        self, mock_is_tracked: Mock, mock_get_exclude: Mock, tmp_path: Path
+    ) -> None:
+        """Copied config should be hidden from git until the repo tracks it."""
+        repo_path = tmp_path / "repo"
+        worktree_path = tmp_path / "worktree"
+        exclude_path = tmp_path / "exclude"
+        repo_path.mkdir()
+        worktree_path.mkdir()
+
+        (repo_path / ".agenttree.yaml").write_text("project: annote\n")
+        mock_get_exclude.return_value = exclude_path
+        mock_is_tracked.return_value = False
+
+        sync_local_agenttree_config(repo_path, worktree_path)
+
+        assert exclude_path.read_text() == ".agenttree.yaml\n"
+
+    @patch("agenttree.worktree._get_worktree_exclude_path")
+    @patch("agenttree.worktree._is_git_tracked")
+    def test_removes_exclude_when_source_becomes_tracked(
+        self, mock_is_tracked: Mock, mock_get_exclude: Mock, tmp_path: Path
+    ) -> None:
+        """Tracked config should no longer be hidden in the worktree."""
+        repo_path = tmp_path / "repo"
+        worktree_path = tmp_path / "worktree"
+        exclude_path = tmp_path / "exclude"
+        repo_path.mkdir()
+        worktree_path.mkdir()
+
+        (repo_path / ".agenttree.yaml").write_text("project: annote\n")
+        exclude_path.write_text(".agenttree.yaml\nother-entry\n")
+        mock_get_exclude.return_value = exclude_path
+        mock_is_tracked.return_value = True
+
+        sync_local_agenttree_config(repo_path, worktree_path)
+
+        assert exclude_path.read_text() == "other-entry\n"
+
+
 class TestRemoveWorktree:
     """Tests for removing worktrees."""
 
@@ -141,6 +218,46 @@ class TestRemoveWorktree:
 
         # Should not raise an error
         remove_worktree(tmp_path, worktree_path)
+
+
+class TestUpdateWorktreeWithMain:
+    """Tests for updating worktrees while preserving local changes."""
+
+    @patch("agenttree.worktree.subprocess.run")
+    def test_stashes_and_restores_uncommitted_changes(
+        self, mock_run: Mock, tmp_path: Path
+    ) -> None:
+        """Restart updates should stash local changes instead of committing them."""
+        mock_run.side_effect = [
+            Mock(stdout=" M file.py\n", returncode=0),  # git status
+            Mock(returncode=0),  # git stash push
+            Mock(returncode=0),  # git fetch origin
+            Mock(returncode=0),  # git pull --rebase --autostash
+            Mock(returncode=0),  # git rebase origin/main
+            Mock(returncode=0),  # git stash pop
+        ]
+
+        assert update_worktree_with_main(tmp_path) is True
+
+        commands = [call_args[0][0] for call_args in mock_run.call_args_list]
+        assert ["git", "stash", "push", "--all", "-m", "agenttree restart autostash"] in commands
+        assert ["git", "stash", "pop"] in commands
+
+    @patch("agenttree.worktree.subprocess.run")
+    def test_returns_false_when_stash_pop_conflicts(
+        self, mock_run: Mock, tmp_path: Path
+    ) -> None:
+        """Restart should surface stash-pop conflicts to the caller."""
+        mock_run.side_effect = [
+            Mock(stdout=" M file.py\n", returncode=0),  # git status
+            Mock(returncode=0),  # git stash push
+            Mock(returncode=0),  # git fetch origin
+            Mock(returncode=0),  # git pull --rebase --autostash
+            Mock(returncode=0),  # git rebase origin/main
+            Mock(returncode=1),  # git stash pop
+        ]
+
+        assert update_worktree_with_main(tmp_path) is False
 
 
 class TestResetWorktree:

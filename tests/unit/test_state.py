@@ -106,6 +106,25 @@ class TestDynamicState:
         assert 42 in issue_ids
         assert 43 in issue_ids
 
+    @patch("agenttree.state._build_agent_from_session")
+    @patch("agenttree.state._get_tmux_sessions")
+    @patch("agenttree.state.load_config")
+    def test_list_active_agents_skips_host_role_sessions(self, mock_config, mock_sessions, mock_build):
+        """list_active_agents should ignore host-role sessions with issue id 000."""
+        mock_config.return_value = MagicMock(project="agenttree")
+        mock_sessions.return_value = [
+            ("agenttree-setup-000", "1704067200"),
+            ("agenttree-architect-000", "1704067300"),
+            ("agenttree-developer-042", "1704067400"),
+        ]
+        mock_build.return_value = MagicMock(issue_id=42, role="developer")
+
+        agents = list_active_agents()
+
+        assert len(agents) == 1
+        assert agents[0].issue_id == 42
+        mock_build.assert_called_once_with(42, "developer", "agenttree-developer-042", "1704067400", "agenttree")
+
 
 class TestStopAgentServeSession:
     """Tests for serve session cleanup in stop_agent()."""
