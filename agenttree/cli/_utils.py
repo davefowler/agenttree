@@ -30,7 +30,12 @@ def get_manager_session_name(config: Config) -> str:
     return f"{config.project}-manager-000"
 
 
-def require_role_running(config: Config, role_name: str, hint: bool = True) -> str:
+def require_role_running(
+    config: Config,
+    role_name: str,
+    hint: bool = True,
+    start_target: str | None = None,
+) -> str:
     """Require that a named host role session is running."""
     from agenttree.tmux import session_exists
 
@@ -38,7 +43,8 @@ def require_role_running(config: Config, role_name: str, hint: bool = True) -> s
     if not session_exists(session_name):
         console.print(f"[red]Error: {role_name.capitalize()} not running[/red]")
         if hint:
-            console.print(f"[yellow]Start it with: agenttree start {role_name}[/yellow]")
+            target = start_target or role_name
+            console.print(f"[yellow]Start it with: agenttree start {target}[/yellow]")
         sys.exit(1)
     return session_name
 
@@ -66,15 +72,7 @@ def require_manager_running(config: Config, hint: bool = True) -> str:
     Exits:
         With code 1 if manager is not running
     """
-    from agenttree.tmux import session_exists
-
-    session_name = get_manager_session_name(config)
-    if not session_exists(session_name):
-        console.print("[red]Error: Manager not running[/red]")
-        if hint:
-            console.print("[yellow]Start it with: agenttree start 0[/yellow]")
-        sys.exit(1)
-    return session_name
+    return require_role_running(config, "manager", hint=hint, start_target="0")
 
 
 def get_manager_session_if_running(config: Config) -> str | None:

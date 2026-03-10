@@ -59,6 +59,7 @@ class TestRequireManagerRunning:
         mock_session_exists.return_value = True
         config = MagicMock()
         config.project = "myproject"
+        config.get_role_tmux_session.return_value = "myproject-manager-000"
 
         result = require_manager_running(config)
         assert result == "myproject-manager-000"
@@ -70,6 +71,7 @@ class TestRequireManagerRunning:
         mock_session_exists.return_value = False
         config = MagicMock()
         config.project = "myproject"
+        config.get_role_tmux_session.return_value = "myproject-manager-000"
 
         with pytest.raises(SystemExit) as excinfo:
             require_manager_running(config)
@@ -81,6 +83,7 @@ class TestRequireManagerRunning:
         mock_session_exists.return_value = False
         config = MagicMock()
         config.project = "myproject"
+        config.get_role_tmux_session.return_value = "myproject-manager-000"
 
         with pytest.raises(SystemExit) as excinfo:
             require_manager_running(config, hint=False)
