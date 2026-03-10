@@ -210,6 +210,66 @@ class TestAgentsRepository:
         assert gitignore.read_text().count("_agenttree/") == 1
 
     @patch("agenttree.agents_repo.subprocess.run")
+    def test_clone_repo_seeds_from_upstream_when_template_missing(self, mock_run, agents_repo, tmp_path):
+        """Should seed local main from upstream when cloned repo is empty."""
+        agents_repo.agents_path = tmp_path / "_agenttree"
+        agents_repo.agents_path.mkdir()
+        (agents_repo.agents_path / ".git").mkdir()
+
+        mock_run.side_effect = [
+            Mock(stdout="davefowler\n"),
+            Mock(),
+            Mock(),
+            Mock(),
+            Mock(),
+            Mock(),
+        ]
+
+        agents_repo._clone_repo()
+
+        calls = [call.args[0] for call in mock_run.call_args_list]
+        assert ["git", "-C", str(agents_repo.agents_path), "fetch", "upstream"] in calls
+        assert [
+            "git",
+            "-C",
+            str(agents_repo.agents_path),
+            "checkout",
+            "-B",
+            "main",
+            "upstream/main",
+        ] in calls
+        assert ["git", "-C", str(agents_repo.agents_path), "push", "-u", "origin", "main"] in calls
+
+    @patch("agenttree.agents_repo.subprocess.run")
+    def test_clone_repo_skips_seeding_when_template_present(self, mock_run, agents_repo, tmp_path):
+        """Should not reseed when the cloned repo already has template content."""
+        agents_repo.agents_path = tmp_path / "_agenttree"
+        agents_repo.agents_path.mkdir()
+        (agents_repo.agents_path / ".git").mkdir()
+        (agents_repo.agents_path / "templates").mkdir()
+
+        mock_run.side_effect = [
+            Mock(stdout="davefowler\n"),
+            Mock(),
+            Mock(),
+            Mock(),
+        ]
+
+        agents_repo._clone_repo()
+
+        calls = [call.args[0] for call in mock_run.call_args_list]
+        assert ["git", "-C", str(agents_repo.agents_path), "fetch", "upstream"] in calls
+        assert [
+            "git",
+            "-C",
+            str(agents_repo.agents_path),
+            "checkout",
+            "-B",
+            "main",
+            "upstream/main",
+        ] not in calls
+
+    @patch("agenttree.agents_repo.subprocess.run")
     def test_commit(self, mock_run, agents_repo):
         """Test _commit executes git commands."""
         agents_repo._commit("Test commit message")

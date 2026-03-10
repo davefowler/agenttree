@@ -35,6 +35,8 @@ EXCLUDE_FILES = {
     "readme.md",
     "CHANGELOG.md",
     "changelog.md",
+    "AGENTS.md",
+    "agents.md",
 }
 
 
@@ -227,21 +229,24 @@ their research files.
         console.print("  [cyan]agenttree migrate-docs[/cyan]")
 
 
-def _ensure_optional_architect_skill(repo_path: Path) -> None:
-    """Ensure optional architect skill exists in _agenttree/skills."""
+def _ensure_optional_role_skill(repo_path: Path, role_name: str) -> None:
+    """Ensure an optional role skill exists in _agenttree/skills."""
     import importlib.resources
 
     skills_dir = repo_path / "_agenttree" / "skills"
     if not skills_dir.exists():
         return
 
-    architect_skill = skills_dir / "architect.md"
-    if architect_skill.exists():
+    role_skill = skills_dir / f"{role_name}.md"
+    if role_skill.exists():
         return
 
-    template_path = importlib.resources.files("agenttree.templates").joinpath("architect.md")
-    architect_skill.write_text(template_path.read_text())
-    console.print("[green]✓ Added optional architect skill template (_agenttree/skills/architect.md)[/green]")
+    template_path = importlib.resources.files("agenttree.templates").joinpath(f"{role_name}.md")
+    if not template_path.is_file():
+        return
+
+    role_skill.write_text(template_path.read_text())
+    console.print(f"[green]✓ Added optional {role_name} skill template (_agenttree/skills/{role_name}.md)[/green]")
 
 
 @click.command()
@@ -291,7 +296,8 @@ def init(worktrees_dir: str | None, project: str | None) -> None:
         agents_repo = AgentsRepository(repo_path)
         agents_repo.ensure_repo()
         console.print("[green]✓ _agenttree/ repository created[/green]")
-        _ensure_optional_architect_skill(repo_path)
+        _ensure_optional_role_skill(repo_path, "architect")
+        _ensure_optional_role_skill(repo_path, "setup")
 
         # Always create knowledge base population issue
         _create_knowledge_issue(repo_path)

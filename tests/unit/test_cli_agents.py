@@ -17,7 +17,12 @@ def mock_config():
     """Create a mock config with roles."""
     config = MagicMock()
     config.project = "testproject"
-    config.roles = {"manager": MagicMock(), "architect": MagicMock(), "developer": MagicMock()}
+    config.roles = {
+        "manager": MagicMock(),
+        "architect": MagicMock(),
+        "setup": MagicMock(),
+        "developer": MagicMock(),
+    }
     config.get_role_tmux_session.side_effect = lambda role: f"testproject-{role}-000"
     return config
 
@@ -107,3 +112,76 @@ class TestStartAgentHostRoleRouting:
         assert result.exit_code == 1
         assert "already running" in result.output.lower()
         assert "Use --force" in result.output
+
+    def test_start_setup_skips_preflight(self, cli_runner, mock_config):
+        """Setup role should skip preflight so onboarding works in fresh repos."""
+        from agenttree.cli import main
+
+        with patch("agenttree.cli.agents.load_config", return_value=mock_config):
+            with patch("agenttree.cli.agents.run_preflight") as mock_preflight:
+                with patch("agenttree.api.start_role") as mock_start_role:
+                    result = cli_runner.invoke(main, ["start", "setup"])
+
+        mock_preflight.assert_not_called()
+        mock_start_role.assert_called_once_with("setup", tool=None, force=False)
+        assert result.exit_code == 0
+
+
+class TestHostRoleCliCommands:
+    """Tests for CLI commands targeting host roles by name."""
+
+    def test_agents_shows_running_host_roles(self, cli_runner, mock_config):
+        """agents command should show running host roles like setup."""
+        from agenttree.cli import main
+
+        mock_config.roles["setup"].description = "Interactive project setup agent"
+
+        def session_exists_side_effect(session_name: str) -> bool:
+            return session_name == "testproject-setup-000"
+
+        with patch("agenttree.cli.agents.load_config", return_value=mock_config):
+            with patch("agenttree.state.list_active_agents", return_value=[]):
+                with patch("agenttree.tmux.session_exists", side_effect=session_exists_side_effect):
+                    result = cli_runner.invoke(main, ["agents"])
+
+        assert result.exit_code == 0
+        assert "Running Host Roles" in result.output
+        assert "setup" in result.output
+
+    def test_output_accepts_role_name(self, cli_runner, mock_config):
+        """output command should allow host role names like setup."""
+        from agenttree.cli import main
+
+        with patch("agenttree.cli.agents.load_config", return_value=mock_config):
+            with patch("agenttree.cli.agents.require_role_running", return_value="testproject-setup-000"):
+                with patch("agenttree.tmux.capture_pane", return_value="setup output"):
+                    result = cli_runner.invoke(main, ["output", "setup"])
+
+        assert result.exit_code == 0
+        assert "setup output" in result.output
+
+    def test_send_accepts_role_name(self, cli_runner, mock_config):
+        """send command should allow host role names like setup."""
+        from agenttree.cli import main
+
+        with patch("agenttree.cli.agents.load_config", return_value=mock_config):
+            with patch("agenttree.cli.agents.require_role_running", return_value="testproject-setup-000"):
+                with patch("agenttree.tmux.send_message", return_value="sent") as mock_send:
+                    result = cli_runner.invoke(main, ["send", "setup", "hello"])
+
+        mock_send.assert_called_once_with("testproject-setup-000", "hello", interrupt=False)
+        assert result.exit_code == 0
+        assert "Sent message to setup" in result.output
+
+    def test_stop_accepts_role_name(self, cli_runner, mock_config):
+        """stop command should allow host role names like setup."""
+        from agenttree.cli import main
+
+        with patch("agenttree.cli.agents.load_config", return_value=mock_config):
+            with patch("agenttree.cli.agents.get_role_session_if_running", return_value="testproject-setup-000"):
+                with patch("agenttree.tmux.kill_session") as mock_kill:
+                    result = cli_runner.invoke(main, ["stop", "setup"])
+
+        mock_kill.assert_called_once_with("testproject-setup-000")
+        assert result.exit_code == 0
+        assert "Stopped setup" in result.output

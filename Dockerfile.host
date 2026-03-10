@@ -35,17 +35,20 @@ RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 ENV PATH="/home/agent/.local/bin:$PATH"
 
 # Install agenttree runtime dependencies via uv
-RUN uv pip install --system \
-    click>=8.1.0 \
-    pyyaml>=6.0 \
-    pydantic>=2.0.0 \
-    rich>=13.0.0 \
-    filelock>=3.0.0 \
-    jinja2>=3.1.0 \
-    transitions>=0.9.0
+RUN sudo /home/agent/.local/bin/uv pip install --system --break-system-packages \
+    "click>=8.1.0" \
+    "pyyaml>=6.0" \
+    "pydantic>=2.0.0" \
+    "rich>=13.0.0" \
+    "filelock>=3.0.0" \
+    "jinja2>=3.1.0" \
+    "transitions>=0.9.0"
 
 # Create workspace directory
 WORKDIR /workspace
+
+# Bundle the AgentTree Python package for non-dogfooding repos.
+COPY --chown=agent:agent agenttree /opt/agenttree/agenttree
 
 # Pre-create Claude config to skip onboarding wizard
 RUN mkdir -p /home/agent/.claude/projects/-workspace && \
@@ -55,9 +58,14 @@ RUN mkdir -p /home/agent/.claude/projects/-workspace && \
 # Create agenttree wrapper script (avoids slow install for dogfooding)
 COPY --chown=agent:agent <<'EOF' /home/agent/agenttree-wrapper.sh
 #!/bin/bash
-# Wrapper for agenttree CLI when working on agenttree itself
-# Uses PYTHONPATH instead of editable install for instant startup
-PYTHONPATH=/workspace exec python3 -c "import sys; sys.argv[0]='agenttree'; from agenttree.cli import main; main()" "$@"
+# Wrapper for agenttree CLI.
+# Uses /workspace when dogfooding AgentTree itself, otherwise falls back to the
+# bundled package baked into the image for external repos.
+PYTHONPATH_VALUE="/opt/agenttree"
+if [ -f /workspace/pyproject.toml ] && grep -q 'name = "agenttree"' /workspace/pyproject.toml; then
+    PYTHONPATH_VALUE="/workspace"
+fi
+PYTHONPATH="${PYTHONPATH_VALUE}" exec python3 -c "import sys; sys.argv[0]='agenttree'; from agenttree.cli import main; main()" "$@"
 EOF
 RUN chmod +x /home/agent/agenttree-wrapper.sh
 
@@ -80,16 +88,12 @@ if [ -f /home/agent/.gitconfig-host/.gitconfig ]; then
     cp /home/agent/.gitconfig-host/.gitconfig /home/agent/.gitconfig
 fi
 
-# Set up agenttree - use symlink approach for instant startup when dogfooding
-AGENTTREE_PATH=""
-if [ -f /workspace/pyproject.toml ] && grep -q 'name = "agenttree"' /workspace/pyproject.toml; then
-    mkdir -p /home/agent/bin
-    ln -sf /home/agent/agenttree-wrapper.sh /home/agent/bin/agenttree
-    AGENTTREE_PATH="/home/agent/bin:"
-fi
+# Make agenttree available in PATH for both dogfooding and external repos.
+mkdir -p /home/agent/bin
+ln -sf /home/agent/agenttree-wrapper.sh /home/agent/bin/agenttree
 
 # Use exec env to ensure PATH persists to child processes
-exec env PATH="${AGENTTREE_PATH}${PATH}" "$@"
+exec env PATH="/home/agent/bin:${PATH}" "$@"
 EOF
 RUN chmod +x /home/agent/entrypoint.sh
 

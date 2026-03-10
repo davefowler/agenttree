@@ -324,6 +324,19 @@ class TestDependenciesCheck:
                     # Should call uv sync --check or similar
                     mock_run.assert_called()
 
+    def test_dependencies_check_skips_js_repo(self, tmp_path, monkeypatch):
+        """Should not require uv in a package.json repo without pyproject.toml."""
+        from agenttree.preflight import DependenciesCheck
+
+        (tmp_path / "package.json").write_text('{"name":"annote"}')
+        monkeypatch.chdir(tmp_path)
+
+        check = DependenciesCheck()
+        result = check.check()
+
+        assert result.passed is True
+        assert "JavaScript/TypeScript repo detected" in result.message
+
 
 class TestGitCheck:
     """Tests for GitCheck."""
@@ -418,6 +431,19 @@ class TestTestRunnerCheck:
 
         assert result.passed is False
         assert result.fix_hint is not None
+
+    def test_test_runner_check_skips_js_repo(self, tmp_path, monkeypatch):
+        """Should not require pytest in a package.json repo without pyproject.toml."""
+        from agenttree.preflight import TestRunnerCheck
+
+        (tmp_path / "package.json").write_text('{"name":"annote"}')
+        monkeypatch.chdir(tmp_path)
+
+        check = TestRunnerCheck()
+        result = check.check()
+
+        assert result.passed is True
+        assert "JavaScript/TypeScript repo detected" in result.message
 
 
 class TestGetDefaultRegistry:

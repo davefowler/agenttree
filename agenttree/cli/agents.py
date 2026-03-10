@@ -9,7 +9,7 @@ import click
 from rich.table import Table
 
 from agenttree.config import DEFAULT_ROLE
-from agenttree.cli._utils import console, load_config, get_issue_func, normalize_issue_id, format_role_label, get_manager_session_name, require_manager_running, get_manager_session_if_running
+from agenttree.cli._utils import console, load_config, get_issue_func, normalize_issue_id, format_role_label, get_manager_session_name, get_role_session_if_running, require_manager_running, require_role_running, get_manager_session_if_running
 from agenttree.tmux import TmuxManager
 from agenttree.container import get_container_runtime
 from agenttree.agents_repo import AgentsRepository
@@ -100,21 +100,6 @@ def start_issue(
     repo_path = Path.cwd()
     config = load_config(repo_path)
 
-    # Run preflight checks unless skipped
-    if not skip_preflight:
-        console.print("[dim]Running preflight checks...[/dim]")
-        results = run_preflight()
-        failed = [r for r in results if not r.passed]
-        if failed:
-            console.print("[red]Preflight checks failed:[/red]")
-            for result in failed:
-                console.print(f"  [red]✗[/red] {result.name}: {result.message}")
-                if result.fix_hint:
-                    console.print(f"    [dim]Hint: {result.fix_hint}[/dim]")
-            console.print("\n[yellow]Use --skip-preflight to bypass these checks[/yellow]")
-            sys.exit(1)
-        console.print("[green]✓ Preflight checks passed[/green]\n")
-
     # Check if issue_id is a role name (e.g., "manager", "architect")
     # or "0" which is the legacy alias for "manager"
     is_role = issue_id in config.roles
@@ -136,6 +121,22 @@ def start_issue(
         target_role = role
     else:
         target_role = None
+
+    # The setup role exists to bootstrap repos that may not be fully configured
+    # yet, so don't block it on project dependency checks.
+    if not skip_preflight and target_role != "setup":
+        console.print("[dim]Running preflight checks...[/dim]")
+        results = run_preflight()
+        failed = [r for r in results if not r.passed]
+        if failed:
+            console.print("[red]Preflight checks failed:[/red]")
+            for result in failed:
+                console.print(f"  [red]✗[/red] {result.name}: {result.message}")
+                if result.fix_hint:
+                    console.print(f"    [dim]Hint: {result.fix_hint}[/dim]")
+            console.print("\n[yellow]Use --skip-preflight to bypass these checks[/yellow]")
+            sys.exit(1)
+        console.print("[green]✓ Preflight checks passed[/green]\n")
 
     if target_role:
         try:
@@ -316,11 +317,17 @@ def agents_status() -> None:
     tmux_manager = TmuxManager(config)
 
     agents = list_active_agents()
+    active_host_roles = []
+    for role_name in sorted(config.roles.keys()):
+        session_name = config.get_role_tmux_session(role_name)
+        if session_exists(session_name):
+            active_host_roles.append(role_name)
 
-    if not agents:
+    if not agents and not active_host_roles:
         console.print("[dim]No active agents[/dim]")
         console.print("\nStart an agent with:")
         console.print("  agenttree start <issue_id>")
+        console.print("  agenttree start <role>")
         return
 
     table = Table(title="Active Agents")
@@ -366,11 +373,33 @@ def agents_status() -> None:
             agent.branch[:20],
         )
 
-    console.print(table)
-    console.print(f"\n[dim]Commands (use ID from table above, add --role if not 'developer'):[/dim]")
-    console.print(f"  agenttree attach <id> [--role <role>]")
-    console.print(f"  agenttree send <id> [--role <role>] 'message'")
-    console.print(f"  agenttree stop <id> [--role <role>]")
+    if agents:
+        console.print(table)
+
+    if active_host_roles:
+        host_table = Table(title="Running Host Roles")
+        host_table.add_column("Role", style="bold cyan")
+        host_table.add_column("Description", style="cyan")
+        host_table.add_column("Status", style="magenta")
+
+        for role_name in active_host_roles:
+            role_config = config.roles[role_name]
+            host_table.add_row(
+                role_name,
+                getattr(role_config, "description", "") or "-",
+                "🟢 Running",
+            )
+
+        console.print(host_table)
+
+    console.print("\n[dim]Commands:[/dim]")
+    console.print("  agenttree attach <id> [--role <role>]")
+    console.print("  agenttree send <id> [--role <role>] 'message'")
+    console.print("  agenttree stop <id> [--role <role>]")
+    console.print("  agenttree attach <role>")
+    console.print("  agenttree output <role>")
+    console.print("  agenttree send <role> 'message'")
+    console.print("  agenttree stop <role>")
 
 
 
@@ -459,6 +488,12 @@ def output(issue_id: str, role: str, lines: int) -> None:
 
     config = load_config()
 
+    if issue_id in config.roles:
+        session_name = require_role_running(config, issue_id, hint=False)
+        output_text = capture_pane(session_name, lines=lines)
+        console.print(output_text)
+        return
+
     # Normalize issue ID
     issue_id_normalized = normalize_issue_id(issue_id)
 
@@ -509,6 +544,15 @@ def send(issue_id: str, message: str, role: str, interrupt: bool) -> None:
 
     config = load_config()
     tmux_manager = TmuxManager(config)
+
+    if issue_id in config.roles:
+        session_name = require_role_running(config, issue_id)
+        result = send_message(session_name, message, interrupt=interrupt)
+        if result != "sent":
+            console.print(f"[red]Error: Failed to send to {issue_id} ({result})[/red]")
+            sys.exit(1)
+        console.print(f"[green]✓ Sent message to {issue_id}[/green]")
+        return
 
     # Normalize issue ID
     issue_id_normalized = normalize_issue_id(issue_id)
@@ -608,6 +652,15 @@ def stop(issue_id: str, role: str, all_roles: bool) -> None:
     from agenttree.tmux import session_exists, kill_session
 
     config = load_config()
+
+    if issue_id in config.roles:
+        session_name = get_role_session_if_running(config, issue_id)
+        if not session_name:
+            console.print(f"[yellow]{issue_id.capitalize()} not running[/yellow]")
+            return
+        kill_session(session_name)
+        console.print(f"[green]✓ Stopped {issue_id}[/green]")
+        return
 
     # Normalize issue ID
     issue_id_normalized = normalize_issue_id(issue_id)

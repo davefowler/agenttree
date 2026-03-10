@@ -2034,6 +2034,19 @@ class TestAINotesDetection:
         assert "readme.md" not in names
         assert "claude.md" in names
 
+    def test_detect_ai_notes_excludes_agents_md(self, tmp_path):
+        """Should not detect AGENTS.md instruction files."""
+        from agenttree.cli.setup import _detect_ai_notes
+
+        (tmp_path / "AGENTS.md").write_text("Repo instructions")
+        (tmp_path / "CLAUDE.md").write_text("Claude notes")
+
+        notes = _detect_ai_notes(tmp_path)
+        names = [n.name for n in notes]
+
+        assert "AGENTS.md" not in names
+        assert "CLAUDE.md" in names
+
     def test_detect_ai_notes_excludes_agenttree_dir(self, tmp_path):
         """Should not detect files inside _agenttree directory."""
         from agenttree.cli.setup import _detect_ai_notes
@@ -2128,6 +2141,19 @@ class TestInitKnowledgeIssue:
         call_kwargs = mock_create.call_args[1]
         assert "knowledge base" in call_kwargs["title"].lower()
         assert "Analyze" in call_kwargs["problem"]
+
+    def test_ensure_optional_role_skill_creates_setup_template(self, tmp_path):
+        """Should create setup.md in _agenttree/skills when missing."""
+        from agenttree.cli.setup import _ensure_optional_role_skill
+
+        skills_dir = tmp_path / "_agenttree" / "skills"
+        skills_dir.mkdir(parents=True)
+
+        _ensure_optional_role_skill(tmp_path, "setup")
+
+        setup_skill = skills_dir / "setup.md"
+        assert setup_skill.exists()
+        assert "Setup Agent" in setup_skill.read_text()
 
     def test_prompt_notes_migration_shows_explanation(self, tmp_path, capsys):
         """Should display explanation about AgentTree notes manager."""

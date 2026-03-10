@@ -21,6 +21,7 @@ import subprocess
 import sys
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from pathlib import Path
 
 
 @dataclass
@@ -146,6 +147,17 @@ class DependenciesCheck(PreflightCheck):
 
     def check(self) -> PreflightResult:
         """Check dependencies using uv."""
+        repo_path = Path.cwd()
+        has_pyproject = (repo_path / "pyproject.toml").exists()
+        has_package_json = (repo_path / "package.json").exists()
+
+        if not has_pyproject and has_package_json:
+            return PreflightResult(
+                name=self.name,
+                passed=True,
+                message="JavaScript/TypeScript repo detected; dependency bootstrap handled by project setup",
+            )
+
         try:
             result = subprocess.run(
                 ["uv", "sync", "--check", "--inexact"],
@@ -276,6 +288,17 @@ class TestRunnerCheck(PreflightCheck):
 
     def check(self) -> PreflightResult:
         """Check for pytest."""
+        repo_path = Path.cwd()
+        has_pyproject = (repo_path / "pyproject.toml").exists()
+        has_package_json = (repo_path / "package.json").exists()
+
+        if not has_pyproject and has_package_json:
+            return PreflightResult(
+                name=self.name,
+                passed=True,
+                message="JavaScript/TypeScript repo detected; test commands come from package.json/.agenttree.yaml",
+            )
+
         try:
             result = subprocess.run(
                 [sys.executable, "-m", "pytest", "--version"],
