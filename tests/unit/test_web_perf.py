@@ -10,7 +10,7 @@ def test_get_repo_remote_name_reads_from_config() -> None:
     mock_config = MagicMock()
     mock_config.repo_remote_name = "owner/repo"
 
-    with patch("agenttree.config.load_config", return_value=mock_config):
+    with patch("agenttree.hooks.load_config", return_value=mock_config):
         from agenttree.hooks import get_repo_remote_name
 
         result = get_repo_remote_name()
@@ -23,7 +23,7 @@ def test_get_repo_remote_name_raises_when_no_remote() -> None:
     mock_config = MagicMock()
     mock_config.repo_remote_name = None
 
-    with patch("agenttree.config.load_config", return_value=mock_config):
+    with patch("agenttree.hooks.load_config", return_value=mock_config):
         from agenttree.hooks import get_repo_remote_name
 
         with pytest.raises(ValueError, match="Could not determine"):

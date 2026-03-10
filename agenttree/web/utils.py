@@ -144,7 +144,7 @@ def convert_issue_to_web(
 
             repo_name = get_repo_remote_name()
             pr_url = f"https://github.com/{repo_name}/pull/{issue.pr_number}"
-        except (subprocess.CalledProcessError, ValueError) as e:
+        except ValueError as e:
             logger.warning("Failed to derive pr_url from repo remote: %s", e)
 
     return WebIssue(

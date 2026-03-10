@@ -1762,8 +1762,6 @@ def get_repo_remote_name() -> str:
     Raises:
         ValueError: If repo remote name is not available
     """
-    from agenttree.config import load_config
-
     name = load_config().repo_remote_name
     if name is None:
         raise ValueError("Could not determine repo remote name from git origin")
