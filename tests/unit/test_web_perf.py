@@ -47,7 +47,7 @@ def test_convert_issue_to_web_no_git_subprocess() -> None:
     mock_issue.updated = "2025-01-01T00:00:00Z"
     mock_issue.history = []
     mock_issue.dependencies = []
-    mock_issue.processing = False
+    mock_issue.processing = None
     mock_issue.ci_escalated = False
     mock_issue.flow = "default"
     mock_issue.priority = MagicMock()
