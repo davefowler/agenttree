@@ -51,11 +51,18 @@ class VoiceSession {
             // 2. Create peer connection
             this.pc = new RTCPeerConnection();
 
-            // 3. Set up remote audio playback
+            // 3. Set up remote audio playback (iOS requires DOM element + playsinline)
             this.audioEl = document.createElement('audio');
             this.audioEl.autoplay = true;
+            this.audioEl.setAttribute('playsinline', '');
+            this.audioEl.setAttribute('webkit-playsinline', '');
+            this.audioEl.style.display = 'none';
+            document.body.appendChild(this.audioEl);
             var self = this;
-            this.pc.ontrack = function(e) { self.audioEl.srcObject = e.streams[0]; };
+            this.pc.ontrack = function(e) {
+                self.audioEl.srcObject = e.streams[0];
+                self.audioEl.play().catch(function() {});
+            };
 
             // 4. Get microphone and add track
             this.localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -124,7 +131,11 @@ class VoiceSession {
             try { this.pc.close(); } catch(e) {}
             this.pc = null;
         }
-        if (this.audioEl) { this.audioEl.srcObject = null; this.audioEl = null; }
+        if (this.audioEl) {
+            this.audioEl.srcObject = null;
+            if (this.audioEl.parentNode) this.audioEl.parentNode.removeChild(this.audioEl);
+            this.audioEl = null;
+        }
         this.active = false;
         this.onStatus('Tap to start a voice session', 'idle');
         this.onLog('Session ended');
