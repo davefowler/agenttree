@@ -64,16 +64,21 @@ class VoiceSession {
                 self.audioEl.play().catch(function() {});
             };
 
-            // 4. Get microphone and add track
+            // 4. Check secure context (getUserMedia requires HTTPS on mobile)
+            if (!window.isSecureContext) {
+                throw new Error('Voice requires a secure connection (HTTPS)');
+            }
+
+            // 5. Get microphone and add track
             this.localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
             this.pc.addTrack(this.localStream.getTracks()[0]);
 
-            // 5. Create data channel for events
+            // 6. Create data channel for events
             this.dc = this.pc.createDataChannel('oai-events');
             this.dc.onopen = function() { self.onLog('Data channel open'); };
             this.dc.onmessage = function(e) { self._onDataChannelMessage(e); };
 
-            // 6. SDP offer/answer exchange via OpenAI Realtime API GA endpoints
+            // 7. SDP offer/answer exchange via OpenAI Realtime API GA endpoints
             //    (Dec 2025 — replaced beta /v1/realtime/sessions)
             var offer = await this.pc.createOffer();
             await this.pc.setLocalDescription(offer);
@@ -114,8 +119,14 @@ class VoiceSession {
             }
 
         } catch (err) {
-            this.onStatus('Error: ' + err.message, 'error');
-            this.onLog('Error: ' + err.message);
+            var msg = err.message;
+            if (err.name === 'NotAllowedError') {
+                msg = 'Microphone permission denied';
+            } else if (err.name === 'NotFoundError') {
+                msg = 'No microphone found';
+            }
+            this.onStatus('Error: ' + msg, 'error');
+            this.onLog('Error: ' + msg);
             this.stop();
         }
     }
