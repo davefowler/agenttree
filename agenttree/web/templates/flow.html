@@ -14,6 +14,11 @@
 <body>
     {% include 'partials/header.html' %}
 
+    {% if has_openai_key %}
+    <script src="/static/voice.js"></script>
+    {% include 'partials/voice_widget.html' %}
+    {% endif %}
+
     <div class="flow-container">
         <!-- Left sidebar: Issue list (no polling - refresh page for updates) -->
         <div class="flow-sidebar">

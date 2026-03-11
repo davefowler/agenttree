@@ -160,6 +160,21 @@ async def voice_token(
                 "required": ["issue_id"],
             },
         },
+        {
+            "type": "function",
+            "name": "navigate",
+            "description": "Navigate the user's browser to a URL within AgentTree. Use this when the user asks to see an issue, go to kanban, etc. Note: navigation causes a full page reload which disconnects the voice session.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "Relative URL to navigate to, e.g. /kanban?issue=42 or /flow?issue=10",
+                    }
+                },
+                "required": ["url"],
+            },
+        },
     ]
 
     # OpenAI Realtime API GA endpoints (released Dec 2025):
@@ -202,6 +217,14 @@ async def voice_tool_call(
     The browser receives function_call events from OpenAI, POSTs them
     here, and we return the result to send back via the data channel.
     """
+    body = await request.json()
+    fn_name = str(body.get("name", ""))
+    fn_args = dict(body.get("arguments", {}))
+
+    # navigate is handled client-side, but if it reaches the server, ack it
+    if fn_name == "navigate":
+        return {"result": "Navigation is handled client-side"}
+
     from agenttree.mcp_server import (
         approve as mcp_approve,
         create_issue as mcp_create,
@@ -212,10 +235,6 @@ async def voice_tool_call(
         status as mcp_status,
         stop_agent as mcp_stop,
     )
-
-    body = await request.json()
-    fn_name = str(body.get("name", ""))
-    fn_args = dict(body.get("arguments", {}))
 
     def _run_tool(name: str, args: dict[str, object]) -> str:
         tools: dict[str, Callable[[dict[str, object]], object]] = {

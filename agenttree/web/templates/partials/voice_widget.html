@@ -1,0 +1,66 @@
+<!-- Voice chat widget dropdown (shown when mic button is clicked) -->
+<div class="voice-widget-dropdown" id="voice-widget-dropdown">
+    <div class="voice-widget-header">
+        <span class="voice-widget-status" id="vw-status">Click mic to start</span>
+        <button class="voice-widget-close" onclick="window.toggleVoiceWidget()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16">
+                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+        </button>
+    </div>
+    <div class="voice-widget-log" id="vw-log"></div>
+</div>
+
+<script>
+(function() {
+    var voiceWidget = new VoiceSession({
+        onStatus: function(text, state) {
+            var statusEl = document.getElementById('vw-status');
+            var btn = document.getElementById('voice-widget-btn');
+            if (!statusEl || !btn) return;
+
+            statusEl.textContent = text;
+            statusEl.className = 'voice-widget-status' + (state === 'active' ? ' active' : state === 'error' ? ' error' : '');
+
+            if (state === 'active') {
+                btn.classList.add('voice-active');
+            } else if (state === 'idle' || state === 'error') {
+                btn.classList.remove('voice-active');
+            }
+        },
+        onLog: function(text, className) {
+            var el = document.getElementById('vw-log');
+            if (!el) return;
+            var div = document.createElement('div');
+            div.textContent = text;
+            if (className) div.className = className;
+            el.appendChild(div);
+            el.scrollTop = el.scrollHeight;
+        },
+        getIssueId: function() {
+            var params = new URLSearchParams(window.location.search);
+            var issue = params.get('issue');
+            return issue ? parseInt(issue, 10) : null;
+        },
+        onNavigate: function(url) {
+            window.location.href = url;
+        },
+    });
+
+    var dropdownOpen = false;
+
+    window.toggleVoiceWidget = function() {
+        var dropdown = document.getElementById('voice-widget-dropdown');
+        if (!dropdown) return;
+
+        dropdownOpen = !dropdownOpen;
+        dropdown.classList.toggle('open', dropdownOpen);
+
+        if (dropdownOpen && !voiceWidget.active) {
+            voiceWidget.start();
+        } else if (!dropdownOpen && voiceWidget.active) {
+            voiceWidget.stop();
+        }
+    };
+})();
+</script>
