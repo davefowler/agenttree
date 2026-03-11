@@ -1753,45 +1753,19 @@ def get_commits_ahead_behind_main(worktree_dir: Optional[str]) -> tuple[int, int
 def get_repo_remote_name() -> str:
     """Get the repository name from git remote.
 
-    Parses owner/repo from URLs like:
-    - git@github.com:owner/repo.git
-    - https://github.com/owner/repo.git
-    - https://github.com/owner/repo
+    Reads from config (computed once at startup) to avoid spawning a
+    subprocess on every call.
 
     Returns:
         Repository name in format "owner/repo"
 
     Raises:
-        subprocess.CalledProcessError: If git command fails
-        subprocess.TimeoutExpired: If git command times out
-        ValueError: If URL format is unrecognized
+        ValueError: If repo remote name is not available
     """
-    result = subprocess.run(
-        ["git", "remote", "get-url", "origin"],
-        capture_output=True,
-        text=True,
-        check=True,
-        timeout=GIT_COMMAND_TIMEOUT,
-    )
-    url = result.stdout.strip()
-
-    # Remove .git suffix if present
-    if url.endswith(".git"):
-        url = url[:-4]
-
-    # Parse SSH URL: git@github.com:owner/repo
-    if url.startswith("git@"):
-        match = re.search(r"git@[^:]+:(.+)", url)
-        if match:
-            return match.group(1)
-
-    # Parse HTTPS URL: https://github.com/owner/repo
-    if url.startswith("https://") or url.startswith("http://"):
-        match = re.search(r"github\.com/(.+)", url)
-        if match:
-            return match.group(1)
-
-    raise ValueError(f"Unrecognized remote URL format: {url}")
+    name = load_config().repo_remote_name
+    if name is None:
+        raise ValueError("Could not determine repo remote name from git origin")
+    return name
 
 
 def generate_pr_body(issue: Issue) -> str:

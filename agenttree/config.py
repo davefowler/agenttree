@@ -481,6 +481,7 @@ class Config(BaseModel):
     allow_self_approval: bool = False
     auto_start_on_create: bool = True
     containers: dict[str, ContainerTypeConfig] = Field(default_factory=dict)
+    repo_remote_name: str | None = None
 
     # ── Port / path helpers ──────────────────────────────────────────
 
@@ -1263,5 +1264,48 @@ def load_config(path: Path | None = None) -> "Config":
     # The new format always has stages extracted from flows
 
     result = Config(**data)
+
+    # Compute repo remote name once at config load time (avoids repeated
+    # subprocess calls in web request handlers).
+    if result.repo_remote_name is None:
+        result.repo_remote_name = _resolve_repo_remote_name()
+
     _config_cache[config_file] = (mtime, result)
     return result
+
+
+def _resolve_repo_remote_name() -> str | None:
+    """Resolve the GitHub owner/repo from git remote origin.
+
+    Returns None if git is unavailable or no origin remote is configured.
+    """
+    import re
+    import subprocess
+
+    try:
+        r = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if r.returncode != 0:
+            return None
+        url = r.stdout.strip()
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return None
+
+    if url.endswith(".git"):
+        url = url[:-4]
+
+    # SSH: git@github.com:owner/repo
+    if url.startswith("git@"):
+        match = re.search(r"git@[^:]+:(.+)", url)
+        if match:
+            return match.group(1)
+
+    # HTTPS: https://github.com/owner/repo
+    if url.startswith("https://") or url.startswith("http://"):
+        match = re.search(r"github\.com/(.+)", url)
+        if match:
+            return match.group(1)
+
+    return None
