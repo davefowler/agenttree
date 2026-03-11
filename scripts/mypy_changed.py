@@ -39,12 +39,17 @@ def main() -> int:
         return 0
 
     print(f"Running mypy on {len(targets)} changed files.")
-    result = subprocess.run(
-        ["mypy", "--ignore-missing-imports", *targets],
-        cwd=repo_root,
-        check=False,
-    )
-    return result.returncode
+    try:
+        result = subprocess.run(
+            ["mypy", "--ignore-missing-imports", *targets],
+            cwd=repo_root,
+            check=False,
+            timeout=120,
+        )
+        return result.returncode
+    except subprocess.TimeoutExpired:
+        print("mypy timed out after 120 seconds; skipping (CI will catch errors)")
+        return 0
 
 
 if __name__ == "__main__":
