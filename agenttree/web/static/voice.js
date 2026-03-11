@@ -16,6 +16,7 @@ class VoiceSession {
         this.onStatus = opts.onStatus || function() {};
         this.onLog = opts.onLog || function() {};
         this.getIssueId = opts.getIssueId || function() { return null; };
+        this.onNavigate = opts.onNavigate || null;
 
         this.pc = null;
         this.dc = null;
@@ -169,6 +170,24 @@ class VoiceSession {
         var fnArgs;
         try { fnArgs = JSON.parse(output.arguments || '{}'); } catch(e) { fnArgs = {}; }
         this.onLog('Tool: ' + fnName + '(' + JSON.stringify(fnArgs) + ')', 'tool-call');
+
+        // Handle navigate client-side without server round-trip
+        if (fnName === 'navigate' && this.onNavigate) {
+            var url = fnArgs.url || '/kanban';
+            if (this.dc && this.dc.readyState === 'open') {
+                this.dc.send(JSON.stringify({
+                    type: 'conversation.item.create',
+                    item: {
+                        type: 'function_call_output',
+                        call_id: output.call_id,
+                        output: 'Navigating to ' + url,
+                    },
+                }));
+                this.dc.send(JSON.stringify({ type: 'response.create' }));
+            }
+            this.onNavigate(url);
+            return;
+        }
 
         try {
             var resp = await fetch('/api/voice/tool-call', {

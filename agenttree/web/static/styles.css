@@ -3155,3 +3155,84 @@ body:has(.rate-limit-banner) .kanban-board {
 .settings-actions .btn {
     padding: 10px 24px;
 }
+
+/* Voice widget dropdown */
+.voice-widget-dropdown {
+    display: none;
+    position: absolute;
+    top: 100%;
+    right: 80px;
+    width: 320px;
+    max-height: 300px;
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+    z-index: 1000;
+    flex-direction: column;
+}
+
+.voice-widget-dropdown.open {
+    display: flex;
+}
+
+.voice-widget-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.voice-widget-status {
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+.voice-widget-status.active {
+    color: #22c55e;
+}
+
+.voice-widget-status.error {
+    color: #ef4444;
+}
+
+.voice-widget-close {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 2px;
+    line-height: 0;
+}
+
+.voice-widget-close:hover {
+    color: var(--text-primary);
+}
+
+.voice-widget-log {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 12px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    max-height: 240px;
+}
+
+.voice-widget-log div {
+    padding: 2px 0;
+}
+
+.voice-widget-log .tool-call {
+    color: var(--text-primary);
+    font-family: var(--font-mono, monospace);
+    font-size: 11px;
+}
+
+.header-icon-btn.voice-active {
+    color: #22c55e;
+}
+
+header .header-row {
+    position: relative;
+}

@@ -580,6 +580,7 @@ async def kanban(
             "search": search or "",
             "current_view": view or "nonempty",
             "rate_limit_warning": rate_limit_warning,
+            "has_openai_key": bool(os.environ.get("OPENAI_API_KEY")),
         }
     )
 
@@ -991,6 +992,7 @@ async def flow(
             "search": search or "",
             "current_sort": sort or "stage",
             "current_filter": filter or "all",
+            "has_openai_key": bool(os.environ.get("OPENAI_API_KEY")),
         }
     )
 
@@ -1667,6 +1669,14 @@ async def voice_tool_call(
     The browser receives function_call events from OpenAI, POSTs them
     here, and we return the result to send back via the data channel.
     """
+    body = await request.json()
+    fn_name = str(body.get("name", ""))
+    fn_args = dict(body.get("arguments", {}))
+
+    # navigate is handled client-side, but if it reaches the server, ack it
+    if fn_name == "navigate":
+        return {"result": "Navigation is handled client-side"}
+
     from agenttree.mcp_server import (
         status as mcp_status,
         get_issue as mcp_get_issue,
@@ -1677,10 +1687,6 @@ async def voice_tool_call(
         start_issue as mcp_start,
         stop_agent as mcp_stop,
     )
-
-    body = await request.json()
-    fn_name = str(body.get("name", ""))
-    fn_args = dict(body.get("arguments", {}))
 
     def _run_tool(name: str, args: dict[str, object]) -> str:
         tools: dict[str, Callable[[dict[str, object]], object]] = {

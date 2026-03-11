@@ -138,6 +138,7 @@ async def kanban(
             "search": search or "",
             "current_view": view or "nonempty",
             "rate_limit_warning": rate_limit_warning,
+            "has_openai_key": bool(os.environ.get("OPENAI_API_KEY")),
         },
     )
 
@@ -239,6 +240,7 @@ async def flow(
             "search": search or "",
             "current_sort": sort or "stage",
             "current_filter": filter or "all",
+            "has_openai_key": bool(os.environ.get("OPENAI_API_KEY")),
         },
     )
 
