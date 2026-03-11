@@ -177,6 +177,11 @@ The `_agenttree/` directory is a **separate git repository** that stores all AI 
 - `skills/` - Stage instructions and agent skill files
 - `templates/` - Document templates for each stage
 
+Documentation inside `_agenttree/` should be split by audience:
+- Internal workflow docs belong in places like `_agenttree/plans/`, `_agenttree/specs/`, `_agenttree/rfcs/`, `_agenttree/knowledge/`, and `_agenttree/tasks/`
+- External/public-facing docs such as blog posts, explainers, and publishable essays belong in `_agenttree/public/`
+- Public docs may be linked from the main `README.md`, but should not be created in a main-repo `docs/` directory
+
 **This is gitignored from the main repo** because it's its own repo. When you update skills or templates in `_agenttree/`, those changes are tracked there, not in the main codebase commits.
 
 ### Other Notes

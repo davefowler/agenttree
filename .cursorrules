@@ -23,11 +23,18 @@ Raw tmux/container commands bypass workflow, break state tracking, and cause bug
 
 **All documentation goes in `_agenttree/` repository, NOT in the main codebase.**
 
+Differentiate clearly between internal workflow docs and external/public-facing docs:
+
+- Internal workflow/process docs stay in `_agenttree/` and use the directories below.
+- External user-facing longform docs (blog posts, explainers, marketing-style essays, publishable thought pieces) should also live in `_agenttree/`, but under `_agenttree/public/`.
+- Public docs may be linked from the main `README.md`, but should not be placed in a main-repo `docs/` directory.
+
 When creating plans, specs, proposals, or documentation:
 - `_agenttree/plans/` - Planning docs, proposals, design discussions
 - `_agenttree/specs/` - Feature specifications, architecture docs
 - `_agenttree/rfcs/` - Request for comments, major decisions
 - `_agenttree/knowledge/` - Gotchas, patterns, onboarding info
+- `_agenttree/public/` - External/public-facing docs, blog posts, essays, explainer content
 - `_agenttree/tasks/` - Task logs and work history
 
 **DO NOT create:**

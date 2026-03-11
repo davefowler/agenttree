@@ -449,6 +449,7 @@ Comprehensive documentation is available in the [`docs/`](docs/) directory:
 - Current Phase: **Phase 2 Complete** ✅
 - Next Phase: **Phase 3 - Enhanced GitHub Integration** 🎯
 - Test Coverage: **25%** (48 tests passing)
+- **[Workflow engineering](https://github.com/davefowler/agenttree-agenttree/blob/main/public/workflow-engineering.md)** - Essay on AgentTree's agent-first workflow model and why workflow becomes core infrastructure
 
 ## Development
 
