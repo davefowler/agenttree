@@ -194,6 +194,21 @@
             switchTab('chat');
         }
 
+        // Toast notification for mobile
+        window.showToast = function(message, type) {
+            var existing = document.querySelector('.mobile-toast');
+            if (existing) existing.remove();
+            var toast = document.createElement('div');
+            toast.className = 'mobile-toast' + (type === 'error' ? ' error' : ' success');
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            setTimeout(function() { toast.classList.add('visible'); }, 10);
+            setTimeout(function() {
+                toast.classList.remove('visible');
+                setTimeout(function() { toast.remove(); }, 300);
+            }, 3000);
+        };
+
         // Agent light toggle (for sidebar)
         window.toggleAgent = async function(issueNumber, lightElement) {
             const isOn = lightElement.classList.contains('on');
@@ -206,7 +221,6 @@
 
             lightElement.classList.remove('off', 'stalled');
             lightElement.classList.add('starting');
-            lightElement.title = 'Starting agent...';
 
             try {
                 const response = await fetch(`/api/issues/${issueNumber}/start`, {
@@ -214,17 +228,18 @@
                 });
 
                 if (response.ok) {
+                    showToast('Agent starting...', 'success');
                     setTimeout(() => location.reload(), 2000);
                 } else {
+                    const data = await response.json().catch(() => ({}));
+                    showToast(data.detail || 'Failed to start agent', 'error');
                     lightElement.classList.remove('starting');
                     lightElement.classList.add('stalled');
-                    lightElement.title = 'Failed to start - click to retry';
                 }
             } catch (error) {
-                console.error('Error starting agent:', error);
+                showToast('Network error — check connection', 'error');
                 lightElement.classList.remove('starting');
                 lightElement.classList.add('stalled');
-                lightElement.title = 'Error - click to retry';
             }
         };
 
@@ -233,12 +248,12 @@
             const isOn = lightElement.classList.contains('on');
 
             if (isOn) {
+                showToast('Agent is already running', 'success');
                 return;
             }
 
             lightElement.classList.remove('off', 'stalled');
             lightElement.classList.add('starting');
-            lightElement.title = 'Starting agent...';
 
             try {
                 const response = await fetch(`/api/issues/${issueNumber}/start`, {
@@ -246,17 +261,18 @@
                 });
 
                 if (response.ok) {
+                    showToast('Agent starting...', 'success');
                     setTimeout(() => location.reload(), 2000);
                 } else {
+                    const data = await response.json().catch(() => ({}));
+                    showToast(data.detail || 'Failed to start agent', 'error');
                     lightElement.classList.remove('starting');
                     lightElement.classList.add('stalled');
-                    lightElement.title = 'Failed to start - click to retry';
                 }
             } catch (error) {
-                console.error('Error starting agent:', error);
+                showToast('Network error — check connection', 'error');
                 lightElement.classList.remove('starting');
                 lightElement.classList.add('stalled');
-                lightElement.title = 'Error - click to retry';
             }
         }
 
@@ -399,6 +415,33 @@
         }
         .voice-overlay-log .tool-call {
             color: #4a9eff;
+        }
+        /* Toast notifications */
+        .mobile-toast {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            padding: 12px 16px;
+            font-size: 14px;
+            font-weight: 500;
+            text-align: center;
+            z-index: 200;
+            transform: translateY(-100%);
+            transition: transform 0.3s ease;
+        }
+        .mobile-toast.visible {
+            transform: translateY(0);
+        }
+        .mobile-toast.success {
+            background: #1a3a1a;
+            color: #4aff7a;
+            border-bottom: 1px solid #2a5a2a;
+        }
+        .mobile-toast.error {
+            background: #3a1a1a;
+            color: #ff4a4a;
+            border-bottom: 1px solid #5a2a2a;
         }
         /* Voice tab button pulse when active */
         .voice-tab-btn.active svg {
