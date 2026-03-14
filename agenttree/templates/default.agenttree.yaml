@@ -67,6 +67,19 @@ roles:
   #     image: agenttree-host:latest
   #   skill: architect.md
 
+  # Optional: COO operations role (host-level, no container)
+  # Uncomment to enable an operational supervisor that watches stalls,
+  # understands what hot-reloads vs what needs a restart, and makes small
+  # system/process improvements over time.
+  # coo:
+  #   description: "Operational supervisor for system health and restarts"
+  #   tool: claude
+  #   model: sonnet
+  #   container:
+  #     enabled: false
+  #     image: agenttree-host:latest
+  #   skill: coo.md
+
 # Workflow flows
 # The default flow defines stages inline (dict). Secondary flows reference
 # stages by dot path (list). A bare stage name like "implement" expands to

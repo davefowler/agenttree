@@ -2155,6 +2155,19 @@ class TestInitKnowledgeIssue:
         assert setup_skill.exists()
         assert "Setup Agent" in setup_skill.read_text()
 
+    def test_ensure_optional_role_skill_creates_coo_template(self, tmp_path):
+        """Should create coo.md in _agenttree/skills when missing."""
+        from agenttree.cli.setup import _ensure_optional_role_skill
+
+        skills_dir = tmp_path / "_agenttree" / "skills"
+        skills_dir.mkdir(parents=True)
+
+        _ensure_optional_role_skill(tmp_path, "coo")
+
+        coo_skill = skills_dir / "coo.md"
+        assert coo_skill.exists()
+        assert "COO Agent" in coo_skill.read_text()
+
     def test_prompt_notes_migration_shows_explanation(self, tmp_path, capsys):
         """Should display explanation about AgentTree notes manager."""
         from agenttree.cli.setup import _prompt_notes_migration

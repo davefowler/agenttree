@@ -364,6 +364,9 @@ agenttree start 42 --tool aider
 
 # Force restart (kills existing agent)
 agenttree start 42 --force
+
+# Restart the full AgentTree process (server + heartbeat + active agents)
+agenttree restart
 ```
 
 ### Monitor Agents

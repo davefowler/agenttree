@@ -45,7 +45,7 @@ When you receive a heartbeat ping (every 5 minutes), do this:
    - Reset or reimplement the issue:
      - `agenttree reset --issue <id> -y` for full reset
      - `agenttree reimplement --issue <id> -y` if only implementation failed
-   - Restart: `agenttree start <id>`
+   - Restart the issue: `agenttree start <id> --force`
 
 ### If an Issue Reaches a Review Stage
 
@@ -63,6 +63,7 @@ Give a quick review — make sure it's reasonable — but don't block on minor i
 | `agenttree reset --issue <id> -y` | Full reset — wipes everything, back to backlog |
 | `agenttree reimplement --issue <id> -y` | Reset to implement.setup, keeps plan files |
 | `agenttree start <id>` | Start an agent for an issue |
+| `agenttree restart` | Restart the full AgentTree system |
 | `agenttree stop <id>` | Stop an agent |
 | `agenttree approve <id>` | Approve at human review stage |
 | `agenttree approve <id> --skip-approval` | Approve without PR approval check |
@@ -115,3 +116,5 @@ Once your test issue flows through to `accepted`:
 - Never write implementation code for issues. Only fix agenttree infrastructure.
 - Be patient. Give the system time to work before intervening.
 - The goal is a system that works without you. Every fix should be permanent.
+- Use `agenttree start <id> --force` for issue-level restarts.
+- If you change server/heartbeat behavior or config that only loads at startup, use `agenttree restart` to restart the full system.

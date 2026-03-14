@@ -185,3 +185,46 @@ class TestHostRoleCliCommands:
         mock_kill.assert_called_once_with("testproject-setup-000")
         assert result.exit_code == 0
         assert "Stopped setup" in result.output
+
+
+class TestRestartCommand:
+    """Tests for the restart command."""
+
+    def test_restart_without_issue_restarts_full_system(self, cli_runner):
+        """restart with no issue id should restart server, heartbeat, and agents."""
+        from agenttree.cli import main
+
+        mock_ctx = MagicMock()
+
+        with patch("agenttree.cli.agents.shutil.which", return_value="/usr/local/bin/agenttree"):
+            with patch("agenttree.cli.agents.subprocess.Popen") as mock_popen:
+                with patch("agenttree.cli.agents.click.get_current_context", return_value=mock_ctx):
+                    result = cli_runner.invoke(main, ["restart"])
+
+        mock_popen.assert_called_once()
+        args, kwargs = mock_popen.call_args
+        assert args[0][0].endswith("python") or "python" in args[0][0]
+        assert kwargs["start_new_session"] is True
+        mock_ctx.invoke.assert_called_once()
+        assert result.exit_code == 0
+        assert "Scheduled full AgentTree restart" in result.output
+
+    def test_restart_forwards_host_and_port(self, cli_runner):
+        """restart should pass custom host and port through to start."""
+        from agenttree.cli import main
+
+        mock_ctx = MagicMock()
+
+        with patch("agenttree.cli.agents.shutil.which", return_value="/usr/local/bin/agenttree"):
+            with patch("agenttree.cli.agents.subprocess.Popen") as mock_popen:
+                with patch("agenttree.cli.agents.click.get_current_context", return_value=mock_ctx):
+                    result = cli_runner.invoke(main, ["restart", "--host", "127.0.0.1", "--port", "9900"])
+
+        mock_popen.assert_called_once()
+        args, kwargs = mock_popen.call_args
+        script = args[0][2]
+        assert "127.0.0.1" in script
+        assert "9900" in script
+        assert kwargs["start_new_session"] is True
+        mock_ctx.invoke.assert_called_once()
+        assert result.exit_code == 0
