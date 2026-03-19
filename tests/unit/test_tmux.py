@@ -407,7 +407,7 @@ test-session: 2 windows (created Mon Jan  1 12:00:00 2024)"""
 
 
 class TestTmuxManager:
-    """Tests for TmuxManager class (messenger and serve sessions only)."""
+    """Tests for TmuxManager class."""
 
     @pytest.fixture
     def mock_config(self):
@@ -417,38 +417,78 @@ class TestTmuxManager:
         config.is_project_session.side_effect = lambda name: name.startswith("myproject-")
         return config
 
-    def test_send_message_to_issue(self, mock_config):
-        """Should send message to issue session and return status."""
-        from agenttree.tmux import TmuxManager
-
-        manager = TmuxManager(mock_config)
-
-        with patch("agenttree.tmux.send_message", return_value="sent") as mock_send:
-            result = manager.send_message_to_issue("issue-42", "hello")
-
-        assert result == "sent"
-        mock_send.assert_called_once_with("issue-42", "hello", check_claude=True, interrupt=False)
-
     def test_is_issue_running(self, mock_config):
-        """Should check issue session existence."""
+        """Should check session existence."""
         from agenttree.tmux import TmuxManager
 
         manager = TmuxManager(mock_config)
 
         with patch("agenttree.tmux.session_exists", return_value=True) as mock_exists:
-            result = manager.is_issue_running("issue-42")
+            result = manager.is_issue_running("myproject-developer-042")
 
         assert result is True
-        mock_exists.assert_called_once_with("issue-42")
+        mock_exists.assert_called_once_with("myproject-developer-042")
+
+    def test_is_issue_running_false(self, mock_config):
+        """Should return False when session does not exist."""
+        from agenttree.tmux import TmuxManager
+
+        manager = TmuxManager(mock_config)
+
+        with patch("agenttree.tmux.session_exists", return_value=False):
+            result = manager.is_issue_running("myproject-developer-042")
+
+        assert result is False
+
+    def test_send_message_to_issue(self, mock_config):
+        """Should send message to session and return status."""
+        from agenttree.tmux import TmuxManager
+
+        manager = TmuxManager(mock_config)
+
+        with patch("agenttree.tmux.send_message", return_value="sent") as mock_send:
+            result = manager.send_message_to_issue("myproject-developer-042", "hello")
+
+        assert result == "sent"
+        mock_send.assert_called_once_with("myproject-developer-042", "hello", check_claude=True, interrupt=False)
+
+    def test_send_message_to_issue_with_interrupt(self, mock_config):
+        """Should pass interrupt flag through to send_message."""
+        from agenttree.tmux import TmuxManager
+
+        manager = TmuxManager(mock_config)
+
+        with patch("agenttree.tmux.send_message", return_value="sent") as mock_send:
+            result = manager.send_message_to_issue("myproject-developer-042", "hello", interrupt=True)
+
+        assert result == "sent"
+        mock_send.assert_called_once_with("myproject-developer-042", "hello", check_claude=True, interrupt=True)
+
+    def test_attach_to_issue_success(self, mock_config):
+        """Should attach to session when it exists."""
+        from agenttree.tmux import TmuxManager
+
+        manager = TmuxManager(mock_config)
+
+        with patch("agenttree.tmux.session_exists", return_value=True):
+            with patch("agenttree.tmux.attach_session") as mock_attach:
+                manager.attach_to_issue("myproject-developer-042")
+
+        mock_attach.assert_called_once_with("myproject-developer-042")
+
+    def test_attach_to_issue_raises_when_no_session(self, mock_config):
+        """Should raise RuntimeError when session doesn't exist."""
+        from agenttree.tmux import TmuxManager
+
+        manager = TmuxManager(mock_config)
+
+        with patch("agenttree.tmux.session_exists", return_value=False):
+            with pytest.raises(RuntimeError, match="does not exist"):
+                manager.attach_to_issue("myproject-developer-042")
 
     def test_list_issue_sessions(self, mock_config):
-        """Should filter sessions by project prefix using is_project_session."""
+        """Should filter sessions using config.is_project_session."""
         from agenttree.tmux import TmuxManager, TmuxSession
-
-        # list_issue_sessions uses config.is_project_session to filter
-        mock_config.project = "myproject"
-        # Configure is_project_session to match project sessions
-        mock_config.is_project_session.side_effect = lambda name: name.startswith("myproject-")
 
         manager = TmuxManager(mock_config)
 
@@ -464,6 +504,21 @@ class TestTmuxManager:
         assert len(result) == 2
         assert result[0].name == "myproject-developer-042"
         assert result[1].name == "myproject-developer-043"
+
+    def test_list_issue_sessions_empty(self, mock_config):
+        """Should return empty list when no matching sessions."""
+        from agenttree.tmux import TmuxManager, TmuxSession
+
+        manager = TmuxManager(mock_config)
+
+        test_sessions = [
+            TmuxSession(name="other-project-042", windows=1, attached=False),
+        ]
+
+        with patch("agenttree.tmux.list_sessions", return_value=test_sessions):
+            result = manager.list_issue_sessions()
+
+        assert result == []
 
 
 class TestStartController:
@@ -546,14 +601,52 @@ class TestStartController:
         call_args = mock_create.call_args[0]
         assert call_args[2] == "custom-ai-tool --special-flag"
 
+    def test_start_manager_no_skill_file_skips_send(self, mock_config, tmp_path):
+        """Should not send any keys when no skill_file is provided."""
+        from agenttree.tmux import TmuxManager
 
-class TestServeSession:
-    """Tests for serve session functionality (now in api.start_issue)."""
+        manager = TmuxManager(mock_config)
 
-    def test_serve_session_naming(self):
-        """Serve session should be named {project}-serve-{issue_id}."""
+        with patch("agenttree.tmux.session_exists", return_value=False):
+            with patch("agenttree.tmux.create_session"):
+                with patch("agenttree.tmux.wait_for_prompt", return_value=True):
+                    with patch("agenttree.tmux.send_keys") as mock_send:
+                        manager.start_host_role(
+                            session_name="testproject-manager-000",
+                            repo_path=tmp_path,
+                            tool_name="claude",
+                        )
+
+        mock_send.assert_not_called()
+
+    def test_start_manager_with_model(self, mock_config, tmp_path):
+        """Should append model flag to ai command when model is specified."""
+        from agenttree.tmux import TmuxManager
+
+        manager = TmuxManager(mock_config)
+
+        with patch("agenttree.tmux.session_exists", return_value=False):
+            with patch("agenttree.tmux.create_session") as mock_create:
+                with patch("agenttree.tmux.wait_for_prompt", return_value=False):
+                    manager.start_host_role(
+                        session_name="testproject-manager-000",
+                        repo_path=tmp_path,
+                        tool_name="claude",
+                        model="claude-3-5-sonnet",
+                    )
+
+        call_args = mock_create.call_args[0]
+        assert call_args[2] == "claude --model claude-3-5-sonnet"
+
+
+class TestServeSessionInStartIssue:
+    """Serve session tests moved to test_api.py - these are simple naming tests."""
+
+    def test_serve_session_naming_convention(self):
+        """Serve sessions should follow {project}-serve-{issue_id} convention."""
         from agenttree.ids import serve_session_name
         assert serve_session_name("myproject", 135) == "myproject-serve-135"
+        assert serve_session_name("app", 1) == "app-serve-001"
 
 
 class TestSaveTmuxHistoryToFile:
