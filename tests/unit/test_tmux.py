@@ -413,119 +413,82 @@ class TestTmuxManager:
     def mock_config(self):
         """Create a mock config."""
         config = MagicMock()
-        config.get_tmux_session_name.return_value = "agent-42"
+        config.project = "myproject"
+        config.is_project_session.side_effect = lambda name: name.startswith("myproject-")
         return config
 
-    def test_get_session_name(self, mock_config):
-        """Should delegate to config."""
-        from agenttree.tmux import TmuxManager
-
-        manager = TmuxManager(mock_config)
-        result = manager.get_session_name(42)
-
-        assert result == "agent-42"
-        mock_config.get_tmux_session_name.assert_called_once_with(42)
-
-    def test_stop_agent(self, mock_config):
-        """Should kill the correct session."""
+    def test_is_issue_running(self, mock_config):
+        """Should check session existence."""
         from agenttree.tmux import TmuxManager
 
         manager = TmuxManager(mock_config)
 
-        with patch("agenttree.tmux.kill_session") as mock_kill:
-            manager.stop_agent(42)
+        with patch("agenttree.tmux.session_exists", return_value=True) as mock_exists:
+            result = manager.is_issue_running("myproject-developer-042")
 
-        mock_kill.assert_called_once_with("agent-42")
+        assert result is True
+        mock_exists.assert_called_once_with("myproject-developer-042")
 
-    def test_attach(self, mock_config):
-        """Should attach to correct session."""
+    def test_is_issue_running_false(self, mock_config):
+        """Should return False when session does not exist."""
+        from agenttree.tmux import TmuxManager
+
+        manager = TmuxManager(mock_config)
+
+        with patch("agenttree.tmux.session_exists", return_value=False):
+            result = manager.is_issue_running("myproject-developer-042")
+
+        assert result is False
+
+    def test_send_message_to_issue(self, mock_config):
+        """Should send message to session and return status."""
+        from agenttree.tmux import TmuxManager
+
+        manager = TmuxManager(mock_config)
+
+        with patch("agenttree.tmux.send_message", return_value="sent") as mock_send:
+            result = manager.send_message_to_issue("myproject-developer-042", "hello")
+
+        assert result == "sent"
+        mock_send.assert_called_once_with("myproject-developer-042", "hello", check_claude=True, interrupt=False)
+
+    def test_send_message_to_issue_with_interrupt(self, mock_config):
+        """Should pass interrupt flag through to send_message."""
+        from agenttree.tmux import TmuxManager
+
+        manager = TmuxManager(mock_config)
+
+        with patch("agenttree.tmux.send_message", return_value="sent") as mock_send:
+            result = manager.send_message_to_issue("myproject-developer-042", "hello", interrupt=True)
+
+        assert result == "sent"
+        mock_send.assert_called_once_with("myproject-developer-042", "hello", check_claude=True, interrupt=True)
+
+    def test_attach_to_issue_success(self, mock_config):
+        """Should attach to session when it exists."""
         from agenttree.tmux import TmuxManager
 
         manager = TmuxManager(mock_config)
 
         with patch("agenttree.tmux.session_exists", return_value=True):
             with patch("agenttree.tmux.attach_session") as mock_attach:
-                manager.attach(42)
+                manager.attach_to_issue("myproject-developer-042")
 
-        mock_attach.assert_called_once_with("agent-42")
+        mock_attach.assert_called_once_with("myproject-developer-042")
 
-    def test_is_running(self, mock_config):
-        """Should check correct session."""
+    def test_attach_to_issue_raises_when_no_session(self, mock_config):
+        """Should raise RuntimeError when session doesn't exist."""
         from agenttree.tmux import TmuxManager
 
         manager = TmuxManager(mock_config)
 
-        with patch("agenttree.tmux.session_exists", return_value=True) as mock_exists:
-            result = manager.is_running(42)
-
-        assert result is True
-        mock_exists.assert_called_once_with("agent-42")
-
-    def test_list_agent_sessions(self, mock_config):
-        """Should filter sessions by project prefix."""
-        from agenttree.tmux import TmuxManager, TmuxSession
-
-        # list_agent_sessions uses config.project to build prefix
-        mock_config.project = "myproject"
-
-        manager = TmuxManager(mock_config)
-
-        test_sessions = [
-            TmuxSession(name="myproject-agent-1", windows=1, attached=False),
-            TmuxSession(name="myproject-agent-2", windows=1, attached=False),
-            TmuxSession(name="other-session", windows=1, attached=False),
-        ]
-
-        with patch("agenttree.tmux.list_sessions", return_value=test_sessions):
-            result = manager.list_agent_sessions()
-
-        assert len(result) == 2
-        assert result[0].name == "myproject-agent-1"
-        assert result[1].name == "myproject-agent-2"
-
-    def test_stop_issue_agent(self, mock_config):
-        """Should kill issue session."""
-        from agenttree.tmux import TmuxManager
-
-        manager = TmuxManager(mock_config)
-
-        with patch("agenttree.tmux.kill_session") as mock_kill:
-            manager.stop_issue_agent("issue-42")
-
-        mock_kill.assert_called_once_with("issue-42")
-
-    def test_send_message_to_issue(self, mock_config):
-        """Should send message to issue session and return status."""
-        from agenttree.tmux import TmuxManager
-
-        manager = TmuxManager(mock_config)
-
-        with patch("agenttree.tmux.send_message", return_value="sent") as mock_send:
-            result = manager.send_message_to_issue("issue-42", "hello")
-
-        assert result == "sent"
-        mock_send.assert_called_once_with("issue-42", "hello", check_claude=True, interrupt=False)
-
-    def test_is_issue_running(self, mock_config):
-        """Should check issue session existence."""
-        from agenttree.tmux import TmuxManager
-
-        manager = TmuxManager(mock_config)
-
-        with patch("agenttree.tmux.session_exists", return_value=True) as mock_exists:
-            result = manager.is_issue_running("issue-42")
-
-        assert result is True
-        mock_exists.assert_called_once_with("issue-42")
+        with patch("agenttree.tmux.session_exists", return_value=False):
+            with pytest.raises(RuntimeError, match="does not exist"):
+                manager.attach_to_issue("myproject-developer-042")
 
     def test_list_issue_sessions(self, mock_config):
-        """Should filter sessions by project prefix using is_project_session."""
+        """Should filter sessions using config.is_project_session."""
         from agenttree.tmux import TmuxManager, TmuxSession
-
-        # list_issue_sessions uses config.is_project_session to filter
-        mock_config.project = "myproject"
-        # Configure is_project_session to match project sessions
-        mock_config.is_project_session.side_effect = lambda name: name.startswith("myproject-")
 
         manager = TmuxManager(mock_config)
 
@@ -541,6 +504,21 @@ class TestTmuxManager:
         assert len(result) == 2
         assert result[0].name == "myproject-developer-042"
         assert result[1].name == "myproject-developer-043"
+
+    def test_list_issue_sessions_empty(self, mock_config):
+        """Should return empty list when no matching sessions."""
+        from agenttree.tmux import TmuxManager, TmuxSession
+
+        manager = TmuxManager(mock_config)
+
+        test_sessions = [
+            TmuxSession(name="other-project-042", windows=1, attached=False),
+        ]
+
+        with patch("agenttree.tmux.list_sessions", return_value=test_sessions):
+            result = manager.list_issue_sessions()
+
+        assert result == []
 
 
 class TestStartController:
@@ -623,335 +601,52 @@ class TestStartController:
         call_args = mock_create.call_args[0]
         assert call_args[2] == "custom-ai-tool --special-flag"
 
-
-class TestServeSession:
-    """Tests for serve session functionality in start_issue_agent_in_container."""
-
-    @pytest.fixture
-    def mock_config(self):
-        """Create a mock config with serve command."""
-        from agenttree.config import RoleConfig, ContainerConfig
-        config = MagicMock()
-        config.project = "myproject"
-        config.default_model = "claude-sonnet"
-        config.default_container_image = "agenttree-agent:latest"
-        config.commands = {"serve": "uv run uvicorn app:app --port $PORT"}
-        config.get_port_for_issue.return_value = 9135
-        config.get_issue_container_name.return_value = "myproject-issue-135"
-        config.roles = {
-            "developer": RoleConfig(
-                name="developer",
-                container=ContainerConfig(enabled=True, image="agenttree-agent:latest"),
-            ),
-        }
-        tool_config = MagicMock()
-        tool_config.command = "claude"
-        tool_config.container_entry_command.return_value = ["claude", "--dangerously-skip-permissions"]
-        tool_config.container_env.return_value = {}
-        tool_config.container_mounts.return_value = []
-        config.get_tool_config.return_value = tool_config
-        return config
-
-    @pytest.fixture
-    def mock_container_runtime(self):
-        """Create a mock container runtime."""
-        runtime = MagicMock()
-        runtime.runtime = "docker"  # Required by build_container_command
-        return runtime
-
-    def test_serve_session_naming(self, mock_config, mock_container_runtime, tmp_path):
-        """Serve session should be named {project}-serve-{issue_id}."""
+    def test_start_manager_no_skill_file_skips_send(self, mock_config, tmp_path):
+        """Should not send any keys when no skill_file is provided."""
         from agenttree.tmux import TmuxManager
 
         manager = TmuxManager(mock_config)
-
-        with patch("agenttree.tmux.session_exists", return_value=False):
-            with patch("agenttree.tmux.kill_session"):
-                with patch("agenttree.tmux.create_session") as mock_create:
-                    with patch("agenttree.tmux.wait_for_prompt", return_value=False):
-                        with patch("agenttree.container.build_container_command", return_value=["docker", "run", "image"]):
-                            with patch("agenttree.container.cleanup_containers_by_prefix"):
-                                manager.start_issue_agent_in_container(
-                                    issue_id=135,
-                                    session_name="myproject-issue-135",
-                                    worktree_path=tmp_path,
-                                    tool_name="claude",
-                                    container_runtime=mock_container_runtime,
-                                )
-
-        # Verify serve session was created with correct name
-        # Filter by session name containing "-serve-"
-        serve_session_calls = [
-            call for call in mock_create.call_args_list
-            if "-serve-" in call[0][0]
-        ]
-        assert len(serve_session_calls) == 1
-        assert serve_session_calls[0][0][0] == "myproject-serve-135"
-
-    def test_serve_session_starts_with_correct_command(self, mock_config, mock_container_runtime, tmp_path):
-        """Serve session should run with PORT=xxxx prefix."""
-        from agenttree.tmux import TmuxManager
-
-        manager = TmuxManager(mock_config)
-
-        with patch("agenttree.tmux.session_exists", return_value=False):
-            with patch("agenttree.tmux.kill_session"):
-                with patch("agenttree.tmux.create_session") as mock_create:
-                    with patch("agenttree.tmux.wait_for_prompt", return_value=False):
-                        with patch("agenttree.container.build_container_command", return_value=["docker", "run", "image"]):
-                            with patch("agenttree.container.cleanup_containers_by_prefix"):
-                                manager.start_issue_agent_in_container(
-                                    issue_id=135,
-                                    session_name="myproject-issue-135",
-                                    worktree_path=tmp_path,
-                                    tool_name="claude",
-                                    container_runtime=mock_container_runtime,
-                                )
-
-        # Find the serve session create call
-        serve_calls = [
-            call for call in mock_create.call_args_list
-            if "serve" in str(call[0][0])
-        ]
-        assert len(serve_calls) == 1
-        # Check the command has PORT=9135 prefix
-        serve_command = serve_calls[0][0][2]
-        assert "PORT=9135" in serve_command
-        assert "uv run uvicorn app:app --port $PORT" in serve_command
-
-    def test_serve_session_skipped_when_no_serve_command(self, mock_config, mock_container_runtime, tmp_path):
-        """No serve session should be created when commands.serve is not configured."""
-        from agenttree.tmux import TmuxManager
-
-        # Remove serve command from config
-        mock_config.commands = {}
-
-        manager = TmuxManager(mock_config)
-
-        with patch("agenttree.tmux.session_exists", return_value=False):
-            with patch("agenttree.tmux.kill_session"):
-                with patch("agenttree.tmux.create_session") as mock_create:
-                    with patch("agenttree.tmux.wait_for_prompt", return_value=False):
-                        with patch("agenttree.container.build_container_command", return_value=["docker", "run", "image"]):
-                            with patch("agenttree.container.cleanup_containers_by_prefix"):
-                                manager.start_issue_agent_in_container(
-                                    issue_id=135,
-                                    session_name="myproject-issue-135",
-                                    worktree_path=tmp_path,
-                                    tool_name="claude",
-                                    container_runtime=mock_container_runtime,
-                                )
-
-        # Should only have one create_session call (for agent, not serve)
-        assert mock_create.call_count == 1
-        # Verify it's the agent session, not serve
-        assert "serve" not in str(mock_create.call_args_list[0][0][0])
-
-    def test_existing_serve_session_killed_before_new_one(self, mock_config, mock_container_runtime, tmp_path):
-        """Existing serve session should be killed before creating new one."""
-        from agenttree.tmux import TmuxManager
-
-        manager = TmuxManager(mock_config)
-
-        # Mock session_exists to return True for serve session
-        def session_exists_side_effect(name):
-            return "serve" in name or name == "myproject-issue-135"
-
-        with patch("agenttree.tmux.session_exists", side_effect=session_exists_side_effect):
-            with patch("agenttree.tmux.kill_session") as mock_kill:
-                with patch("agenttree.tmux.create_session"):
-                    with patch("agenttree.tmux.wait_for_prompt", return_value=False):
-                        with patch("agenttree.container.build_container_command", return_value=["docker", "run", "image"]):
-                            with patch("agenttree.container.cleanup_containers_by_prefix"):
-                                manager.start_issue_agent_in_container(
-                                    issue_id=135,
-                                    session_name="myproject-issue-135",
-                                    worktree_path=tmp_path,
-                                    tool_name="claude",
-                                    container_runtime=mock_container_runtime,
-                                )
-
-        # Verify serve session was killed
-        serve_kill_calls = [
-            call for call in mock_kill.call_args_list
-            if "serve" in str(call)
-        ]
-        assert len(serve_kill_calls) >= 1
-        assert serve_kill_calls[0][0][0] == "myproject-serve-135"
-
-    def test_serve_session_failure_does_not_block_agent(self, mock_config, mock_container_runtime, tmp_path):
-        """Serve session failure should not prevent agent from starting."""
-        from agenttree.tmux import TmuxManager
-
-        manager = TmuxManager(mock_config)
-
-        call_count = [0]
-
-        def create_session_side_effect(*args, **kwargs):
-            call_count[0] += 1
-            # First call is agent session (succeeds)
-            if call_count[0] == 1:
-                return
-            # Second call is serve session (fails)
-            raise subprocess.CalledProcessError(1, "tmux")
-
-        with patch("agenttree.tmux.session_exists", return_value=False):
-            with patch("agenttree.tmux.kill_session"):
-                with patch("agenttree.tmux.create_session", side_effect=create_session_side_effect):
-                    with patch("agenttree.tmux.wait_for_prompt", return_value=False):
-                        with patch("agenttree.container.build_container_command", return_value=["docker", "run", "image"]):
-                            with patch("agenttree.container.cleanup_containers_by_prefix"):
-                                # Should not raise even if serve session fails
-                                manager.start_issue_agent_in_container(
-                                    issue_id=135,
-                                    session_name="myproject-issue-135",
-                                    worktree_path=tmp_path,
-                                    tool_name="claude",
-                                    container_runtime=mock_container_runtime,
-                                )
-
-        # Agent session should have been created
-        assert call_count[0] >= 1
-
-
-class TestImageSelectionForIssueAgent:
-    """Tests for container image selection in start_issue_agent_in_container."""
-
-    @pytest.fixture
-    def base_mock_config(self):
-        """Create a base mock config for testing."""
-        config = MagicMock()
-        config.project = "testproject"
-        config.default_model = "claude-sonnet"
-        config.default_container_image = "agenttree-agent:latest"
-        config.commands = {}
-        config.get_port_for_issue.return_value = None
-        config.get_issue_container_name.return_value = "testproject-issue-42"
-        tool_config = MagicMock()
-        tool_config.command = "claude"
-        tool_config.container_entry_command.return_value = ["claude"]
-        tool_config.container_env.return_value = {}
-        tool_config.container_mounts.return_value = []
-        config.get_tool_config.return_value = tool_config
-        return config
-
-    @pytest.fixture
-    def mock_container_runtime(self):
-        """Create a mock container runtime."""
-        runtime = MagicMock()
-        runtime.runtime = "docker"
-        return runtime
-
-    def test_role_with_container_enabled_uses_custom_image(
-        self, base_mock_config, mock_container_runtime, tmp_path
-    ):
-        """Role with container.enabled=true should use its custom image."""
-        from agenttree.config import RoleConfig, ContainerConfig
-        from agenttree.tmux import TmuxManager
-
-        # Configure role with container enabled
-        base_mock_config.roles = {
-            "developer": RoleConfig(
-                name="developer",
-                container=ContainerConfig(enabled=True, image="custom-dev:latest"),
-            ),
-        }
-
-        manager = TmuxManager(base_mock_config)
 
         with patch("agenttree.tmux.session_exists", return_value=False):
             with patch("agenttree.tmux.create_session"):
-                with patch("agenttree.tmux.wait_for_prompt", return_value=False):
-                    with patch("agenttree.container.build_container_command") as mock_build:
-                        with patch("agenttree.container.cleanup_containers_by_prefix"):
-                            mock_build.return_value = ["docker", "run", "test"]
-                            manager.start_issue_agent_in_container(
-                                issue_id=42,
-                                session_name="testproject-developer-042",
-                                worktree_path=tmp_path,
-                                tool_name="claude",
-                                container_runtime=mock_container_runtime,
-                                role="developer",
-                            )
+                with patch("agenttree.tmux.wait_for_prompt", return_value=True):
+                    with patch("agenttree.tmux.send_keys") as mock_send:
+                        manager.start_host_role(
+                            session_name="testproject-manager-000",
+                            repo_path=tmp_path,
+                            tool_name="claude",
+                        )
 
-        # Verify custom image was used
-        mock_build.assert_called_once()
-        call_kwargs = mock_build.call_args
-        container_type = call_kwargs.kwargs.get("container_type") or call_kwargs[1].get("container_type")
-        assert container_type.image == "custom-dev:latest"
+        mock_send.assert_not_called()
 
-    def test_role_with_container_disabled_uses_default_image(
-        self, base_mock_config, mock_container_runtime, tmp_path
-    ):
-        """Role with container.enabled=false should fall back to default image."""
-        from agenttree.config import RoleConfig, ContainerConfig
+    def test_start_manager_with_model(self, mock_config, tmp_path):
+        """Should append model flag to ai command when model is specified."""
         from agenttree.tmux import TmuxManager
 
-        # Configure role with container disabled (like architect)
-        base_mock_config.roles = {
-            "architect": RoleConfig(
-                name="architect",
-                container=ContainerConfig(enabled=False, image="agenttree-host:latest"),
-            ),
-        }
-
-        manager = TmuxManager(base_mock_config)
+        manager = TmuxManager(mock_config)
 
         with patch("agenttree.tmux.session_exists", return_value=False):
-            with patch("agenttree.tmux.create_session"):
+            with patch("agenttree.tmux.create_session") as mock_create:
                 with patch("agenttree.tmux.wait_for_prompt", return_value=False):
-                    with patch("agenttree.container.build_container_command") as mock_build:
-                        with patch("agenttree.container.cleanup_containers_by_prefix"):
-                            mock_build.return_value = ["docker", "run", "test"]
-                            manager.start_issue_agent_in_container(
-                                issue_id=42,
-                                session_name="testproject-architect-042",
-                                worktree_path=tmp_path,
-                                tool_name="claude",
-                                container_runtime=mock_container_runtime,
-                                role="architect",
-                            )
+                    manager.start_host_role(
+                        session_name="testproject-manager-000",
+                        repo_path=tmp_path,
+                        tool_name="claude",
+                        model="claude-3-5-sonnet",
+                    )
 
-        # Verify default image was used (not the disabled role's image)
-        mock_build.assert_called_once()
-        call_kwargs = mock_build.call_args
-        container_type = call_kwargs.kwargs.get("container_type") or call_kwargs[1].get("container_type")
-        assert container_type.image == "agenttree-agent:latest"
+        call_args = mock_create.call_args[0]
+        assert call_args[2] == "claude --model claude-3-5-sonnet"
 
-    def test_role_with_no_container_config_uses_default_image(
-        self, base_mock_config, mock_container_runtime, tmp_path
-    ):
-        """Role with no container config should fall back to default image."""
-        from agenttree.config import RoleConfig
-        from agenttree.tmux import TmuxManager
 
-        # Configure role without container config
-        base_mock_config.roles = {
-            "custom": RoleConfig(name="custom"),
-        }
+class TestServeSessionInStartIssue:
+    """Serve session tests moved to test_api.py - these are simple naming tests."""
 
-        manager = TmuxManager(base_mock_config)
-
-        with patch("agenttree.tmux.session_exists", return_value=False):
-            with patch("agenttree.tmux.create_session"):
-                with patch("agenttree.tmux.wait_for_prompt", return_value=False):
-                    with patch("agenttree.container.build_container_command") as mock_build:
-                        with patch("agenttree.container.cleanup_containers_by_prefix"):
-                            mock_build.return_value = ["docker", "run", "test"]
-                            manager.start_issue_agent_in_container(
-                                issue_id=42,
-                                session_name="testproject-custom-042",
-                                worktree_path=tmp_path,
-                                tool_name="claude",
-                                container_runtime=mock_container_runtime,
-                                role="custom",
-                            )
-
-        # Verify default image was used
-        mock_build.assert_called_once()
-        call_kwargs = mock_build.call_args
-        container_type = call_kwargs.kwargs.get("container_type") or call_kwargs[1].get("container_type")
-        assert container_type.image == "agenttree-agent:latest"
+    def test_serve_session_naming_convention(self):
+        """Serve sessions should follow {project}-serve-{issue_id} convention."""
+        from agenttree.ids import serve_session_name
+        assert serve_session_name("myproject", 135) == "myproject-serve-135"
+        assert serve_session_name("app", 1) == "app-serve-001"
 
 
 class TestSaveTmuxHistoryToFile:

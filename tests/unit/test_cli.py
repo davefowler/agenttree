@@ -57,31 +57,13 @@ class TestSendCommand:
         mock_issue.id = "42"
 
         mock_agent = MagicMock()
-        mock_agent.tmux_session = "agent-42"
         mock_agent.issue_id = "42"
         mock_agent.role = "developer"
 
-        # First call returns None (no agent), second call returns agent (after start)
-        agent_call_count = [0]
-        def mock_get_agent(issue_id, role="developer"):
-            agent_call_count[0] += 1
-            if agent_call_count[0] == 1:
-                return None  # First check: not running
-            return mock_agent  # After start: running
-
         with patch("agenttree.cli.agents.load_config", return_value=mock_config):
             with patch("agenttree.cli.agents.get_issue_func", return_value=mock_issue):
-                with patch("agenttree.state.get_active_agent", side_effect=mock_get_agent):
-                    with patch("agenttree.cli.agents.TmuxManager") as mock_tm_class:
-                        mock_tm = MagicMock()
-                        mock_tm.is_issue_running.return_value = True
-                        mock_tm.send_message_to_issue.return_value = "sent"
-                        mock_tm_class.return_value = mock_tm
-
-                        # Mock the API start_issue function (used instead of subprocess)
-                        with patch("agenttree.api.start_issue") as mock_start:
-                            mock_start.return_value = mock_agent
-                            result = cli_runner.invoke(main, ["send", "42", "hello"])
+                with patch("agenttree.api.send_message", return_value="restarted"):
+                    result = cli_runner.invoke(main, ["send", "42", "hello"])
 
         assert result.exit_code == 0
 
@@ -93,20 +75,13 @@ class TestSendCommand:
         mock_issue.id = "42"
 
         mock_agent = MagicMock()
-        mock_agent.tmux_session = "agent-42"
         mock_agent.issue_id = "42"
         mock_agent.role = "developer"
 
         with patch("agenttree.cli.agents.load_config", return_value=mock_config):
             with patch("agenttree.cli.agents.get_issue_func", return_value=mock_issue):
-                with patch("agenttree.state.get_active_agent", return_value=mock_agent):
-                    with patch("agenttree.cli.agents.TmuxManager") as mock_tm_class:
-                        mock_tm = MagicMock()
-                        mock_tm.is_issue_running.return_value = True
-                        mock_tm.send_message_to_issue.return_value = "sent"
-                        mock_tm_class.return_value = mock_tm
-
-                        result = cli_runner.invoke(main, ["send", "42", "hello"])
+                with patch("agenttree.api.send_message", return_value="sent"):
+                    result = cli_runner.invoke(main, ["send", "42", "hello"])
 
         assert result.exit_code == 0
 
@@ -115,16 +90,16 @@ class TestStopCommand:
     """Tests for the stop command (and kill alias)."""
 
     def test_stop_no_active_agent(self, cli_runner, mock_config):
-        """Should error when no active agent for issue."""
+        """Should print message when no active agent for issue."""
         from agenttree.cli import main
 
         with patch("agenttree.cli.agents.load_config", return_value=mock_config):
-            with patch("agenttree.state.get_active_agent", return_value=None):
+            with patch("agenttree.api.stop_agent", return_value=False):
                 with patch("agenttree.cli.agents.get_issue_func", return_value=None):
                     result = cli_runner.invoke(main, ["stop", "42"])
 
-        assert result.exit_code == 1
-        assert "No active agent" in result.output
+        assert result.exit_code == 0
+        assert "No active" in result.output
 
     def test_stop_success(self, cli_runner, mock_config):
         """Should stop agent session successfully using consolidated stop_agent."""
@@ -149,16 +124,14 @@ class TestAttachCommand:
     """Tests for the attach command."""
 
     def test_attach_no_active_agent(self, cli_runner, mock_config):
-        """Should error when no active agent for issue."""
+        """Should error when trying to attach to sub-agent (not supported)."""
         from agenttree.cli import main
 
         with patch("agenttree.cli.agents.load_config", return_value=mock_config):
-            with patch("agenttree.state.get_active_agent", return_value=None):
-                with patch("agenttree.cli.agents.get_issue_func", return_value=None):
-                    result = cli_runner.invoke(main, ["attach", "42"])
+            result = cli_runner.invoke(main, ["attach", "42"])
 
         assert result.exit_code == 1
-        assert "No active agent" in result.output
+        assert "output" in result.output
 
     def test_attach_architect_by_role_name(self, cli_runner, mock_config):
         """Should attach to host role by role name."""
@@ -1542,7 +1515,7 @@ class TestManagerCommands:
         mock_send.assert_called_once()
 
     def test_send_to_manager_not_running(self, cli_runner, mock_config):
-        """Should error when manager is not running."""
+        """Should error when messenger is not running."""
         from agenttree.cli import main
 
         with patch("agenttree.cli.agents.load_config", return_value=mock_config):
@@ -1551,10 +1524,10 @@ class TestManagerCommands:
 
         assert result.exit_code == 1
         assert "not running" in result.output.lower()
-        assert "agenttree start 0" in result.output
+        assert "agenttree start messenger" in result.output
 
     def test_stop_manager_success(self, cli_runner, mock_config):
-        """Should stop manager session when running."""
+        """Should stop messenger session when running."""
         from agenttree.cli import main
 
         with patch("agenttree.cli.agents.load_config", return_value=mock_config):
@@ -1563,8 +1536,8 @@ class TestManagerCommands:
                     result = cli_runner.invoke(main, ["stop", "0"])
 
         assert result.exit_code == 0
-        assert "Stopped manager" in result.output
-        mock_kill.assert_called_once_with("testproject-manager-000")
+        assert "Stopped messenger" in result.output
+        mock_kill.assert_called_once_with("testproject-messenger-000")
 
     def test_stop_manager_not_running(self, cli_runner, mock_config):
         """Should handle gracefully when manager not running."""

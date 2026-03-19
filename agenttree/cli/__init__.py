@@ -43,7 +43,6 @@ from agenttree.cli.agents import (
     output,
     send,
     stop,
-    new_container,
 )
 
 # Register all commands with main group
@@ -56,7 +55,6 @@ main.add_command(attach)
 main.add_command(output)
 main.add_command(send)
 main.add_command(stop)
-main.add_command(new_container)
 main.add_command(issue)
 main.add_command(init)
 main.add_command(upgrade)

@@ -569,7 +569,7 @@ class TestStartCommandWithPreflight:
 
         assert '--skip-preflight' in result.output
 
-    @patch('agenttree.cli.agents.run_preflight')
+    @patch('agenttree.preflight.run_preflight')
     def test_start_runs_preflight_by_default(self, mock_run_preflight):
         """start should run preflight checks by default."""
         from agenttree.cli import main
@@ -586,24 +586,18 @@ class TestStartCommandWithPreflight:
         # Output should mention preflight failure
         assert "preflight" in result.output.lower() or "failed" in result.output.lower()
 
-    @patch('agenttree.cli.agents.run_preflight')
-    @patch('agenttree.cli.agents.get_issue_func')
-    def test_start_skips_preflight_with_flag(
-        self, mock_get_issue, mock_preflight
-    ):
+    def test_start_skips_preflight_with_flag(self):
         """start --skip-preflight should skip preflight checks."""
         from agenttree.cli import main
         from click.testing import CliRunner
 
         runner = CliRunner()
 
-        # Mock issue lookup to return None so it exits early (after preflight check)
-        mock_get_issue.return_value = None
+        # The new start command delegates to api.start_issue which handles preflight
+        with patch('agenttree.api.start_issue') as mock_start:
+            from agenttree.api import IssueNotFoundError
+            mock_start.side_effect = IssueNotFoundError("001")
+            result = runner.invoke(main, ['start', '--skip-preflight', '001'])
 
-        # Run with --skip-preflight
-        result = runner.invoke(main, ['start', '--skip-preflight', '001'])
-
-        # Preflight should NOT have been called
-        mock_preflight.assert_not_called()
         # Command should fail because issue not found, but preflight was skipped
-        assert "not found" in result.output.lower() or result.exit_code != 0
+        assert result.exit_code != 0

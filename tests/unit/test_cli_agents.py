@@ -35,7 +35,7 @@ class TestStartAgentHostRoleRouting:
         from agenttree.cli import main
 
         with patch("agenttree.cli.agents.load_config", return_value=mock_config):
-            with patch("agenttree.cli.agents.run_preflight") as mock_preflight:
+            with patch("agenttree.preflight.run_preflight") as mock_preflight:
                 mock_preflight.return_value = []  # No failed checks
                 with patch("agenttree.api.start_role") as mock_start_role:
                     # This should route to start_role because architect is in HOST_TMUX_ROLES
@@ -50,7 +50,7 @@ class TestStartAgentHostRoleRouting:
         from agenttree.cli import main
 
         with patch("agenttree.cli.agents.load_config", return_value=mock_config):
-            with patch("agenttree.cli.agents.run_preflight") as mock_preflight:
+            with patch("agenttree.preflight.run_preflight") as mock_preflight:
                 mock_preflight.return_value = []  # No failed checks
                 with patch("agenttree.api.start_role") as mock_start_role:
                     result = cli_runner.invoke(main, ["start", "42", "--role", "manager"])
@@ -70,7 +70,7 @@ class TestStartAgentHostRoleRouting:
         mock_config.is_resumable_stage.return_value = False
 
         with patch("agenttree.cli.agents.load_config", return_value=mock_config):
-            with patch("agenttree.cli.agents.run_preflight") as mock_preflight:
+            with patch("agenttree.preflight.run_preflight") as mock_preflight:
                 mock_preflight.return_value = []  # No failed checks
                 with patch("agenttree.api.start_role") as mock_start_role:
                     with patch("agenttree.cli.agents.get_issue_func", return_value=mock_issue):
@@ -89,7 +89,7 @@ class TestStartAgentHostRoleRouting:
         from agenttree.cli import main
 
         with patch("agenttree.cli.agents.load_config", return_value=mock_config):
-            with patch("agenttree.cli.agents.run_preflight") as mock_preflight:
+            with patch("agenttree.preflight.run_preflight") as mock_preflight:
                 mock_preflight.return_value = []  # No failed checks
                 with patch("agenttree.api.start_role") as mock_start_role:
                     result = cli_runner.invoke(main, ["start", "42", "--role", "architect", "--force"])
@@ -103,7 +103,7 @@ class TestStartAgentHostRoleRouting:
         from agenttree.api import AgentAlreadyRunningError
 
         with patch("agenttree.cli.agents.load_config", return_value=mock_config):
-            with patch("agenttree.cli.agents.run_preflight") as mock_preflight:
+            with patch("agenttree.preflight.run_preflight") as mock_preflight:
                 mock_preflight.return_value = []  # No failed checks
                 with patch("agenttree.api.start_role") as mock_start_role:
                     mock_start_role.side_effect = AgentAlreadyRunningError("architect", "architect")
@@ -118,7 +118,7 @@ class TestStartAgentHostRoleRouting:
         from agenttree.cli import main
 
         with patch("agenttree.cli.agents.load_config", return_value=mock_config):
-            with patch("agenttree.cli.agents.run_preflight") as mock_preflight:
+            with patch("agenttree.preflight.run_preflight") as mock_preflight:
                 with patch("agenttree.api.start_role") as mock_start_role:
                     result = cli_runner.invoke(main, ["start", "setup"])
 
