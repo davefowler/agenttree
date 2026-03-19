@@ -12,8 +12,7 @@ from agenttree.api import (
     AgentStartError,
     AgentAlreadyRunningError,
     PreflightError,
-    ContainerUnavailableError,
-    ControllerNotRunningError,
+    MessengerNotRunningError,
 )
 
 
@@ -30,6 +29,8 @@ class TestStartAgent:
         config.get_issue_worktree_path.return_value = Path("/tmp/worktrees/042-test-issue")
         config.model_for.return_value = "claude-sonnet-4-20250514"
         config.get_port_for_issue.return_value = 8042
+        config.is_resumable_stage.return_value = False
+        config.commands = {}
         return config
 
     @pytest.fixture
@@ -47,46 +48,44 @@ class TestStartAgent:
         """Create a mock active agent."""
         agent = MagicMock()
         agent.issue_id = "042"
-        agent.host = "developer"
-        agent.tmux_session = "testproj-issue-042"
-        agent.worktree_path = Path("/tmp/worktrees/042-test-issue")
+        agent.role = "developer"
+        agent.pid = 12345
+        agent.worktree = Path("/tmp/worktrees/042-test-issue")
         agent.port = 8042
+        agent.log_file = "/tmp/worktrees/042-test-issue/.agenttree/agent-developer.log"
+        agent.started = "2024-01-01T00:00:00Z"
         return agent
 
-    def test_start_issue_creates_worktree_and_starts_tmux(
+    def test_start_issue_creates_worktree_and_starts_process(
         self, mock_config, mock_issue, mock_agent, tmp_path, monkeypatch
     ):
         """Happy path: returns ActiveAgent."""
         monkeypatch.chdir(tmp_path)
 
-        mock_runtime = MagicMock()
-        mock_runtime.is_available.return_value = True
-        mock_runtime.get_runtime_name.return_value = "docker"
+        mock_proc = MagicMock()
+        mock_proc.pid = 12345
+        mock_proc.log_file = "/tmp/worktrees/042-test-issue/.agenttree/agent-developer.log"
+        mock_proc.started = "2024-01-01T00:00:00Z"
 
         with patch("agenttree.config.load_config", return_value=mock_config):
             with patch("agenttree.preflight.run_preflight", return_value=[]):
                 with patch("agenttree.issues.get_issue", return_value=mock_issue):
                     with patch("agenttree.state.get_active_agent", return_value=None):
-                        with patch("agenttree.tmux.TmuxManager") as mock_tm_class:
-                            mock_tm = MagicMock()
-                            mock_tm.start_issue_agent_in_container.return_value = True
-                            mock_tm_class.return_value = mock_tm
+                        with patch("agenttree.state.get_issue_names", return_value={
+                            "branch": "issue-042-test-issue",
+                            "session": "testproj-issue-042",
+                        }):
+                            with patch("agenttree.worktree.create_worktree"):
+                                with patch("agenttree.worktree.sync_local_agenttree_config"):
+                                    with patch("agenttree.issues.create_session"):
+                                        with patch("agenttree.issues.update_issue_metadata"):
+                                            with patch("agenttree.process.start_agent", return_value=mock_proc):
+                                                with patch("agenttree.process.stop_agent_process"):
+                                                    with patch("subprocess.run") as mock_run:
+                                                        mock_run.return_value = MagicMock(returncode=1)
+                                                        result = start_issue("042", quiet=True)
 
-                            with patch("agenttree.state.create_agent_for_issue", return_value=mock_agent):
-                                with patch("agenttree.container.get_container_runtime", return_value=mock_runtime):
-                                    with patch("agenttree.worktree.create_worktree"):
-                                        with patch("agenttree.state.get_issue_names", return_value={
-                                            "branch": "issue-042-test-issue",
-                                            "session": "testproj-issue-042",
-                                        }):
-                                                with patch("agenttree.issues.create_session"):
-                                                    with patch("agenttree.issues.update_issue_metadata"):
-                                                        with patch("agenttree.container.is_container_running", return_value=False):
-                                                            with patch("subprocess.run") as mock_run:
-                                                                mock_run.return_value = MagicMock(returncode=1)
-                                                                result = start_issue("042", quiet=True)
-
-        assert result == mock_agent
+        assert result.issue_id == mock_issue.id
 
     def test_start_issue_issue_not_found_raises(self, mock_config, tmp_path, monkeypatch):
         """IssueNotFoundError when issue doesn't exist."""
@@ -121,33 +120,31 @@ class TestStartAgent:
         """With force=True, restarts agent."""
         monkeypatch.chdir(tmp_path)
 
-        mock_runtime = MagicMock()
-        mock_runtime.is_available.return_value = True
-        mock_runtime.get_runtime_name.return_value = "docker"
+        mock_proc = MagicMock()
+        mock_proc.pid = 12345
+        mock_proc.log_file = "/tmp/worktrees/042-test-issue/.agenttree/agent-developer.log"
+        mock_proc.started = "2024-01-01T00:00:00Z"
 
         with patch("agenttree.config.load_config", return_value=mock_config):
             with patch("agenttree.preflight.run_preflight", return_value=[]):
                 with patch("agenttree.issues.get_issue", return_value=mock_issue):
                     with patch("agenttree.state.get_active_agent", return_value=mock_agent):
-                        with patch("agenttree.tmux.TmuxManager") as mock_tm_class:
-                            mock_tm = MagicMock()
-                            mock_tm.start_issue_agent_in_container.return_value = True
-                            mock_tm_class.return_value = mock_tm
+                        with patch("agenttree.process.stop_agent_process") as mock_stop:
+                            with patch("agenttree.state.get_issue_names", return_value={
+                                "branch": "issue-042-test-issue",
+                                "session": "testproj-issue-042",
+                            }):
+                                with patch("agenttree.worktree.create_worktree"):
+                                    with patch("agenttree.worktree.sync_local_agenttree_config"):
+                                        with patch("agenttree.issues.create_session"):
+                                            with patch("agenttree.issues.update_issue_metadata"):
+                                                with patch("agenttree.process.start_agent", return_value=mock_proc):
+                                                    with patch("subprocess.run") as mock_run:
+                                                        mock_run.return_value = MagicMock(returncode=1)
+                                                        result = start_issue("042", force=True, quiet=True)
 
-                            with patch("agenttree.state.create_agent_for_issue", return_value=mock_agent):
-                                with patch("agenttree.container.get_container_runtime", return_value=mock_runtime):
-                                    with patch("agenttree.worktree.create_worktree"):
-                                        with patch("agenttree.state.get_issue_names", return_value={
-                                            "branch": "issue-042-test-issue",
-                                            "session": "testproj-issue-042",
-                                        }):
-                                                with patch("agenttree.issues.create_session"):
-                                                    with patch("agenttree.issues.update_issue_metadata"):
-                                                        with patch("subprocess.run") as mock_run:
-                                                            mock_run.return_value = MagicMock(returncode=1)
-                                                            result = start_issue("042", force=True, quiet=True)
-
-        assert result == mock_agent
+        assert result.issue_id == mock_issue.id
+        mock_stop.assert_called_once()
 
     def test_start_issue_syncs_local_agenttree_config_into_worktree(
         self, mock_config, mock_issue, mock_agent, tmp_path, monkeypatch
@@ -155,33 +152,27 @@ class TestStartAgent:
         """Issue start should copy local workflow config into the worktree."""
         monkeypatch.chdir(tmp_path)
 
-        mock_runtime = MagicMock()
-        mock_runtime.is_available.return_value = True
-        mock_runtime.get_runtime_name.return_value = "container"
+        mock_proc = MagicMock()
+        mock_proc.pid = 12345
+        mock_proc.log_file = "/tmp/worktrees/042-test-issue/.agenttree/agent-developer.log"
+        mock_proc.started = "2024-01-01T00:00:00Z"
 
         with patch("agenttree.config.load_config", return_value=mock_config):
             with patch("agenttree.preflight.run_preflight", return_value=[]):
                 with patch("agenttree.issues.get_issue", return_value=mock_issue):
                     with patch("agenttree.state.get_active_agent", return_value=None):
-                        with patch("agenttree.tmux.TmuxManager") as mock_tm_class:
-                            mock_tm = MagicMock()
-                            mock_tm.start_issue_agent_in_container.return_value = True
-                            mock_tm_class.return_value = mock_tm
-
-                            with patch("agenttree.state.create_agent_for_issue", return_value=mock_agent):
-                                with patch("agenttree.container.get_container_runtime", return_value=mock_runtime):
-                                    with patch("agenttree.worktree.create_worktree"):
-                                        with patch("agenttree.worktree.sync_local_agenttree_config") as mock_sync:
-                                            with patch("agenttree.state.get_issue_names", return_value={
-                                                "branch": "issue-042-test-issue",
-                                                "session": "testproj-issue-042",
-                                            }):
-                                                with patch("agenttree.issues.create_session"):
-                                                    with patch("agenttree.issues.update_issue_metadata"):
-                                                        with patch("agenttree.container.is_container_running", return_value=False):
-                                                            with patch("subprocess.run") as mock_run:
-                                                                mock_run.return_value = MagicMock(returncode=1)
-                                                                start_issue("042", quiet=True)
+                        with patch("agenttree.state.get_issue_names", return_value={
+                            "branch": "issue-042-test-issue",
+                            "session": "testproj-issue-042",
+                        }):
+                            with patch("agenttree.worktree.create_worktree"):
+                                with patch("agenttree.worktree.sync_local_agenttree_config") as mock_sync:
+                                    with patch("agenttree.issues.create_session"):
+                                        with patch("agenttree.issues.update_issue_metadata"):
+                                            with patch("agenttree.process.start_agent", return_value=mock_proc):
+                                                with patch("subprocess.run") as mock_run:
+                                                    mock_run.return_value = MagicMock(returncode=1)
+                                                    start_issue("042", quiet=True)
 
         mock_sync.assert_called_once_with(
             tmp_path,
@@ -204,116 +195,36 @@ class TestStartAgent:
 
         assert "git_clean" in str(exc_info.value)
 
-    def test_start_issue_container_not_available(
-        self, mock_config, mock_issue, tmp_path, monkeypatch
-    ):
-        """ContainerUnavailableError when no runtime."""
-        monkeypatch.chdir(tmp_path)
-
-        mock_runtime = MagicMock()
-        mock_runtime.is_available.return_value = False
-        mock_runtime.get_recommended_action.return_value = "Install Docker"
-
-        with patch("agenttree.config.load_config", return_value=mock_config):
-            with patch("agenttree.preflight.run_preflight", return_value=[]):
-                with patch("agenttree.issues.get_issue", return_value=mock_issue):
-                    with patch("agenttree.state.get_active_agent", return_value=None):
-                        with patch("agenttree.tmux.TmuxManager"):
-                            with patch("agenttree.state.create_agent_for_issue") as mock_create:
-                                mock_create.return_value = MagicMock()
-                                with patch("agenttree.container.get_container_runtime", return_value=mock_runtime):
-                                    with patch("agenttree.worktree.create_worktree"):
-                                        with patch("agenttree.state.get_issue_names", return_value={
-                                            "branch": "issue-042-test-issue",
-                                            "session": "testproj-issue-042",
-                                        }):
-                                                with patch("agenttree.issues.create_session"):
-                                                    with patch("agenttree.issues.update_issue_metadata"):
-                                                        with patch("agenttree.container.is_container_running", return_value=False):
-                                                            with patch("subprocess.run") as mock_run:
-                                                                mock_run.return_value = MagicMock(returncode=1)
-                                                                with pytest.raises(ContainerUnavailableError) as exc_info:
-                                                                    start_issue("042", quiet=True)
-
-        assert "Install Docker" in str(exc_info.value)
-
     def test_start_issue_quiet_suppresses_output(
         self, mock_config, mock_issue, mock_agent, tmp_path, monkeypatch, capsys
     ):
         """No console output when quiet=True."""
         monkeypatch.chdir(tmp_path)
 
-        mock_runtime = MagicMock()
-        mock_runtime.is_available.return_value = True
-        mock_runtime.get_runtime_name.return_value = "docker"
+        mock_proc = MagicMock()
+        mock_proc.pid = 12345
+        mock_proc.log_file = "/tmp/worktrees/042-test-issue/.agenttree/agent-developer.log"
+        mock_proc.started = "2024-01-01T00:00:00Z"
 
         with patch("agenttree.config.load_config", return_value=mock_config):
             with patch("agenttree.preflight.run_preflight", return_value=[]):
                 with patch("agenttree.issues.get_issue", return_value=mock_issue):
                     with patch("agenttree.state.get_active_agent", return_value=None):
-                        with patch("agenttree.tmux.TmuxManager") as mock_tm_class:
-                            mock_tm = MagicMock()
-                            mock_tm.start_issue_agent_in_container.return_value = True
-                            mock_tm_class.return_value = mock_tm
-
-                            with patch("agenttree.state.create_agent_for_issue", return_value=mock_agent):
-                                with patch("agenttree.container.get_container_runtime", return_value=mock_runtime):
-                                    with patch("agenttree.worktree.create_worktree"):
-                                        with patch("agenttree.state.get_issue_names", return_value={
-                                            "branch": "issue-042-test-issue",
-                                            "session": "testproj-issue-042",
-                                        }):
-                                                with patch("agenttree.issues.create_session"):
-                                                    with patch("agenttree.issues.update_issue_metadata"):
-                                                        with patch("agenttree.container.is_container_running", return_value=False):
-                                                            with patch("subprocess.run") as mock_run:
-                                                                mock_run.return_value = MagicMock(returncode=1)
-                                                                start_issue("042", quiet=True)
+                        with patch("agenttree.state.get_issue_names", return_value={
+                            "branch": "issue-042-test-issue",
+                            "session": "testproj-issue-042",
+                        }):
+                            with patch("agenttree.worktree.create_worktree"):
+                                with patch("agenttree.worktree.sync_local_agenttree_config"):
+                                    with patch("agenttree.issues.create_session"):
+                                        with patch("agenttree.issues.update_issue_metadata"):
+                                            with patch("agenttree.process.start_agent", return_value=mock_proc):
+                                                with patch("subprocess.run") as mock_run:
+                                                    mock_run.return_value = MagicMock(returncode=1)
+                                                    start_issue("042", quiet=True)
 
         captured = capsys.readouterr()
         assert captured.out == ""
-
-    @pytest.mark.parametrize("force_api_key,expected", [
-        (True, True),
-        (False, False),
-    ])
-    def test_start_issue_force_api_key_passthrough(
-        self, mock_config, mock_issue, mock_agent, tmp_path, monkeypatch,
-        force_api_key: bool, expected: bool
-    ):
-        """Verify force_api_key is passed through to TmuxManager."""
-        monkeypatch.chdir(tmp_path)
-
-        mock_runtime = MagicMock()
-        mock_runtime.is_available.return_value = True
-        mock_runtime.get_runtime_name.return_value = "docker"
-
-        with patch("agenttree.config.load_config", return_value=mock_config):
-            with patch("agenttree.preflight.run_preflight", return_value=[]):
-                with patch("agenttree.issues.get_issue", return_value=mock_issue):
-                    with patch("agenttree.state.get_active_agent", return_value=None):
-                        with patch("agenttree.tmux.TmuxManager") as mock_tm_class:
-                            mock_tm = MagicMock()
-                            mock_tm.start_issue_agent_in_container.return_value = True
-                            mock_tm_class.return_value = mock_tm
-
-                            with patch("agenttree.state.create_agent_for_issue", return_value=mock_agent):
-                                with patch("agenttree.container.get_container_runtime", return_value=mock_runtime):
-                                    with patch("agenttree.worktree.create_worktree"):
-                                        with patch("agenttree.state.get_issue_names", return_value={
-                                            "branch": "issue-042-test-issue",
-                                            "session": "testproj-issue-042",
-                                        }):
-                                                with patch("agenttree.issues.create_session"):
-                                                    with patch("agenttree.issues.update_issue_metadata"):
-                                                        with patch("agenttree.container.is_container_running", return_value=False):
-                                                            with patch("subprocess.run") as mock_run:
-                                                                mock_run.return_value = MagicMock(returncode=1)
-                                                                start_issue("042", quiet=True, force_api_key=force_api_key)
-
-        mock_tm.start_issue_agent_in_container.assert_called_once()
-        call_kwargs = mock_tm.start_issue_agent_in_container.call_args.kwargs
-        assert call_kwargs.get("force_api_key") is expected
 
 
 class TestSendMessage:
@@ -338,88 +249,38 @@ class TestSendMessage:
         """Create a mock active agent."""
         agent = MagicMock()
         agent.issue_id = "042"
-        agent.host = "developer"
-        agent.tmux_session = "testproj-issue-042"
+        agent.role = "developer"
+        agent.pid = 12345
         return agent
 
-    def test_send_message_success(self, mock_config, mock_issue, mock_agent):
-        """Returns 'sent' when agent running."""
+    def test_send_message_agent_running(self, mock_config, mock_issue, mock_agent):
+        """Returns 'sent' when sub-agent is running (can't send mid-flight)."""
         with patch("agenttree.config.load_config", return_value=mock_config):
             with patch("agenttree.issues.get_issue", return_value=mock_issue):
                 with patch("agenttree.state.get_active_agent", return_value=mock_agent):
-                    with patch("agenttree.tmux.TmuxManager") as mock_tm_class:
-                        mock_tm = MagicMock()
-                        mock_tm.is_issue_running.return_value = True
-                        mock_tm.send_message_to_issue.return_value = "sent"
-                        mock_tm_class.return_value = mock_tm
-
-                        result = send_message("042", "hello", quiet=True)
+                    result = send_message("042", "hello", quiet=True)
 
         assert result == "sent"
-        mock_tm.send_message_to_issue.assert_called_once_with("testproj-issue-042", "hello", interrupt=False)
 
-    def test_send_message_auto_starts_agent(self, mock_config, mock_issue, mock_agent):
+    def test_send_message_auto_starts_agent(self, mock_config, mock_issue):
         """Starts agent if not running and auto_start=True."""
-        call_count = [0]
-
-        def mock_get_agent(issue_id, host="developer"):
-            call_count[0] += 1
-            if call_count[0] == 1:
-                return None
-            return mock_agent
-
-        with patch("agenttree.config.load_config", return_value=mock_config):
-            with patch("agenttree.issues.get_issue", return_value=mock_issue):
-                with patch("agenttree.state.get_active_agent", side_effect=mock_get_agent):
-                    with patch("agenttree.tmux.TmuxManager") as mock_tm_class:
-                        mock_tm = MagicMock()
-                        mock_tm.is_issue_running.return_value = True
-                        mock_tm.send_message_to_issue.return_value = "sent"
-                        mock_tm_class.return_value = mock_tm
-
-                        with patch("agenttree.api.start_issue", return_value=mock_agent):
-                            result = send_message("042", "hello", quiet=True)
-
-        assert result == "sent"
-
-    def test_send_message_no_auto_start(self, mock_config, mock_issue):
-        """Returns error if agent not running and auto_start=False."""
         with patch("agenttree.config.load_config", return_value=mock_config):
             with patch("agenttree.issues.get_issue", return_value=mock_issue):
                 with patch("agenttree.state.get_active_agent", return_value=None):
-                    with patch("agenttree.tmux.TmuxManager") as mock_tm_class:
-                        mock_tm = MagicMock()
-                        mock_tm.is_issue_running.return_value = False
-                        mock_tm_class.return_value = mock_tm
-
-                        result = send_message("042", "hello", auto_start=False, quiet=True)
-
-        assert result == "no_agent"
-
-    def test_send_message_retry_on_claude_exit(self, mock_config, mock_issue, mock_agent):
-        """Restarts and retries if Claude CLI exited."""
-        send_call_count = [0]
-
-        def mock_send(session, message, interrupt=False):
-            send_call_count[0] += 1
-            if send_call_count[0] == 1:
-                return "claude_exited"
-            return "sent"
-
-        with patch("agenttree.config.load_config", return_value=mock_config):
-            with patch("agenttree.issues.get_issue", return_value=mock_issue):
-                with patch("agenttree.state.get_active_agent", return_value=mock_agent):
-                    with patch("agenttree.tmux.TmuxManager") as mock_tm_class:
-                        mock_tm = MagicMock()
-                        mock_tm.is_issue_running.return_value = True
-                        mock_tm.send_message_to_issue.side_effect = mock_send
-                        mock_tm_class.return_value = mock_tm
-
-                        with patch("agenttree.api.start_issue", return_value=mock_agent):
-                            result = send_message("042", "hello", quiet=True)
+                    with patch("agenttree.api.start_issue") as mock_start:
+                        result = send_message("042", "hello", quiet=True)
 
         assert result == "restarted"
-        assert send_call_count[0] == 2
+        mock_start.assert_called_once()
+
+    def test_send_message_no_auto_start(self, mock_config, mock_issue):
+        """Returns 'no_agent' if agent not running and auto_start=False."""
+        with patch("agenttree.config.load_config", return_value=mock_config):
+            with patch("agenttree.issues.get_issue", return_value=mock_issue):
+                with patch("agenttree.state.get_active_agent", return_value=None):
+                    result = send_message("042", "hello", auto_start=False, quiet=True)
+
+        assert result == "no_agent"
 
     def test_send_message_issue_not_found(self, mock_config):
         """IssueNotFoundError when issue doesn't exist."""
@@ -432,7 +293,7 @@ class TestSendMessage:
 
 
 class TestStartController:
-    """Tests for start_controller() function."""
+    """Tests for start_controller() function (alias for start_messenger)."""
 
     @pytest.fixture
     def mock_config(self):
@@ -442,8 +303,8 @@ class TestStartController:
         config.project = "testproj"
         config.default_tool = "claude"
         config.default_model = "opus"
-        manager_role = RoleConfig(name="manager", tool="claude", model="sonnet")
-        config.roles = {"manager": manager_role}
+        manager_role = RoleConfig(name="messenger", tool="claude", model="sonnet")
+        config.roles = {"messenger": manager_role}
         config.get_role_tmux_session.return_value = "testproj-controller-000"
         return config
 
@@ -488,7 +349,7 @@ class TestStartController:
                 with pytest.raises(AgentAlreadyRunningError) as exc_info:
                     start_controller(quiet=True)
 
-        assert exc_info.value.issue_id == "manager"
+        assert exc_info.value.issue_id == "messenger"
 
     def test_start_controller_force_restarts(self, mock_config, tmp_path, monkeypatch):
         """With force=True, restarts controller."""
@@ -508,18 +369,19 @@ class TestStartController:
 
 
 class TestControllerMessages:
-    """Tests for sending messages to controller."""
+    """Tests for sending messages to messenger (issue 0)."""
 
     @pytest.fixture
     def mock_config(self):
         """Create a mock config."""
         config = MagicMock()
         config.project = "testproj"
+        config.get_role_tmux_session.return_value = "testproj-controller-000"
         config.get_manager_tmux_session.return_value = "testproj-controller-000"
         return config
 
-    def test_send_to_controller_success(self, mock_config):
-        """Message sent to controller successfully."""
+    def test_send_to_messenger_success(self, mock_config):
+        """Message sent to messenger successfully."""
         with patch("agenttree.config.load_config", return_value=mock_config):
             with patch("agenttree.tmux.session_exists", return_value=True):
                 with patch("agenttree.tmux.send_message", return_value="sent") as mock_send:
@@ -528,348 +390,159 @@ class TestControllerMessages:
         assert result == "sent"
         mock_send.assert_called_once_with("testproj-controller-000", "hello controller", interrupt=False)
 
-    def test_send_to_controller_not_running(self, mock_config):
-        """ControllerNotRunningError if controller not running."""
+    def test_send_to_messenger_not_running(self, mock_config):
+        """MessengerNotRunningError if messenger not running."""
         with patch("agenttree.config.load_config", return_value=mock_config):
             with patch("agenttree.tmux.session_exists", return_value=False):
-                with pytest.raises(ControllerNotRunningError):
+                with pytest.raises(MessengerNotRunningError):
                     send_message("0", "hello", quiet=True)
 
 
 # =============================================================================
-# Tests for Stop/Cleanup Functions (from state.py consolidation)
+# Tests for Stop/Cleanup Functions
 # =============================================================================
 
 
 class TestStopAgent:
     """Tests for stop_agent function."""
 
-    def test_stop_agent_kills_tmux_and_container(self):
-        """stop_agent should kill tmux session and cleanup containers by prefix."""
+    def test_stop_agent_kills_process_and_serve_session(self):
+        """stop_agent kills serve tmux session and stops process."""
         from agenttree.api import stop_agent
 
         mock_config = MagicMock()
         mock_config.project = "myproject"
-        mock_config.get_issue_tmux_session.return_value = "myproject-developer-042"
-        mock_config.get_issue_container_name.return_value = "agenttree-myproject-042"
-
-        mock_runtime = MagicMock()
-        mock_runtime.runtime = "container"
+        mock_config.commands = {}
 
         with patch("agenttree.config.load_config", return_value=mock_config), \
-             patch("agenttree.tmux.session_exists", return_value=True), \
-             patch("agenttree.tmux.kill_session") as mock_kill, \
-             patch("agenttree.container.get_container_runtime", return_value=mock_runtime), \
-             patch("agenttree.container.cleanup_containers_by_prefix", return_value=1) as mock_cleanup:
-
-            result = stop_agent(42, "developer", quiet=True)
-
-        assert result is True
-        # Verify tmux session was killed using config method
-        mock_config.get_issue_tmux_session.assert_called_with(42, "developer")
-        mock_kill.assert_any_call("myproject-developer-042")
-
-        # Verify container was cleaned up using prefix-based cleanup
-        mock_config.get_issue_container_name.assert_called_with(42)
-        mock_cleanup.assert_called_once_with("container", "agenttree-myproject-042")
-
-    def test_stop_agent_handles_no_session(self):
-        """stop_agent should gracefully handle when tmux session doesn't exist."""
-        from agenttree.api import stop_agent
-
-        mock_config = MagicMock()
-        mock_config.project = "myproject"
-        mock_config.get_issue_tmux_session.return_value = "myproject-developer-042"
-        mock_config.get_issue_container_name.return_value = "agenttree-myproject-042"
-
-        mock_runtime = MagicMock()
-        mock_runtime.runtime = "container"
-
-        with patch("agenttree.config.load_config", return_value=mock_config), \
+             patch("agenttree.process.stop_agent_process", return_value=True) as mock_stop_proc, \
+             patch("agenttree.ids.serve_session_name", return_value="myproject-serve-042"), \
              patch("agenttree.tmux.session_exists", return_value=False), \
-             patch("agenttree.tmux.kill_session") as mock_kill, \
-             patch("agenttree.container.get_container_runtime", return_value=mock_runtime), \
-             patch("agenttree.container.cleanup_containers_by_prefix", return_value=1) as mock_cleanup:
+             patch("agenttree.tmux.kill_session") as mock_kill:
 
             result = stop_agent(42, "developer", quiet=True)
 
-        # Should still attempt container cleanup
         assert result is True
-        # Should not attempt to kill session
+        mock_stop_proc.assert_called_once_with(42, "developer")
+        mock_kill.assert_not_called()  # serve session doesn't exist
+
+    def test_stop_agent_kills_serve_session_if_exists(self):
+        """stop_agent kills serve tmux session when it exists."""
+        from agenttree.api import stop_agent
+
+        mock_config = MagicMock()
+        mock_config.project = "myproject"
+        mock_config.commands = {}
+
+        with patch("agenttree.config.load_config", return_value=mock_config), \
+             patch("agenttree.process.stop_agent_process", return_value=True), \
+             patch("agenttree.ids.serve_session_name", return_value="myproject-serve-042"), \
+             patch("agenttree.tmux.session_exists", return_value=True), \
+             patch("agenttree.tmux.kill_session") as mock_kill:
+
+            result = stop_agent(42, "developer", quiet=True)
+
+        assert result is True
+        mock_kill.assert_called_once_with("myproject-serve-042")
+
+    def test_stop_agent_handles_no_process(self):
+        """stop_agent returns False when nothing to stop."""
+        from agenttree.api import stop_agent
+
+        mock_config = MagicMock()
+        mock_config.project = "myproject"
+        mock_config.commands = {}
+
+        with patch("agenttree.config.load_config", return_value=mock_config), \
+             patch("agenttree.process.stop_agent_process", return_value=False), \
+             patch("agenttree.ids.serve_session_name", return_value="myproject-serve-042"), \
+             patch("agenttree.tmux.session_exists", return_value=False), \
+             patch("agenttree.tmux.kill_session") as mock_kill:
+
+            result = stop_agent(42, "developer", quiet=True)
+
+        assert result is False
         mock_kill.assert_not_called()
-        # Should still cleanup containers by prefix
-        mock_cleanup.assert_called_once_with("container", "agenttree-myproject-042")
 
-    def test_stop_agent_handles_no_container(self):
-        """stop_agent should gracefully handle when no container runtime is available."""
+    def test_stop_agent_calls_stop_agent_process(self):
+        """stop_agent uses agenttree.process.stop_agent_process, not tmux/container."""
         from agenttree.api import stop_agent
 
         mock_config = MagicMock()
         mock_config.project = "myproject"
-        mock_config.get_issue_tmux_session.return_value = "myproject-developer-042"
-        mock_config.get_issue_container_name.return_value = "agenttree-myproject-042"
-
-        mock_runtime = MagicMock()
-        mock_runtime.runtime = None  # No container runtime
+        mock_config.commands = {}
 
         with patch("agenttree.config.load_config", return_value=mock_config), \
-             patch("agenttree.tmux.session_exists", return_value=True), \
-             patch("agenttree.tmux.kill_session") as mock_kill, \
-             patch("agenttree.container.get_container_runtime", return_value=mock_runtime), \
-             patch("agenttree.container.cleanup_containers_by_prefix") as mock_cleanup:
+             patch("agenttree.process.stop_agent_process", return_value=True) as mock_stop_proc, \
+             patch("agenttree.ids.serve_session_name", return_value="myproject-serve-042"), \
+             patch("agenttree.tmux.session_exists", return_value=False):
 
-            result = stop_agent(42, "developer", quiet=True)
+            stop_agent(42, "developer", quiet=True)
 
-        assert result is True  # Still returns True because tmux was stopped
-        # Should kill tmux session
-        mock_kill.assert_called_with("myproject-developer-042")
-        # Should not attempt container operations (no runtime)
-        mock_cleanup.assert_not_called()
-
-    def test_stop_agent_uses_prefix_cleanup(self):
-        """stop_agent should use cleanup_containers_by_prefix for container cleanup.
-
-        This ensures containers with random suffixes (e.g., agenttree-myproject-042-abc123)
-        are properly cleaned up, not just containers matching the exact base name.
-        """
-        from agenttree.api import stop_agent
-
-        mock_config = MagicMock()
-        mock_config.project = "myproject"
-        mock_config.get_issue_tmux_session.return_value = "myproject-developer-042"
-        mock_config.get_issue_container_name.return_value = "agenttree-myproject-042"
-
-        mock_runtime = MagicMock()
-        mock_runtime.runtime = "container"
-
-        with patch("agenttree.config.load_config", return_value=mock_config), \
-             patch("agenttree.tmux.session_exists", return_value=True), \
-             patch("agenttree.tmux.kill_session"), \
-             patch("agenttree.container.get_container_runtime", return_value=mock_runtime), \
-             patch("agenttree.container.cleanup_containers_by_prefix", return_value=2) as mock_cleanup:
-
-            result = stop_agent(42, "developer", quiet=True)
-
-        assert result is True
-        # Verify cleanup_containers_by_prefix was called with correct prefix
-        mock_cleanup.assert_called_once_with("container", "agenttree-myproject-042")
-        # Direct stop/delete should NOT be called - we use prefix cleanup instead
-        mock_runtime.stop.assert_not_called()
-        mock_runtime.delete.assert_not_called()
-
-    def test_stop_agent_prefix_cleanup_handles_multiple_containers(self):
-        """stop_agent should clean up all containers matching the prefix.
-
-        When multiple containers exist with suffixes (e.g., from repeated --force starts),
-        cleanup_containers_by_prefix should remove all of them.
-        """
-        from agenttree.api import stop_agent
-
-        mock_config = MagicMock()
-        mock_config.project = "myproject"
-        mock_config.get_issue_tmux_session.return_value = "myproject-developer-042"
-        mock_config.get_issue_container_name.return_value = "agenttree-myproject-042"
-
-        mock_runtime = MagicMock()
-        mock_runtime.runtime = "container"
-
-        # cleanup_containers_by_prefix returns count of containers cleaned
-        with patch("agenttree.config.load_config", return_value=mock_config), \
-             patch("agenttree.tmux.session_exists", return_value=False), \
-             patch("agenttree.tmux.kill_session"), \
-             patch("agenttree.container.get_container_runtime", return_value=mock_runtime), \
-             patch("agenttree.container.cleanup_containers_by_prefix", return_value=3) as mock_cleanup:
-
-            result = stop_agent(42, "developer", quiet=True)
-
-        # Should return True because containers were cleaned
-        assert result is True
-        mock_cleanup.assert_called_once_with("container", "agenttree-myproject-042")
+        mock_stop_proc.assert_called_once_with(42, "developer")
 
 
 class TestStopAllAgentsForIssue:
     """Tests for stop_all_agents_for_issue function."""
 
     def test_stop_all_agents_for_issue(self):
-        """stop_all_agents_for_issue should find all role sessions and stop each."""
+        """stop_all_agents_for_issue delegates to process.stop_all_for_issue."""
         from agenttree.api import stop_all_agents_for_issue
 
-        mock_agents = [
-            MagicMock(issue_id="042", role="developer"),
-            MagicMock(issue_id="042", role="reviewer"),
-        ]
-
-        with patch("agenttree.state.get_active_agents_for_issue", return_value=mock_agents), \
-             patch("agenttree.api.stop_agent", return_value=True) as mock_stop:
-
+        with patch("agenttree.process.stop_all_for_issue", return_value=2) as mock_stop:
             result = stop_all_agents_for_issue("042", quiet=True)
 
         assert result == 2
-        mock_stop.assert_has_calls([
-            call("042", "developer", True),
-            call("042", "reviewer", True),
-        ])
+        mock_stop.assert_called_once_with("042")
 
 
 class TestCleanupOrphanedContainers:
-    """Tests for cleanup_orphaned_containers function."""
+    """Tests for cleanup_orphaned_containers - now a no-op."""
 
-    def test_cleanup_orphaned_containers(self):
-        """cleanup_orphaned_containers should stop containers without tmux sessions using runtime abstraction."""
+    def test_cleanup_orphaned_containers_is_noop(self):
+        """cleanup_orphaned_containers returns 0 (no-op)."""
         from agenttree.api import cleanup_orphaned_containers
 
-        mock_config = MagicMock()
-        mock_config.project = "myproject"
-        mock_config.get_issue_tmux_session.side_effect = lambda issue_id, role: f"myproject-{role}-{issue_id:03d}"
+        result = cleanup_orphaned_containers(quiet=True)
 
-        mock_containers = [
-            {"name": "agenttree-myproject-042", "id": "container1"},
-            {"name": "agenttree-myproject-043", "id": "container2"},
-            {"name": "other-container", "id": "container3"},  # Should be ignored
-        ]
-
-        mock_runtime = MagicMock()
-        mock_runtime.runtime = "container"
-        mock_runtime.list_all.return_value = mock_containers
-
-        def session_exists_side_effect(session_name):
-            # Only issue 043 has an active tmux session
-            return session_name == "myproject-developer-043"
-
-        with patch("agenttree.config.load_config", return_value=mock_config), \
-             patch("agenttree.container.get_container_runtime", return_value=mock_runtime), \
-             patch("agenttree.tmux.session_exists", side_effect=session_exists_side_effect):
-
-            result = cleanup_orphaned_containers(quiet=True)
-
-        assert result == 1  # Only container 042 should be cleaned up
-        # Should stop and delete only the orphaned container (using container ID)
-        mock_runtime.stop.assert_called_once_with("container1")
-        mock_runtime.delete.assert_called_once_with("container1")
+        assert result == 0
 
     def test_cleanup_orphaned_skips_active(self):
-        """cleanup_orphaned_containers should NOT clean up containers with active tmux sessions."""
+        """cleanup_orphaned_containers is a no-op regardless of state."""
         from agenttree.api import cleanup_orphaned_containers
 
-        mock_config = MagicMock()
-        mock_config.project = "myproject"
+        result = cleanup_orphaned_containers(quiet=False)
 
-        mock_containers = [
-            {"name": "agenttree-myproject-042", "id": "container1"},
-        ]
-
-        mock_runtime = MagicMock()
-        mock_runtime.runtime = "container"
-        mock_runtime.list_all.return_value = mock_containers
-
-        with patch("agenttree.config.load_config", return_value=mock_config), \
-             patch("agenttree.container.get_container_runtime", return_value=mock_runtime), \
-             patch("agenttree.tmux.session_exists", return_value=True):  # Session exists
-
-            result = cleanup_orphaned_containers(quiet=True)
-
-        assert result == 0  # No containers cleaned up
-        mock_runtime.stop.assert_not_called()
-        mock_runtime.delete.assert_not_called()
+        assert result == 0
 
 
 class TestCleanupAllContainers:
-    """Tests for cleanup_all_agenttree_containers function."""
+    """Tests for cleanup_all_agenttree_containers - now a no-op."""
 
-    def test_cleanup_all_containers(self):
-        """cleanup_all_agenttree_containers should remove all agenttree containers regardless of session state."""
+    def test_cleanup_all_containers_is_noop(self):
+        """cleanup_all_agenttree_containers returns 0 (no-op)."""
         from agenttree.api import cleanup_all_agenttree_containers
 
-        mock_config = MagicMock()
-        mock_config.project = "myproject"
+        result = cleanup_all_agenttree_containers(quiet=True)
 
-        mock_containers = [
-            {"name": "agenttree-myproject-042", "image": ""},
-            {"name": "agenttree-other-043", "image": ""},
-            {"name": "other-container", "image": "agenttree:latest"},  # Match by image
-            {"name": "unrelated", "image": "nginx"},  # Should be ignored
-        ]
-
-        mock_runtime = MagicMock()
-        mock_runtime.runtime = "container"
-        mock_runtime.list_all.return_value = mock_containers
-        mock_runtime.stop.return_value = True
-        mock_runtime.delete.return_value = True
-
-        with patch("agenttree.config.load_config", return_value=mock_config), \
-             patch("agenttree.container.get_container_runtime", return_value=mock_runtime):
-
-            result = cleanup_all_agenttree_containers(quiet=True)
-
-        assert result == 3  # Three agenttree containers
-        # Should stop and delete all matching containers
-        expected_calls = [
-            call("agenttree-myproject-042"),
-            call("agenttree-other-043"),
-            call("other-container"),
-        ]
-        mock_runtime.stop.assert_has_calls(expected_calls, any_order=True)
-        mock_runtime.delete.assert_has_calls(expected_calls, any_order=True)
+        assert result == 0
 
 
 class TestCleanupAllWithRetry:
-    """Tests for cleanup_all_with_retry function."""
+    """Tests for cleanup_all_with_retry - now a no-op."""
 
-    def test_cleanup_all_with_retry(self):
-        """cleanup_all_with_retry should perform multiple passes with configurable delay."""
+    def test_cleanup_all_with_retry_is_noop(self):
+        """cleanup_all_with_retry is a no-op."""
         from agenttree.api import cleanup_all_with_retry
 
-        with patch("agenttree.api.cleanup_all_agenttree_containers", return_value=2) as mock_cleanup, \
-             patch("time.sleep") as mock_sleep:
-
-            cleanup_all_with_retry(max_passes=3, delay_s=1.0, quiet=True)
-
-        # Should call cleanup 3 times
-        assert mock_cleanup.call_count == 3
-        # Should sleep between passes (2 sleeps for 3 passes)
-        mock_sleep.assert_has_calls([call(1.0), call(1.0)])
+        # Should not raise
+        cleanup_all_with_retry(max_passes=3, delay_s=1.0, quiet=True)
 
     def test_cleanup_all_with_retry_single_pass(self):
-        """cleanup_all_with_retry should work with single pass (no sleep)."""
+        """cleanup_all_with_retry is a no-op for single pass too."""
         from agenttree.api import cleanup_all_with_retry
 
-        with patch("agenttree.api.cleanup_all_agenttree_containers", return_value=1) as mock_cleanup, \
-             patch("time.sleep") as mock_sleep:
-
-            cleanup_all_with_retry(max_passes=1, delay_s=2.0, quiet=True)
-
-        mock_cleanup.assert_called_once()
-        mock_sleep.assert_not_called()  # No sleep for single pass
-
-
-class TestContainerNamingConsistency:
-    """Tests to verify API uses consistent container naming from config."""
-
-    def test_container_naming_consistency(self):
-        """stop_agent should use cleanup_containers_by_prefix with config-derived prefix."""
-        from agenttree.api import stop_agent
-
-        mock_config = MagicMock()
-        mock_config.project = "testproject"
-        mock_config.get_issue_tmux_session.return_value = "testproject-developer-123"
-        mock_config.get_issue_container_name.return_value = "agenttree-testproject-123"
-
-        mock_runtime = MagicMock()
-        mock_runtime.runtime = "container"
-
-        with patch("agenttree.config.load_config", return_value=mock_config), \
-             patch("agenttree.tmux.session_exists", return_value=False), \
-             patch("agenttree.tmux.kill_session"), \
-             patch("agenttree.container.get_container_runtime", return_value=mock_runtime), \
-             patch("agenttree.container.cleanup_containers_by_prefix", return_value=1) as mock_cleanup:
-
-            stop_agent(123, "developer", quiet=True)
-
-        # Verify config method was called with issue_id
-        mock_config.get_issue_container_name.assert_called_with(123)
-        # Verify cleanup_containers_by_prefix was called with prefix (handles random suffixes)
-        expected_prefix = "agenttree-testproject-123"
-        mock_cleanup.assert_called_with("container", expected_prefix)
+        cleanup_all_with_retry(max_passes=1, delay_s=2.0, quiet=True)
 
 
 class TestTransitionIssue:
@@ -991,49 +664,75 @@ class TestTransitionIssue:
 class TestNotifyAgent:
     """Tests for _notify_agent() function."""
 
-    def test_notify_sends_message(self):
-        """Sends message to active agent's tmux session."""
+    def test_notify_sends_to_messenger_via_tmux(self):
+        """Sends message to messenger (issue 0) via tmux."""
         from agenttree.api import _notify_agent
 
-        agent = MagicMock()
-        agent.tmux_session = "testproj-dev-042"
+        mock_config = MagicMock()
+        mock_config.get_role_tmux_session.return_value = "testproj-messenger-000"
+        mock_config.get_manager_tmux_session.return_value = "testproj-messenger-000"
 
-        with patch("agenttree.state.get_active_agent", return_value=agent), \
+        with patch("agenttree.config.load_config", return_value=mock_config), \
              patch("agenttree.tmux.session_exists", return_value=True), \
              patch("agenttree.tmux.send_message") as mock_send:
 
-            _notify_agent("42", "Test message")
+            _notify_agent(0, "Test message")
 
-        mock_send.assert_called_once_with("testproj-dev-042", "Test message", interrupt=False)
+        mock_send.assert_called_once_with("testproj-messenger-000", "Test message", interrupt=False)
 
-    def test_notify_sends_with_interrupt(self):
-        """Sends message with interrupt=True when specified."""
+    def test_notify_sends_with_interrupt_to_messenger(self):
+        """Sends message with interrupt=True when specified (messenger only)."""
         from agenttree.api import _notify_agent
 
-        agent = MagicMock()
-        agent.tmux_session = "testproj-dev-042"
+        mock_config = MagicMock()
+        mock_config.get_role_tmux_session.return_value = "testproj-messenger-000"
+        mock_config.get_manager_tmux_session.return_value = "testproj-messenger-000"
 
-        with patch("agenttree.state.get_active_agent", return_value=agent), \
+        with patch("agenttree.config.load_config", return_value=mock_config), \
              patch("agenttree.tmux.session_exists", return_value=True), \
              patch("agenttree.tmux.send_message") as mock_send:
 
-            _notify_agent("42", "Test message", interrupt=True)
+            _notify_agent(0, "Test message", interrupt=True)
 
-        mock_send.assert_called_once_with("testproj-dev-042", "Test message", interrupt=True)
+        mock_send.assert_called_once_with("testproj-messenger-000", "Test message", interrupt=True)
 
-    def test_notify_no_agent(self):
-        """Does nothing if no active agent."""
+    def test_notify_sub_agent_is_noop(self):
+        """Does nothing for sub-agents (non-zero issue_id)."""
         from agenttree.api import _notify_agent
 
-        with patch("agenttree.state.get_active_agent", return_value=None):
-            _notify_agent("42", "Test message")  # Should not raise
+        with patch("agenttree.tmux.send_message") as mock_send:
+            _notify_agent(42, "Test message")  # Should not send via tmux
+
+        mock_send.assert_not_called()
+
+    def test_notify_messenger_no_session_is_noop(self):
+        """Does nothing if messenger tmux session doesn't exist."""
+        from agenttree.api import _notify_agent
+
+        mock_config = MagicMock()
+        mock_config.get_role_tmux_session.return_value = "testproj-messenger-000"
+        mock_config.get_manager_tmux_session.return_value = "testproj-messenger-000"
+
+        with patch("agenttree.config.load_config", return_value=mock_config), \
+             patch("agenttree.tmux.session_exists", return_value=False), \
+             patch("agenttree.tmux.send_message") as mock_send:
+
+            _notify_agent(0, "Test message")
+
+        mock_send.assert_not_called()
 
     def test_notify_never_raises(self):
-        """Never raises even if tmux operations fail."""
+        """Never raises even if operations fail."""
         from agenttree.api import _notify_agent
 
-        with patch("agenttree.state.get_active_agent", side_effect=Exception("boom")):
-            _notify_agent("42", "Test message")  # Should not raise
+        with patch("agenttree.config.load_config", side_effect=Exception("boom")):
+            _notify_agent(0, "Test message")  # Should not raise
+
+    def test_notify_sub_agent_never_raises(self):
+        """Never raises for sub-agents either."""
+        from agenttree.api import _notify_agent
+
+        _notify_agent(42, "Test message")  # Should not raise
 
 
 class TestStartRole:
@@ -1046,114 +745,75 @@ class TestStartRole:
         config.project = "testproj"
         config.default_tool = "claude"
         config.default_model = "sonnet"
-        config.get_role_tmux_session.return_value = "testproj-architect-000"
+        config.get_role_tmux_session.return_value = "testproj-messenger-000"
         return config
 
     @pytest.fixture
-    def mock_role_containerized(self):
-        """Create a mock role config with container enabled."""
+    def mock_role(self):
+        """Create a mock role config."""
         role = MagicMock()
         role.tool = "claude"
         role.model = "opus"
-        role.skill_file = "architect.md"
-        role.is_containerized.return_value = True
-        role.container = MagicMock()
-        role.container.enabled = True
+        role.skill_file = "messenger.md"
         return role
 
-    @pytest.fixture
-    def mock_role_host(self):
-        """Create a mock role config running on host (no container)."""
-        role = MagicMock()
-        role.tool = "claude"
-        role.model = "opus"
-        role.skill_file = "architect.md"
-        role.is_containerized.return_value = False
-        role.container = None
-        return role
-
-    def test_start_role_warns_on_container_mode_architect(
-        self, mock_config, mock_role_containerized, tmp_path, monkeypatch, caplog
+    def test_start_role_creates_tmux_session(
+        self, mock_config, mock_role, tmp_path, monkeypatch
     ):
-        """Warning logged when architect has container.enabled=true."""
-        from agenttree.api import start_role, HOST_TMUX_ROLES
-        import logging
-
-        monkeypatch.chdir(tmp_path)
-        mock_config.roles = {"architect": mock_role_containerized}
-
-        with caplog.at_level(logging.WARNING):
-            with patch("agenttree.config.load_config", return_value=mock_config), \
-                 patch("agenttree.tmux.session_exists", return_value=False), \
-                 patch("agenttree.tmux.TmuxManager") as mock_tm_class:
-                mock_tm = MagicMock()
-                mock_tm_class.return_value = mock_tm
-
-                start_role("architect", quiet=True)
-
-        assert "architect" in HOST_TMUX_ROLES
-        assert any("container mode" in record.message.lower() for record in caplog.records)
-
-    def test_start_role_warns_on_container_mode_manager(
-        self, mock_config, mock_role_containerized, tmp_path, monkeypatch, caplog
-    ):
-        """Warning logged when manager has container.enabled=true."""
-        from agenttree.api import start_role, HOST_TMUX_ROLES
-        import logging
-
-        monkeypatch.chdir(tmp_path)
-        mock_config.roles = {"manager": mock_role_containerized}
-
-        with caplog.at_level(logging.WARNING):
-            with patch("agenttree.config.load_config", return_value=mock_config), \
-                 patch("agenttree.tmux.session_exists", return_value=False), \
-                 patch("agenttree.tmux.TmuxManager") as mock_tm_class:
-                mock_tm = MagicMock()
-                mock_tm_class.return_value = mock_tm
-
-                start_role("manager", quiet=True)
-
-        assert "manager" in HOST_TMUX_ROLES
-        assert any("container mode" in record.message.lower() for record in caplog.records)
-
-    def test_start_role_no_warn_for_host_mode(
-        self, mock_config, mock_role_host, tmp_path, monkeypatch, caplog
-    ):
-        """No warning when container.enabled=false (running on host)."""
+        """start_role creates tmux session via TmuxManager.start_host_role."""
         from agenttree.api import start_role
-        import logging
 
         monkeypatch.chdir(tmp_path)
-        mock_config.roles = {"architect": mock_role_host}
+        mock_config.roles = {"messenger": mock_role}
 
-        with caplog.at_level(logging.WARNING):
-            with patch("agenttree.config.load_config", return_value=mock_config), \
-                 patch("agenttree.tmux.session_exists", return_value=False), \
-                 patch("agenttree.tmux.TmuxManager") as mock_tm_class:
-                mock_tm = MagicMock()
-                mock_tm_class.return_value = mock_tm
+        with patch("agenttree.config.load_config", return_value=mock_config), \
+             patch("agenttree.tmux.session_exists", return_value=False), \
+             patch("agenttree.tmux.TmuxManager") as mock_tm_class:
+            mock_tm = MagicMock()
+            mock_tm_class.return_value = mock_tm
 
-                start_role("architect", quiet=True)
+            start_role("messenger", quiet=True)
 
-        assert not any("container mode" in record.message.lower() for record in caplog.records)
+        mock_tm.start_host_role.assert_called_once()
 
-    def test_start_role_no_warn_for_developer(
-        self, mock_config, mock_role_containerized, tmp_path, monkeypatch, caplog
+    def test_start_role_already_running_raises(
+        self, mock_config, mock_role, tmp_path, monkeypatch
     ):
-        """No warning for developer role with container enabled (designed for containers)."""
+        """AgentAlreadyRunningError if session already running."""
         from agenttree.api import start_role
-        import logging
 
         monkeypatch.chdir(tmp_path)
-        mock_config.roles = {"developer": mock_role_containerized}
+        mock_config.roles = {"messenger": mock_role}
 
-        with caplog.at_level(logging.WARNING):
-            with patch("agenttree.config.load_config", return_value=mock_config), \
-                 patch("agenttree.tmux.session_exists", return_value=False), \
-                 patch("agenttree.tmux.TmuxManager") as mock_tm_class:
-                mock_tm = MagicMock()
-                mock_tm_class.return_value = mock_tm
+        with patch("agenttree.config.load_config", return_value=mock_config), \
+             patch("agenttree.tmux.session_exists", return_value=True):
 
-                start_role("developer", quiet=True)
+            with pytest.raises(AgentAlreadyRunningError):
+                start_role("messenger", quiet=True)
 
-        assert not any("container mode" in record.message.lower() for record in caplog.records)
+    def test_start_role_force_restarts(
+        self, mock_config, mock_role, tmp_path, monkeypatch
+    ):
+        """force=True kills existing session and restarts."""
+        from agenttree.api import start_role
+
+        monkeypatch.chdir(tmp_path)
+        mock_config.roles = {"messenger": mock_role}
+
+        with patch("agenttree.config.load_config", return_value=mock_config), \
+             patch("agenttree.tmux.session_exists", return_value=True), \
+             patch("agenttree.tmux.kill_session") as mock_kill, \
+             patch("agenttree.tmux.TmuxManager") as mock_tm_class:
+            mock_tm = MagicMock()
+            mock_tm_class.return_value = mock_tm
+
+            start_role("messenger", force=True, quiet=True)
+
+        mock_kill.assert_called_once_with("testproj-messenger-000")
+        mock_tm.start_host_role.assert_called_once()
+
+    def test_start_role_messenger_in_host_tmux_roles(self):
+        """HOST_TMUX_ROLES contains 'messenger'."""
+        from agenttree.api import HOST_TMUX_ROLES
+
+        assert "messenger" in HOST_TMUX_ROLES

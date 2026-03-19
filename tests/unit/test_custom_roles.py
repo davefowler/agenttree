@@ -313,21 +313,22 @@ class TestGetCurrentAgentHost:
             assert get_current_role() == "reviewer"
 
     def test_default_in_container(self):
-        """Test default is 'developer' when in container."""
-        with patch.dict(os.environ, {"AGENTTREE_CONTAINER": "1"}, clear=True):
+        """Test default is 'developer' when running as agent subprocess."""
+        with patch.dict(os.environ, {"AGENTTREE_ISSUE_ID": "42"}, clear=True):
             # Clear AGENTTREE_ROLE to test default
             os.environ.pop("AGENTTREE_ROLE", None)
             assert get_current_role() == "developer"
 
     def test_default_on_host(self):
-        """Test default is 'manager' when not in container."""
+        """Test default is 'messenger' when not an agent subprocess."""
         with patch.dict(os.environ, {}, clear=True):
-            # Clear container and agent role vars
+            # Clear agent env vars
             os.environ.pop("AGENTTREE_CONTAINER", None)
             os.environ.pop("AGENTTREE_ROLE", None)
+            os.environ.pop("AGENTTREE_ISSUE_ID", None)
             # Also mock the container detection files
             with patch("os.path.exists", return_value=False):
-                assert get_current_role() == "manager"
+                assert get_current_role() == "messenger"
 
 
 class TestCanAgentOperateInStage:

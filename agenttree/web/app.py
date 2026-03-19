@@ -147,20 +147,22 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     _heartbeat_task = asyncio.create_task(heartbeat_loop(interval))
     console.print(f"[green]✓ Started heartbeat events (every {interval}s)[/green]")
 
-    # Auto-start manager if not running (fallback for direct server start)
+    # Auto-start messenger if not running (fallback for direct server start)
     from agenttree.tmux import session_exists
     config = load_config()
+    # Check both messenger and legacy manager session names
+    messenger_session = config.get_role_tmux_session("messenger")
     manager_session = config.get_manager_tmux_session()
-    if not session_exists(manager_session):
+    if not session_exists(messenger_session) and not session_exists(manager_session):
         try:
-            from agenttree.api import start_controller
+            from agenttree.api import start_messenger
 
-            await asyncio.to_thread(start_controller, quiet=True)
-            console.print("[green]✓ Started controller agent[/green]")
+            await asyncio.to_thread(start_messenger, quiet=True)
+            console.print("[green]✓ Started messenger agent[/green]")
         except Exception as e:
-            console.print(f"[yellow]⚠ Could not start controller: {e}[/yellow]")
+            console.print(f"[yellow]⚠ Could not start messenger: {e}[/yellow]")
     else:
-        console.print("[green]✓ Manager already running[/green]")
+        console.print("[green]✓ Messenger already running[/green]")
 
     yield  # Server runs here
 
@@ -312,12 +314,25 @@ class AgentManager:
     def _check_issue_tmux_session(self, issue_id: int) -> bool:
         """Check if tmux session exists for an issue-bound agent.
 
-        Note: Manager is agent 0, so _check_issue_tmux_session(0) checks manager.
+        Note: Manager/messenger is agent 0.
         Uses config.get_issue_session_patterns() for consistent naming.
         """
         active = self._get_active_sessions()
         patterns = _config.get_issue_session_patterns(issue_id)
         return any(name in active for name in patterns)
+
+    def _check_issue_agent_running(self, issue_id: int) -> bool:
+        """Check if an agent is running for an issue.
+
+        Checks both process-based agents (claude -p) and tmux sessions.
+        """
+        # Check process-based agent first
+        from agenttree.process import get_agent
+        agent = get_agent(issue_id, "developer")
+        if agent:
+            return True
+        # Fall back to tmux session check (for messenger/legacy)
+        return self._check_issue_tmux_session(issue_id)
 
 
 # Global agent manager - will be initialized in startup
@@ -331,16 +346,13 @@ def convert_issue_to_web(issue: issue_crud.Issue, load_dependents: bool = False)
         issue: The issue to convert
         load_dependents: If True, also load dependent issues (issues blocked by this one)
     """
-    # Check if tmux session is active for this issue.
-    # For human review stages, check the developer agent (the review stage
-    # itself has no agent — it's waiting for human action).
+    # Check if agent is running for this issue.
+    # Uses process-based detection (PID) with tmux fallback.
     if _config.is_human_review(issue.stage):
-        from agenttree.ids import parse_issue_id
-        iid = parse_issue_id(str(issue.id))
-        dev_session = _config.get_issue_tmux_session(iid, "developer")
-        tmux_active = dev_session in agent_manager._get_active_sessions()
+        # For human review stages, check the developer agent
+        tmux_active = agent_manager._check_issue_agent_running(issue.id)
     else:
-        tmux_active = agent_manager._check_issue_tmux_session(issue.id)
+        tmux_active = agent_manager._check_issue_agent_running(issue.id)
 
     # Load dependents if requested (issues blocked by this one)
     dependents: list[int] = []
@@ -1069,20 +1081,27 @@ async def mobile(
     )
 
 
-def _capture_tmux_output(session_names: list[str]) -> tuple[str | None, str | None]:
-    """Sync helper that captures tmux output from session.
+def _capture_agent_output(issue_id: int, session_names: list[str]) -> tuple[str | None, str | None]:
+    """Sync helper that captures output from agent (process log or tmux).
 
-    This function is called via asyncio.to_thread() to avoid blocking the event loop
-    during subprocess calls.
+    Tries process log file first (for claude -p agents), then falls back
+    to tmux session capture (for messenger/legacy).
 
     Returns:
-        Tuple of (output, session_name) or (None, None) if no session found.
+        Tuple of (output, source_name) or (None, None) if no output found.
     """
     from agenttree.tmux import capture_pane
+    from agenttree.process import get_agent_output
 
+    # Try process-based agent log first
+    log_output = get_agent_output(issue_id, "developer", lines=100)
+    if log_output:
+        return log_output, f"process-{issue_id}"
+
+    # Fall back to tmux
     for name in session_names:
         output = capture_pane(name, lines=100)
-        if output:  # capture_pane returns "" on error
+        if output:
             return output, name
     return None, None
 
@@ -1107,15 +1126,21 @@ async def agent_tmux(
     issue_id = parse_issue_id(agent_num)
     session_names = config.get_issue_session_patterns(issue_id)
 
-    # Capture tmux output in thread pool to avoid blocking event loop
-    raw_output, session_name = await asyncio.to_thread(_capture_tmux_output, session_names)
+    # Capture output in thread pool to avoid blocking event loop
+    raw_output, source_name = await asyncio.to_thread(_capture_agent_output, issue_id, session_names)
 
-    if raw_output and session_name:
+    if raw_output and source_name:
         # Strip Claude Code's input prompt separator from the output
         output = _strip_claude_input_prompt(raw_output)
-        # Check if Claude is actually running (not just tmux session)
-        is_running = await asyncio.to_thread(is_claude_running, session_name)
-        claude_status = "running" if is_running else "exited"
+        if source_name and source_name.startswith("process-"):
+            # Process-based agent - check if PID is alive
+            from agenttree.process import get_agent as get_proc_agent
+            proc_agent = get_proc_agent(issue_id, "developer")
+            claude_status = "running" if proc_agent else "exited"
+        else:
+            # Tmux-based - check if Claude is running
+            is_running = await asyncio.to_thread(is_claude_running, source_name)
+            claude_status = "running" if is_running else "exited"
     else:
         output = "Tmux session not active"
         claude_status = "no_session"
@@ -1240,15 +1265,9 @@ async def get_agent_status(
     from agenttree.ids import parse_issue_id
     parsed_id = parse_issue_id(issue_id)
 
-    # For human review stages, check the developer agent session
+    # Check if agent is running (process-based or tmux)
     issue = issue_crud.get_issue(parsed_id, sync=False)
-    if issue and _config.is_human_review(issue.stage):
-        dev_session = _config.get_issue_tmux_session(parsed_id, "developer")
-        tmux_active = await asyncio.to_thread(
-            lambda: dev_session in agent_manager._get_active_sessions()
-        )
-    else:
-        tmux_active = await asyncio.to_thread(agent_manager._check_issue_tmux_session, parsed_id)
+    tmux_active = await asyncio.to_thread(agent_manager._check_issue_agent_running, parsed_id)
 
     processing = issue.processing if issue else None
     stage = issue.stage if issue else None

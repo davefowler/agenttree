@@ -554,8 +554,12 @@ class Config(BaseModel):
         return tmux_session_name(self.project, issue_id, role)
 
     def get_manager_tmux_session(self) -> str:
-        """Get tmux session name for the manager agent."""
+        """Get tmux session name for the manager agent (legacy, prefer messenger)."""
         return self.get_role_tmux_session("manager")
+
+    def get_messenger_tmux_session(self) -> str:
+        """Get tmux session name for the messenger agent."""
+        return self.get_role_tmux_session("messenger")
 
     def get_role_tmux_session(self, role: str) -> str:
         """Get tmux session name for a host-level role agent.

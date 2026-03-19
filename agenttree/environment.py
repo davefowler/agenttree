@@ -1,7 +1,8 @@
 """Environment detection utilities for AgentTree.
 
-This module provides functions to detect the runtime environment,
-including container detection and agent role determination.
+This module provides functions to detect the runtime environment.
+In the new architecture, everything runs in a single container (or on host).
+Sub-agents are `claude -p` subprocesses, not separate containers.
 """
 
 import os
@@ -15,40 +16,37 @@ if TYPE_CHECKING:
 
 
 def is_running_in_container() -> bool:
-    """Check if we're running inside a container.
+    """Check if we're running inside the agenttree container.
 
-    Checks for AGENTTREE_CONTAINER env var (set by agenttree when launching)
-    as well as common container indicators.
+    In the new architecture, there's ONE container for the whole system.
+    This checks for AGENTTREE_CONTAINER env var set when launching the container.
 
     Returns:
         True if running in a container, False otherwise
     """
-    # Trust explicit runtime signals set by AgentTree.
-    # Generic container indicators (/.dockerenv, /.containerenv) are also
-    # true in CI and cause host-path assumptions like /workspace to break.
     return (
         os.environ.get("AGENTTREE_CONTAINER") == "1"
         or os.environ.get("CONTAINER_RUNTIME") is not None
     )
 
 
+def is_agent_subprocess() -> bool:
+    """Check if we're running as a claude -p subprocess (not interactive).
+
+    Agent subprocesses have AGENTTREE_ISSUE_ID set but no terminal.
+
+    Returns:
+        True if running as an agent subprocess
+    """
+    return os.environ.get("AGENTTREE_ISSUE_ID") is not None
+
+
 def get_code_directory(issue: "Issue | None", issue_dir: Path) -> Path:
     """Get the correct working directory for code operations.
 
-    Inside containers, code is always mounted at /workspace regardless of
-    the issue's worktree_dir (which is a host path). On the host, use the
-    issue's worktree_dir if set, otherwise fall back to issue_dir.
-
-    Args:
-        issue: The issue object (may be None)
-        issue_dir: The issue's _agenttree/issues/ directory (fallback)
-
-    Returns:
-        Path to the directory containing the code
+    In the new model, agents run directly in their worktree (no /workspace mount).
+    On host, use the issue's worktree_dir if set, otherwise fall back to issue_dir.
     """
-    if is_running_in_container():
-        return Path("/workspace")
-
     if issue and issue.worktree_dir:
         return Path(issue.worktree_dir)
 
@@ -58,42 +56,32 @@ def get_code_directory(issue: "Issue | None", issue_dir: Path) -> Path:
 def get_current_role() -> str:
     """Get the current agent role.
 
-    The role is determined by the AGENTTREE_ROLE env var.
-    If not set, defaults to "developer" for containers or "manager" for host.
-
     Returns:
-        Role name (e.g., "developer", "manager", "reviewer")
+        Role name (e.g., "developer", "messenger", "reviewer")
     """
-    # Check for explicit role
     role = os.environ.get("AGENTTREE_ROLE")
     if role:
         return role
 
-    # Default: developer if in container, manager if on host
-    if is_running_in_container():
+    # Default: developer if agent subprocess, messenger if host
+    if is_agent_subprocess():
         return DEFAULT_ROLE
-    return "manager"
+    return "messenger"
 
 
 def can_agent_operate_in_stage(stage_role: str) -> bool:
     """Check if the current agent can operate in a stage with the given role.
 
-    Agents can only operate in stages where the stage's role matches their identity.
-    - Default agents (role="developer") can only operate in role="developer" stages
-    - Custom agents (role="reviewer") can only operate in role="reviewer" stages
-    - Manager can operate in any stage (it's human-driven)
-
     Args:
-        stage_role: The role value from the stage config (e.g., "developer", "manager", "reviewer")
+        stage_role: The role from the stage config
 
     Returns:
-        True if the current agent can operate in this stage, False otherwise
+        True if the current agent can operate in this stage
     """
     current_role = get_current_role()
 
-    # Manager (human) can operate anywhere
-    if current_role == "manager":
+    # Messenger/manager can operate anywhere
+    if current_role in ("manager", "messenger"):
         return True
 
-    # Agents can only operate in their own role stages
     return current_role == stage_role

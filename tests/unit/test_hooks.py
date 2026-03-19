@@ -2950,9 +2950,8 @@ class TestRollbackHook:
 class TestGetCodeDirectory:
     """Tests for get_code_directory() helper function."""
 
-    @patch('agenttree.environment.is_running_in_container', return_value=True)
-    def test_returns_workspace_in_container(self, mock_in_container, tmp_path):
-        """Should return /workspace when running in container."""
+    def test_returns_worktree_dir_when_set(self, tmp_path):
+        """Should return worktree_dir when set (no container distinction)."""
         from agenttree.environment import get_code_directory
 
         issue = Issue(
@@ -2967,7 +2966,7 @@ class TestGetCodeDirectory:
 
         result = get_code_directory(issue, issue_dir)
 
-        assert result == Path("/workspace")
+        assert result == Path(".worktrees/issue-123-test")
 
     @patch('agenttree.environment.is_running_in_container', return_value=False)
     def test_returns_worktree_dir_on_host_when_set(self, mock_in_container, tmp_path):
@@ -3018,16 +3017,15 @@ class TestGetCodeDirectory:
 
         assert result == issue_dir
 
-    @patch('agenttree.environment.is_running_in_container', return_value=True)
-    def test_returns_workspace_when_issue_none_in_container(self, mock_in_container, tmp_path):
-        """Should return /workspace when issue is None in container."""
+    def test_returns_issue_dir_when_issue_none(self, tmp_path):
+        """Should return issue_dir when issue is None."""
         from agenttree.environment import get_code_directory
 
         issue_dir = tmp_path / "_agenttree" / "issues" / "123-test-issue"
 
         result = get_code_directory(None, issue_dir)
 
-        assert result == Path("/workspace")
+        assert result == issue_dir
 
 
 class TestClosePrHook:
