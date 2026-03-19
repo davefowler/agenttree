@@ -297,6 +297,7 @@ def init(worktrees_dir: str | None, project: str | None) -> None:
         agents_repo.ensure_repo()
         console.print("[green]✓ _agenttree/ repository created[/green]")
         _ensure_optional_role_skill(repo_path, "architect")
+        _ensure_optional_role_skill(repo_path, "coo")
         _ensure_optional_role_skill(repo_path, "setup")
 
         # Always create knowledge base population issue

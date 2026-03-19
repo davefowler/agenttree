@@ -1,4 +1,4 @@
-"""Agent management commands (start, agents, sandbox, attach, send, output, stop, kill)."""
+"""Agent management commands (start, restart, attach, send, output, stop, kill)."""
 
 import shutil
 import subprocess
@@ -523,6 +523,71 @@ def output(issue_id: str, role: str, lines: int) -> None:
 
     output_text = capture_pane(agent.tmux_session, lines=lines)
     console.print(output_text)
+
+
+def _schedule_detached_command(command: list[str], *, delay_seconds: float = 0.0) -> None:
+    """Run a command in a detached process, optionally after a short delay."""
+    if delay_seconds > 0:
+        delayed_command = [
+            sys.executable,
+            "-c",
+            (
+                "import subprocess, time; "
+                f"time.sleep({delay_seconds!r}); "
+                f"subprocess.run({command!r}, check=False)"
+            ),
+        ]
+        subprocess.Popen(
+            delayed_command,
+            cwd=Path.cwd(),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        return
+
+    subprocess.Popen(
+        command,
+        cwd=Path.cwd(),
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+
+
+@click.command()
+@click.option("--host", default="0.0.0.0", help="Host to bind to when restarting the full system")
+@click.option("--port", default=None, type=int, help="Port to bind to when restarting the full system")
+def restart(
+    host: str,
+    port: int | None,
+) -> None:
+    """Restart the full AgentTree process safely.
+
+    This restarts the web server, heartbeat, manager, and active issue agents.
+    It is intended for config/code changes that require a full system reboot.
+    """
+    agenttree_executable = shutil.which("agenttree") or sys.argv[0]
+
+    try:
+        command = [agenttree_executable, "start"]
+        if host != "0.0.0.0":
+            command.extend(["--host", host])
+        if port is not None:
+            command.extend(["--port", str(port)])
+        _schedule_detached_command(command, delay_seconds=1.0)
+    except OSError as e:
+        console.print(f"[red]Error: Could not schedule restart: {e}[/red]")
+        sys.exit(1)
+
+    console.print("[green]✓ Scheduled full AgentTree restart[/green]")
+    console.print("[dim]A detached 'agenttree start' will relaunch the server, heartbeat, manager, and active agents.[/dim]")
+    from agenttree.cli.server import stop_all as stop_all_command
+
+    ctx = click.get_current_context()
+    ctx.invoke(stop_all_command)
 
 
 @click.command()
