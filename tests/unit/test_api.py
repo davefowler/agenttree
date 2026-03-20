@@ -254,13 +254,13 @@ class TestSendMessage:
         return agent
 
     def test_send_message_agent_running(self, mock_config, mock_issue, mock_agent):
-        """Returns 'sent' when sub-agent is running (can't send mid-flight)."""
+        """Returns 'running' when sub-agent is running (can't send mid-flight)."""
         with patch("agenttree.config.load_config", return_value=mock_config):
             with patch("agenttree.issues.get_issue", return_value=mock_issue):
                 with patch("agenttree.state.get_active_agent", return_value=mock_agent):
                     result = send_message("042", "hello", quiet=True)
 
-        assert result == "sent"
+        assert result == "running"
 
     def test_send_message_auto_starts_agent(self, mock_config, mock_issue):
         """Starts agent if not running and auto_start=True."""

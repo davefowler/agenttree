@@ -48,6 +48,7 @@ htmlcov/
 TASK.md
 .agent-config
 .agenttree/
+.agenttree-processes.json
 
 # OS
 .DS_Store

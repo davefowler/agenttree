@@ -93,9 +93,6 @@ class MessengerNotRunningError(Exception):
         super().__init__("Messenger not running. Start with: agenttree start messenger")
 
 
-# Keep backward compat aliases
-ContainerUnavailableError = AgentStartError
-ControllerNotRunningError = MessengerNotRunningError
 HOST_TMUX_ROLES: set[str] = {"messenger", "manager", "architect"}
 
 
@@ -135,7 +132,7 @@ def start_issue(
     from agenttree.ids import parse_issue_id
     from agenttree.issues import get_issue, update_issue_stage, update_issue_metadata
     from agenttree.preflight import run_preflight
-    from agenttree.state import get_active_agent, create_agent_for_issue, get_issue_names
+    from agenttree.state import get_active_agent, get_issue_names
     from agenttree.issues import create_session
     from agenttree.worktree import (
         create_worktree,
@@ -412,7 +409,12 @@ def send_message(
         quiet: Suppress output
 
     Returns:
-        Status: "sent", "restarted", "no_agent", "error"
+        Status: "sent", "running", "restarted", "no_agent", "error"
+        - "sent": Message delivered to messenger
+        - "running": Sub-agent is running (cannot receive messages mid-flight)
+        - "restarted": Agent was dead and has been restarted
+        - "no_agent": Agent not running and auto_start=False
+        - "error": Failed to send or start
     """
     from agenttree.config import load_config
     from agenttree.ids import parse_issue_id
@@ -457,7 +459,7 @@ def send_message(
                 f"[yellow]Agent for issue #{issue.id} is running (PID {agent.pid}). "
                 f"Sub-agents don't accept messages mid-flight.[/yellow]"
             )
-        return "sent"  # Best we can do
+        return "running"
 
     # Agent not running
     if not auto_start:
@@ -551,8 +553,9 @@ def transition_issue(
 def _notify_agent(issue_id: int, message: str, *, interrupt: bool = False) -> None:
     """Best-effort notify an active agent. Never raises.
 
-    For sub-agents (claude -p), this is a no-op since they can't receive messages.
-    For messenger, sends via tmux.
+    For messenger (issue 0): sends via tmux.
+    For sub-agents (claude -p): writes a notification file that the agent
+    reads on the next `agenttree next` call.
     """
     try:
         if issue_id == 0:
@@ -564,6 +567,11 @@ def _notify_agent(issue_id: int, message: str, *, interrupt: bool = False) -> No
                 session_name = config.get_manager_tmux_session()
             if session_exists(session_name):
                 tmux_send(session_name, message, interrupt=interrupt)
+        else:
+            # Sub-agents can't receive messages mid-flight, so write to a file
+            # that the agent will read on the next `agenttree next` call
+            from agenttree.process import write_agent_notification
+            write_agent_notification(issue_id, message)
     except Exception as e:
         log.warning("Failed to notify agent for issue #%s: %s", issue_id, e)
 

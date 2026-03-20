@@ -72,7 +72,13 @@ def _save_state(state: dict[str, dict[str, Any]]) -> None:
 
 
 def is_pid_alive(pid: int) -> bool:
-    """Check if a process with the given PID is still running."""
+    """Check if a process with the given PID is still running.
+    
+    Note: pid=0 is special on Linux (sends to process group), so we
+    explicitly return False for it to avoid false positives.
+    """
+    if pid <= 0:
+        return False
     try:
         os.kill(pid, 0)  # Signal 0 = check existence
         return True
@@ -189,19 +195,23 @@ def start_agent(
     if model:
         cmd.extend(["--model", model])
 
-    # Open log file for writing
+    # Open log file for writing - subprocess inherits this fd
     log_handle = open(log_file, "w")
 
-    # Start subprocess
-    proc = subprocess.Popen(
-        cmd,
-        stdin=subprocess.PIPE,
-        stdout=log_handle,
-        stderr=subprocess.STDOUT,
-        cwd=str(worktree_path),
-        # Don't let parent signals kill the child
-        preexec_fn=os.setpgrp,
-    )
+    try:
+        # Start subprocess
+        proc = subprocess.Popen(
+            cmd,
+            stdin=subprocess.PIPE,
+            stdout=log_handle,
+            stderr=subprocess.STDOUT,
+            cwd=str(worktree_path),
+            # Don't let parent signals kill the child
+            preexec_fn=os.setpgrp,
+        )
+    finally:
+        # Close parent's copy of the fd - subprocess keeps writing via its inherited copy
+        log_handle.close()
 
     # Write prompt to stdin and close it
     if proc.stdin:
@@ -309,6 +319,76 @@ def get_agent_output(issue_id: int, role: str, lines: int = 50) -> str:
         return "".join(all_lines[-lines:])
     except OSError:
         return ""
+
+
+def write_agent_notification(issue_id: int, message: str) -> bool:
+    """Write a notification file for an agent to read on next `agenttree next`.
+    
+    Since subprocess-based agents can't receive messages mid-flight,
+    notifications are written to a file that the agent reads when it
+    next calls `agenttree next`.
+    
+    Args:
+        issue_id: Issue ID
+        message: Notification message
+        
+    Returns:
+        True if notification was written successfully
+    """
+    from agenttree.config import load_config
+    
+    try:
+        config = load_config()
+        worktree_path = config.get_issue_worktree_path(issue_id)
+        
+        notification_dir = worktree_path / ".agenttree"
+        notification_dir.mkdir(exist_ok=True)
+        notification_file = notification_dir / "pending_notification.txt"
+        
+        # Append to existing notifications (one per line)
+        with open(notification_file, "a") as f:
+            timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            f.write(f"[{timestamp}] {message}\n")
+        
+        log.info("Wrote notification for issue #%d: %s", issue_id, message[:50])
+        return True
+    except Exception as e:
+        log.warning("Failed to write notification for issue #%d: %s", issue_id, e)
+        return False
+
+
+def read_agent_notifications(issue_id: int) -> list[str]:
+    """Read and clear pending notifications for an agent.
+    
+    Called by `agenttree next` to show any notifications that arrived
+    while the agent was working.
+    
+    Args:
+        issue_id: Issue ID
+        
+    Returns:
+        List of notification messages (empty if none)
+    """
+    from agenttree.config import load_config
+    
+    try:
+        config = load_config()
+        worktree_path = config.get_issue_worktree_path(issue_id)
+        notification_file = worktree_path / ".agenttree" / "pending_notification.txt"
+        
+        if not notification_file.exists():
+            return []
+        
+        notifications = notification_file.read_text().strip().split("\n")
+        notifications = [n for n in notifications if n.strip()]
+        
+        # Clear the file after reading
+        notification_file.unlink()
+        
+        return notifications
+    except Exception as e:
+        log.warning("Failed to read notifications for issue #%d: %s", issue_id, e)
+        return []
 
 
 def build_agent_prompt(

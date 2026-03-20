@@ -164,6 +164,15 @@ def stage_next(issue_id: str | None) -> None:
         console.print(f"[red]Issue {issue_id} not found[/red]")
         sys.exit(1)
 
+    # Check for and display any pending notifications
+    from agenttree.process import read_agent_notifications
+    notifications = read_agent_notifications(issue.id)
+    if notifications:
+        console.print(f"\n[bold yellow]📬 Pending Notifications:[/bold yellow]")
+        for notification in notifications:
+            console.print(f"  {notification}")
+        console.print()
+
     if issue.stage == "accepted":
         console.print(f"[yellow]Issue is already accepted[/yellow]")
         return
