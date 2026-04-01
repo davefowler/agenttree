@@ -92,6 +92,14 @@ AgentTree's YAML stages are simpler and more readable, but don't support composi
 
 **Takeaway:** Workflow composition isn't urgent, but as we add more flows beyond `default` and `quick`, having a way to share common stage definitions (via YAML anchors or similar) would reduce duplication.
 
+### 8. Multi-Agent Support
+
+Gastown supports a broad range of AI agents out of the box: Claude Code, GitHub Copilot, Codex, Gemini, Cursor, AMP, OpenCode, Goose, and more. Integration is configuration-based (JSON presets), not code-linked -- any CLI that runs in a terminal works at "Tier 0" with zero integration effort.
+
+AgentTree currently supports Claude Code and Aider, with the tool configured in `.agenttree.yaml`.
+
+**Takeaway:** A preset-based agent integration system (like Gastown's tiered approach) would make it easier to add new agent backends without code changes.
+
 ## Where AgentTree Excels
 
 ### 1. Container Isolation
@@ -138,6 +146,24 @@ The heartbeat system already checks for stalled agents, but Gastown's layered su
 ### 6. Merge Queue Integration (Medium Value, Future)
 Not urgent now, but as agent count grows, integrate with GitHub's merge queue or build a simple queue to serialize PR merging and avoid conflicts.
 
+## What the Community Says About Gastown
+
+External reviews provide useful calibration on what actually matters:
+
+- **DoltHub** (Jan 2026): "The constraint on what you can build may shift from clock time to creativity and dollars in Claude Code tokens." Positive hands-on experience, but highlights the cost dimension.
+
+- **Maggie Appleton** (Jan 2026): Notes Gastown is "entirely vibecoded, hastily designed with off-the-cuff solutions, and inefficiently burning through thousands of dollars a month in API costs." Key insight: **when you have agents churning through code, design becomes the bottleneck**, not development time.
+
+- **Paddo.dev** (Jan 2026): Distinguishes "org-chart multi-agent" (AI mimicking human roles) from "operational multi-agent" (Gas Town, where roles serve execution coordination). Notes that for most developers, a vanilla approach (Plan Mode, focused CLAUDE.md, verification loops) handles what's needed without an orchestration layer.
+
+- **Aviator** (Feb 2026): "The majority of engineering teams have no business adopting agent orchestration right now... If you can't get consistent value from one agent, you'll get consistently amplified chaos from ten."
+
+- **Goosetown** (Block/Goose team, Feb 2026): Built a Gas Town-inspired layer on Goose, deliberately more minimal, focused on research-first parallel work with phases. Validates the "simpler is better for most teams" position.
+
+The consensus: Gastown's *direction* is right (multi-agent is the future), but the *complexity* is premature for most teams. AgentTree's lighter-weight approach with human gates may be better positioned for the current state of the art -- where agent reliability still requires human oversight.
+
 ---
 
 *Written 2026-04-01. Based on Gastown repo at github.com/gastownhall/gastown (~13.4k stars) and AgentTree at github.com/davefowler/agenttree.*
+
+**Sources:** [Gastown repo](https://github.com/gastownhall/gastown) | [Yegge launch post](https://steve-yegge.medium.com/welcome-to-gas-town-4f25ee16dd04) | [DoltHub review](https://www.dolthub.com/blog/2026-01-15-a-day-in-gas-town/) | [Appleton analysis](https://maggieappleton.com/gastown) | [Paddo.dev](https://paddo.dev/blog/gastown-two-kinds-of-multi-agent/) | [Aviator](https://www.aviator.co/blog/the-rise-of-coding-agent-orchestrators/) | [Goosetown](https://block.github.io/goose/blog/2026/02/19/gastown-explained-goosetown/)
