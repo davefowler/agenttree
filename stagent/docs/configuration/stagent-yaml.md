@@ -217,7 +217,7 @@ commands:
       git -C {{.Task.WorktreeDir}} push
 ```
 
-Invoked as `stagent ship <task-id>`. Templated with the [task projection](../reference/schema.md#tasks-view) — fields available: `.Task.ID`, `.Task.Title`, `.Task.Branch`, `.Task.WorktreeDir`, `.Task.Flow`, `.Task.CurrentStage`, `.Task.Status`.
+Invoked as `stagent ship <task-id>`. Templated with the [task projection](../reference/schema.md#tasks-current-state-per-task) — fields available: `.Task.ID`, `.Task.Title`, `.Task.Branch`, `.Task.WorktreeDir`, `.Task.Flow`, `.Task.CurrentStage`, `.Task.Status`.
 
 Keep commands short. Anything more than a few lines should probably be a built-in Go command instead.
 

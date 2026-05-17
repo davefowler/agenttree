@@ -1,0 +1,7 @@
+# MkDocs build output
+site/
+
+# Editor swap files
+*.swp
+*~
+.DS_Store

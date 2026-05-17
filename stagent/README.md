@@ -21,7 +21,7 @@ Same idea, rewritten:
 - **Go** instead of Python — strong types, single binary, native concurrency for the heartbeat
 - **SQLite event log + views** instead of YAML files — atomic writes, queryable, no merge conflicts
 - **Direct `claude -p`** instead of tmux orchestration — sessions tracked by ID, not by terminal
-- **SwiftUI viewer** reads the SQLite file directly, push-updated via a heartbeat sentinel
+- **SwiftUI viewer** reads the SQLite file directly, push-updated via WAL file watching
 
 ## Design tenets
 
@@ -79,11 +79,24 @@ tasks/                                 # COMMITTED — one markdown file per tas
 
 ## Docs
 
-User-facing documentation lives in `docs/` and is built with MkDocs (`mkdocs serve` from this directory). Implementation notes — the "why we built it this way" doc set — live in `notes/`:
+Two doc surfaces, intentionally separate:
 
-- [notes/architecture.md](./notes/architecture.md) — types, lifecycle, design
-- [notes/schema.md](./notes/schema.md) — event log + views
-- [notes/config.md](./notes/config.md) — `.stagent.yaml` format
+**User-facing docs** live in [`docs/`](./docs/) and are built with MkDocs. To view locally:
+
+```bash
+pip install mkdocs-material pymdown-extensions
+mkdocs serve
+```
+
+Then open <http://127.0.0.1:8000>. The site covers concepts, configuration, hooks, CLI reference, and worked patterns.
+
+**Implementation notes** — the "why we built it this way" engineer-facing notes — live in [`notes/`](./notes/):
+
+- [notes/architecture.md](./notes/architecture.md) — types, lifecycle, design rationale
+- [notes/schema.md](./notes/schema.md) — event log + views + migration approach
+- [notes/config.md](./notes/config.md) — `.stagent.yaml` format rationale
+
+If you're a contributor or you want to understand "why is it built this way?", start in `notes/`. If you're a user trying to get tasks running, start in `docs/`.
 
 ## Status
 
