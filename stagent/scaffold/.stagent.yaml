@@ -31,12 +31,17 @@ stages:
     max_runs: 3
     hooks:
       enter:
+        # Validate the task file before touching anything. Fails loudly
+        # if a required section or checkbox is missing. (The same check
+        # runs at `stagent new`; this is defense in depth.)
+        - validate_task_sections: {}
         - run_shell:
             cmd: "git worktree add {{.Task.WorktreeDir}} -b {{.Task.Branch}} origin/main"
             fail_on_nonzero: true
         # Add project install / fixture steps here. Examples:
         # - run_shell: { cmd: "cd {{.Task.WorktreeDir}} && go mod download" }
         # - run_shell: { cmd: "cd {{.Task.WorktreeDir}} && npm ci" }
+        # - run_shell: { cmd: "cd {{.Task.WorktreeDir}} && uv sync" }
         # - run_shell: { cmd: "cd {{.Task.WorktreeDir}} && cp .env.example .env" }
 
   code:
@@ -50,8 +55,13 @@ stages:
             cmd: "cd {{.Task.WorktreeDir}} && git rebase origin/main"
             fail_on_nonzero: true
       exit:
-        - run_shell: { cmd: "cd {{.Task.WorktreeDir}} && go test ./...", fail_on_nonzero: true }
-        - run_shell: { cmd: "cd {{.Task.WorktreeDir}} && go vet ./...",  fail_on_nonzero: true }
+        # Run your project's tests / lint / type-check. The scaffold ships
+        # language-neutral — uncomment the line(s) that fit your stack.
+        # - run_shell: { cmd: "cd {{.Task.WorktreeDir}} && go test ./...",      fail_on_nonzero: true }
+        # - run_shell: { cmd: "cd {{.Task.WorktreeDir}} && go vet ./...",       fail_on_nonzero: true }
+        # - run_shell: { cmd: "cd {{.Task.WorktreeDir}} && npm test",           fail_on_nonzero: true }
+        # - run_shell: { cmd: "cd {{.Task.WorktreeDir}} && pytest",             fail_on_nonzero: true }
+        # - run_shell: { cmd: "cd {{.Task.WorktreeDir}} && cargo test",         fail_on_nonzero: true }
         - section_check:
             section: "Implementation plan"
             expect: all_checked
@@ -82,13 +92,15 @@ stages:
     max_runs: 3
     hooks:
       exit:
-        # Reviewer appends "### Pass N" under "## Reviews"; we check the latest.
+        # Reviewer appends "### Pass N" under "## Reviews". The regex
+        # in the last segment matches every Pass; by default the hook
+        # picks the LAST in document order (= most recently appended).
         - section_check:
-            section: "Reviews > Pass [-1]"     # `[-1]` = highest-N subsection
+            section: "Reviews > /^Pass \\d+$/"
             expect: all_checked
             on_fail:
               redirect_to: code
-              message_from_section: "Reviews > Pass [-1]"
+              message_from_section: "Reviews > /^Pass \\d+$/"
 
   human_review:
     type: human

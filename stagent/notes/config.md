@@ -102,15 +102,16 @@ stages:
     hooks:
       exit:
         # Reviewer appends a new "### Pass N" subsection under "## Reviews"
-        # on every entry. We check the LATEST pass (`[-1]` = highest N).
-        # If any box is unticked, the whole Pass section becomes the
-        # redirect message back to code.
+        # on every entry. The regex in the last segment matches every Pass;
+        # the hook picks the LAST in document order by default. If any box
+        # is unticked, the whole Pass section becomes the redirect message
+        # back to code.
         - section_check:
-            section: "Reviews > Pass [-1]"
+            section: "Reviews > /^Pass \\d+$/"
             expect: all_checked
             on_fail:
               redirect_to: code
-              message_from_section: "Reviews > Pass [-1]"
+              message_from_section: "Reviews > /^Pass \\d+$/"
 
   human_review:
     type: human
@@ -258,7 +259,7 @@ The default template structure (matches the default flow's hooks):
 ## Reviews
 <!--
 Reviewer appends "### Pass N" on each entry. The section_check hook keys
-on `Reviews > Pass [-1]` (latest pass). "Review approved" is always the
+on `Reviews > /^Pass \d+$/` (latest pass — regex match, pick last). "Review approved" is always the
 LAST checkbox; it means no critical/high/medium issues remain. Low-
 severity nits do not block approval. Lint and type errors are CI's job.
 -->
@@ -297,7 +298,7 @@ for the auth-expired path. **Severity: medium.**
 LGTM. Network errors now propagate; auth-expired path covered.
 ```
 
-The hook syntax `"Reviews > Pass [-1]"` resolves to the H3 subsection whose name matches `Pass N` with the highest integer N. The same syntax in `message_from_section` returns the full text of that subsection (checkboxes + notes) as the redirect message — so the developer sees exactly which boxes were unticked and the reviewer's reasoning.
+The hook syntax `"Reviews > /^Pass \\d+$/"` resolves to the H3 subsection whose name matches `Pass N` with the highest integer N. The same syntax in `message_from_section` returns the full text of that subsection (checkboxes + notes) as the redirect message — so the developer sees exactly which boxes were unticked and the reviewer's reasoning.
 
 **Why a new section each pass instead of clearing in place:**
 

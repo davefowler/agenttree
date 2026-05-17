@@ -81,26 +81,40 @@ Hooks reference sections in the task file via a path syntax:
 "H2-name > H3-name > H4-name ..."
 ```
 
-Each `>` descends one heading level. Whitespace around `>` is optional. Examples:
+Each `>` descends one heading level. Whitespace around `>` is optional.
+
+**Two kinds of segment:**
+
+- **Literal** — exact heading text. Case-sensitive; whitespace inside the name is collapsed (`"Review  Plan"` matches `## Review Plan`).
+- **Regex** — wrapped in `/…/`. Matches H<parent+1> children whose visible heading text matches the pattern. RE2 syntax (Go's `regexp` package).
+
+Examples:
 
 | Path | Resolves to |
 |---|---|
 | `"Implementation plan"` | The `## Implementation plan` H2 section (full body). |
-| `"Reviews > Pass 1"` | The `### Pass 1` H3 under `## Reviews`. |
+| `"Reviews > Pass 1"` | The literal `### Pass 1` H3 under `## Reviews`. |
 | `"Code > Notes"` | The `### Notes` H3 under `## Code`. |
-| `"Reviews > Pass [-1]"` | The H3 under `## Reviews` whose name matches `Pass N` for the highest integer N. |
+| `"Reviews > /^Pass \\d+$/"` | All H3s under `## Reviews` whose name matches `Pass N`. Multi-match: picks the **last** in document order by default. |
 
-### The `[-1]` modifier — "the latest one"
+### Regex segments — for sections that grow over time
 
-For sections that re-append on each stage entry (the Pass-N pattern), the path can end with `[-1]` to mean "the highest-numbered H3 child." If multiple H3 subsections match `<prefix> N`, pick the one with the largest N. Used by the `review` stage's exit hook:
+The Pass-N review pattern adds new `### Pass N` subsections on every review entry. Hooks need to operate on "the latest one." Express that with a regex on the last path segment:
 
 ```yaml
 - section_check:
-    section: "Reviews > Pass [-1]"
+    section: "Reviews > /^Pass \\d+$/"
     expect: all_checked
 ```
 
-`[-1]` is **only** for numbered-suffix matching, and **only** at the last segment of a path. To match the literal text `[-1]`, escape it: `Pass \[-1\]` (rare).
+**Rules:**
+
+- A regex segment is delimited by `/…/`. Inside, use standard [RE2 syntax](https://github.com/google/re2/wiki/Syntax) — no flags suffix (no `/.../i`); use inline `(?i)` if you need case-insensitive matching.
+- A regex segment cannot contain `>` (the path separator). In practice heading text won't either; if you genuinely need it, use a character class (`[>]`).
+- When a regex matches **multiple sections**, the hook picks **the last in document order** by default. Override with the hook's `pick: first` option.
+- When a regex matches **zero sections**, the hook acts as if the section doesn't exist (`Fail` for `section_check`, etc.) — except at task creation, where the validator allows zero matches on regex paths (Pass N hasn't been written yet).
+
+**Literal segments must match exactly one section.** Zero matches or multiple matches are authoring errors caught by the validator (see [Validation](../concepts/validation.md)).
 
 ### Checkbox parsing
 
@@ -140,11 +154,11 @@ The hook keys on the **latest** pass:
 
 ```yaml
 - section_check:
-    section: "Reviews > Pass [-1]"
+    section: "Reviews > /^Pass \\d+$/"
     expect: all_checked
     on_fail:
       redirect_to: code
-      message_from_section: "Reviews > Pass [-1]"
+      message_from_section: "Reviews > /^Pass \\d+$/"
 ```
 
 If the latest pass has any unchecked box, the whole section (boxes + notes) becomes the redirect message back to the developer. They see exactly what's not approved and what the reviewer wrote.

@@ -9,7 +9,7 @@ A full worked example of the `code ↔ review` redirect loop — what's in the Y
 │ code │ ───────────────▶ │ review │ ───────────────▶ │ next stage…  │
 └──────┘                  └────────┘                  └──────────────┘
    ▲                          │
-   │   redirect (Pass[-1])    │
+   │   redirect (latest Pass) │
    └──────────────────────────┘
 ```
 
@@ -42,11 +42,11 @@ stages:
     hooks:
       exit:
         - section_check:
-            section: "Reviews > Pass [-1]"
+            section: "Reviews > /^Pass \\d+$/"
             expect: all_checked
             on_fail:
               redirect_to: code
-              message_from_section: "Reviews > Pass [-1]"
+              message_from_section: "Reviews > /^Pass \\d+$/"
 
 flows:
   default:
@@ -190,7 +190,7 @@ It exits.
 
 Exit hook fires:
 
-`section_check { section: "Reviews > Pass [-1]" }` → finds Pass 1, sees `- [ ] Review approved` unchecked, returns `Redirect(code, <body of Pass 1>)`.
+`section_check { section: "Reviews > /^Pass \\d+$/" }` → finds Pass 1, sees `- [ ] Review approved` unchecked, returns `Redirect(code, <body of Pass 1>)`.
 
 Two events appended:
 
@@ -255,7 +255,7 @@ the redirect Location includes the `?next=` param.
 
 Exits.
 
-Exit hook: `section_check { section: "Reviews > Pass [-1]" }` → finds Pass 2, all boxes checked → `Pass`.
+Exit hook: `section_check { section: "Reviews > /^Pass \\d+$/" }` → finds Pass 2, all boxes checked → `Pass`.
 
 `stage.completed` for `review`. Flow advances to `human_review`.
 

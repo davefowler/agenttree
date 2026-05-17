@@ -69,8 +69,9 @@ remain unchecked and continues.
 
 <!--
 On every entry to the `review` stage, the reviewer appends a new
-"### Pass N" subsection here. The section_check hook keys on the LATEST
-pass (`Reviews > Pass [-1]`). Prior passes stay in place as audit trail.
+"### Pass N" subsection here. The section_check hook matches Pass
+sections via regex (`Reviews > /^Pass \d+$/`) and picks the latest
+in document order. Prior passes stay in place as audit trail.
 
 Each Pass section is a checklist followed by free-form notes. If any
 box in the latest pass is unchecked, the whole Pass section becomes

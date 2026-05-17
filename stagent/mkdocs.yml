@@ -81,6 +81,7 @@ nav:
       - Stages, flows, hooks: concepts/stages-flows-hooks.md
       - The event log: concepts/event-log.md
       - Sessions: concepts/sessions.md
+      - Validation: concepts/validation.md
   - Configuration:
       - configuration/index.md
       - The .stagent.yaml file: configuration/stagent-yaml.md

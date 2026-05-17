@@ -79,11 +79,11 @@ stages:
     hooks:
       exit:
         - section_check:
-            section: "Reviews > Pass [-1]"
+            section: "Reviews > /^Pass \\d+$/"
             expect: all_checked
             on_fail:
               redirect_to: code
-              message_from_section: "Reviews > Pass [-1]"
+              message_from_section: "Reviews > /^Pass \\d+$/"
 
   human_review:
     type: human

@@ -73,11 +73,11 @@ Verify checkboxes (or content) in a task-file section.
 
 ```yaml
 - section_check:
-    section: "Reviews > Pass [-1]"
+    section: "Reviews > /^Pass \\d+$/"
     expect: all_checked
     on_fail:
       redirect_to: code
-      message_from_section: "Reviews > Pass [-1]"
+      message_from_section: "Reviews > /^Pass \\d+$/"
 ```
 
 | Slot | Use case |
@@ -86,15 +86,54 @@ Verify checkboxes (or content) in a task-file section.
 
 **Args:**
 
-- `section` *(required)*: section path. See [Task files → section path syntax](task-files.md#section-path-syntax-used-by-hooks). Supports `[-1]` modifier.
+- `section` *(required)*: section path. Literal segments OR regex segments wrapped in `/…/`. See [Task files → section path syntax](task-files.md#section-path-syntax-used-by-hooks). Regex segments that match multiple sections pick the last in document order by default.
 - `expect` *(required)*: `all_checked` is the only value in v1.
+- `pick` *(optional, regex paths only)*: `last` (default) or `first` — which match to use when the regex matches multiple sections.
 - `file` *(default `{{.TaskFile}}`)*: which file to read.
 - `on_fail` *(optional)*: instead of returning `Fail`, return `Redirect(to, message)`.
   - `redirect_to` *(required if `on_fail` is set)*: target stage name.
-  - `message_from_section` *(optional)*: the redirect message is the body of this section path (supports `[-1]`). Defaults to the same `section`.
+  - `message_from_section` *(optional)*: the redirect message is the body of this section path. Same path syntax as `section`. Defaults to the same `section` value.
   - `message_template` *(optional)*: alternative to `message_from_section`; a templated string.
 
-If the section doesn't exist, `section_check` returns `Fail` with a "section not found" message.
+**Failure cases (return `Fail`):**
+
+- Section doesn't exist: `"section '<path>' not found"`.
+- Section exists but contains zero list items: `"section '<path>' has no checkboxes; likely a typo or missing required content"`. Empty checklists are **not** vacuously satisfied — they're an authoring error and we fail loudly.
+- Literal path matches multiple sections: `"ambiguous section path '<path>'; multiple headings match"`.
+
+### `validate_task_sections`
+
+Verify the task file has every section the configured hooks reference, with the right shape. Used as an early failure mode before agents are spawned.
+
+```yaml
+- validate_task_sections: {}
+```
+
+| Slot | Use case |
+|---|---|
+| `enter` (on the first stage of the flow, usually `setup`) | Pre-flight: fail loudly before any work starts. |
+
+**Args:**
+
+None. The hook reads the loaded config, identifies every `section:` reference reachable from the task's flow, and validates against the task file.
+
+**Checks performed:**
+
+- Every literal section path referenced by a hook exists in the task file.
+- Every regex section path's parent segment exists. (Zero matches on the regex itself is allowed — useful for sections that grow over time like `## Reviews`.)
+- Every `section_check { expect: all_checked }` with a literal path resolves to a section containing ≥1 checkbox.
+- The task file has exactly one H1 (the title).
+- Heading text is unique within its parent — no two `### Notes` under the same H2.
+- No H<n+2> appears without its H<n+1> parent (no `### Foo` directly under H1).
+
+**Two callsites, same implementation:**
+
+The CLI runs `validate_task_sections` automatically inside `stagent new` before appending `task.created`. Failures at that callsite exit non-zero with a clear error; nothing lands in the event log. The same hook, configured as an `enter` hook on `setup`, runs again at task pickup time — defense in depth for "user edited the task file between `new` and `run`" or "config was hot-reloaded."
+
+**Verdicts:**
+
+- All checks pass → `Pass`.
+- Anything missing or malformed → `Fail` with a message listing every failure (not just the first). The agent never sees this — it's caught before any session is spawned.
 
 ### `min_words`
 
