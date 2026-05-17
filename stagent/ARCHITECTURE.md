@@ -106,8 +106,17 @@ type Role struct {
     Name      string
     Model     string  // opus | sonnet | haiku
     Dangerous bool    // pass --dangerously-skip-permissions; required true for agent roles in v1
+    Bound     Bound   // session scope; default "task"
     // Role prompt loaded from .stagent/prompts/roles/<Name>.md by convention.
 }
+
+type Bound string
+const (
+    BoundStage   Bound = "stage"     // fresh session per stage entry
+    BoundTask    Bound = "task"      // one session per (task, role) — DEFAULT
+    BoundRun     Bound = "run"       // one per daemon run, across tasks    — v1: errors if used
+    BoundForever Bound = "forever"   // one per role, persists across runs  — v1: errors if used
+)
 
 type StageType string
 const (
@@ -130,7 +139,7 @@ type StageDef struct {
 type StageHooks struct {
     Enter []Hook   // run on stage.entered; failures rollback
     Exit  []Hook   // run when the stage attempts to complete (agent exit, human approve, script tick says "done")
-    Tick  []Hook   // run every daemon tick while in this stage (script stages only)
+    Tick  []Hook   // run every daemon tick while in this stage (script + human stages; not agent)
 }
 
 type Hook interface {
@@ -264,6 +273,7 @@ The agent never decides when it's "done" — it just exits when it thinks so. Th
 - Status becomes `waiting_human`.
 - User runs `stagent approve <task>` (or any command bound to `human.approved`).
 - Heartbeat sees the approval event, runs exit hooks, completes the stage.
+- **Tick hooks are valid on human stages** and run on every daemon tick (subject to each hook's `MinInterval`). Use them for periodic checks while the human is taking their time — e.g. polling GH to verify CI is still green during `human_review`. A tick hook that returns `Redirect(stage, message)` will route the task back to an earlier stage with the failure info.
 
 ### `script` stages
 
@@ -275,9 +285,18 @@ The agent never decides when it's "done" — it just exits when it thinks so. Th
 
 ## Sessions
 
-A `Session` is a Claude session ID, scoped to a `(task, role)` pair. The same session continues across stages for that role — e.g. the `developer` role's session spans `implement.code`, `implement.address_review`, and any retries.
+A `Session` is a Claude session ID. Its scope is controlled by the role's `Bound` setting:
 
-This is a deliberate choice. Continuity across stages preserves context. Per-stage isolation would lose it.
+| `Bound` | Session key | Behavior |
+|---|---|---|
+| `stage` | `(task, role, stage, entry_number)` | Fresh memory every time the role enters a stage. Good for "fresh-eyes" reviewers. |
+| `task` (default) | `(task, role)` | One session per role per task. Continues across all stages, retries, and redirect loops for that role. **Current default.** |
+| `run` | `(daemon_run_id, role)` | One session per role across all tasks within one `stagent run` invocation. *v1: errors if used.* |
+| `forever` | `(role)` | One session per role, persists across daemon restarts. *v1: errors if used.* |
+
+`task` is the default because it preserves context where it matters (review loops, retries) while keeping tasks isolated from each other. `stage` is the opt-in for roles that benefit from amnesia — usually reviewers.
+
+**Why `run` and `forever` are deferred in v1:** Claude Code stores session JSONLs under the encoded CWD (`~/.claude/projects/<cwd>/<uuid>.jsonl`). Each stagent task has a different CWD (its worktree), so sessions naturally key by worktree. To support `run`/`forever`, we'd need to either always invoke `claude` from a fixed CWD (and have the agent navigate to the worktree via paths) or accept that resume-across-CWDs has quirks. Doable; not v1.
 
 ### How session IDs are captured
 
@@ -551,7 +570,8 @@ The goal: every path through the state machine has a test that pins it. Adding a
 - **Run budget:** `max_runs` per stage, counting all entries (initial + retry + redirect + human_goto). Defaults: 3 for agent/script, 1 for human.
 - **Failure escalation:** status change only. Notifications are a user-wired hook.
 - **Skill files:** `.stagent/skills/<name>.md`, checked into git. Stage `Skill` field is optional; falls back to role's skill, then to a built-in default.
-- **Default flow** (what `stagent init` scaffolds): `define → plan → plan_review → code → review → ci → human_review → merge_wait → cleanup`. Loops happen via `review`/`ci` redirecting to `code`. `merge_wait` polls for the PR to be merged (via `gh pr view`); `cleanup` removes the worktree, deletes the branch, archives the task dir, and emits `task.completed`.
+- **Default flow** (what `stagent init` scaffolds): `define → plan → plan_review → code → pr → review → human_review → merge_wait → cleanup`. CI runs before code review (best practice — don't waste reviewer cycles on broken code). Loops happen via `pr`/`review`/`human_review` redirecting to `code`. `pr` pushes the branch, opens the PR, and waits for CI green; `human_review` has tick hooks that re-poll CI in case it goes red while a human is taking their time. `merge_wait` polls for the PR to be merged; `cleanup` removes the worktree, deletes the branch, archives the task dir, and emits `task.completed`.
+- **Session bounds:** roles default to `bound: task` (one session per task, continues across stage loops). Opt into `bound: stage` for fresh-eyes-each-time roles. `run` and `forever` ship as planned values but error in v1.
 - **Prompts (not "skills"):** `prompts/roles/<role>.md` is the system prompt set once per session; `prompts/stages/<stage>.md` is the user message sent every entry. Templates at `templates/stages/<stage>.md`; artifacts at `tasks/<id>/<stage>.md`. Stage name is the universal identifier.
 - **Database scope:** per-user, local, gitignored at `.stagent/stagent.db`. Multi-dev collaboration happens via PRs (the code), not a shared event log. Backups are user-handled (Time Machine handles the single-file DB; Litestream/rsync if cross-machine sync is wanted).
 - **Daemon runs foreground only in v1.** `stagent run` blocks the terminal until Ctrl-C. The SwiftUI app spawns it as a subprocess when needed. No `launchd` / `systemd` integration in v1.

@@ -16,10 +16,12 @@ roles:
     model: opus
     dangerous: true     # passes --dangerously-skip-permissions to claude -p
                         # required true for agent roles in v1 (headless mode)
+    bound: task         # one session per (task, role) — continues across loops
 
   reviewer:
     model: sonnet
     dangerous: true
+    bound: stage        # fresh eyes each time the reviewer enters the stage
 
 # ─── Stages ───────────────────────────────────────────────────────────
 # Three types: agent, human, script.
@@ -64,7 +66,7 @@ stages:
   code:
     type: agent
     role: developer
-    max_runs: 7    # generous: review and ci both redirect back here
+    max_runs: 7    # generous: pr, review, and human_review can all redirect back
     hooks:
       enter:
         - run_shell: { cmd: "git rebase origin/main", fail_on_nonzero: false }
@@ -73,8 +75,25 @@ stages:
         - run_shell: { cmd: "go test ./...", fail_on_nonzero: true }
         - run_shell: { cmd: "go vet ./...",  fail_on_nonzero: true }
         - section_check: { section: Completion, expect: all_checked }
-        - run_shell: { cmd: "git push -u origin HEAD", fail_on_nonzero: true }
+    # NOTE: code does NOT push or open PRs. The pr stage handles all gh interaction.
+
+  pr:
+    type: script
+    max_runs: 5
+    hooks:
+      enter:
+        - run_shell: { cmd: "git push -u origin HEAD" }
         - run_shell: { cmd: "gh pr create --fill || true", fail_on_nonzero: false }
+      tick:
+        - wait_for_ci: { min_interval: 30s, timeout: 30m }
+      exit:
+        - ci_status:
+            on_failure:
+              redirect_to: code
+              message_template: |
+                CI failed. Failing checks:
+                {{.CIFailures}}
+                See logs at {{.CILogURL}}. Fix and push again.
 
   review:
     type: agent
@@ -91,25 +110,18 @@ stages:
             redirect_to: code
             message_from_section: "Changes requested"
 
-  ci:
-    type: script
-    max_runs: 3
-    hooks:
-      tick:
-        - wait_for_ci: { min_interval: 30s, timeout: 30m }
-      exit:
-        - ci_status:
-            on_failure:
-              redirect_to: code
-              message_template: |
-                CI failed. Failing checks:
-                {{.CIFailures}}
-                See logs at {{.CILogURL}}. Fix and push again.
-
   human_review:
     type: human
-    # Reviewer eyeballs PR + approves. Merge happens in the GitHub UI
-    # (or wire a `gh pr merge` run_shell on exit if you want auto-merge).
+    hooks:
+      tick:
+        # Re-check CI every 5min in case it went red while waiting for human approval.
+        - ci_status:
+            min_interval: 5m
+            on_failure:
+              redirect_to: code
+              message_template: "CI went red during human review. Failing: {{.CIFailures}}"
+    # The human approves via `stagent approve <task>`. Merge happens in the GH UI;
+    # add `run_shell: gh pr merge --auto` to exit hooks if you want auto-merge.
 
   merge_wait:
     type: script
@@ -135,11 +147,11 @@ flows:
     - plan
     - plan_review
     - code
-    - review
-    - ci
-    - human_review
-    - merge_wait
-    - cleanup
+    - pr             # push + open PR + wait for CI green
+    - review         # agent reviewer; redirects to code if changes requested
+    - human_review   # human approves; tick hooks re-poll CI in case it goes red
+    - merge_wait     # poll gh until merged to main
+    - cleanup        # remove worktree, delete branch, archive task dir
 
   quick:
     - define
@@ -180,7 +192,7 @@ heartbeat:
 - **No `output:` field.** Artifact name follows the stage name. Want a different filename? Rename the stage.
 - **No `skill:` or per-stage prompt path field.** Prompts are loaded by convention.
 - **`max_runs`** is the total times this stage may be entered across the task (any reason — initial, retry, redirect, human_goto). Defaults: 3 for `agent`/`script`, 1 for `human`.
-- **`hooks.tick` is only valid** on `type: script` stages.
+- **`hooks.tick` is valid** on `type: script` AND `type: human` stages. Not on `agent` stages — agents own their own turn. On human stages, tick hooks run while waiting for approval (use `min_interval` to avoid hot-polling).
 - **The agent never signals completion explicitly.** When its process exits (any reason), the daemon runs the exit hooks. Encode "is this done?" by writing exit hooks — typically `section_check` on a Completion section in the artifact.
 - **Hooks return one of three verdicts:** `Pass` (proceed), `Fail` (retry-or-fail), `Redirect(stage, message)` (route to chosen stage; loops happen this way).
 
@@ -196,7 +208,7 @@ heartbeat:
 | `run_shell` | `cmd, fail_on_nonzero, timeout` | enter / exit |
 | `wait_for_ci` | `min_interval, timeout` | tick |
 | `wait_for_merge` | `min_interval, timeout` | tick |
-| `ci_status` | `on_failure: { redirect_to, message_template }` | exit (script stages) |
+| `ci_status` | `min_interval?, on_failure: { redirect_to, message_template }` | exit (script) / tick (human) |
 
 Hooks return one of three verdicts: `Pass`, `Fail`, or `Redirect(target_stage)`. `Pass` lets the flow proceed; `Fail` triggers retry-or-fail; `Redirect` routes to the named stage with `reason: redirect`. `section_redirect` is the canonical example — used for review loops.
 
