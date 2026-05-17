@@ -111,9 +111,9 @@ type Role struct {
 
 type StageType string
 const (
-    StageAgent     StageType = "agent"      // Claude session
-    StageHuman     StageType = "human"      // pause for approval
-    StageHeartbeat StageType = "heartbeat"  // daemon-driven
+    StageAgent  StageType = "agent"   // Claude session does the work
+    StageHuman  StageType = "human"   // paused for human review
+    StageScript StageType = "script"  // daemon executes hooks deterministically
 )
 
 type StageDef struct {
@@ -121,15 +121,15 @@ type StageDef struct {
     Type     StageType
     Role     string      // which Role executes (agent stages only)
     Output   string      // artifact filename: "spec.md"
-    Retries  int         // max additional attempts after the first; default 0
+    MaxRuns  int         // total entries to this stage allowed across a task
     Hooks    StageHooks
     Skill    string      // optional skill file override
 }
 
 type StageHooks struct {
-    Enter      []Hook   // run on stage.entered; failures rollback
-    Exit       []Hook   // run on completion attempt; failures block or retry
-    Heartbeat  []Hook   // run every tick while in this stage (heartbeat stages only)
+    Enter []Hook   // run on stage.entered; failures rollback
+    Exit  []Hook   // run when the stage attempts to complete (agent exit, human approve, script tick says "done")
+    Tick  []Hook   // run every daemon tick while in this stage (script stages only)
 }
 
 type Hook interface {
@@ -192,17 +192,17 @@ heartbeat tick ──▶ resolves first stage in flow
                   Event: stage.entered (attempt=1)
                               │
                               ▼
-                  StageDef.Type == "agent"?
+                  StageDef.Type == ?
                               │
             ┌─────────────────┼─────────────────┐
             ▼                 ▼                 ▼
-         agent             human            heartbeat
+         agent             human             script
             │                 │                 │
-   start/resume claude    wait for         run heartbeat
-   session                stagent approve  hooks each tick
+   start/resume claude    wait for         run tick hooks
+   session                stagent approve  each daemon tick
             │                 │                 │
-   process exits         user runs        until exit hooks
-   (any reason)          stagent approve  pass
+   process exits         user runs        until tick hooks
+   (any reason)          stagent approve  report done
             │                 │                 │
             └─────────┬───────┘                 │
                       ▼                         │
@@ -258,12 +258,13 @@ The agent never decides when it's "done" — it just exits when it thinks so. Th
 - User runs `stagent approve <task>` (or any command bound to `human.approved`).
 - Heartbeat sees the approval event, runs exit hooks, completes the stage.
 
-### `heartbeat` stages
+### `script` stages
 
-- Heartbeat enters the stage. No Claude session.
-- On every tick while in this stage, runs `StageHooks.Heartbeat` hooks.
-  Examples: `wait_for_ci`, `git_push`, `ensure_pr_exists`, `cleanup_containers`.
-- When all heartbeat hooks return "done", exit hooks run and stage completes.
+- Heartbeat enters the stage. No Claude session, no human involvement.
+- On every tick while in this stage, runs `StageHooks.Tick` hooks (subject to each hook's `MinInterval`).
+  Examples: `wait_for_ci`, `ensure_pr_exists`, `cleanup_containers`.
+- When all tick hooks return "done", exit hooks run and the stage completes (or redirects).
+- **Escalation works through redirects.** A script stage's hook can return `Redirect(stage, message)` exactly like an agent stage's hook. Example: a `ci` stage detects test failures and returns `Redirect(code, <ci logs>)` — the developer's session resumes with the CI output in its prompt. No new escalation concept needed.
 
 ## Sessions
 
@@ -286,26 +287,34 @@ We never need to scan the project directory to discover IDs. The DB is the autho
 
 Named sessions don't exist in Claude Code; UUIDs are required. Our event log gives us the per-`(task, role)` indirection we want.
 
-## Retries
+## Run budgets (`max_runs`)
 
-Each `StageDef` has a `retries` field, default 0 (meaning 1 attempt total). On stage failure:
+Each `StageDef` has a `max_runs` field: the total number of times the stage may be entered across the task's lifetime, counted across *every reason* — initial, retry, redirect, human_goto. One budget, no special cases.
 
 ```
-attempt_count = COUNT(events WHERE type='stage.entered' AND task=X AND stage=Y)
-if attempt_count <= retries:   # retries=0 → 1 attempt allowed
-    emit stage.retrying
-    emit stage.entered (attempt = attempt_count + 1)
-    resume the session if one exists
-else:
-    emit stage.failed
-    # task transitions to status=failed, surfaces in UI for human intervention
+attempts = COUNT(events WHERE type='stage.entered' AND task=X AND stage=Y)
+on any attempt to enter the stage (flow / retry / redirect / human_goto):
+    if attempts >= stage.max_runs:
+        emit stage.failed
+    else:
+        emit stage.entered (attempt: attempts+1, reason: <how>)
 ```
 
-Retries reuse the Claude session (same UUID, `--resume`). The agent sees its prior context plus the new attempt's prompt, which includes whatever the exit hook complained about.
+This collapses "retry budget" and "loop budget" into one number. `code` with `max_runs: 7` allows many review-loop iterations. `review` with `max_runs: 3` caps how many times a reviewer can reject before the task escalates.
 
-**When attempts are exhausted**, `stage.failed` is emitted and the task's status becomes `failed`. The task surfaces in the viewer for a human to handle — rewind, restart, edit the artifact, or abort. No notifications in v1; users can wire `run_shell` on a future `stage.failed` post-completion hook for Slack/email.
+**Defaults:**
 
-**Future direction (not v1):** an *observer* agent role inspects failed stages and either applies a fix (returning to `in_progress`) or routes to human review with a structured explanation. This sits between "attempts exhausted" and "human takes over." For v1, we skip the observer and escalate directly to humans.
+| Stage type | default `max_runs` |
+|---|---|
+| `agent` | 3 (one initial + room for two retries/loops) |
+| `script` | 3 (transient failures are common; retries cheap) |
+| `human` | 1 (humans don't typically retry; override for re-approval loops) |
+
+**When the budget is exhausted**, `stage.failed` is emitted and the task's status becomes `failed`. The task surfaces in the viewer for a human to handle — `goto` somewhere, edit the artifact, or abort. No notifications in v1; users can wire `run_shell` on a future `stage.failed` post-completion hook for Slack/email.
+
+Retries and redirects both reuse the Claude session for the target stage (same UUID, `--resume`). The agent sees its prior context plus a prompt prefix containing the hook's `Message` — typically what failed and how to fix it.
+
+**Future direction (not v1):** an *observer* agent role inspects failed stages and either applies a fix (returning to `in_progress`) or routes to human review with a structured explanation. This sits between "budget exhausted" and "human takes over." For v1, we skip the observer and escalate directly to humans.
 
 ## Redirects (loop-backs)
 
@@ -448,7 +457,7 @@ stagent task new "<title>"
 stagent task list
 stagent task show <id>
 stagent approve <id>              # emits human.approved (completes a human stage)
-stagent goto <id> <stage>         # emits stage.entered with reason=human_goto
+stagent goto <id> <stage> [-m "msg"]   # emits stage.entered with reason=human_goto; -m prepends a message to the resumed agent's prompt
 stagent restart <id>              # kills the session, re-enters current stage as a retry
 stagent abort <id>                # emits task.aborted
 stagent run                       # runs the heartbeat daemon (per-repo, foreground)
@@ -514,9 +523,12 @@ The goal: every path through the state machine has a test that pins it. Adding a
 - **Task creation:** title + optional `--flow`. Nothing else.
 - **Worktrees:** always. `.worktrees/task-<id>/` on branch `task-<id>`. No in-place mode.
 - **Concurrency:** parallel per task, serial within a task.
-- **Rollback:** `stagent rewind <task>` via a `stage.rewound` corrective event.
+- **Stage types:** `agent`, `human`, `script` (not "heartbeat" — that's the daemon's name, not a stage type). Tick hooks on script stages live at `hooks.tick`.
+- **Routing primitives:** Hook returns `Pass | Fail | Redirect(stage, message)`. Loop-backs (review→code) are redirects to earlier stages. `stagent goto <task> <stage> [-m]` is the human-issued redirect. No `rewind`, no `stage.rewound`.
+- **Run budget:** `max_runs` per stage, counting all entries (initial + retry + redirect + human_goto). Defaults: 3 for agent/script, 1 for human.
 - **Failure escalation:** status change only. Notifications are a user-wired hook.
 - **Skill files:** `.stagent/skills/<name>.md`, checked into git. Stage `Skill` field is optional; falls back to role's skill, then to a built-in default.
+- **Default flow** (what `stagent init` scaffolds): `define → plan → plan_review → code → review → ci → human_review`. Loops happen via `review`/`ci` redirecting to `code`.
 
 ## Verification (resolved)
 

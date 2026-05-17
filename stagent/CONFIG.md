@@ -23,17 +23,19 @@ roles:
     dangerous: true
 
 # ─── Stages ───────────────────────────────────────────────────────────
-# Three types: agent, human, heartbeat.
+# Three types: agent, human, script.
+# max_runs is the total number of times a stage may be entered for a task
+# (initial + retries + redirects + human_gotos). Defaults: 3 (agent/script), 1 (human).
 stages:
 
   define:
     type: agent
     role: developer
     output: spec.md
-    retries: 1
+    max_runs: 2
     hooks:
       enter:
-        - create_from_template: { template: spec.md.tmpl }
+        - create_from_template: { template: spec.md, dest: spec.md }
       exit:
         - file_exists: { path: spec.md }
         - min_words: { file: spec.md, section: Approach, min: 50 }
@@ -43,51 +45,66 @@ stages:
     type: agent
     role: developer
     output: plan.md
-    retries: 1
+    max_runs: 2
     hooks:
+      enter:
+        - create_from_template: { template: plan.md, dest: plan.md }
       exit:
         - file_exists: { path: plan.md }
         - section_check: { file: plan.md, section: Completion, expect: all_checked }
 
   plan_review:
     type: human
-    hooks:
-      exit: []      # nothing — human.approved is the signal
+    # human stages need no hooks; stagent approve is the signal
 
   code:
     type: agent
     role: developer
     output: code_notes.md
-    retries: 2
+    max_runs: 7      # generous: review and CI both redirect back here
     hooks:
+      enter:
+        - run_shell: { cmd: "git rebase origin/main", fail_on_nonzero: false }
+        - create_from_template: { template: code_notes.md, dest: code_notes.md }
       exit:
         - run_shell: { cmd: "go test ./...", fail_on_nonzero: true }
         - run_shell: { cmd: "go vet ./...",  fail_on_nonzero: true }
         - section_check: { file: code_notes.md, section: Completion, expect: all_checked }
+        - run_shell: { cmd: "git push -u origin HEAD", fail_on_nonzero: true }
 
-  independent_review:
+  review:
     type: agent
     role: reviewer
     output: review.md
-    retries: 0
+    max_runs: 3      # cap how many times reviewer can reject before escalating
     hooks:
+      enter:
+        - create_from_template: { template: review.md, dest: review.md }
       exit:
         - file_exists: { path: review.md }
         - section_check: { file: review.md, section: Verdict, expect: all_checked }
-        # If reviewer checks "Request changes", loop back to code.
+        # If reviewer checked "Request changes", loop back to code with their notes.
         # Otherwise (Approve checked), flow proceeds to next stage.
         - section_redirect:
             file: review.md
             when_checked: "Request changes"
             redirect_to: code
+            message_from_section: "Changes requested"   # body of this section becomes the redirect message
 
-  ci_wait:
-    type: heartbeat
+  ci:
+    type: script
+    max_runs: 3
     hooks:
-      heartbeat:
+      tick:
         - wait_for_ci: { min_interval: 30s, timeout: 30m }
       exit:
-        - ci_passed: {}
+        - ci_status:
+            on_failure:
+              redirect_to: code
+              message_template: |
+                CI failed. Failing checks:
+                {{.CIFailures}}
+                See logs at {{.CILogURL}}. Fix and push again.
 
   human_review:
     type: human
@@ -100,8 +117,8 @@ flows:
     - plan
     - plan_review
     - code
-    - independent_review
-    - ci_wait
+    - review
+    - ci
     - human_review
 
   quick:
@@ -136,13 +153,14 @@ heartbeat:
 
 ## Schema rules
 
-- **Stage names are bare identifiers**, not dot paths. Sub-stage hierarchies from agenttree are gone — they were rarely load-bearing and added cognitive load. If you want grouping, name stages with a prefix (`code_review`, `code_test`).
-- **`type` is required** on every stage. One of `agent`, `human`, `heartbeat`.
-- **`role` is required** on `agent` stages. Forbidden on `human` and `heartbeat`.
+- **Stage names are bare identifiers**, not dot paths. Sub-stage hierarchies from agenttree are gone — they added cognitive load without buying much. If you want grouping, prefix the names (`code_review`, `code_test`).
+- **`type` is required** on every stage. One of `agent`, `human`, `script`.
+- **`role` is required** on `agent` stages. Forbidden on `human` and `script`.
 - **`output` is required** on `agent` stages. Forbidden on others.
-- **`retries` defaults to 0**. Means 1 attempt total. `retries: 2` means up to 3 attempts.
-- **`hooks.heartbeat` is only valid** on `type: heartbeat` stages.
-- **The agent never signals completion explicitly.** When its process exits (any reason), the heartbeat runs the exit hooks. Encode "is this done?" by writing exit hooks — typically `section_check` on a Completion section in the output artifact.
+- **`max_runs`** is the total times this stage may be entered across the task (any reason — initial, retry, redirect, human_goto). Defaults: 3 for `agent`/`script`, 1 for `human`.
+- **`hooks.tick` is only valid** on `type: script` stages.
+- **The agent never signals completion explicitly.** When its process exits (any reason), the daemon runs the exit hooks. Encode "is this done?" by writing exit hooks — typically `section_check` on a Completion section in the output artifact.
+- **Hooks return one of three verdicts:** `Pass` (proceed), `Fail` (retry-or-fail), `Redirect(stage, message)` (route to chosen stage; loops happen this way).
 
 ## Hooks reference (v1)
 
@@ -151,12 +169,12 @@ heartbeat:
 | `file_exists` | `path` | exit |
 | `min_words` | `file, section, min` | exit |
 | `section_check` | `file, section, expect: all_checked` | exit |
-| `section_redirect` | `file, when_checked, redirect_to` | exit |
+| `section_redirect` | `file, when_checked, redirect_to, message_from_section?` | exit |
 | `create_from_template` | `template, dest` | enter |
 | `run_shell` | `cmd, fail_on_nonzero, timeout` | enter / exit |
-| `wait_for_ci` | `min_interval, timeout` | heartbeat |
-| `ci_passed` | — | exit (heartbeat stages) |
-| `git_push` | `branch` | enter / exit / heartbeat |
+| `wait_for_ci` | `min_interval, timeout` | tick |
+| `ci_status` | `on_failure: { redirect_to, message_template }` | exit (script stages) |
+| `git_push` | `branch` | enter / exit |
 
 Hooks return one of three verdicts: `Pass`, `Fail`, or `Redirect(target_stage)`. `Pass` lets the flow proceed; `Fail` triggers retry-or-fail; `Redirect` routes to the named stage with `reason: redirect`. `section_redirect` is the canonical example — used for review loops.
 
