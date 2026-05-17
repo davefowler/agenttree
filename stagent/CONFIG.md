@@ -72,7 +72,14 @@ stages:
     retries: 0
     hooks:
       exit:
+        - file_exists: { path: review.md }
         - section_check: { file: review.md, section: Verdict, expect: all_checked }
+        # If reviewer checks "Request changes", loop back to code.
+        # Otherwise (Approve checked), flow proceeds to next stage.
+        - section_redirect:
+            file: review.md
+            when_checked: "Request changes"
+            redirect_to: code
 
   ci_wait:
     type: heartbeat
@@ -144,12 +151,14 @@ heartbeat:
 | `file_exists` | `path` | exit |
 | `min_words` | `file, section, min` | exit |
 | `section_check` | `file, section, expect: all_checked` | exit |
+| `section_redirect` | `file, when_checked, redirect_to` | exit |
 | `create_from_template` | `template, dest` | enter |
 | `run_shell` | `cmd, fail_on_nonzero, timeout` | enter / exit |
 | `wait_for_ci` | `min_interval, timeout` | heartbeat |
 | `ci_passed` | — | exit (heartbeat stages) |
 | `git_push` | `branch` | enter / exit / heartbeat |
-| `ensure_pr` | `base, title_from` | exit / heartbeat |
+
+Hooks return one of three verdicts: `Pass`, `Fail`, or `Redirect(target_stage)`. `Pass` lets the flow proceed; `Fail` triggers retry-or-fail; `Redirect` routes to the named stage with `reason: redirect`. `section_redirect` is the canonical example — used for review loops.
 
 Hooks are a Go interface — adding one is ~20 lines + a test. The YAML uses tagged union form (`name: { args }`).
 

@@ -48,11 +48,9 @@ const (
     EventTaskCreated      EventType = "task.created"
     EventTaskAborted      EventType = "task.aborted"
 
-    EventStageEntered     EventType = "stage.entered"     // attempt N started
-    EventStageCompleted   EventType = "stage.completed"   // exit hooks passed
+    EventStageEntered     EventType = "stage.entered"     // payload carries reason: flow|retry|redirect|human_goto
+    EventStageCompleted   EventType = "stage.completed"   // exit hooks passed (or redirected — work was done)
     EventStageFailed      EventType = "stage.failed"      // attempts exhausted
-    EventStageRedirected  EventType = "stage.redirected"  // hook moved us to a different stage
-    EventStageRetrying    EventType = "stage.retrying"
 
     EventSessionStarted   EventType = "session.started"   // claude -p invoked, session id captured
     EventSessionEnded     EventType = "session.ended"     // process exited, reason recorded
@@ -138,7 +136,20 @@ type Hook interface {
     Run(ctx *HookCtx) HookResult
     MinInterval() time.Duration   // 0 = every tick; useful for wait_for_ci etc.
 }
-// concrete: FileExists, SectionCheck, MinWords, RunShell, WaitForCI, ...
+
+type HookResult struct {
+    Verdict Verdict   // Pass | Fail | Redirect
+    Target  string    // stage name; only set when Verdict == Redirect
+    Message string    // human-readable; prepended to agent's next prompt on Fail/Redirect
+}
+
+type Verdict int
+const (
+    Pass Verdict = iota
+    Fail
+    Redirect
+)
+// concrete: FileExists, SectionCheck, MinWords, RunShell, WaitForCI, SectionRedirect, ...
 
 type Flow struct {
     Name   string
@@ -198,23 +209,24 @@ heartbeat tick ──▶ resolves first stage in flow
             heartbeat runs                      │
             exit hooks                          │
                       │                         │
-            ┌─────────┴─────────┐               │
-            pass                fail            │
-            │                   │               │
-            ▼                   ▼               │
-            Event:        attempts < retries?   │
-            stage.        ┌──────┴──────┐       │
-            completed     yes           no      │
-                          │             │       │
-                          ▼             ▼       │
-                    Event:         Event:       │
-                    stage.         stage.failed │
-                    retrying       (escalate)   │
-                          │                     │
-                          ▼                     │
-                    stage.entered (attempt=N+1) │
-                    resume agent with           │
-                    hook errors in prompt       │
+            ┌─────────┼──────────────┐          │
+            pass      redirect       fail       │
+            │         │              │          │
+            ▼         ▼              ▼          │
+        Event:    Event:        attempts        │
+        stage.    stage.        < retries?      │
+        completed completed     ┌────┴────┐     │
+                  Event:        yes       no    │
+                  stage.        │         │     │
+                  entered       ▼         ▼     │
+                  (target,    Event:   Event:   │
+                  reason=     stage.   stage.   │
+                  redirect)   entered  failed   │
+                              (reason= (escalate)
+                              retry)            │
+                              resume            │
+                              with hook         │
+                              errors            │
                                                 │
                               ┌─────────────────┘
                               ▼
@@ -229,7 +241,7 @@ Every transition is driven by the heartbeat reading the event log + checking art
 ### `agent` stages
 
 - Heartbeat sees the stage is current and no session is active for `(task, role)`.
-- Heartbeat invokes `claude -p "<initial prompt>" --dangerously-skip-permissions` (governed by `Role.Dangerous`), captures the session ID, emits `session.started`.
+- Heartbeat generates a UUID, emits `session.started` with it, then invokes `claude -p "<initial prompt>" --session-id <uuid> --dangerously-skip-permissions` (last flag governed by `Role.Dangerous`).
 - The prompt instructs the agent what to produce (artifact name, sections to fill, checkboxes to complete).
 - While the process is running, the heartbeat does nothing — just waits.
 - When the process exits (clean finish, OOM, killed, token limit — reason doesn't matter), the heartbeat runs exit hooks:
@@ -261,16 +273,18 @@ This is a deliberate choice. Continuity across stages preserves context. Per-sta
 
 ### How session IDs are captured
 
-Claude Code writes session transcripts to `~/.claude/projects/<cwd-encoded>/<session-uuid>.jsonl`. When we invoke `claude -p` we capture the session ID by either:
+We generate the UUID ourselves and pass `--session-id <uuid>` on first invocation. Claude Code writes the session transcript to `~/.claude/projects/<cwd-encoded>/<that-uuid>.jsonl` (the encoded-cwd substitutes `-` for `/`, e.g. `/Users/dave/proj` → `-Users-dave-proj`). Verified against `claude` 2.1.143.
 
-1. **Preferred** — passing `--session-id <uuid>` if Claude Code supports specifying it (we generate the UUID ourselves and store it before invoking). *This needs verification — see [open questions](#open-questions).*
-2. **Fallback** — invoking `claude -p`, then reading the most-recently-modified JSONL in the project directory and parsing its filename for the UUID.
+The flow:
 
-Once captured, we emit `session.started` with the UUID in the payload. Subsequent invocations: `claude -p "<msg>" --resume <uuid>`.
+1. `uuid := uuid.NewV4()`
+2. Emit `session.started` event with the UUID.
+3. Invoke `claude -p "<prompt>" --session-id <uuid> --dangerously-skip-permissions`.
+4. Subsequent invocations for the same `(task, role)`: `claude -p "<msg>" --resume <uuid> --dangerously-skip-permissions`.
 
-### Why not name sessions?
+We never need to scan the project directory to discover IDs. The DB is the authoritative source.
 
-Claude Code doesn't natively support named sessions as of writing. The UUID-in-DB approach is equivalent and gives us one stable handle per (task, role).
+Named sessions don't exist in Claude Code; UUIDs are required. Our event log gives us the per-`(task, role)` indirection we want.
 
 ## Retries
 
@@ -293,16 +307,66 @@ Retries reuse the Claude session (same UUID, `--resume`). The agent sees its pri
 
 **Future direction (not v1):** an *observer* agent role inspects failed stages and either applies a fix (returning to `in_progress`) or routes to human review with a structured explanation. This sits between "attempts exhausted" and "human takes over." For v1, we skip the observer and escalate directly to humans.
 
-## Rollback
+## Redirects (loop-backs)
 
-`stagent rewind <task>` emits a corrective `stage.rewound` event that voids the most recent `stage.completed` for a task and re-enters the previous stage. No data is deleted — the original events stay; the `tasks` view stops considering completions once a `stage.rewound` references them.
+Going back to an earlier stage is **not** an undo. It's a normal hook outcome.
 
-**Rewind is not a hook.** Hooks are pre-completion gates that vote pass/fail. Rewind is post-completion correction, triggered by:
+A hook returns one of three verdicts:
 
-- The user, via `stagent rewind <task>` — common case ("I approved the wrong thing").
-- The future observer agent — once it exists.
+- **Pass** → flow proceeds to next stage in order
+- **Fail** → retry (if attempts remain) or `stage.failed`
+- **Redirect(stage)** → emit `stage.completed` on the current stage (the work was done), then `stage.entered(stage, reason: "redirect")` on the target
 
-Hooks can block stages from *becoming* completed. They can't undo completed stages. That's by design — separating the two keeps each concept simple.
+A redirect pointing forward is rare; a redirect pointing backward is the **review loop**, the most common non-linear flow. Same machinery either way.
+
+### Review-loop example
+
+```yaml
+code_review:
+  type: agent
+  role: reviewer
+  output: review.md
+  hooks:
+    exit:
+      - file_exists: { path: review.md }
+      - section_check: { file: review.md, section: Verdict, expect: all_checked }
+      - section_redirect:
+          file: review.md
+          when_checked: "Request changes"
+          redirect_to: code
+```
+
+The reviewer fills in `review.md`, checking exactly one of two sections: "Approve" or "Request changes." On exit, hooks run. The `section_redirect` hook reads the file: if "Request changes" is checked, it returns `Redirect(code)`. Otherwise it passes and the flow continues to the next stage.
+
+When the redirect fires:
+
+1. `stage.completed` for `code_review` (the work was done — reviewer reached a verdict).
+2. `stage.entered` for `code` with `reason: "redirect"`, `from_stage: "code_review"`.
+3. The `code` agent's session is resumed (`--resume <uuid>`) with the reviewer's message prepended to the prompt.
+4. The code stage's retry budget resets — each redirect cycle is its own attempt sequence.
+
+`code → code_review → code → code_review → ...` loops naturally until the reviewer approves or the user intervenes.
+
+### `stage.entered` reasons
+
+| `reason` | When |
+|---|---|
+| `flow` | Normal forward transition from the previous stage |
+| `retry` | Same stage's exit hooks failed; trying again within the same cycle |
+| `redirect` | Downstream stage redirected back here |
+| `human_goto` | User ran `stagent goto <task> <stage>` |
+
+### `stagent goto` — the human escape hatch
+
+When a human needs to send a task to a specific stage manually:
+
+```
+stagent goto <task> <stage>
+```
+
+Emits `stage.entered` with `reason: "human_goto"`. Same machinery as hook redirects. There is no `rewind` command and no `stage.rewound` event — `goto` is the one human-issued routing primitive.
+
+Hooks are pre-completion gates. Redirects are a hook verdict that happens to route to a chosen target. `goto` is a human exercising the same routing primitive. The three vocabularies collapse into one.
 
 ## Artifacts and templates
 
@@ -383,10 +447,11 @@ stagent init
 stagent task new "<title>"
 stagent task list
 stagent task show <id>
-stagent approve <id>             # emits human.approved
-stagent restart <id>              # kills session, emits stage.retrying
+stagent approve <id>              # emits human.approved (completes a human stage)
+stagent goto <id> <stage>         # emits stage.entered with reason=human_goto
+stagent restart <id>              # kills the session, re-enters current stage as a retry
 stagent abort <id>                # emits task.aborted
-stagent run                       # runs the heartbeat daemon
+stagent run                       # runs the heartbeat daemon (per-repo, foreground)
 stagent status                    # current state of all tasks (queries views)
 stagent log <id>                  # event log for a task (tails)
 stagent session <id> <role>       # prints the claude session id, for terminal resume
@@ -453,7 +518,12 @@ The goal: every path through the state machine has a test that pins it. Adding a
 - **Failure escalation:** status change only. Notifications are a user-wired hook.
 - **Skill files:** `.stagent/skills/<name>.md`, checked into git. Stage `Skill` field is optional; falls back to role's skill, then to a built-in default.
 
-## Verification spikes (not blocking design, but needed before code)
+## Verification (resolved)
 
-1. **`claude -p` and `--session-id`** — does Claude Code's CLI accept a caller-supplied UUID to *create* a session with? If yes, we generate the UUID, store it, then invoke. If no, we invoke first and read the newest JSONL in `~/.claude/projects/<cwd-encoded>/` to capture the auto-generated UUID. Either works; we just need to know which path the v1 code takes.
-2. **`claude --resume <uuid> -p "msg"`** — confirm resume works in headless (`-p`) mode and that subsequent turns extend the same JSONL. Should — but worth a 5-minute test before relying on it.
+Verified against `claude` 2.1.143:
+
+- `claude -p --session-id <uuid> "<prompt>"` accepts a caller-supplied UUID and writes the transcript to `~/.claude/projects/<encoded-cwd>/<that-uuid>.jsonl`. We generate UUIDs ourselves; no post-invocation directory scan needed.
+- `claude --resume <uuid> -p "<msg>"` works in headless mode and appends to the same JSONL.
+- Encoded-cwd substitutes `-` for `/` (e.g. `/Users/dave/proj` → `-Users-dave-proj`, with a leading dash from the leading slash).
+- `--dangerously-skip-permissions` is refused when running as root — relevant if we ever add containers.
+- `--no-session-persistence` exists if we want one-shot agents that don't write JSONL.

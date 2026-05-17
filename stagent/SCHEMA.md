@@ -44,11 +44,9 @@ That's it. The table is INSERT-only — no UPDATE, no DELETE, ever. State correc
 | `task.created` | — | — | `{title, flow, worktree_dir, branch}` |
 | `task.aborted` | — | — | `{reason}` |
 | `task.completed` | — | — | `{}` |
-| `stage.entered` | yes | yes (if agent) | `{attempt}` |
+| `stage.entered` | yes | yes (if agent) | `{attempt, reason, from_stage?}` — reason ∈ `flow`/`retry`/`redirect`/`human_goto` |
 | `stage.completed` | yes | yes (if agent) | `{}` |
 | `stage.failed` | yes | yes (if agent) | `{reason, last_error}` |
-| `stage.redirected` | yes (from) | — | `{to_stage, reason}` |
-| `stage.retrying` | yes | yes | `{attempt}` |
 | `session.started` | yes | yes | `{claude_session_id, pid}` |
 | `session.ended` | yes | yes | `{reason, exit_code}` |
 | `session.resumed` | yes | yes | `{claude_session_id}` |
