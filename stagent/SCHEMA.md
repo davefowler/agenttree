@@ -44,7 +44,7 @@ That's it. The table is INSERT-only — no UPDATE, no DELETE, ever. State correc
 | `task.created` | — | — | `{title, flow, worktree_dir, branch}` |
 | `task.aborted` | — | — | `{reason}` |
 | `task.completed` | — | — | `{}` |
-| `stage.entered` | yes | yes (if agent) | `{attempt, reason, from_stage?}` — reason ∈ `flow`/`retry`/`redirect`/`human_goto` |
+| `stage.entered` | yes | yes (if agent) | `{attempt, reason, stage_type, from_stage?}` — reason ∈ `flow`/`retry`/`redirect`/`human_goto`; stage_type ∈ `agent`/`human`/`script` |
 | `stage.completed` | yes | yes (if agent) | `{}` |
 | `stage.failed` | yes | yes (if agent) | `{reason, last_error}` |
 | `session.started` | yes | yes | `{claude_session_id, pid}` |
@@ -74,11 +74,16 @@ WITH
   latest_stage AS (
     SELECT task_id, stage, MAX(id) AS evt_id
     FROM events
-    WHERE type IN ('stage.entered', 'stage.completed', 'stage.failed', 'stage.redirected')
+    WHERE type IN ('stage.entered', 'stage.completed', 'stage.failed')
     GROUP BY task_id
   ),
   latest_stage_event AS (
-    SELECT e.task_id, e.stage, e.type, e.created_at
+    SELECT
+        e.task_id,
+        e.stage,
+        e.type,
+        e.created_at,
+        json_extract(e.payload, '$.stage_type') AS stage_type
     FROM events e
     JOIN latest_stage ls ON e.id = ls.evt_id
   ),
@@ -95,29 +100,11 @@ SELECT
     c.branch,
     COALESCE(lse.stage, '')                            AS current_stage,
     CASE
-        WHEN t.type = 'task.completed' THEN 'completed'
-        WHEN t.type = 'task.aborted'   THEN 'aborted'
-        WHEN lse.type = 'stage.failed' THEN 'failed'
-        WHEN EXISTS (
-            SELECT 1 FROM events e2
-            WHERE e2.task_id = c.task_id
-              AND e2.stage = lse.stage
-              AND e2.type = 'stage.entered'
-              AND NOT EXISTS (
-                  SELECT 1 FROM events e3
-                  WHERE e3.task_id = c.task_id
-                    AND e3.stage = lse.stage
-                    AND e3.type IN ('stage.completed', 'stage.failed')
-                    AND e3.id > e2.id
-              )
-              -- waiting on human if no agent activity since entering
-              AND NOT EXISTS (
-                  SELECT 1 FROM events e4
-                  WHERE e4.task_id = c.task_id
-                    AND e4.type = 'session.started'
-                    AND e4.id > e2.id
-              )
-        ) AND lse.type = 'stage.entered' THEN 'waiting_human'
+        WHEN t.type = 'task.completed'       THEN 'completed'
+        WHEN t.type = 'task.aborted'         THEN 'aborted'
+        WHEN lse.type = 'stage.failed'       THEN 'failed'
+        WHEN lse.type = 'stage.entered'
+         AND lse.stage_type = 'human'        THEN 'waiting_human'
         ELSE 'active'
     END                                                AS status,
     c.created_at,
@@ -127,7 +114,7 @@ LEFT JOIN latest_stage_event lse USING (task_id)
 LEFT JOIN terminal           t   USING (task_id);
 ```
 
-> The `waiting_human` logic above is simplified; the real implementation will cross-reference `StageDef.Type == 'human'` (loaded from config). One option: emit `stage.entered` with `payload.stage_type` so the view doesn't need config. Worth deciding before writing the view in code.
+The `waiting_human` branch keys on `payload.stage_type = 'human'` recorded on `stage.entered`. The view never reads `.stagent.yaml`. If a config rename ever changes a stage's `type`, the new value lands on the next `stage.entered` and the projection follows.
 
 ### `sessions` — latest Claude session per (task, role)
 

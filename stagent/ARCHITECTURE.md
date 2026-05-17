@@ -48,7 +48,9 @@ const (
     EventTaskCreated      EventType = "task.created"
     EventTaskAborted      EventType = "task.aborted"
 
-    EventStageEntered     EventType = "stage.entered"     // payload carries reason: flow|retry|redirect|human_goto
+    EventStageEntered     EventType = "stage.entered"     // payload: {attempt, reason, stage_type, from_stage?}
+                                                          // reason ∈ flow|retry|redirect|human_goto
+                                                          // stage_type ∈ agent|human|script (so projections don't read config)
     EventStageCompleted   EventType = "stage.completed"   // exit hooks passed (or redirected — work was done)
     EventStageFailed      EventType = "stage.failed"      // attempts exhausted
 
