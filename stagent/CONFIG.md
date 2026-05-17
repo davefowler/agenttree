@@ -44,16 +44,35 @@ tasks_dir: tasks      # default; configurable
 # elsewhere — the user provides a complete task file before starting.
 stages:
 
+  setup:
+    type: script
+    max_runs: 3
+    hooks:
+      enter:
+        # Standard worktree + branch creation. Override the cmd if your project
+        # uses a different path convention or base branch.
+        - run_shell:
+            cmd: "git worktree add {{.Task.WorktreeDir}} -b {{.Task.Branch}} origin/main"
+            fail_on_nonzero: true
+
+        # Project-specific install / fixture setup goes here. Examples:
+        # - run_shell: { cmd: "cd {{.Task.WorktreeDir}} && go mod download" }
+        # - run_shell: { cmd: "cd {{.Task.WorktreeDir}} && npm ci" }
+        # - run_shell: { cmd: "cd {{.Task.WorktreeDir}} && cp .env.example .env" }
+
   code:
     type: agent
     role: developer
     max_runs: 7    # generous: pr, review, and human_review can all redirect back
     hooks:
       enter:
-        - run_shell: { cmd: "git rebase origin/main", fail_on_nonzero: false }
+        # Rebase on every code entry — on review/CI redirects, main may have moved.
+        # fail_on_nonzero: true so merge conflicts escalate instead of silently
+        # producing broken code.
+        - run_shell: { cmd: "cd {{.Task.WorktreeDir}} && git rebase origin/main", fail_on_nonzero: true }
       exit:
-        - run_shell: { cmd: "go test ./...", fail_on_nonzero: true }
-        - run_shell: { cmd: "go vet ./...",  fail_on_nonzero: true }
+        - run_shell: { cmd: "cd {{.Task.WorktreeDir}} && go test ./...", fail_on_nonzero: true }
+        - run_shell: { cmd: "cd {{.Task.WorktreeDir}} && go vet ./...",  fail_on_nonzero: true }
         - section_check: { section: "Code > Completion", expect: all_checked }
     # NOTE: code does NOT push or open PRs. The pr stage handles all gh interaction.
 
@@ -115,6 +134,7 @@ stages:
 # Ordered lists of stage names. A task picks one at creation time.
 flows:
   default:
+    - setup          # create worktree, branch, install deps
     - code           # implement based on the user-written task file
     - pr             # push + open PR + wait for CI green
     - review         # agent reviewer; redirects to code if changes requested
@@ -122,6 +142,7 @@ flows:
     - cleanup        # remove worktree, delete branch
 
   quick:
+    - setup
     - code
     - cleanup
 

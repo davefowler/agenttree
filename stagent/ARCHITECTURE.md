@@ -183,18 +183,19 @@ The first form is the **expected default**. Plan in Cursor/your editor; write a 
 
 The second form is for users who want to start blank from a template — stagent copies `.stagent/templates/task.md` into `<tasks_dir>/<id>-<slug>.md`. Edit before or after starting.
 
-Either way, `task new` does three things:
+Either way, `task new` does just two things — both bookkeeping, no filesystem work:
 
 1. Allocates the next sequential task ID.
-2. Creates a git worktree at `.worktrees/task-<id>/` on a new branch `task-<id>`.
-3. Appends a `task.created` event:
+2. Appends a `task.created` event with the **planned** worktree path and branch name:
    ```json
    { "title": "Fix login bug", "flow": "default",
      "task_file": "tasks/001-fix-login.md",
      "worktree_dir": "/abs/path/.worktrees/task-001", "branch": "task-001" }
    ```
 
-The heartbeat picks it up on the next tick and enters the first stage of the chosen flow.
+**The worktree itself doesn't exist yet.** It's created by the `setup` stage (first in the default flow) on the heartbeat's next tick. This means `task new` can never fail at "git worktree add" — that failure mode becomes a normal `stage.failed` on `setup`, retryable, visible in the event log.
+
+The heartbeat picks up the new task on the next tick and enters the first stage of the chosen flow (`setup` in the default).
 
 ## Lifecycle of a task
 
@@ -657,7 +658,8 @@ The goal: every path through the state machine has a test that pins it. Adding a
 - **Run budget:** `max_runs` per stage, counting all entries (initial + retry + redirect + human_goto). Defaults: 3 for agent/script, 1 for human.
 - **Failure escalation:** status change only. Notifications are a user-wired hook.
 - **Skill files:** `.stagent/skills/<name>.md`, checked into git. Stage `Skill` field is optional; falls back to role's skill, then to a built-in default.
-- **Default flow** (what `stagent init` scaffolds): `code → pr → review → human_review → cleanup`. Stagent runs the execution loop only; planning (problem, approach) happens elsewhere (Cursor, your editor, your brain) and the user provides a complete task file. `pr` pushes and waits for CI; `review` runs only on green CI; `human_review` completes via EITHER `stagent approve` OR a tick hook detecting the merge in GH. `cleanup` removes the worktree, deletes the branch, emits `task.completed`. CI staying green during human_review is enforced by tick hooks that redirect to `code` if it goes red.
+- **Default flow** (what `stagent init` scaffolds): `setup → code → pr → review → human_review → cleanup`. Stagent runs the execution loop only; planning (problem, approach) happens elsewhere (Cursor, your editor, your brain) and the user provides a complete task file. `setup` creates the worktree, branch, and runs any project install steps. `pr` pushes and waits for CI; `review` runs only on green CI; `human_review` completes via EITHER `stagent approve` OR a tick hook detecting the merge in GH. `cleanup` removes the worktree, deletes the branch, emits `task.completed`. CI staying green during human_review is enforced by tick hooks that redirect to `code` if it goes red.
+- **`task new` does no filesystem work** — it only allocates an ID and emits `task.created` with the planned worktree path. The `setup` stage creates the worktree. This makes "git worktree add" a normal `stage.failed` instead of a CLI error if it fails (disk full, branch collision, etc.) — retryable, visible in the event log, fixable via `stagent goto <task> setup`.
 - **One task file per task:** `tasks/<id>-<slug>.md` (committed). Sections within it represent stage outputs. Hooks check checkboxes via section paths like `"Code > Completion"`. No per-stage artifact files.
 - **Task creation:** `stagent task new <file>` registers an existing user-written file; `stagent task new "<title>"` creates one from `.stagent/templates/task.md`. Either way the path is recorded in `task.created` and passed as `{{.TaskFile}}` to every stage prompt.
 - **Session bounds:** roles default to `bound: task` (one session per task, continues across stage loops). Opt into `bound: stage` for fresh-eyes-each-time roles. `run` and `forever` ship as planned values but error in v1.
