@@ -58,6 +58,7 @@ const (
 
     EventHookFired        EventType = "hook.fired"
     EventHumanApproved    EventType = "human.approved"
+    EventForceTick        EventType = "force_tick"        // CLI request to ignore min_interval on next tick
 )
 ```
 
@@ -511,13 +512,45 @@ The gitignored half is just runtime: SQLite log, PID file, worktrees. Everything
 
 ## Concurrency
 
-The heartbeat is one process, ticking every `heartbeat.interval`. Within a tick:
+The heartbeat is one process, running a select loop. Within the loop:
 
 - **Tasks run in parallel** (one goroutine per active task). Tasks are independent — different worktrees, different sessions, different stages.
-- **Within a task, stages are serial**. The state machine doesn't have a notion of "two stages of the same task at once."
-- **Hook execution is serial within a stage**. Enter and exit hooks run in declared order; the first failure short-circuits.
+- **Within a task, stages are serial.** The state machine doesn't have a notion of "two stages of the same task at once."
+- **Hook execution is serial within a stage.** Enter and exit hooks run in declared order; the first failure short-circuits.
 
 SQLite handles the concurrent appends without contention (see SCHEMA.md). The daemon never holds a long-running transaction.
+
+## Process model
+
+Agent stages run `claude -p` as a **direct child** of the daemon. The per-task goroutine calls `cmd.Start()`, then `cmd.Wait()` in a goroutine of its own. When the child exits — for any reason — Wait returns and the goroutine emits `session.ended` and triggers exit hook evaluation. **No periodic PID polling.** Event-driven.
+
+The daemon never blocks on a single agent — each agent has its own goroutine; the main loop continues to service ticks, CLI commands, and other agents' completions.
+
+**Crash recovery.** If the daemon dies mid-agent (OOM, kill, segfault), child processes get reparented to PID 1 and the daemon loses its handle. On next start, the daemon replays the event log; any `session.started` without a matching `session.ended` indicates a process was running. For each:
+
+1. `kill(pid, 0)` to test liveness.
+2. If still alive: emit `session.ended` with `reason: "daemon_restart_orphan"` and let the retry budget decide (most likely: retry the stage with the agent's JSONL still intact, since `--resume` will pick up where it left off).
+3. If dead: same emission, same handling.
+
+This gives full crash safety without paying for polling in the hot path. The PID file at `.stagent/daemon.pid` prevents two daemons starting against the same DB.
+
+## Tick scheduling and forced polls
+
+Tick hooks have a `MinInterval` (default = the heartbeat's tick interval). The heartbeat tracks `last_run_at` per hook and skips hooks whose interval hasn't elapsed. So `wait_for_ci` set to `min_interval: 30s` polls every 30s regardless of the daemon's tick frequency.
+
+`stagent poll [<task>]` emits a `force_tick` event the heartbeat sees on its next iteration. For that iteration, all tick hooks run **ignoring `min_interval`**. Without args, all active tasks; with a task ID, that one only.
+
+Auto-triggers that emit `force_tick` implicitly:
+
+- `stagent approve <task>` — the user might be about to merge; recheck PR state.
+- `stagent goto <task> <stage>` — state just changed manually; re-evaluate.
+
+**Why not a global PR-status cache in v1?** Per-task tick hooks + `stagent poll` get you most of the responsiveness without:
+- Shared in-memory state to invalidate and clean up
+- A separate poller subsystem
+- Different code paths for cached vs fresh
+
+A global cache (one `gh pr list` call refreshing all PR states at once) is a worthwhile **v2 optimization** if you hit GH rate limits with many concurrent tasks or build a UI "refresh" button.
 
 ## How completion works
 
@@ -553,6 +586,7 @@ stagent task list
 stagent task show <id>
 stagent approve <id>              # emits human.approved (completes a human stage)
 stagent goto <id> <stage> [-m "msg"]   # emits stage.entered with reason=human_goto; -m prepends a message to the resumed agent's prompt
+stagent poll [<id>]               # force tick hooks to run NOW, ignoring min_interval. No args = all active tasks. Use after merging in GH UI to advance immediately.
 stagent restart <id>              # kills the session, re-enters current stage as a retry
 stagent abort <id>                # emits task.aborted
 stagent run                       # runs the heartbeat daemon (per-repo, foreground)

@@ -52,6 +52,7 @@ That's it. The table is INSERT-only — no UPDATE, no DELETE, ever. State correc
 | `session.resumed` | yes | yes | `{claude_session_id}` |
 | `hook.fired` | yes | — | `{hook, result, message}` |
 | `human.approved` | yes | — | `{actor_user}` |
+| `force_tick` | — | — | `{}` — task_id is set if scoped to one task, else 0 for all-active. Causes the next heartbeat iteration to ignore min_interval on tick hooks. |
 
 ## Views
 
