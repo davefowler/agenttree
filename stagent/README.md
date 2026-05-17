@@ -46,11 +46,13 @@ stagent status                # show all tasks and stages
 ## Layout
 
 ```
-.stagent.yaml         # roles, stages, flows, hooks, commands
+.stagent.yaml             # roles, stages, flows, hooks, commands
 .stagent/
-  stagent.db          # SQLite event log (gitignored)
-  daemon.pid          # liveness (gitignored)
-  tasks/<id>/         # markdown artifacts per task
+  stagent.db              # SQLite event log (gitignored)
+  daemon.pid              # liveness (gitignored)
+  skills/<name>.md        # role/stage system prompts (committed)
+  templates/<output>.md   # artifact templates (committed)
+  tasks/<id>/             # markdown artifacts per task (gitignored)
     spec.md
     plan.md
     review.md

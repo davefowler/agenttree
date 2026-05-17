@@ -289,13 +289,57 @@ else:
 
 Retries reuse the Claude session (same UUID, `--resume`). The agent sees its prior context plus the new attempt's prompt, which includes whatever the exit hook complained about.
 
-**When attempts are exhausted**, `stage.failed` is emitted and the task's status becomes `failed` (surfaces in the viewer). No notifications, no Slack — escalation is whatever the user wires up via a `run_shell` hook on `stage.failed`. Keeps the core small.
+**When attempts are exhausted**, `stage.failed` is emitted and the task's status becomes `failed`. The task surfaces in the viewer for a human to handle — rewind, restart, edit the artifact, or abort. No notifications in v1; users can wire `run_shell` on a future `stage.failed` post-completion hook for Slack/email.
+
+**Future direction (not v1):** an *observer* agent role inspects failed stages and either applies a fix (returning to `in_progress`) or routes to human review with a structured explanation. This sits between "attempts exhausted" and "human takes over." For v1, we skip the observer and escalate directly to humans.
 
 ## Rollback
 
-`stagent rewind <task>` emits a corrective event that voids the most recent `stage.completed` for a task and re-enters the previous stage. Implemented as a new `stage.rewound` event type; the `tasks` view treats it as a roll-back of the latest completion. No data is deleted — the original events stay; the view just stops considering them once a `stage.rewound` references them.
+`stagent rewind <task>` emits a corrective `stage.rewound` event that voids the most recent `stage.completed` for a task and re-enters the previous stage. No data is deleted — the original events stay; the `tasks` view stops considering completions once a `stage.rewound` references them.
 
-Use cases: a human-approved stage was approved by mistake; an agent's exit hooks let something through that shouldn't have passed.
+**Rewind is not a hook.** Hooks are pre-completion gates that vote pass/fail. Rewind is post-completion correction, triggered by:
+
+- The user, via `stagent rewind <task>` — common case ("I approved the wrong thing").
+- The future observer agent — once it exists.
+
+Hooks can block stages from *becoming* completed. They can't undo completed stages. That's by design — separating the two keeps each concept simple.
+
+## Artifacts and templates
+
+Stage outputs are markdown files. They need templates so agents have a structure to fill into — section headings, checkboxes, prompts. Without templates, every agent invents its own layout and the hooks that look for specific sections break.
+
+**Layout:**
+
+```
+.stagent/
+  templates/
+    spec.md          ← committed to git, project config
+    plan.md
+    review.md
+  tasks/
+    001/             ← gitignored, one dir per task
+      spec.md        ← copied from template on stage.entered
+      plan.md        ← edited by the agent
+      review.md
+```
+
+- **Templates** live at `.stagent/templates/<output>` and are checked into git alongside skills. They define the structure the agent fills.
+- **Task artifacts** live at `.stagent/tasks/<id>/<output>` in the **main repo** (not the worktree). They are gitignored.
+
+**Lifecycle:**
+
+1. On `stage.entered`, the heartbeat invokes the stage's enter hooks. For agent stages, this typically includes `create_from_template: { template: <output>, dest: <output> }` which copies `.stagent/templates/<output>` to `.stagent/tasks/<id>/<output>` if the file doesn't already exist.
+2. The agent's prompt includes the **absolute path** to the artifact. The agent's CWD is the worktree (for code edits via Read/Edit/Write tools on project files), but it reads and writes its artifact at the absolute path it was given.
+3. The agent's exit hooks check the artifact (`file_exists`, `section_check`, `min_words`).
+4. After `stage.completed`, the artifact stays. It is never deleted automatically.
+5. Subsequent stages can read prior stages' artifacts — e.g. the `code` stage reads the `plan.md` produced by `plan`. Same absolute path, same file.
+
+**Why not in the worktree, why not committed?**
+
+- *Not in the worktree:* the worktree is for code. Mixing workflow files into it conflates two concerns. Also the daemon (running in the main repo) would have to chase artifacts across N worktrees.
+- *Not committed:* would pollute the project's git history with workflow output. Agenttree got this right with a separate `_agenttree/` repo; stagent keeps it gitignored.
+
+**Archival:** artifacts accumulate forever by default — markdown is tiny. If cleanup ever matters, `stagent task archive <id>` (deferred) can tar them up.
 
 ## Concurrency
 

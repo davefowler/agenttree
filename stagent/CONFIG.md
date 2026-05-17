@@ -155,10 +155,48 @@ Hooks are a Go interface — adding one is ~20 lines + a test. The YAML uses tag
 
 ## Skills
 
-Skills are markdown files passed to `claude -p` as the system prompt. They live at `.stagent/skills/<name>.md` and are committed to git. A stage's skill resolution:
+Skills are plain markdown files passed to `claude -p` as the system prompt. They live at `.stagent/skills/<name>.md` and are committed to git. A stage's skill resolution:
 
 1. `StageDef.Skill` if set
 2. otherwise `Role.SkillFile`
 3. otherwise a built-in default
 
-Skills should remind the agent that the system judges completion via exit hooks — so the artifact must satisfy them (e.g. all checkboxes ticked, tests passing) before the agent exits.
+Skills should remind the agent that the system judges completion via exit hooks — so the artifact must satisfy them (all checkboxes ticked, sections filled, tests passing) before the agent exits.
+
+## Templates
+
+Templates are markdown files at `.stagent/templates/<output_name>` (committed to git). They define the structure each stage's artifact starts with — section headings, checklists, prompts for the agent to answer.
+
+On `stage.entered`, the `create_from_template` enter hook copies the template into `.stagent/tasks/<id>/<output_name>` (gitignored, lives in the main repo). The agent receives an absolute path to the artifact in its prompt and edits it directly.
+
+Example `.stagent/templates/spec.md`:
+
+```markdown
+# Spec: {{.Task.Title}}
+
+## Problem
+
+<!-- Describe the problem in 2-3 sentences. -->
+
+## Approach
+
+<!-- Outline the proposed approach in 50+ words. -->
+
+## Completion checklist
+
+- [ ] Problem stated clearly
+- [ ] Approach explained
+- [ ] Edge cases considered
+- [ ] Open questions surfaced
+```
+
+The corresponding stage hooks check the structure:
+
+```yaml
+exit:
+  - file_exists: { path: spec.md }
+  - min_words: { file: spec.md, section: Approach, min: 50 }
+  - section_check: { file: spec.md, section: "Completion checklist", expect: all_checked }
+```
+
+Templates can use Go template syntax for task context (`{{.Task.Title}}`, `{{.Task.ID}}`, `{{.Task.Branch}}`). Skills do not — they're plain markdown, identical for every task.
