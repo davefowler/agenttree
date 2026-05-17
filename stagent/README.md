@@ -46,16 +46,28 @@ stagent status                # show all tasks and stages
 ## Layout
 
 ```
-.stagent.yaml             # roles, stages, flows, hooks, commands
-.stagent/
-  stagent.db              # SQLite event log (gitignored)
-  daemon.pid              # liveness (gitignored)
-  skills/<name>.md        # role/stage system prompts (committed)
-  templates/<output>.md   # artifact templates (committed)
-  tasks/<id>/             # markdown artifacts per task (gitignored)
-    spec.md
-    plan.md
-    review.md
+.stagent.yaml                          # roles, stages, flows, hooks, commands
+
+.stagent/                              # committed and gitignored mixed; .gitignore below
+  prompts/                             # COMMITTED — workflow definition
+    roles/<role>.md                    #   role system prompts (sent once per session)
+    stages/<stage>.md                  #   stage user prompts (sent on every entry)
+  templates/
+    stages/<stage>.md                  # COMMITTED — artifact templates
+
+  stagent.db                           # GITIGNORED — per-dev event log (SQLite, WAL)
+  daemon.pid                           # GITIGNORED — daemon liveness
+  tasks/<id>/<stage>.md                # GITIGNORED — per-dev in-flight artifacts
+  archive/<id>/                        # GITIGNORED — per-dev completed task dirs
+```
+
+`.gitignore` snippet:
+
+```
+.stagent/stagent.db*
+.stagent/daemon.pid
+.stagent/tasks/
+.stagent/archive/
 ```
 
 ## Docs

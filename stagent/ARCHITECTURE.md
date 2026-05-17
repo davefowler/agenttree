@@ -105,8 +105,8 @@ type StageProgress struct {
 type Role struct {
     Name      string
     Model     string  // opus | sonnet | haiku
-    SkillFile string  // optional path to system prompt
     Dangerous bool    // pass --dangerously-skip-permissions; required true for agent roles in v1
+    // Role prompt loaded from .stagent/prompts/roles/<Name>.md by convention.
 }
 
 type StageType string
@@ -120,10 +120,11 @@ type StageDef struct {
     Name     string      // bare identifier: "code", "plan_review"
     Type     StageType
     Role     string      // which Role executes (agent stages only)
-    Output   string      // artifact filename: "spec.md"
     MaxRuns  int         // total entries to this stage allowed across a task
     Hooks    StageHooks
-    Skill    string      // optional skill file override
+    // Artifact path is .stagent/tasks/<task_id>/<Name>.md by convention.
+    // Stage prompt is .stagent/prompts/stages/<Name>.md by convention.
+    // No per-stage prompt or output overrides — names are the identifiers.
 }
 
 type StageHooks struct {
@@ -240,9 +241,15 @@ Every transition is driven by the heartbeat reading the event log + checking art
 
 ### `agent` stages
 
-- Heartbeat sees the stage is current and no session is active for `(task, role)`.
-- Heartbeat generates a UUID, emits `session.started` with it, then invokes `claude -p "<initial prompt>" --session-id <uuid> --dangerously-skip-permissions` (last flag governed by `Role.Dangerous`).
-- The prompt instructs the agent what to produce (artifact name, sections to fill, checkboxes to complete).
+- Heartbeat sees the stage is current and checks whether a session exists for `(task, role)`.
+- **First time for this role on this task** (no session yet):
+  - Generate a UUID, emit `session.started`.
+  - Invoke `claude -p "<stage prompt + context>" --session-id <uuid> --system-prompt "$(cat .stagent/prompts/roles/<role>.md)" --dangerously-skip-permissions`.
+  - The system prompt (role identity, project context, conventions) is set ONCE here and persists across all future turns in this session.
+- **Subsequent invocations** (session exists, e.g. another stage for the same role, or a retry, or a redirect):
+  - Invoke `claude -p "<stage prompt + redirect message if any>" --resume <uuid> --dangerously-skip-permissions`.
+  - No `--system-prompt` — the role prompt is already part of the session.
+- The stage prompt (`.stagent/prompts/stages/<stage>.md`) describes what to produce in this stage, references prior stage artifacts available, and tells the agent where to write its own output.
 - While the process is running, the heartbeat does nothing — just waits.
 - When the process exits (clean finish, OOM, killed, token limit — reason doesn't matter), the heartbeat runs exit hooks:
   - Hooks pass → `stage.completed`
@@ -377,42 +384,58 @@ Emits `stage.entered` with `reason: "human_goto"`. Same machinery as hook redire
 
 Hooks are pre-completion gates. Redirects are a hook verdict that happens to route to a chosen target. `goto` is a human exercising the same routing primitive. The three vocabularies collapse into one.
 
-## Artifacts and templates
+## Prompts, templates, and artifacts
 
-Stage outputs are markdown files. They need templates so agents have a structure to fill into — section headings, checkboxes, prompts. Without templates, every agent invents its own layout and the hooks that look for specific sections break.
-
-**Layout:**
+Three categories of markdown, three folders, clear ownership:
 
 ```
 .stagent/
+  prompts/
+    roles/
+      developer.md         ← role system prompt, sent ONCE per session
+      reviewer.md
+    stages/
+      define.md            ← stage prompt, sent on EVERY stage entry
+      plan.md
+      code.md
+      review.md
   templates/
-    spec.md          ← committed to git, project config
-    plan.md
-    review.md
+    stages/
+      define.md            ← artifact template, copied to task dir on entry
+      plan.md
+      code.md
+      review.md
   tasks/
-    001/             ← gitignored, one dir per task
-      spec.md        ← copied from template on stage.entered
-      plan.md        ← edited by the agent
+    001/                   ← one dir per task; gitignored
+      define.md            ← filled by the agent
+      plan.md
+      code.md
       review.md
 ```
 
-- **Templates** live at `.stagent/templates/<output>` and are checked into git alongside skills. They define the structure the agent fills.
-- **Task artifacts** live at `.stagent/tasks/<id>/<output>` in the **main repo** (not the worktree). They are gitignored.
+**Naming convention:** the stage name (`code`) is the identifier for its prompt (`prompts/stages/code.md`), its template (`templates/stages/code.md`), and its artifact (`tasks/<id>/code.md`). No per-stage overrides for prompt path, template path, or output filename — the names are the keys. Less YAML, less drift.
 
-**Lifecycle:**
+### How prompts work
 
-1. On `stage.entered`, the heartbeat invokes the stage's enter hooks. For agent stages, this typically includes `create_from_template: { template: <output>, dest: <output> }` which copies `.stagent/templates/<output>` to `.stagent/tasks/<id>/<output>` if the file doesn't already exist.
-2. The agent's prompt includes the **absolute path** to the artifact. The agent's CWD is the worktree (for code edits via Read/Edit/Write tools on project files), but it reads and writes its artifact at the absolute path it was given.
-3. The agent's exit hooks check the artifact (`file_exists`, `section_check`, `min_words`).
-4. After `stage.completed`, the artifact stays. It is never deleted automatically.
-5. Subsequent stages can read prior stages' artifacts — e.g. the `code` stage reads the `plan.md` produced by `plan`. Same absolute path, same file.
+- **Role prompt** (`prompts/roles/<role>.md`) is the system prompt set once at session creation via `--system-prompt`. It defines the role's identity, project context, conventions, what tools to favor, etc. Persists across all stage entries for that role.
+- **Stage prompt** (`prompts/stages/<stage>.md`) is sent as the user message on every stage entry. Describes the immediate task: what to produce, what sections to fill, what prior artifacts to read, where to write output (absolute path). Stage prompts are templated with task context — `{{.Task.ID}}`, `{{.Task.Title}}`, `{{.ArtifactPath}}`, `{{.PriorArtifacts}}`, plus any redirect message prepended.
 
-**Why not in the worktree, why not committed?**
+This means the developer-role's session retains its identity across `code → review-loop → code → ci-loop → code` while each entry tells it specifically what to do this turn.
 
-- *Not in the worktree:* the worktree is for code. Mixing workflow files into it conflates two concerns. Also the daemon (running in the main repo) would have to chase artifacts across N worktrees.
-- *Not committed:* would pollute the project's git history with workflow output. Agenttree got this right with a separate `_agenttree/` repo; stagent keeps it gitignored.
+### How artifacts are reconciled
 
-**Archival:** artifacts accumulate forever by default — markdown is tiny. If cleanup ever matters, `stagent task archive <id>` (deferred) can tar them up.
+1. Stage entered → enter hook copies `.stagent/templates/stages/<stage>.md` → `.stagent/tasks/<id>/<stage>.md` (only if dest doesn't exist; retries and redirects keep the existing file so the agent can build on it).
+2. Agent invocation: CWD is the task's worktree (for code edits via Read/Edit/Write on project files). The stage prompt gives it the **absolute path** to `.stagent/tasks/<id>/<stage>.md` and tells it to write there.
+3. Agent exits → exit hooks validate the artifact (`file_exists`, `section_check`, `min_words`).
+4. Pass → `stage.completed`; artifact stays. Fail → retry or fail; artifact persists for the next attempt. Redirect → both stages' artifacts persist; the target's session resumes with the redirect message prepended.
+5. **Cross-stage reads:** `code`'s prompt includes "your plan is at `.stagent/tasks/<id>/plan.md`." The agent reads it directly. Continuity across stages without any reconciliation step.
+6. **Cleanup:** the `cleanup` stage at the end of the default flow can move `.stagent/tasks/<id>/` to `.stagent/archive/<id>/` (or leave it — markdown is tiny).
+
+### Why this layout
+
+- **Not in the worktree:** worktree is for code. Mixing workflow files in conflates two concerns and forces the daemon to chase artifacts across N worktree paths.
+- **Not committed:** would pollute project git history with workflow output. The committed half (`prompts/`, `templates/`) is workflow *definition*. The gitignored half (`tasks/`, `archive/`, `stagent.db`) is workflow *state*.
+- **Same names everywhere:** stage `code` → prompt at `prompts/stages/code.md` → template at `templates/stages/code.md` → artifact at `tasks/<id>/code.md`. One identifier, four files, zero indirection.
 
 ## Concurrency
 
@@ -528,7 +551,10 @@ The goal: every path through the state machine has a test that pins it. Adding a
 - **Run budget:** `max_runs` per stage, counting all entries (initial + retry + redirect + human_goto). Defaults: 3 for agent/script, 1 for human.
 - **Failure escalation:** status change only. Notifications are a user-wired hook.
 - **Skill files:** `.stagent/skills/<name>.md`, checked into git. Stage `Skill` field is optional; falls back to role's skill, then to a built-in default.
-- **Default flow** (what `stagent init` scaffolds): `define → plan → plan_review → code → review → ci → human_review`. Loops happen via `review`/`ci` redirecting to `code`.
+- **Default flow** (what `stagent init` scaffolds): `define → plan → plan_review → code → review → ci → human_review → merge_wait → cleanup`. Loops happen via `review`/`ci` redirecting to `code`. `merge_wait` polls for the PR to be merged (via `gh pr view`); `cleanup` removes the worktree, deletes the branch, archives the task dir, and emits `task.completed`.
+- **Prompts (not "skills"):** `prompts/roles/<role>.md` is the system prompt set once per session; `prompts/stages/<stage>.md` is the user message sent every entry. Templates at `templates/stages/<stage>.md`; artifacts at `tasks/<id>/<stage>.md`. Stage name is the universal identifier.
+- **Database scope:** per-user, local, gitignored at `.stagent/stagent.db`. Multi-dev collaboration happens via PRs (the code), not a shared event log. Backups are user-handled (Time Machine handles the single-file DB; Litestream/rsync if cross-machine sync is wanted).
+- **Daemon runs foreground only in v1.** `stagent run` blocks the terminal until Ctrl-C. The SwiftUI app spawns it as a subprocess when needed. No `launchd` / `systemd` integration in v1.
 
 ## Verification (resolved)
 
