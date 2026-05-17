@@ -101,14 +101,16 @@ stages:
     max_runs: 3
     hooks:
       exit:
-        # Reviewer must check "Review approved". If they don't, redirect back
-        # to code with the body of "Review notes" as the message.
+        # Reviewer appends a new "### Pass N" subsection under "## Reviews"
+        # on every entry. We check the LATEST pass (`[-1]` = highest N).
+        # If any box is unticked, the whole Pass section becomes the
+        # redirect message back to code.
         - section_check:
-            section: "Review plan"
+            section: "Reviews > Pass [-1]"
             expect: all_checked
             on_fail:
               redirect_to: code
-              message_from_section: "Review notes"
+              message_from_section: "Reviews > Pass [-1]"
 
   human_review:
     type: human
@@ -253,12 +255,13 @@ The default template structure (matches the default flow's hooks):
 - [ ] (Replace with the first concrete task)
 - [ ] (Add more granular items as needed)
 
-## Review plan
-<!-- Reviewer must check "Review approved". If not, "Review notes" becomes the redirect message. -->
-- [ ] Review approved
-
-## Review notes
-<!-- Empty if approved. If not, write what needs to change here. -->
+## Reviews
+<!--
+Reviewer appends "### Pass N" on each entry. The section_check hook keys
+on `Reviews > Pass [-1]` (latest pass). "Review approved" is always the
+LAST checkbox; it means no critical/high/medium issues remain. Low-
+severity nits do not block approval. Lint and type errors are CI's job.
+-->
 
 ## Code
 <!-- Filled by the developer agent. -->
@@ -266,6 +269,40 @@ The default template structure (matches the default flow's hooks):
 <!-- Implementation notes. -->
 ```
 
-See [`scaffold/task.md`](../scaffold/task.md) for the version `stagent init` actually emits (with explanatory comments in every section).
+See [`scaffold/.stagent/templates/task.md`](../scaffold/.stagent/templates/task.md) for the version `stagent init` actually emits (with explanatory comments in every section and the severity rubric inline).
 
 If you change the section headings, update the corresponding hook `section:` references in `.stagent.yaml`.
+
+### The Pass-N review pattern
+
+Each entry to the `review` stage appends a new `### Pass N` subsection under `## Reviews`. The reviewer never overwrites prior passes; the file keeps the full audit trail.
+
+```markdown
+## Reviews
+
+### Pass 1
+- [ ] Tests cover the new behavior on the primary path
+- [x] Public API changes are documented
+- [ ] Review approved
+
+The retry logic in client.go:142 swallows network errors silently —
+return them so callers can decide. **Severity: high.** Also no test
+for the auth-expired path. **Severity: medium.**
+
+### Pass 2
+- [x] Tests cover the new behavior on the primary path
+- [x] Public API changes are documented
+- [x] Review approved
+
+LGTM. Network errors now propagate; auth-expired path covered.
+```
+
+The hook syntax `"Reviews > Pass [-1]"` resolves to the H3 subsection whose name matches `Pass N` with the highest integer N. The same syntax in `message_from_section` returns the full text of that subsection (checkboxes + notes) as the redirect message — so the developer sees exactly which boxes were unticked and the reviewer's reasoning.
+
+**Why a new section each pass instead of clearing in place:**
+
+- The append-only design tenet applies to documents as well as events. Editing prior verdicts is a destructive operation; appending is not.
+- Re-reviewers can see what prior passes raised and verify each item was addressed. Hiding history makes them re-discover everything.
+- The committed task file in `git log` shows the workflow's full progression — useful in PR archaeology.
+
+**Should the new reviewer see the old reviews?** Yes. Continuity is real value, and anchoring risk is manageable via the stage prompt ("verify whether each prior concern was addressed; raise new issues only if you see them in the latest diff"). Session boundness (`bound: stage` vs `bound: task`) controls Claude's *memory*, not the reviewer's *visibility* into the task file.

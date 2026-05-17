@@ -6,14 +6,18 @@ start, pause, and edit while it works — your call).
 
 Sections are wired to the workflow:
   - Problem, Context, Possible solutions   ← human-written, planning context
-  - Implementation plan                    ← human-written checklist; code stage
-                                             must check every box to complete
-  - Review plan                            ← reviewer must check "Review approved";
-                                             if not, "Review notes" becomes the
-                                             redirect message back to the developer
-  - Code, Review                           ← agents fill these in during execution
+  - Implementation plan                    ← human-written checklist; the
+                                             code stage must check every
+                                             box to complete
+  - Reviews                                ← reviewer appends "### Pass N"
+                                             on each review entry; the
+                                             section_check hook keys on
+                                             the latest pass. Prior passes
+                                             stay as audit trail.
+  - Code                                   ← developer agent fills this
 
-Comments like this one (HTML comments) are ignored. Delete or keep them.
+Comments like this one (HTML comments) are ignored by hooks. Delete or
+keep them as you like.
 -->
 
 ## Problem
@@ -61,27 +65,41 @@ remain unchecked and continues.
 - [ ] (Replace with the first concrete task)
 - [ ] (Add more granular items as needed)
 
-## Review plan
+## Reviews
 
 <!--
-What the reviewer must approve. The default is one box:
-"Review approved." If you want the reviewer to verify specific things
-(coverage, perf, docs updated), add more boxes here.
+On every entry to the `review` stage, the reviewer appends a new
+"### Pass N" subsection here. The section_check hook keys on the LATEST
+pass (`Reviews > Pass [-1]`). Prior passes stay in place as audit trail.
 
-If the reviewer wants changes instead of approving, they leave
-"Review approved" UNchecked and write feedback in "Review notes"
-below. The hook then redirects back to `code` with those notes
-prepended to the developer's next prompt.
--->
+Each Pass section is a checklist followed by free-form notes. If any
+box in the latest pass is unchecked, the whole Pass section becomes
+the redirect message back to the developer.
 
-- [ ] Review approved
+"Review approved" is the FINAL checkbox — the reviewer evaluates each
+specific criterion first, then ticks "approved" only if every prior
+box is also ticked AND there are no critical, high, or medium severity
+issues remaining in the notes. Low-severity nits do NOT block
+approval; the reviewer can note them under a "Nits" sub-block for the
+developer to consider but should still tick "approved."
 
-## Review notes
+Severity rubric:
+  - critical:  data loss, security hole, will break in production
+  - high:      wrong behavior on a documented path, regression
+  - medium:    correctness gap on an edge case, missing test for the
+               primary path, API contract issue
+  - low / nit: style, naming, micro-perf, doc typos
 
-<!--
-Empty if approved. If review is NOT approved, the reviewer writes
-what needs to change here, and the text becomes the message the
-developer sees when resumed.
+Lint, formatting, and type errors are caught by CI in the `pr` stage —
+do NOT add boxes for them here.
+
+To customize the first pass, un-comment the block below and add any
+project-specific must-verify items above "Review approved":
+
+  ### Pass 1
+  - [ ] Tests cover the new behavior on the primary path
+  - [ ] Public API changes are documented
+  - [ ] Review approved
 -->
 
 ## Code

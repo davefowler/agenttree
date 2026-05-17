@@ -1,0 +1,154 @@
+# stagent config — declares roles, stages, flows, and (optionally) commands.
+# Loaded at runner start and on SIGHUP. See ./docs/configuration/ for details.
+
+project: {{.Project}}
+
+# ─── Roles ────────────────────────────────────────────────────────────
+# Role prompts live at .stagent/prompts/roles/<name>.md by convention.
+roles:
+
+  developer:
+    model: opus
+    dangerous: true        # required true for agent roles in v1
+    bound: task            # one session per (task, role); continues across loops
+
+  reviewer:
+    model: sonnet
+    dangerous: true
+    bound: stage           # fresh session per review pass
+
+# ─── Tasks ────────────────────────────────────────────────────────────
+# One markdown file per task at <tasks_dir>/<id>-<slug>.md.
+tasks_dir: tasks
+
+# ─── Stages ───────────────────────────────────────────────────────────
+# Stage prompts live at .stagent/prompts/stages/<name>.md by convention.
+# Hooks reference sections within the task file via "H2 > H3 > ..." paths.
+stages:
+
+  setup:
+    type: script
+    max_runs: 3
+    hooks:
+      enter:
+        - run_shell:
+            cmd: "git worktree add {{.Task.WorktreeDir}} -b {{.Task.Branch}} origin/main"
+            fail_on_nonzero: true
+        # Add project install / fixture steps here. Examples:
+        # - run_shell: { cmd: "cd {{.Task.WorktreeDir}} && go mod download" }
+        # - run_shell: { cmd: "cd {{.Task.WorktreeDir}} && npm ci" }
+        # - run_shell: { cmd: "cd {{.Task.WorktreeDir}} && cp .env.example .env" }
+
+  code:
+    type: agent
+    role: developer
+    max_runs: 7            # generous: pr, review, and human_review can all redirect back
+    hooks:
+      enter:
+        # Rebase on every entry; on review/CI redirects, main may have moved.
+        - run_shell:
+            cmd: "cd {{.Task.WorktreeDir}} && git rebase origin/main"
+            fail_on_nonzero: true
+      exit:
+        - run_shell: { cmd: "cd {{.Task.WorktreeDir}} && go test ./...", fail_on_nonzero: true }
+        - run_shell: { cmd: "cd {{.Task.WorktreeDir}} && go vet ./...",  fail_on_nonzero: true }
+        - section_check:
+            section: "Implementation plan"
+            expect: all_checked
+
+  pr:
+    type: script
+    max_runs: 5
+    hooks:
+      enter:
+        - run_shell: { cmd: "cd {{.Task.WorktreeDir}} && git push -u origin HEAD" }
+        - run_shell:
+            cmd: "cd {{.Task.WorktreeDir}} && gh pr create --fill || true"
+            fail_on_nonzero: false
+      tick:
+        - wait_for_ci: { min_interval: 30s, timeout: 30m }
+      exit:
+        - ci_status:
+            on_failure:
+              redirect_to: code
+              message_template: |
+                CI failed. Failing checks:
+                {{.CIFailures}}
+                See logs at {{.CILogURL}}. Fix and push again.
+
+  review:
+    type: agent
+    role: reviewer
+    max_runs: 3
+    hooks:
+      exit:
+        # Reviewer appends "### Pass N" under "## Reviews"; we check the latest.
+        - section_check:
+            section: "Reviews > Pass [-1]"     # `[-1]` = highest-N subsection
+            expect: all_checked
+            on_fail:
+              redirect_to: code
+              message_from_section: "Reviews > Pass [-1]"
+
+  human_review:
+    type: human
+    hooks:
+      tick:
+        # Two parallel completion paths:
+        #   1. `stagent approve <task>` — human approves explicitly
+        #   2. wait_for_merge tick hook detects the PR was merged in GH
+        - wait_for_merge: { min_interval: 1m, timeout: 24h }
+        # Guard against CI going red mid-review:
+        - ci_status:
+            min_interval: 5m
+            on_failure:
+              redirect_to: code
+              message_template: "CI went red during human review. Failing: {{.CIFailures}}"
+
+  cleanup:
+    type: script
+    max_runs: 1
+    hooks:
+      exit:
+        - run_shell: { cmd: "git worktree remove {{.Task.WorktreeDir}}" }
+        - run_shell:
+            cmd: "git branch -D {{.Task.Branch}} 2>/dev/null || true"
+            fail_on_nonzero: false
+
+# ─── Flows ────────────────────────────────────────────────────────────
+# Ordered lists of stage names. A task picks one at creation time
+# (`stagent new "<title>" --flow <name>`; default is "default").
+flows:
+  default:
+    - setup           # create worktree, branch, install deps
+    - code            # implement based on the task file
+    - pr              # push + open PR + wait for CI green
+    - review          # agent reviewer; redirects to code if changes requested
+    - human_review    # completes via `stagent approve` OR PR merge
+    - cleanup         # remove worktree, delete branch
+
+  quick:
+    - setup
+    - code
+    - cleanup
+
+# ─── Commands (optional) ──────────────────────────────────────────────
+# User recipes — like `just`. Templated with the task projection.
+# Keep them short; anything complex belongs as a Go command.
+commands:
+
+  ship:
+    desc: Approve the current human stage and push any local commits
+    run: |
+      stagent approve {{.Task.ID}}
+      git -C {{.Task.WorktreeDir}} push
+
+  resume:
+    desc: Resume the developer's session in a real Claude Code terminal
+    run: |
+      SID=$(stagent session {{.Task.ID}} developer)
+      cd {{.Task.WorktreeDir}} && claude --resume "$SID"
+
+# ─── Heartbeat ────────────────────────────────────────────────────────
+heartbeat:
+  interval: 2s          # how often the runner ticks
