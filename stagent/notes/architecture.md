@@ -68,7 +68,7 @@ There is no `events.update` — the log is append-only. State corrections happen
 
 ### Projections
 
-These are **SQL views** (defined in [SCHEMA.md](./SCHEMA.md)), not Go structs you write to. The Go structs below are what `SELECT` returns into:
+These are **SQL views** (defined in [schema.md](./schema.md)), not Go structs you write to. The Go structs below are what `SELECT` returns into:
 
 ```go
 type Task struct {
@@ -117,7 +117,7 @@ type Bound string
 const (
     BoundStage   Bound = "stage"     // fresh session per stage entry
     BoundTask    Bound = "task"      // one session per (task, role) — DEFAULT
-    BoundRun     Bound = "run"       // one per daemon run, across tasks    — v1: errors if used
+    BoundRun     Bound = "run"       // one per runner invocation, across tasks — v1: errors if used
     BoundForever Bound = "forever"   // one per role, persists across runs  — v1: errors if used
 )
 
@@ -125,7 +125,7 @@ type StageType string
 const (
     StageAgent  StageType = "agent"   // Claude session does the work
     StageHuman  StageType = "human"   // paused for human review
-    StageScript StageType = "script"  // daemon executes hooks deterministically
+    StageScript StageType = "script"  // runner executes hooks deterministically
 )
 
 type StageDef struct {
@@ -142,7 +142,7 @@ type StageDef struct {
 type StageHooks struct {
     Enter []Hook   // run on stage.entered; failures rollback
     Exit  []Hook   // run when the stage attempts to complete (agent exit, human approve, script tick says "done")
-    Tick  []Hook   // run every daemon tick while in this stage (script + human stages; not agent)
+    Tick  []Hook   // run every runner tick while in this stage (script + human stages; not agent)
 }
 
 type Hook interface {
@@ -224,7 +224,7 @@ heartbeat tick ──▶ resolves first stage in flow
          agent             human             script
             │                 │                 │
    start/resume claude    wait for         run tick hooks
-   session                stagent approve  each daemon tick
+   session                stagent approve  each runner tick
             │                 │                 │
    process exits         user runs        until tick hooks
    (any reason)          stagent approve  report done
@@ -309,8 +309,8 @@ A `Session` is a Claude session ID. Its scope is controlled by the role's `Bound
 |---|---|---|
 | `stage` | `(task, role, stage, entry_number)` | Fresh memory every time the role enters a stage. Good for "fresh-eyes" reviewers. |
 | `task` (default) | `(task, role)` | One session per role per task. Continues across all stages, retries, and redirect loops for that role. **Current default.** |
-| `run` | `(daemon_run_id, role)` | One session per role across all tasks within one `stagent run` invocation. *v1: errors if used.* |
-| `forever` | `(role)` | One session per role, persists across daemon restarts. *v1: errors if used.* |
+| `run` | `(runner_id, role)` | One session per role across all tasks within one `stagent run` invocation. *v1: errors if used.* |
+| `forever` | `(role)` | One session per role, persists across runner restarts. *v1: errors if used.* |
 
 `task` is the default because it preserves context where it matters (review loops, retries) while keeping tasks isolated from each other. `stage` is the opt-in for roles that benefit from amnesia — usually reviewers.
 
@@ -443,7 +443,7 @@ tasks/                              ← COMMITTED to git
     task.md                         ← OPTIONAL single template; used by `stagent task new "<title>"`
 
   stagent.db                        ← GITIGNORED — per-user event log
-  daemon.pid                        ← GITIGNORED — per-user
+  runner.pid                        ← GITIGNORED — per-user
 ```
 
 ### The task file
@@ -521,31 +521,33 @@ The gitignored half is just runtime: SQLite log, PID file, worktrees. Everything
 
 ## Concurrency
 
-The heartbeat is one process, running a select loop. Within the loop:
+The runner is one OS process. Inside it:
 
-- **Tasks run in parallel** (one goroutine per active task). Tasks are independent — different worktrees, different sessions, different stages.
+- **One heartbeat goroutine** runs the select loop — emits ticks, services CLI commands, picks up new tasks.
+- **One task worker goroutine per active task.** A *task worker* owns the per-task state machine: spawning the Claude child for the current agent stage, watching it, running enter/exit hooks, advancing the task to the next stage.
+- **Tasks run in parallel** (workers are independent — different worktrees, different sessions, different stages).
 - **Within a task, stages are serial.** The state machine doesn't have a notion of "two stages of the same task at once."
 - **Hook execution is serial within a stage.** Enter and exit hooks run in declared order; the first failure short-circuits.
 
-SQLite handles the concurrent appends without contention (see SCHEMA.md). The daemon never holds a long-running transaction.
+SQLite handles the concurrent appends without contention (see [schema.md](./schema.md)). The runner never holds a long-running transaction.
 
 ## Process model
 
-Agent stages run `claude -p` as a **direct child** of the daemon. The per-task goroutine calls `cmd.Start()`, then `cmd.Wait()` in a goroutine of its own. When the child exits — for any reason — Wait returns and the goroutine emits `session.ended` and triggers exit hook evaluation. **No periodic PID polling.** Event-driven.
+Agent stages run `claude -p` as a **direct child** of the runner. The task worker calls `cmd.Start()`, then `cmd.Wait()` in a goroutine of its own. When the child exits — for any reason — Wait returns and the worker emits `session.ended` and triggers exit hook evaluation. **No periodic PID polling.** Event-driven.
 
-The daemon never blocks on a single agent — each agent has its own goroutine; the main loop continues to service ticks, CLI commands, and other agents' completions.
+The runner never blocks on a single agent — each task worker manages its own Claude child; the heartbeat continues to service ticks, CLI commands, and other workers' completions.
 
-**Crash recovery.** If the daemon dies mid-agent (OOM, kill, segfault), child processes get reparented to PID 1 and the daemon loses its handle. On next start, the daemon replays the event log; any `session.started` without a matching `session.ended` indicates a process was running. For each:
+**Crash recovery.** If the runner dies mid-agent (OOM, kill, segfault), child processes get reparented to PID 1 and the runner loses its handle. On next start, the runner replays the event log; any `session.started` without a matching `session.ended` indicates a process was running. For each:
 
 1. `kill(pid, 0)` to test liveness.
-2. If still alive: emit `session.ended` with `reason: "daemon_restart_orphan"` and let the retry budget decide (most likely: retry the stage with the agent's JSONL still intact, since `--resume` will pick up where it left off).
+2. If still alive: emit `session.ended` with `reason: "runner_restart_orphan"` and let the retry budget decide (most likely: retry the stage with the agent's JSONL still intact, since `--resume` will pick up where it left off).
 3. If dead: same emission, same handling.
 
-This gives full crash safety without paying for polling in the hot path. The PID file at `.stagent/daemon.pid` prevents two daemons starting against the same DB.
+This gives full crash safety without paying for polling in the hot path. The PID file at `.stagent/runner.pid` prevents two runners starting against the same DB.
 
 ## Tick scheduling and forced polls
 
-Tick hooks have a `MinInterval` (default = the heartbeat's tick interval). The heartbeat tracks `last_run_at` per hook and skips hooks whose interval hasn't elapsed. So `wait_for_ci` set to `min_interval: 30s` polls every 30s regardless of the daemon's tick frequency.
+Tick hooks have a `MinInterval` (default = the heartbeat's tick interval). The heartbeat tracks `last_run_at` per hook and skips hooks whose interval hasn't elapsed. So `wait_for_ci` set to `min_interval: 30s` polls every 30s regardless of the runner's tick frequency.
 
 `stagent poll [<task>]` emits a `force_tick` event the heartbeat sees on its next iteration. For that iteration, all tick hooks run **ignoring `min_interval`**. Without args, all active tasks; with a task ID, that one only.
 
@@ -575,7 +577,7 @@ Implications:
 
 - If the agent thought it was done but missed something (tests fail, a checkbox in the artifact is unchecked, the output file is empty), the exit hook catches it. The agent resumes with structured feedback and tries again.
 - If the agent crashed mid-work, same path runs: hooks fail, retry. Recovery code is the same code as the normal "you missed a step" path.
-- The state machine is fully recoverable across daemon restarts — the daemon only needs to read events + check process state.
+- The state machine is fully recoverable across runner restarts — the runner only needs to read events + check process state.
 - We never parse Claude's stop reasons, token-exhaustion messages, or exit codes. They're noise.
 
 The exit hooks themselves are how you encode "is this done?" — typically `section_check: { file: plan.md, section: Completion, expect: all_checked }` catches a half-finished artifact with unchecked items.
@@ -595,8 +597,8 @@ stagent new "<title>" --flow <f>  # opt into a non-default flow
 stagent new <path/to/file.md>     # register an existing user-written file as a task
 stagent list                      # all tasks; current stage; status
 stagent show <id>                 # detail view of one task (current stage, attempts, sessions)
-stagent run                       # runs the daemon (per-repo, foreground)
-stagent status                    # short status — same data as `list` plus daemon liveness
+stagent run                       # runs the runner (per-repo, foreground)
+stagent status                    # short status — same data as `list` plus runner liveness
 stagent log <id>                  # event log for a task (tails)
 stagent approve <id>              # emits human.approved (completes a human stage)
 stagent goto <id> <stage> [-m]    # emits stage.entered with reason=human_goto; -m prepends a message to the resumed agent's prompt
@@ -636,9 +638,9 @@ The Mac viewer is a separate, thin app:
 - **Writes** by shelling out to the `stagent` CLI (`Process` API).
 - **Opens terminals** by shelling out to `osascript` against iTerm — e.g. to resume a Claude session in a real Claude Code terminal: `osascript -e 'tell application "iTerm" to ... claude --resume <uuid>'`.
 
-The daemon doesn't know the viewer exists. No IPC, no API, no sentinel file. The SQLite file is the contract.
+The runner doesn't know the viewer exists. No IPC, no API, no sentinel file. The SQLite file is the contract.
 
-**Liveness:** the daemon writes a PID file at `.stagent/daemon.pid` on start and removes it on graceful exit. `stagent status` checks `kill -0 $(cat .stagent/daemon.pid)` to know if the daemon is alive. Cheaper and more reliable than emitting periodic events.
+**Liveness:** the runner writes a PID file at `.stagent/runner.pid` on start and removes it on graceful exit. `stagent status` checks `kill -0 $(cat .stagent/runner.pid)` to know if the runner is alive. Cheaper and more reliable than emitting periodic events.
 
 ## Testing strategy
 
@@ -657,13 +659,13 @@ The goal: every path through the state machine has a test that pins it. Adding a
 
 ## Decisions (locked in)
 
-- **Daemon scope:** per-repo. `stagent run` in each project's directory. No global daemon, no project registry, no IPC. The Mac viewer talks to one project at a time (open from a project's worktree path).
+- **Runner scope:** per-repo. `stagent run` in each project's directory. No global runner, no project registry, no IPC. The Mac viewer talks to one project at a time (open from a project's worktree path).
 - **Containers:** none in v1. Agents run on the host inside the task's git worktree with `--dangerously-skip-permissions`. The worktree provides enough isolation that a misbehaving agent doesn't corrupt the user's main checkout. **Future:** a single shared container that holds all stagent activity, scoped to "protect the user's machine," not "protect tasks from each other."
 - **GitHub integration:** none in v1. `stagent` is purely local. Users wire `gh` calls via `run_shell` hooks or `commands:` recipes if they want PR/issue lifecycle.
 - **Task creation:** title + optional `--flow`. Nothing else.
 - **Worktrees:** always. `.worktrees/task-<id>/` on branch `task-<id>`. No in-place mode.
 - **Concurrency:** parallel per task, serial within a task.
-- **Stage types:** `agent`, `human`, `script` (not "heartbeat" — that's the daemon's name, not a stage type). Tick hooks on script stages live at `hooks.tick`.
+- **Stage types:** `agent`, `human`, `script` (not "heartbeat" — that's the runner's name, not a stage type). Tick hooks on script stages live at `hooks.tick`.
 - **Routing primitives:** Hook returns `Pass | Fail | Redirect(stage, message)`. Loop-backs (review→code) are redirects to earlier stages. `stagent goto <task> <stage> [-m]` is the human-issued redirect. No `rewind`, no `stage.rewound`.
 - **Run budget:** `max_runs` per stage, counting all entries (initial + retry + redirect + human_goto). Defaults: 3 for agent/script, 1 for human.
 - **Failure escalation:** status change only. Notifications are a user-wired hook.
@@ -675,7 +677,7 @@ The goal: every path through the state machine has a test that pins it. Adding a
 - **Session bounds:** roles default to `bound: task` (one session per task, continues across stage loops). Opt into `bound: stage` for fresh-eyes-each-time roles. `run` and `forever` ship as planned values but error in v1.
 - **Prompts (not "skills"):** `prompts/roles/<role>.md` is the system prompt set once per session; `prompts/stages/<stage>.md` is the user message sent every entry. Templates at `templates/stages/<stage>.md`; artifacts at `tasks/<id>/<stage>.md`. Stage name is the universal identifier.
 - **Database scope:** per-user, local, gitignored at `.stagent/stagent.db`. Multi-dev collaboration happens via PRs (the code), not a shared event log. Backups are user-handled (Time Machine handles the single-file DB; Litestream/rsync if cross-machine sync is wanted).
-- **Daemon runs foreground only in v1.** `stagent run` blocks the terminal until Ctrl-C. The SwiftUI app spawns it as a subprocess when needed. No `launchd` / `systemd` integration in v1.
+- **Runner is foreground-only in v1.** `stagent run` blocks the terminal until Ctrl-C. The SwiftUI app spawns it as a subprocess when needed. No `launchd` / `systemd` integration in v1.
 
 ## Verification (resolved)
 

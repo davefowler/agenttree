@@ -8,7 +8,7 @@ A `stagent` workflow is a **flow** — an ordered list of **stages**. Each stage
 
 - **`agent`** — a Claude session does the work
 - **`human`** — paused for human review (or auto-completes when an external signal arrives, like a PR merge)
-- **`script`** — automated by the daemon (CI watch, git ops, cleanup)
+- **`script`** — automated by the runner (CI watch, git ops, cleanup)
 
 A **task** is a single markdown file (`tasks/<id>-<slug>.md`) with sections that represent stage outputs. Stages fill in their sections; hooks validate by checking checkboxes and section content. The user writes the task spec themselves (in Cursor, vim, whatever) — stagent runs the **execution loop** (code → CI → review → merge), not the planning loop.
 
@@ -45,7 +45,7 @@ stagent new tasks/fix-login.md
 # Option B: start from the template, fill it in after.
 stagent new "Fix login redirect bug"
 
-stagent run                               # starts the daemon (per-repo, foreground)
+stagent run                               # starts the runner (per-repo, foreground)
 stagent status                            # show all tasks and stages
 ```
 
@@ -66,22 +66,24 @@ tasks/                                 # COMMITTED — one markdown file per tas
     task.md                            # COMMITTED — optional template for new task files
 
   stagent.db                           # GITIGNORED — per-dev event log (SQLite, WAL)
-  daemon.pid                           # GITIGNORED — per-dev daemon liveness
+  runner.pid                           # GITIGNORED — per-dev runner liveness
 ```
 
 `.gitignore` snippet:
 
 ```
 .stagent/stagent.db*
-.stagent/daemon.pid
+.stagent/runner.pid
 .worktrees/
 ```
 
 ## Docs
 
-- [ARCHITECTURE.md](./ARCHITECTURE.md) — types, lifecycle, design
-- [SCHEMA.md](./SCHEMA.md) — event log + views
-- [CONFIG.md](./CONFIG.md) — `.stagent.yaml` format
+User-facing documentation lives in `docs/` and is built with MkDocs (`mkdocs serve` from this directory). Implementation notes — the "why we built it this way" doc set — live in `notes/`:
+
+- [notes/architecture.md](./notes/architecture.md) — types, lifecycle, design
+- [notes/schema.md](./notes/schema.md) — event log + views
+- [notes/config.md](./notes/config.md) — `.stagent.yaml` format
 
 ## Status
 

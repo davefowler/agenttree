@@ -208,7 +208,7 @@ WHERE NOT s.ended;
 When the event schema or a payload shape changes:
 
 1. **Additive changes** (new event types, new payload fields) require no migration. Old events just don't have the new fields.
-2. **View changes** are dropped and recreated on daemon startup — cheap, no data loss.
+2. **View changes** are dropped and recreated on runner startup — cheap, no data loss.
 3. **Payload reinterpretation** (renaming a field, restructuring) is handled by an upcaster in Go: on read, old payload shapes are translated to current. No DB rewrite.
 
 The events table itself should not need a migration. If it ever does, the migration is "create new DB, replay events from the old one through current handlers."
@@ -221,4 +221,4 @@ No sentinel file, no API. The SwiftUI viewer watches `.stagent/stagent.db-wal` w
 SELECT * FROM events WHERE id > :cursor ORDER BY id;
 ```
 
-That's the diff. The viewer also re-queries the `tasks` view to refresh its list. Daemon liveness comes from a PID file at `.stagent/daemon.pid` — not from periodic events.
+That's the diff. The viewer also re-queries the `tasks` view to refresh its list. Runner liveness comes from a PID file at `.stagent/runner.pid` — not from periodic events.

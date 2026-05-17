@@ -1,6 +1,6 @@
 # Config (`.stagent.yaml`)
 
-Single file. Declares roles, stages, flows, hooks, and optional commands. Loaded once at daemon start and on `SIGHUP`.
+Single file. Declares roles, stages, flows, hooks, and optional commands. Loaded once at runner start and on `SIGHUP`.
 
 ## Full example
 
@@ -172,7 +172,7 @@ commands:
 
 # ─── Heartbeat ────────────────────────────────────────────────────────
 heartbeat:
-  interval: 2s          # how often the daemon ticks
+  interval: 2s          # how often the runner ticks
 ```
 
 ## Schema rules
@@ -184,7 +184,7 @@ heartbeat:
 - **No `output:`, `skill:`, `template:`, or per-stage path overrides.** Everything is by convention or by section reference.
 - **`max_runs`** is the total times this stage may be entered across the task (any reason — initial, retry, redirect, human_goto). Defaults: 3 for `agent`/`script`, 1 for `human`.
 - **`hooks.tick` is valid** on `type: script` AND `type: human` stages. Not on `agent` stages — agents own their own turn. On human stages, tick hooks run while waiting (use `min_interval` to avoid hot-polling).
-- **The agent never signals completion explicitly.** When its process exits (any reason), the daemon runs exit hooks. Encode "is this done?" by writing exit hooks — typically `section_check` on a `Completion` subsection inside the stage's section in the task file.
+- **The agent never signals completion explicitly.** When its process exits (any reason), the runner runs exit hooks. Encode "is this done?" by writing exit hooks — typically `section_check` on a `Completion` subsection inside the stage's section in the task file.
 - **Hooks return one of four verdicts:** `Pass` (satisfied; complete if others agree), `NotYet` (tick hooks only; keep waiting), `Fail` (retry-or-fail), `Redirect(stage, message)` (route to chosen stage; loops happen this way).
 - **A stage with tick hooks completes** when all tick hooks return `Pass` on the same tick AND exit hooks then pass.
 - **Human stages complete** via EITHER `stagent approve <task>` OR all tick hooks returning `Pass`. Whichever fires first.
