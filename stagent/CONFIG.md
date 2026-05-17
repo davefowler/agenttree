@@ -40,7 +40,6 @@ stages:
         - file_exists: { path: spec.md }
         - min_words: { file: spec.md, section: Approach, min: 50 }
         - section_check: { file: spec.md, section: Completion, expect: all_checked }
-        # implicit stage_complete checkbox check added automatically
 
   plan:
     type: agent
@@ -128,7 +127,6 @@ commands:
 # ─── Heartbeat ────────────────────────────────────────────────────────
 heartbeat:
   interval: 2s          # how often the daemon ticks
-  sentinel: .stagent/heartbeat.json
 ```
 
 ## Schema rules
@@ -139,7 +137,7 @@ heartbeat:
 - **`output` is required** on `agent` stages. Forbidden on others.
 - **`retries` defaults to 0**. Means 1 attempt total. `retries: 2` means up to 3 attempts.
 - **`hooks.heartbeat` is only valid** on `type: heartbeat` stages.
-- **Every `agent` stage's output template includes a `stage_complete` checkbox** appended automatically — you don't need to add it to your hooks. The implicit exit hook checks it.
+- **The agent never signals completion explicitly.** When its process exits (any reason), the heartbeat runs the exit hooks. Encode "is this done?" by writing exit hooks — typically `section_check` on a Completion section in the output artifact.
 
 ## Hooks reference (v1)
 
@@ -165,4 +163,4 @@ Skills are markdown files passed to `claude -p` as the system prompt. They live 
 2. otherwise `Role.SkillFile`
 3. otherwise a built-in default
 
-Skills must end with the same `stage_complete` reminder so the agent knows what signals "done."
+Skills should remind the agent that the system judges completion via exit hooks — so the artifact must satisfy them (e.g. all checkboxes ticked, tests passing) before the agent exits.

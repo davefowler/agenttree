@@ -20,12 +20,22 @@ CREATE INDEX idx_events_task         ON events(task_id, id);
 CREATE INDEX idx_events_type         ON events(type, id);
 CREATE INDEX idx_events_task_stage   ON events(task_id, stage, id);
 
--- WAL mode for concurrent readers (SwiftUI viewer, multiple CLI invocations)
+-- Enforce append-only at the lowest level. Future contributors cannot
+-- accidentally violate the invariant.
+CREATE TRIGGER events_no_update BEFORE UPDATE ON events
+BEGIN SELECT RAISE(ABORT, 'events are append-only'); END;
+
+CREATE TRIGGER events_no_delete BEFORE DELETE ON events
+BEGIN SELECT RAISE(ABORT, 'events are append-only'); END;
+
+-- WAL mode for concurrent readers (SwiftUI viewer, multiple CLI invocations).
 PRAGMA journal_mode = WAL;
 PRAGMA synchronous = NORMAL;
 ```
 
-That's it. There are no other writable tables. State corrections happen by appending events, never by updating rows.
+That's it. The table is INSERT-only — no UPDATE, no DELETE, ever. State corrections happen by appending corrective events. This is enforced by triggers, not just convention.
+
+**Why append-only works locking-wise.** SQLite in WAL mode lets readers run without blocking writers, and writers serialize against each other only during the commit (sub-millisecond for single-row inserts). Since we never UPDATE, there are no row-update conflicts. The realistic write rate — one event per agent transition, one per CLI invocation — produces invisible contention.
 
 ### Event types
 
@@ -44,7 +54,6 @@ That's it. There are no other writable tables. State corrections happen by appen
 | `session.resumed` | yes | yes | `{claude_session_id}` |
 | `hook.fired` | yes | — | `{hook, result, message}` |
 | `human.approved` | yes | — | `{actor_user}` |
-| `heartbeat.tick` | — | — | `{tick, duration_ms}` |
 
 ## Views
 
@@ -218,17 +227,12 @@ When the event schema or a payload shape changes:
 
 The events table itself should not need a migration. If it ever does, the migration is "create new DB, replay events from the old one through current handlers."
 
-## Heartbeat sentinel
+## Push signal for the viewer
 
-Not in the database. Lives at `.stagent/heartbeat.json`:
+No sentinel file, no API. The SwiftUI viewer watches `.stagent/stagent.db-wal` with FSEvents — in WAL mode that file is touched on every commit. On change, the viewer advances its "last seen event id" cursor and runs:
 
-```json
-{
-  "tick": 12345,
-  "ts": "2026-05-16T10:23:01Z",
-  "active_tasks": 3,
-  "last_changed_task": 42
-}
+```sql
+SELECT * FROM events WHERE id > :cursor ORDER BY id;
 ```
 
-Written via atomic rename (`heartbeat.json.tmp` → `heartbeat.json`) at the end of every tick. FSEvents on this file is the push signal for the SwiftUI viewer.
+That's the diff. The viewer also re-queries the `tasks` view to refresh its list. Daemon liveness comes from a PID file at `.stagent/daemon.pid` — not from periodic events.

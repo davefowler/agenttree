@@ -5,7 +5,7 @@
 `stagent` is built around three rules that the rest of the design falls out of:
 
 1. **An event log is the only persisted state.** Tasks, stages-in-progress, sessions — none of these are tables you write to. They are SQL views over the event log.
-2. **The agent signals completion by checking a `stage_complete` box** in its output artifact. Process lifecycle (exit code, token exhaustion, killed) is *advisory*, not authoritative. If the box is checked, the stage is done. If it's not checked and the process is gone, retry.
+2. **The agent signals completion by exiting; the heartbeat decides if the work passes.** Hooks are deterministic Go code that run on process exit. Pass → stage completes. Fail → agent is resumed with the hook errors prepended to its next prompt. The agent never runs hooks, never self-judges.
 3. **Configuration is YAML, state is SQLite, documents are markdown.** Each is read or written by the tool best suited to it.
 
 Everything below derives from these rules.
@@ -49,7 +49,7 @@ const (
     EventTaskAborted      EventType = "task.aborted"
 
     EventStageEntered     EventType = "stage.entered"     // attempt N started
-    EventStageCompleted   EventType = "stage.completed"   // checkbox checked + exit hooks passed
+    EventStageCompleted   EventType = "stage.completed"   // exit hooks passed
     EventStageFailed      EventType = "stage.failed"      // attempts exhausted
     EventStageRedirected  EventType = "stage.redirected"  // hook moved us to a different stage
     EventStageRetrying    EventType = "stage.retrying"
@@ -60,7 +60,6 @@ const (
 
     EventHookFired        EventType = "hook.fired"
     EventHumanApproved    EventType = "human.approved"
-    EventHeartbeatTick    EventType = "heartbeat.tick"
 )
 ```
 
@@ -165,34 +164,35 @@ heartbeat tick ──▶ resolves first stage in flow
          agent             human            heartbeat
             │                 │                 │
    start/resume claude    wait for         run heartbeat
-   session, write         stagent approve  hooks each tick
-   stage_complete         (no session)     until exit hook
-   to output file                          passes
+   session                stagent approve  hooks each tick
             │                 │                 │
-            ▼                 ▼                 ▼
-   heartbeat checks      Event: human.    Event: stage.
-   the checkbox          approved         completed
+   process exits         user runs        until exit hooks
+   (any reason)          stagent approve  pass
             │                 │                 │
-            ▼                 ▼                 │
-   checked AND exit                            │
-   hooks pass?                                 │
-   ┌─────────┴─────────┐                       │
-   yes                 no                      │
-   │                   │                       │
-   ▼                   ▼                       │
-   Event:        attempts < retries?           │
-   stage.        ┌──────┴──────┐               │
-   completed     yes           no              │
-                 │             │               │
-                 ▼             ▼               │
-            Event:        Event:               │
-            stage.        stage.failed         │
-            retrying      (escalate)           │
-                 │                             │
-                 └──▶ stage.entered            │
-                      (attempt=N+1)            │
-                                               │
-                              ┌────────────────┘
+            └─────────┬───────┘                 │
+                      ▼                         │
+            heartbeat runs                      │
+            exit hooks                          │
+                      │                         │
+            ┌─────────┴─────────┐               │
+            pass                fail            │
+            │                   │               │
+            ▼                   ▼               │
+            Event:        attempts < retries?   │
+            stage.        ┌──────┴──────┐       │
+            completed     yes           no      │
+                          │             │       │
+                          ▼             ▼       │
+                    Event:         Event:       │
+                    stage.         stage.failed │
+                    retrying       (escalate)   │
+                          │                     │
+                          ▼                     │
+                    stage.entered (attempt=N+1) │
+                    resume agent with           │
+                    hook errors in prompt       │
+                                                │
+                              ┌─────────────────┘
                               ▼
                   next stage in flow
                   (or task.completed if last)
@@ -205,13 +205,15 @@ Every transition is driven by the heartbeat reading the event log + checking art
 ### `agent` stages
 
 - Heartbeat sees the stage is current and no session is active for `(task, role)`.
-- Heartbeat invokes `claude -p "<initial prompt>" --output-format=stream-json`, captures the session ID, emits `session.started`.
-- The prompt instructs the agent: write `output` file, end with a checked `- [x] stage_complete` line.
-- Each subsequent tick: check if process is still alive AND if `stage_complete` is checked in the output file.
-  - Checked + exit hooks pass → `stage.completed`
-  - Process dead + unchecked + attempts left → `stage.retrying` → re-enter with `--resume <id>`
-  - Process dead + unchecked + attempts exhausted → `stage.failed`
-  - Process alive → do nothing, wait for next tick
+- Heartbeat invokes `claude -p "<initial prompt>"`, captures the session ID, emits `session.started`.
+- The prompt instructs the agent what to produce (artifact name, sections to fill, checkboxes to complete).
+- While the process is running, the heartbeat does nothing — just waits.
+- When the process exits (clean finish, OOM, killed, token limit — reason doesn't matter), the heartbeat runs exit hooks:
+  - Hooks pass → `stage.completed`
+  - Hooks fail + attempts left → `stage.retrying` → re-enter with `--resume <id>`, hook errors prepended to the resume prompt
+  - Hooks fail + attempts exhausted → `stage.failed`
+
+The agent never decides when it's "done" — it just exits when it thinks so. The hooks (which include section-completion checkbox checks via `section_check`) are the authoritative judgment.
 
 ### `human` stages
 
@@ -263,29 +265,24 @@ else:
 
 Retries reuse the Claude session (same UUID, `--resume`). The agent sees its prior context plus the new attempt's prompt, which includes whatever the exit hook complained about.
 
-## How we know a session is done
+## How completion works
 
-**The checkbox is authoritative.** Process state is a hint.
+The signal that an agent stage is ready for judgment is **process exit**. Any reason — clean finish, token limit, OOM, killed — triggers the same evaluation path. The heartbeat runs the stage's exit hooks (deterministic Go) and decides:
 
-Each `agent` stage's output template ends with:
+- Hooks pass → `stage.completed`
+- Hooks fail + retries available → `stage.retrying`, resume the session with hook errors prepended to the next prompt
+- Hooks fail + no retries → `stage.failed`
 
-```markdown
----
-- [ ] stage_complete
-```
+**Agents do not run hooks. Agents do not signal completion explicitly.** They work, then exit. The system judges.
 
-The exit hooks for every agent stage include an implicit `section_check` for this box. The agent is instructed (via skill file) to check it as the final action before exiting.
+Implications:
 
-This means:
+- If the agent thought it was done but missed something (tests fail, a checkbox in the artifact is unchecked, the output file is empty), the exit hook catches it. The agent resumes with structured feedback and tries again.
+- If the agent crashed mid-work, same path runs: hooks fail, retry. Recovery code is the same code as the normal "you missed a step" path.
+- The state machine is fully recoverable across daemon restarts — the daemon only needs to read events + check process state.
+- We never parse Claude's stop reasons, token-exhaustion messages, or exit codes. They're noise.
 
-- Process exits cleanly, box checked → completed
-- Process exits cleanly, box unchecked → treat as incomplete, retry if budget allows
-- Process killed (OOM, token limit, crash), box unchecked → same as above
-- Process still running → wait
-
-We never have to parse Claude's stop reasons, token-exhaustion messages, or exit codes. The signal is in the artifact.
-
-A side benefit: this makes the workflow recoverable across `stagent` daemon restarts. The daemon goes down, comes back up, reads the checkbox state, and continues.
+The exit hooks themselves are how you encode "is this done?" — typically `section_check: { file: plan.md, section: Completion, expect: all_checked }` catches a half-finished artifact with unchecked items.
 
 ## Commands
 
@@ -334,23 +331,14 @@ Invoked as `stagent ship 42`. No magic — just shell-out with templating from t
 
 The Mac viewer is a separate, thin app:
 
-- **Reads** SQLite directly (GRDB), uses the `tasks` view.
-- **Watches** `.stagent/heartbeat.json` via FSEvents for push refresh.
+- **Reads** SQLite directly (GRDB), uses the `tasks` and `sessions` views.
+- **Watches** the SQLite WAL file (`.stagent/stagent.db-wal`) via FSEvents for push refresh. In WAL mode the `-wal` file is touched on every commit. The viewer's reaction is to advance its "last seen event id" cursor and query `SELECT * FROM events WHERE id > :cursor` to see exactly what changed.
 - **Writes** by shelling out to the `stagent` CLI (`Process` API).
-- **Opens terminals** by shelling out to `osascript` against iTerm, e.g. to resume a Claude session in a real Claude Code terminal: `osascript -e 'tell application "iTerm" to ... claude --resume <uuid>'`.
+- **Opens terminals** by shelling out to `osascript` against iTerm — e.g. to resume a Claude session in a real Claude Code terminal: `osascript -e 'tell application "iTerm" to ... claude --resume <uuid>'`.
 
-The daemon writes `heartbeat.json` (atomic rename) at the end of every tick:
+The daemon doesn't know the viewer exists. No IPC, no API, no sentinel file. The SQLite file is the contract.
 
-```json
-{
-  "tick": 12345,
-  "ts": "2026-05-16T10:23:01Z",
-  "active_tasks": 3,
-  "last_changed_task": 42
-}
-```
-
-This file is the push signal — when it changes, the viewer re-queries. No daemon needs to know the viewer exists.
+**Liveness:** the daemon writes a PID file at `.stagent/daemon.pid` on start and removes it on graceful exit. `stagent status` checks `kill -0 $(cat .stagent/daemon.pid)` to know if the daemon is alive. Cheaper and more reliable than emitting periodic events.
 
 ## Testing strategy
 

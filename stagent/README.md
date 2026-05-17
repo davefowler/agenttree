@@ -28,8 +28,9 @@ Same idea, rewritten:
 1. **One source of truth.** Events. Everything else is a projection.
 2. **One way to do each thing.** No alternate paths, no compatibility shims.
 3. **Configuration in YAML. State in SQLite. Documents on disk.** Each tool to its strength.
-4. **The agent signals done by checking a box.** Not by exit code, not by calling `stagent next`.
-5. **Crash-safe by construction.** Process death anywhere never corrupts state — at worst, the next heartbeat retries.
+4. **The agent signals done by exiting; the heartbeat judges with hooks.** Agents never run hooks or self-declare completion. Process exit triggers deterministic evaluation; failure resumes the agent with structured feedback.
+5. **Append-only, always.** No UPDATE, no DELETE, ever. Enforced by SQLite triggers. State corrections happen by appending corrective events.
+6. **Crash-safe by construction.** Process death anywhere never corrupts state — at worst, the next heartbeat retries.
 
 ## Quickstart
 
@@ -48,7 +49,7 @@ stagent status                # show all tasks and stages
 .stagent.yaml         # roles, stages, flows, hooks, commands
 .stagent/
   stagent.db          # SQLite event log (gitignored)
-  heartbeat.json      # last tick (gitignored)
+  daemon.pid          # liveness (gitignored)
   tasks/<id>/         # markdown artifacts per task
     spec.md
     plan.md
