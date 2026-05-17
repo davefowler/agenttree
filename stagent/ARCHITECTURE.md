@@ -148,18 +148,19 @@ type Hook interface {
 }
 
 type HookResult struct {
-    Verdict Verdict   // Pass | Fail | Redirect
+    Verdict Verdict   // Pass | NotYet | Fail | Redirect
     Target  string    // stage name; only set when Verdict == Redirect
     Message string    // human-readable; prepended to agent's next prompt on Fail/Redirect
 }
 
 type Verdict int
 const (
-    Pass Verdict = iota
-    Fail
-    Redirect
+    Pass     Verdict = iota   // I'm satisfied; complete stage if all others agree
+    NotYet                    // valid for tick hooks only — keep ticking
+    Fail                      // error; trigger retry/fail logic
+    Redirect                  // route to Target stage with Message
 )
-// concrete: FileExists, SectionCheck, MinWords, RunShell, WaitForCI, SectionRedirect, ...
+// concrete: FileExists, SectionCheck, MinWords, RunShell, WaitForCI, WaitForMerge, SectionRedirect, ...
 
 type Flow struct {
     Name   string
@@ -169,22 +170,26 @@ type Flow struct {
 
 ## Task creation
 
-The surface is deliberately tiny:
+Two ways to start a task; both produce a task file at `<tasks_dir>/<id>-<slug>.md`:
 
 ```
-stagent task new "<title>"                   # uses flow=default
+stagent task new <path/to/file.md>           # register an existing user-written file
+stagent task new "<title>"                   # create a fresh file from templates/task.md
 stagent task new "<title>" --flow <name>     # opt into a non-default flow
 ```
 
-Title is the only required input. Flow is the only knob. No `--priority`, `--labels`, `--from-file`, etc. — these are YAGNI for v1. If the user wants to seed the first artifact with prose, they edit it in the worktree before the heartbeat first ticks. If they want context the agent should read, they put it in the role's skill file.
+The first form is the **expected default**. Plan in Cursor/your editor; write a markdown spec with sections; hand it to stagent to execute. Stagent renames/moves the file into `<tasks_dir>/` (default `tasks/`, configurable) and assigns an ID.
 
-`task new` does three things:
+The second form is for users who want to start blank from a template — stagent copies `.stagent/templates/task.md` into `<tasks_dir>/<id>-<slug>.md`. Edit before or after starting.
+
+Either way, `task new` does three things:
 
 1. Allocates the next sequential task ID.
 2. Creates a git worktree at `.worktrees/task-<id>/` on a new branch `task-<id>`.
 3. Appends a `task.created` event:
    ```json
    { "title": "Fix login bug", "flow": "default",
+     "task_file": "tasks/001-fix-login.md",
      "worktree_dir": "/abs/path/.worktrees/task-001", "branch": "task-001" }
    ```
 
@@ -269,11 +274,14 @@ The agent never decides when it's "done" — it just exits when it thinks so. Th
 
 ### `human` stages
 
-- Heartbeat enters the stage. No session started.
-- Status becomes `waiting_human`.
-- User runs `stagent approve <task>` (or any command bound to `human.approved`).
-- Heartbeat sees the approval event, runs exit hooks, completes the stage.
-- **Tick hooks are valid on human stages** and run on every daemon tick (subject to each hook's `MinInterval`). Use them for periodic checks while the human is taking their time — e.g. polling GH to verify CI is still green during `human_review`. A tick hook that returns `Redirect(stage, message)` will route the task back to an earlier stage with the failure info.
+Two parallel completion paths:
+
+1. **Explicit approval:** user runs `stagent approve <task>`. Emits `human.approved`. Heartbeat runs exit hooks and completes.
+2. **Tick hooks all `Pass`:** when every tick hook returns `Pass` on the same tick, exit hooks run and the stage completes. This is how `human_review` can complete via "PR was merged in GH" — the `wait_for_merge` tick hook returns `NotYet` while unmerged and `Pass` once merged.
+
+Whichever happens first satisfies the stage. The two paths are equivalent — exit hooks always run before `stage.completed`.
+
+Tick hooks on human stages can also redirect: `ci_status` polling every 5min returns `Pass` while green, `Redirect(code, <ci logs>)` if it goes red during the wait. This is how a human review that takes a few hours stays honest about CI.
 
 ### `script` stages
 
@@ -403,58 +411,103 @@ Emits `stage.entered` with `reason: "human_goto"`. Same machinery as hook redire
 
 Hooks are pre-completion gates. Redirects are a hook verdict that happens to route to a chosen target. `goto` is a human exercising the same routing primitive. The three vocabularies collapse into one.
 
-## Prompts, templates, and artifacts
+## Prompts, templates, and the task file
 
-Three categories of markdown, three folders, clear ownership:
+**One markdown file per task.** Sections within it represent stages. Hooks check checkboxes inside named sections. This is the central simplification — instead of N artifact files per task, every task has exactly one document that tells its complete story.
 
 ```
+tasks/                              ← COMMITTED to git
+  001-fix-login-redirect.md         ← one file per task, sections per stage
+  002-add-user-export.md
+
 .stagent/
-  prompts/
+  prompts/                          ← COMMITTED
     roles/
-      developer.md         ← role system prompt, sent ONCE per session
+      developer.md                  ← role system prompt, sent ONCE per session
       reviewer.md
     stages/
-      define.md            ← stage prompt, sent on EVERY stage entry
-      plan.md
-      code.md
+      code.md                       ← stage prompt, sent on EVERY stage entry
       review.md
+      ...
   templates/
-    stages/
-      define.md            ← artifact template, copied to task dir on entry
-      plan.md
-      code.md
-      review.md
-  tasks/
-    001/                   ← one dir per task; gitignored
-      define.md            ← filled by the agent
-      plan.md
-      code.md
-      review.md
+    task.md                         ← OPTIONAL single template; used by `stagent task new "<title>"`
+
+  stagent.db                        ← GITIGNORED — per-user event log
+  daemon.pid                        ← GITIGNORED — per-user
 ```
 
-**Naming convention:** the stage name (`code`) is the identifier for its prompt (`prompts/stages/code.md`), its template (`templates/stages/code.md`), and its artifact (`tasks/<id>/code.md`). No per-stage overrides for prompt path, template path, or output filename — the names are the keys. Less YAML, less drift.
+### The task file
+
+User writes it themselves (in Cursor, vim, whatever). Stagent doesn't do the planning stages — it picks up an already-specified task and runs the execution loop.
+
+Two paths to create one:
+
+```
+stagent task new tasks/fix-login.md         # register an existing file the user wrote
+stagent task new "<title>"                  # creates tasks/<id>-<slug>.md from templates/task.md
+```
+
+Either way, the file lives at a path under `tasks_dir` (default `tasks/`, configurable in `.stagent.yaml`). Stagent records the path in the `task.created` event payload; every stage prompt is templated with `{{.TaskFile}}` pointing at it.
+
+Section structure is a convention, enforced by hooks. A reasonable layout the default template suggests:
+
+```markdown
+# Fix login redirect bug
+
+## Problem
+<!-- Why we're doing this. -->
+
+## Approach
+<!-- High-level plan. User-written or AI-assisted before stagent picks it up. -->
+
+## Code
+<!-- The developer agent fills this. -->
+### Notes
+<!-- What was implemented and why. -->
+### Completion
+- [ ] Implementation matches the Approach
+- [ ] Tests pass locally
+- [ ] No new lint warnings
+
+## Review
+<!-- The reviewer agent fills this. -->
+### Verdict
+- [ ] Approve
+- [ ] Request changes
+### Changes requested
+<!-- If "Request changes" is checked, the body of this section becomes the redirect message. -->
+```
+
+Hooks reference section paths:
+
+```yaml
+- section_check: { section: "Code > Completion", expect: all_checked }
+- section_redirect:
+    section_verdict: "Review > Verdict"
+    when_checked: "Request changes"
+    redirect_to: code
+    message_from_section: "Review > Changes requested"
+```
+
+Section paths are `H2 > H3` (and so on for deeper nesting). Resolution finds the H2 heading by text, then the H3 subheading under it.
 
 ### How prompts work
 
-- **Role prompt** (`prompts/roles/<role>.md`) is the system prompt set once at session creation via `--system-prompt`. It defines the role's identity, project context, conventions, what tools to favor, etc. Persists across all stage entries for that role.
-- **Stage prompt** (`prompts/stages/<stage>.md`) is sent as the user message on every stage entry. Describes the immediate task: what to produce, what sections to fill, what prior artifacts to read, where to write output (absolute path). Stage prompts are templated with task context — `{{.Task.ID}}`, `{{.Task.Title}}`, `{{.ArtifactPath}}`, `{{.PriorArtifacts}}`, plus any redirect message prepended.
+- **Role prompt** (`.stagent/prompts/roles/<role>.md`) is the system prompt set once via `--system-prompt` when the role's session is created for this task. Identity, project context, conventions. Plain markdown, no templating.
+- **Stage prompt** (`.stagent/prompts/stages/<stage>.md`) is the user message sent on every stage entry. Templated with `{{.Task.ID}}`, `{{.Task.Title}}`, `{{.TaskFile}}` (absolute path to the task md), and `{{.RedirectMessage}}` when present. Instructs the agent which section of the task file to fill in and reminds it that hooks judge completion.
 
-This means the developer-role's session retains its identity across `code → review-loop → code → ci-loop → code` while each entry tells it specifically what to do this turn.
+### Why a single task file
 
-### How artifacts are reconciled
+- **Reviewer reads the whole journey in one document.** No need to open four files in order.
+- **Naturally diffs in PRs.** Want to see what the workflow produced? Look at the task file delta.
+- **One template** instead of one per stage. Less drift between template structure and hook expectations.
+- **User-friendly entry point.** Many devs already plan tasks in markdown. Stagent reads from where they're already writing.
 
-1. Stage entered → enter hook copies `.stagent/templates/stages/<stage>.md` → `.stagent/tasks/<id>/<stage>.md` (only if dest doesn't exist; retries and redirects keep the existing file so the agent can build on it).
-2. Agent invocation: CWD is the task's worktree (for code edits via Read/Edit/Write on project files). The stage prompt gives it the **absolute path** to `.stagent/tasks/<id>/<stage>.md` and tells it to write there.
-3. Agent exits → exit hooks validate the artifact (`file_exists`, `section_check`, `min_words`).
-4. Pass → `stage.completed`; artifact stays. Fail → retry or fail; artifact persists for the next attempt. Redirect → both stages' artifacts persist; the target's session resumes with the redirect message prepended.
-5. **Cross-stage reads:** `code`'s prompt includes "your plan is at `.stagent/tasks/<id>/plan.md`." The agent reads it directly. Continuity across stages without any reconciliation step.
-6. **Cleanup:** the `cleanup` stage at the end of the default flow can move `.stagent/tasks/<id>/` to `.stagent/archive/<id>/` (or leave it — markdown is tiny).
+### Why committed (not gitignored)
 
-### Why this layout
+Task specs are shared workflow context, not per-user runtime state. The team should see all tasks; new contributors should be able to read past tasks for context. Diff-able, reviewable, archivable via git.
 
-- **Not in the worktree:** worktree is for code. Mixing workflow files in conflates two concerns and forces the daemon to chase artifacts across N worktree paths.
-- **Not committed:** would pollute project git history with workflow output. The committed half (`prompts/`, `templates/`) is workflow *definition*. The gitignored half (`tasks/`, `archive/`, `stagent.db`) is workflow *state*.
-- **Same names everywhere:** stage `code` → prompt at `prompts/stages/code.md` → template at `templates/stages/code.md` → artifact at `tasks/<id>/code.md`. One identifier, four files, zero indirection.
+The gitignored half is just runtime: SQLite log, PID file, worktrees. Everything else (config, prompts, templates, task files) is committed.
 
 ## Concurrency
 
@@ -570,7 +623,9 @@ The goal: every path through the state machine has a test that pins it. Adding a
 - **Run budget:** `max_runs` per stage, counting all entries (initial + retry + redirect + human_goto). Defaults: 3 for agent/script, 1 for human.
 - **Failure escalation:** status change only. Notifications are a user-wired hook.
 - **Skill files:** `.stagent/skills/<name>.md`, checked into git. Stage `Skill` field is optional; falls back to role's skill, then to a built-in default.
-- **Default flow** (what `stagent init` scaffolds): `define → plan → plan_review → code → pr → review → human_review → merge_wait → cleanup`. CI runs before code review (best practice — don't waste reviewer cycles on broken code). Loops happen via `pr`/`review`/`human_review` redirecting to `code`. `pr` pushes the branch, opens the PR, and waits for CI green; `human_review` has tick hooks that re-poll CI in case it goes red while a human is taking their time. `merge_wait` polls for the PR to be merged; `cleanup` removes the worktree, deletes the branch, archives the task dir, and emits `task.completed`.
+- **Default flow** (what `stagent init` scaffolds): `code → pr → review → human_review → cleanup`. Stagent runs the execution loop only; planning (problem, approach) happens elsewhere (Cursor, your editor, your brain) and the user provides a complete task file. `pr` pushes and waits for CI; `review` runs only on green CI; `human_review` completes via EITHER `stagent approve` OR a tick hook detecting the merge in GH. `cleanup` removes the worktree, deletes the branch, emits `task.completed`. CI staying green during human_review is enforced by tick hooks that redirect to `code` if it goes red.
+- **One task file per task:** `tasks/<id>-<slug>.md` (committed). Sections within it represent stage outputs. Hooks check checkboxes via section paths like `"Code > Completion"`. No per-stage artifact files.
+- **Task creation:** `stagent task new <file>` registers an existing user-written file; `stagent task new "<title>"` creates one from `.stagent/templates/task.md`. Either way the path is recorded in `task.created` and passed as `{{.TaskFile}}` to every stage prompt.
 - **Session bounds:** roles default to `bound: task` (one session per task, continues across stage loops). Opt into `bound: stage` for fresh-eyes-each-time roles. `run` and `forever` ship as planned values but error in v1.
 - **Prompts (not "skills"):** `prompts/roles/<role>.md` is the system prompt set once per session; `prompts/stages/<stage>.md` is the user message sent every entry. Templates at `templates/stages/<stage>.md`; artifacts at `tasks/<id>/<stage>.md`. Stage name is the universal identifier.
 - **Database scope:** per-user, local, gitignored at `.stagent/stagent.db`. Multi-dev collaboration happens via PRs (the code), not a shared event log. Backups are user-handled (Time Machine handles the single-file DB; Litestream/rsync if cross-machine sync is wanted).
