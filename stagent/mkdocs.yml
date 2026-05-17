@@ -1,0 +1,102 @@
+site_name: stagent
+site_description: Staged workflow for AI agents — an event-sourced state machine driving Claude sessions through configurable stages.
+site_url: https://stagent.dev/
+repo_url: https://github.com/davefowler/stagent
+repo_name: davefowler/stagent
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.path
+    - navigation.indexes
+    - navigation.top
+    - content.code.copy
+    - content.code.annotate
+    - search.highlight
+    - search.suggest
+    - search.share
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  font:
+    text: Inter
+    code: JetBrains Mono
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+      permalink_title: Anchor link
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/davefowler/stagent
+
+nav:
+  - Home: index.md
+  - Quickstart: quickstart.md
+  - Concepts:
+      - concepts/index.md
+      - Stages, flows, hooks: concepts/stages-flows-hooks.md
+      - The event log: concepts/event-log.md
+      - Sessions: concepts/sessions.md
+  - Configuration:
+      - configuration/index.md
+      - The .stagent.yaml file: configuration/stagent-yaml.md
+      - Task files: configuration/task-files.md
+      - Prompts: configuration/prompts.md
+      - Hooks reference: configuration/hooks-reference.md
+  - Reference:
+      - CLI: reference/cli.md
+      - Event schema: reference/schema.md
+  - Patterns:
+      - Review loop: patterns/review-loop.md
+      - Custom flows: patterns/custom-flows.md
+  - Operations: operations.md
+
+# Engineer-facing implementation notes live outside the docs site at
+# `../notes/` (architecture.md, schema.md, config.md). They're linked
+# from the home page and from individual pages where the rationale
+# adds depth, but they aren't part of the MkDocs navigation — the user
+# docs and the design notes are intentionally separate surfaces.
