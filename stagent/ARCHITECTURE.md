@@ -174,16 +174,22 @@ type Flow struct {
 Two ways to start a task; both produce a task file at `<tasks_dir>/<id>-<slug>.md`:
 
 ```
-stagent task new <path/to/file.md>           # register an existing user-written file
-stagent task new "<title>"                   # create a fresh file from templates/task.md
-stagent task new "<title>" --flow <name>     # opt into a non-default flow
+stagent new <path/to/file.md>           # register an existing user-written file
+stagent new "<title>"                   # create a fresh file from templates/task.md
+stagent new "<title>" --flow <name>     # opt into a non-default flow
 ```
 
-The first form is the **expected default**. Plan in Cursor/your editor; write a markdown spec with sections; hand it to stagent to execute. Stagent renames/moves the file into `<tasks_dir>/` (default `tasks/`, configurable) and assigns an ID.
+Either form works equally well. Plan in Cursor/your editor and write a complete spec, then `stagent new <file>` to register it. Or `stagent new "<title>"` to start from the template and fill it in afterwards. Stagent moves/copies the file into `<tasks_dir>/` (default `tasks/`, configurable) and assigns an ID.
 
-The second form is for users who want to start blank from a template — stagent copies `.stagent/templates/task.md` into `<tasks_dir>/<id>-<slug>.md`. Edit before or after starting.
+The template (`.stagent/templates/task.md`) has these sections, wired to the default flow's hooks:
 
-Either way, `task new` does just two things — both bookkeeping, no filesystem work:
+- **Problem, Context, Possible solutions** — human-written context for the agents
+- **Implementation plan** — granular checklist; the `code` stage's `section_check` requires every box checked
+- **Review plan** — defaults to `- [ ] Review approved`; the `review` stage redirects to `code` (with the body of "Review notes" as the message) if not checked
+- **Review notes** — empty if approved; otherwise becomes the redirect message
+- **Code** — filled by the developer agent
+
+Either way, `new` does just two things — both bookkeeping, no filesystem work:
 
 1. Allocates the next sequential task ID.
 2. Appends a `task.created` event with the **planned** worktree path and branch name:
@@ -581,19 +587,21 @@ There are two kinds:
 ### Built-in commands (Go)
 
 ```bash
-stagent init
-stagent task new "<title>"
-stagent task list
-stagent task show <id>
+stagent init                      # scaffolds .stagent.yaml, .stagent/prompts/, .stagent/templates/task.md
+stagent new "<title>"             # create tasks/<id>-<slug>.md from .stagent/templates/task.md
+stagent new "<title>" --flow <f>  # opt into a non-default flow
+stagent new <path/to/file.md>     # register an existing user-written file as a task
+stagent list                      # all tasks; current stage; status
+stagent show <id>                 # detail view of one task (current stage, attempts, sessions)
+stagent run                       # runs the daemon (per-repo, foreground)
+stagent status                    # short status — same data as `list` plus daemon liveness
+stagent log <id>                  # event log for a task (tails)
 stagent approve <id>              # emits human.approved (completes a human stage)
-stagent goto <id> <stage> [-m "msg"]   # emits stage.entered with reason=human_goto; -m prepends a message to the resumed agent's prompt
+stagent goto <id> <stage> [-m]    # emits stage.entered with reason=human_goto; -m prepends a message to the resumed agent's prompt
 stagent poll [<id>]               # force tick hooks to run NOW, ignoring min_interval. No args = all active tasks. Use after merging in GH UI to advance immediately.
 stagent restart <id>              # kills the session, re-enters current stage as a retry
 stagent abort <id>                # emits task.aborted
-stagent run                       # runs the heartbeat daemon (per-repo, foreground)
-stagent status                    # current state of all tasks (queries views)
-stagent log <id>                  # event log for a task (tails)
-stagent session <id> <role>       # prints the claude session id, for terminal resume
+stagent session <id> <role>       # prints the claude session UUID, for terminal resume
 ```
 
 Each is a thin wrapper that emits one or more events.

@@ -38,8 +38,13 @@ Same idea, rewritten:
 go install github.com/davefowler/stagent@latest    # brew tap once there's a v0.1
 cd my-project
 stagent init                              # writes .stagent.yaml and scaffolds .stagent/
-# write your task spec in your editor of choice, save as tasks/fix-login.md
-stagent task new tasks/fix-login.md       # register the existing file
+
+# Option A: write your spec in your editor first, then register it.
+stagent new tasks/fix-login.md
+
+# Option B: start from the template, fill it in after.
+stagent new "Fix login redirect bug"
+
 stagent run                               # starts the daemon (per-repo, foreground)
 stagent status                            # show all tasks and stages
 ```

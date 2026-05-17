@@ -73,7 +73,8 @@ stages:
       exit:
         - run_shell: { cmd: "cd {{.Task.WorktreeDir}} && go test ./...", fail_on_nonzero: true }
         - run_shell: { cmd: "cd {{.Task.WorktreeDir}} && go vet ./...",  fail_on_nonzero: true }
-        - section_check: { section: "Code > Completion", expect: all_checked }
+        # Implementation plan is human-written; agent checks items off as work completes.
+        - section_check: { section: "Implementation plan", expect: all_checked }
     # NOTE: code does NOT push or open PRs. The pr stage handles all gh interaction.
 
   pr:
@@ -100,12 +101,14 @@ stages:
     max_runs: 3
     hooks:
       exit:
-        - section_check: { section: "Review > Verdict", expect: all_checked }
-        - section_redirect:
-            section_verdict: "Review > Verdict"
-            when_checked: "Request changes"
-            redirect_to: code
-            message_from_section: "Review > Changes requested"
+        # Reviewer must check "Review approved". If they don't, redirect back
+        # to code with the body of "Review notes" as the message.
+        - section_check:
+            section: "Review plan"
+            expect: all_checked
+            on_fail:
+              redirect_to: code
+              message_from_section: "Review notes"
 
   human_review:
     type: human
@@ -190,17 +193,21 @@ heartbeat:
 
 | Hook | Args | When |
 |---|---|---|
-All hooks that reference sections operate on the task file at `{{.TaskFile}}` unless `file:` is overridden. Section paths use `>` as separator: `"Code > Completion"` resolves to the `### Completion` h3 under the `## Code` h2.
+All hooks that reference sections operate on the task file at `{{.TaskFile}}` unless `file:` is overridden. Section paths use `>` as separator: `"Code > Notes"` resolves to the `### Notes` h3 under the `## Code` h2. Top-level sections (h2) use just the section name: `"Implementation plan"`.
+
+**Checkbox parsing:** `- [ ]` is unchecked. `- [x]` and `- [X]` are both checked (case-insensitive). HTML comments (`<!-- ... -->`) inside a section are ignored when checking.
 
 | Hook | Args | When |
 |---|---|---|
 | `min_words` | `section, min, file?` | exit |
-| `section_check` | `section, expect: all_checked, file?` | exit |
-| `section_redirect` | `section_verdict, when_checked, redirect_to, message_from_section?, file?` | exit |
+| `section_check` | `section, expect: all_checked, file?, on_fail?: { redirect_to, message_from_section }` | exit |
+| `section_redirect` | `when_checked, redirect_to, message_from_section?, section?, file?` | exit |
 | `run_shell` | `cmd, fail_on_nonzero, timeout` | enter / exit |
 | `wait_for_ci` | `min_interval, timeout` | tick |
 | `wait_for_merge` | `min_interval, timeout` | tick |
 | `ci_status` | `min_interval?, on_failure: { redirect_to, message_template }` | exit (script) / tick (human) |
+
+**On `section_check.on_fail`:** by default, a failed `section_check` follows the normal retry path (retry the stage if budget allows, else `stage.failed`). When `on_fail` is provided, the hook instead returns `Redirect(target_stage, message)` — the message body is the text content of `message_from_section`. This is the canonical pattern for "if reviewer didn't approve, send back to developer with notes" — no special hook needed.
 
 Hooks return one of three verdicts: `Pass`, `Fail`, or `Redirect(target_stage)`. `Pass` lets the flow proceed; `Fail` triggers retry-or-fail; `Redirect` routes to the named stage with `reason: redirect`. `section_redirect` is the canonical example — used for review loops.
 
@@ -223,37 +230,42 @@ Stage prompts remind the agent of the convention: the system judges completion v
 
 ## Task template
 
-Optional, single file at `.stagent/templates/task.md`. Used only by `stagent task new "<title>"` (no file argument) — copied to `<tasks_dir>/<id>-<slug>.md`. Users who write their own task files in Cursor or elsewhere never see it.
+Single file at `.stagent/templates/task.md` (committed). Used by `stagent new "<title>"` (no file argument) to seed a fresh task file at `<tasks_dir>/<id>-<slug>.md`. Users who write their own specs in Cursor or elsewhere and run `stagent new <path>` never see it.
 
 Templated with `{{.Task.Title}}`, `{{.Task.ID}}`, etc.
 
-Example `.stagent/templates/task.md`:
+The default template structure (matches the default flow's hooks):
 
 ```markdown
 # {{.Task.Title}}
 
 ## Problem
-<!-- Why we're doing this. -->
+<!-- 2-3 sentences. -->
 
-## Approach
-<!-- High-level plan. Fill in before starting stagent. -->
+## Context
+<!-- Background the agent won't infer: where code lives, prior attempts, constraints, links. -->
+
+## Possible solutions
+<!-- 1-3 approaches you've considered. Shapes how the agent thinks. -->
+
+## Implementation plan
+<!-- Granular checklist; code stage's section_check requires all checked. -->
+- [ ] (Replace with the first concrete task)
+- [ ] (Add more granular items as needed)
+
+## Review plan
+<!-- Reviewer must check "Review approved". If not, "Review notes" becomes the redirect message. -->
+- [ ] Review approved
+
+## Review notes
+<!-- Empty if approved. If not, write what needs to change here. -->
 
 ## Code
-<!-- The developer agent fills this. -->
+<!-- Filled by the developer agent. -->
 ### Notes
-<!-- What was implemented and why. -->
-### Completion
-- [ ] Implementation matches the Approach
-- [ ] Tests pass locally
-- [ ] No new lint warnings
-
-## Review
-<!-- The reviewer agent fills this. -->
-### Verdict
-- [ ] Approve
-- [ ] Request changes
-### Changes requested
-<!-- If "Request changes" is checked, this section is the redirect message. -->
+<!-- Implementation notes. -->
 ```
 
-Section structure matches the hooks in the default flow. If you change the headings, update the hooks' `section:` references to match.
+See [`scaffold/task.md`](../scaffold/task.md) for the version `stagent init` actually emits (with explanatory comments in every section).
+
+If you change the section headings, update the corresponding hook `section:` references in `.stagent.yaml`.
