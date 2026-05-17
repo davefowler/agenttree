@@ -9,20 +9,18 @@ project: my-project
 
 # ─── Roles ────────────────────────────────────────────────────────────
 # Who can do work. Maps to claude invocation params.
+# v1: no containers. Agents run on the host in the task's git worktree.
 roles:
   developer:
     model: opus
     skill: .stagent/skills/developer.md
-    container:
-      image: stagent-agent:latest
-      mounts:
-        - ~/.claude:/home/agent/.claude
-        - .stagent/skills:/skills:ro
+    dangerous: true     # passes --dangerously-skip-permissions to claude -p
+                        # required true for agent roles in v1 (headless mode)
 
   reviewer:
     model: sonnet
     skill: .stagent/skills/reviewer.md
-    # no container → runs on host
+    dangerous: true
 
 # ─── Stages ───────────────────────────────────────────────────────────
 # Three types: agent, human, heartbeat.

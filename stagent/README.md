@@ -35,11 +35,11 @@ Same idea, rewritten:
 ## Quickstart
 
 ```bash
-brew install stagent          # or: go install github.com/davefowler/stagent@latest
+go install github.com/davefowler/stagent@latest    # brew tap once there's a v0.1
 cd my-project
 stagent init                  # writes .stagent.yaml and creates .stagent/
 stagent task new "Fix login redirect bug"
-stagent run                   # starts the heartbeat daemon
+stagent run                   # starts the heartbeat daemon (per-repo, foreground)
 stagent status                # show all tasks and stages
 ```
 

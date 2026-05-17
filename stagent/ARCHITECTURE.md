@@ -106,9 +106,9 @@ type StageProgress struct {
 ```go
 type Role struct {
     Name      string
-    Model     string             // opus | sonnet | haiku
-    Container *ContainerConfig   // nil = host
-    SkillFile string             // optional path to system prompt
+    Model     string  // opus | sonnet | haiku
+    SkillFile string  // optional path to system prompt
+    Dangerous bool    // pass --dangerously-skip-permissions; required true for agent roles in v1
 }
 
 type StageType string
@@ -119,7 +119,7 @@ const (
 )
 
 type StageDef struct {
-    Name     string      // dot path: "implement.code"
+    Name     string      // bare identifier: "code", "plan_review"
     Type     StageType
     Role     string      // which Role executes (agent stages only)
     Output   string      // artifact filename: "spec.md"
@@ -130,20 +130,44 @@ type StageDef struct {
 
 type StageHooks struct {
     Enter      []Hook   // run on stage.entered; failures rollback
-    Exit       []Hook   // run before stage.completed; failures block or retry
+    Exit       []Hook   // run on completion attempt; failures block or retry
     Heartbeat  []Hook   // run every tick while in this stage (heartbeat stages only)
 }
 
 type Hook interface {
     Run(ctx *HookCtx) HookResult
+    MinInterval() time.Duration   // 0 = every tick; useful for wait_for_ci etc.
 }
-// concrete: FileExists, SectionCheck, MinWords, RunShell, ...
+// concrete: FileExists, SectionCheck, MinWords, RunShell, WaitForCI, ...
 
 type Flow struct {
     Name   string
     Stages []string   // ordered list of StageDef names
 }
 ```
+
+## Task creation
+
+The surface is deliberately tiny:
+
+```
+stagent task new "<title>"                   # uses flow=default
+stagent task new "<title>" --flow <name>     # opt into a non-default flow
+```
+
+Title is the only required input. Flow is the only knob. No `--priority`, `--labels`, `--from-file`, etc. — these are YAGNI for v1. If the user wants to seed the first artifact with prose, they edit it in the worktree before the heartbeat first ticks. If they want context the agent should read, they put it in the role's skill file.
+
+`task new` does three things:
+
+1. Allocates the next sequential task ID.
+2. Creates a git worktree at `.worktrees/task-<id>/` on a new branch `task-<id>`.
+3. Appends a `task.created` event:
+   ```json
+   { "title": "Fix login bug", "flow": "default",
+     "worktree_dir": "/abs/path/.worktrees/task-001", "branch": "task-001" }
+   ```
+
+The heartbeat picks it up on the next tick and enters the first stage of the chosen flow.
 
 ## Lifecycle of a task
 
@@ -205,7 +229,7 @@ Every transition is driven by the heartbeat reading the event log + checking art
 ### `agent` stages
 
 - Heartbeat sees the stage is current and no session is active for `(task, role)`.
-- Heartbeat invokes `claude -p "<initial prompt>"`, captures the session ID, emits `session.started`.
+- Heartbeat invokes `claude -p "<initial prompt>" --dangerously-skip-permissions` (governed by `Role.Dangerous`), captures the session ID, emits `session.started`.
 - The prompt instructs the agent what to produce (artifact name, sections to fill, checkboxes to complete).
 - While the process is running, the heartbeat does nothing — just waits.
 - When the process exits (clean finish, OOM, killed, token limit — reason doesn't matter), the heartbeat runs exit hooks:
@@ -264,6 +288,24 @@ else:
 ```
 
 Retries reuse the Claude session (same UUID, `--resume`). The agent sees its prior context plus the new attempt's prompt, which includes whatever the exit hook complained about.
+
+**When attempts are exhausted**, `stage.failed` is emitted and the task's status becomes `failed` (surfaces in the viewer). No notifications, no Slack — escalation is whatever the user wires up via a `run_shell` hook on `stage.failed`. Keeps the core small.
+
+## Rollback
+
+`stagent rewind <task>` emits a corrective event that voids the most recent `stage.completed` for a task and re-enters the previous stage. Implemented as a new `stage.rewound` event type; the `tasks` view treats it as a roll-back of the latest completion. No data is deleted — the original events stay; the view just stops considering them once a `stage.rewound` references them.
+
+Use cases: a human-approved stage was approved by mistake; an agent's exit hooks let something through that shouldn't have passed.
+
+## Concurrency
+
+The heartbeat is one process, ticking every `heartbeat.interval`. Within a tick:
+
+- **Tasks run in parallel** (one goroutine per active task). Tasks are independent — different worktrees, different sessions, different stages.
+- **Within a task, stages are serial**. The state machine doesn't have a notion of "two stages of the same task at once."
+- **Hook execution is serial within a stage**. Enter and exit hooks run in declared order; the first failure short-circuits.
+
+SQLite handles the concurrent appends without contention (see SCHEMA.md). The daemon never holds a long-running transaction.
 
 ## How completion works
 
@@ -355,22 +397,19 @@ The state machine is the system. Most of the test surface is:
 
 The goal: every path through the state machine has a test that pins it. Adding a new stage type or event type without a test should fail CI.
 
-## Open questions
+## Decisions (locked in)
 
-Things I'd like to nail down before writing code:
+- **Daemon scope:** per-repo. `stagent run` in each project's directory. No global daemon, no project registry, no IPC. The Mac viewer talks to one project at a time (open from a project's worktree path).
+- **Containers:** none in v1. Agents run on the host inside the task's git worktree with `--dangerously-skip-permissions`. The worktree provides enough isolation that a misbehaving agent doesn't corrupt the user's main checkout. **Future:** a single shared container that holds all stagent activity, scoped to "protect the user's machine," not "protect tasks from each other."
+- **GitHub integration:** none in v1. `stagent` is purely local. Users wire `gh` calls via `run_shell` hooks or `commands:` recipes if they want PR/issue lifecycle.
+- **Task creation:** title + optional `--flow`. Nothing else.
+- **Worktrees:** always. `.worktrees/task-<id>/` on branch `task-<id>`. No in-place mode.
+- **Concurrency:** parallel per task, serial within a task.
+- **Rollback:** `stagent rewind <task>` via a `stage.rewound` corrective event.
+- **Failure escalation:** status change only. Notifications are a user-wired hook.
+- **Skill files:** `.stagent/skills/<name>.md`, checked into git. Stage `Skill` field is optional; falls back to role's skill, then to a built-in default.
 
-1. **Does `claude -p` accept `--session-id <uuid>` to *create* with a chosen ID?** If yes, capturing is trivial. If no, we fall back to "scan `~/.claude/projects/<cwd>/` after invocation for the newest JSONL." Either works; the former is cleaner. Needs verification against the current Claude Code CLI.
+## Verification spikes (not blocking design, but needed before code)
 
-2. **Where does the daemon live?** Three options:
-   - **(a)** Per-repo: `stagent run` in each project's directory.
-   - **(b)** Global: one daemon watches all registered projects (cleaner for a Mac app).
-   - **(c)** Hybrid: per-repo daemons, global registry for the UI to discover them.
-   I'd recommend (a) for v1 — simplest, no IPC, matches `just` ergonomics. Promote to (b) only if multi-project UX demands it.
-
-3. **Container model.** Agenttree shares one container across roles per issue. Do we keep that, or one container per `(task, role)`? Per-role is cleaner for isolation but more expensive. My instinct: one per task, since roles are mostly sequential.
-
-4. **`heartbeat` stage hook scheduling.** Should `Heartbeat` hooks run every tick (~1s) or have their own min-interval? Probably the latter — `wait_for_ci` polling GitHub every second will rate-limit you. Add `Hook.MinInterval` as a field, default to the tick period.
-
-5. **Worktrees vs in-place.** Agenttree always creates a git worktree per issue. Do we keep that, or allow in-place for solo workflows? Worktrees per task is safer (parallel work, no checkout conflicts). I'd default to worktrees, with a config flag to opt out.
-
-6. **Skill files.** Where do per-stage skill files live? Agenttree has `_agenttree/skills/`. Suggest: `.stagent/skills/<stage>.md`, checked into git as part of project config (not gitignored like the DB). Stage `Skill` field optional — falls back to role's default skill.
+1. **`claude -p` and `--session-id`** — does Claude Code's CLI accept a caller-supplied UUID to *create* a session with? If yes, we generate the UUID, store it, then invoke. If no, we invoke first and read the newest JSONL in `~/.claude/projects/<cwd-encoded>/` to capture the auto-generated UUID. Either works; we just need to know which path the v1 code takes.
+2. **`claude --resume <uuid> -p "msg"`** — confirm resume works in headless (`-p`) mode and that subsequent turns extend the same JSONL. Should — but worth a 5-minute test before relying on it.
