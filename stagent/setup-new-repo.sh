@@ -79,8 +79,11 @@ cd "$TARGET_DIR"
 echo "→ Initializing Go module $GO_MODULE ..."
 go mod init "$GO_MODULE"
 
-# Pin Go version explicitly.
-sed -i.bak -E "s/^go [0-9]+\.[0-9]+/go 1.22/" go.mod && rm -f go.mod.bak
+# Pin the Go directive to 1.22 (minor only — never the patch version).
+# `go mod init` writes the local Go's full version (e.g. "go 1.24.6"),
+# which would tie the module to a specific patch on whoever bootstrapped
+# it. `go mod edit -go=` is the official way to set this cleanly.
+go mod edit -go=1.22
 
 # ─── 4. CI workflow ───────────────────────────────────────────────────
 
