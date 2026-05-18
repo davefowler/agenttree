@@ -42,11 +42,11 @@ stages:
     hooks:
       exit:
         - section_check:
-            section: "Reviews > /^Pass \\d+$/"
+            section: "Reviews > /^Pass \\d+$/[-1]"
             expect: all_checked
             on_fail:
               redirect_to: code
-              message_from_section: "Reviews > /^Pass \\d+$/"
+              message_from_section: "Reviews > /^Pass \\d+$/[-1]"
 
 flows:
   default:
@@ -190,7 +190,7 @@ It exits.
 
 Exit hook fires:
 
-`section_check { section: "Reviews > /^Pass \\d+$/" }` → finds Pass 1, sees `- [ ] Review approved` unchecked, returns `Redirect(code, <body of Pass 1>)`.
+`section_check { section: "Reviews > /^Pass \\d+$/[-1]" }` → finds Pass 1, sees `- [ ] Review approved` unchecked, returns `Redirect(code, <body of Pass 1>)`.
 
 Two events appended:
 
@@ -255,7 +255,7 @@ the redirect Location includes the `?next=` param.
 
 Exits.
 
-Exit hook: `section_check { section: "Reviews > /^Pass \\d+$/" }` → finds Pass 2, all boxes checked → `Pass`.
+Exit hook: `section_check { section: "Reviews > /^Pass \\d+$/[-1]" }` → finds Pass 2, all boxes checked → `Pass`.
 
 `stage.completed` for `review`. Flow advances to `human_review`.
 

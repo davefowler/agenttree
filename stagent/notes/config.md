@@ -107,11 +107,11 @@ stages:
         # is unticked, the whole Pass section becomes the redirect message
         # back to code.
         - section_check:
-            section: "Reviews > /^Pass \\d+$/"
+            section: "Reviews > /^Pass \\d+$/[-1]"
             expect: all_checked
             on_fail:
               redirect_to: code
-              message_from_section: "Reviews > /^Pass \\d+$/"
+              message_from_section: "Reviews > /^Pass \\d+$/[-1]"
 
   human_review:
     type: human
@@ -298,7 +298,7 @@ for the auth-expired path. **Severity: medium.**
 LGTM. Network errors now propagate; auth-expired path covered.
 ```
 
-The hook syntax `"Reviews > /^Pass \\d+$/"` resolves to the H3 subsection whose name matches `Pass N` with the highest integer N. The same syntax in `message_from_section` returns the full text of that subsection (checkboxes + notes) as the redirect message — so the developer sees exactly which boxes were unticked and the reviewer's reasoning.
+The hook syntax `"Reviews > /^Pass \\d+$/[-1]"` resolves to the H3 subsection whose name matches `Pass N` with the highest integer N. The same syntax in `message_from_section` returns the full text of that subsection (checkboxes + notes) as the redirect message — so the developer sees exactly which boxes were unticked and the reviewer's reasoning.
 
 **Why a new section each pass instead of clearing in place:**
 

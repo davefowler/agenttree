@@ -11,7 +11,7 @@ The `validate_task_sections` hook reads the loaded `.stagent.yaml`, walks every 
 | Reference shape | Validator requires |
 |---|---|
 | Literal exact path (e.g. `"Implementation plan"`) | Section exists in the task file. |
-| Regex path (e.g. `"Reviews > /^Pass \\d+$/"`) | The parent segment exists. The regex itself is allowed to match zero — useful for append-on-each-entry sections like `## Reviews` that have no passes at task creation. |
+| Regex path (e.g. `"Reviews > /^Pass \\d+$/[-1]"`) | The parent segment exists. The regex is allowed to match zero at task-creation time — useful for append-on-each-entry sections like `## Reviews` that have no passes yet. The index `[N]` is parsed for syntactic validity but not range-checked at creation time (the matched set might still be empty). |
 | `section_check { expect: all_checked }` with a literal path | Section exists AND contains ≥1 checkbox. Empty checklists fail loudly. |
 | `section_check` with a regex path | Parent exists. The checkbox check happens at runtime against the actual matched section. |
 | `min_words`, `message_from_section` | Section exists (literal) or parent exists (regex). |

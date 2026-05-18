@@ -73,11 +73,11 @@ Verify checkboxes (or content) in a task-file section.
 
 ```yaml
 - section_check:
-    section: "Reviews > /^Pass \\d+$/"
+    section: "Reviews > /^Pass \\d+$/[-1]"
     expect: all_checked
     on_fail:
       redirect_to: code
-      message_from_section: "Reviews > /^Pass \\d+$/"
+      message_from_section: "Reviews > /^Pass \\d+$/[-1]"
 ```
 
 | Slot | Use case |
@@ -86,9 +86,8 @@ Verify checkboxes (or content) in a task-file section.
 
 **Args:**
 
-- `section` *(required)*: section path. Literal segments OR regex segments wrapped in `/…/`. See [Task files → section path syntax](task-files.md#section-path-syntax-used-by-hooks). Regex segments that match multiple sections pick the last in document order by default.
+- `section` *(required)*: section path. Literal segments OR regex segments `/.../[N]`. See [Task files → section path syntax](task-files.md#section-path-syntax-used-by-hooks). The index `[N]` is part of the path; no separate `pick:` field.
 - `expect` *(required)*: `all_checked` is the only value in v1.
-- `pick` *(optional, regex paths only)*: `last` (default) or `first` — which match to use when the regex matches multiple sections.
 - `file` *(default `{{.TaskFile}}`)*: which file to read.
 - `on_fail` *(optional)*: instead of returning `Fail`, return `Redirect(to, message)`.
   - `redirect_to` *(required if `on_fail` is set)*: target stage name.
@@ -100,6 +99,9 @@ Verify checkboxes (or content) in a task-file section.
 - Section doesn't exist: `"section '<path>' not found"`.
 - Section exists but contains zero list items: `"section '<path>' has no checkboxes; likely a typo or missing required content"`. Empty checklists are **not** vacuously satisfied — they're an authoring error and we fail loudly.
 - Literal path matches multiple sections: `"ambiguous section path '<path>'; multiple headings match"`.
+- Bare regex (no `[N]`) matches multiple sections: `"regex matched N sections; specify an index, e.g. /pattern/[-1]"`.
+- Bare regex matches zero sections: `"regex matched no sections"`.
+- Indexed regex `[N]` is out of range: `"regex match index N out of range; got K matches"`.
 
 ### `validate_task_sections`
 

@@ -86,7 +86,7 @@ Each `>` descends one heading level. Whitespace around `>` is optional.
 **Two kinds of segment:**
 
 - **Literal** — exact heading text. Case-sensitive; whitespace inside the name is collapsed (`"Review  Plan"` matches `## Review Plan`).
-- **Regex** — wrapped in `/…/`. Matches H<parent+1> children whose visible heading text matches the pattern. RE2 syntax (Go's `regexp` package).
+- **Regex** — wrapped in `/…/`, optionally followed by an array index `[N]`. Matches direct H<parent+1> children whose visible heading text matches the pattern. RE2 syntax (Go's `regexp` package).
 
 Examples:
 
@@ -95,15 +95,17 @@ Examples:
 | `"Implementation plan"` | The `## Implementation plan` H2 section (full body). |
 | `"Reviews > Pass 1"` | The literal `### Pass 1` H3 under `## Reviews`. |
 | `"Code > Notes"` | The `### Notes` H3 under `## Code`. |
-| `"Reviews > /^Pass \\d+$/"` | All H3s under `## Reviews` whose name matches `Pass N`. Multi-match: picks the **last** in document order by default. |
+| `"Reviews > /^Pass \\d+$/[-1]"` | The **last** H3 under `## Reviews` whose name matches `Pass N`. |
+| `"Reviews > /^Pass \\d+$/[0]"` | The **first** matching H3. |
+| `"Logs > /^attempt-/[2]"` | The 3rd matching H3 (zero-indexed). |
 
 ### Regex segments — for sections that grow over time
 
-The Pass-N review pattern adds new `### Pass N` subsections on every review entry. Hooks need to operate on "the latest one." Express that with a regex on the last path segment:
+The Pass-N review pattern adds new `### Pass N` subsections on every review entry. Hooks need to operate on "the latest one." Express that with a regex segment plus the `[-1]` index:
 
 ```yaml
 - section_check:
-    section: "Reviews > /^Pass \\d+$/"
+    section: "Reviews > /^Pass \\d+$/[-1]"
     expect: all_checked
 ```
 
@@ -111,8 +113,11 @@ The Pass-N review pattern adds new `### Pass N` subsections on every review entr
 
 - A regex segment is delimited by `/…/`. Inside, use standard [RE2 syntax](https://github.com/google/re2/wiki/Syntax) — no flags suffix (no `/.../i`); use inline `(?i)` if you need case-insensitive matching.
 - A regex segment cannot contain `>` (the path separator). In practice heading text won't either; if you genuinely need it, use a character class (`[>]`).
-- When a regex matches **multiple sections**, the hook picks **the last in document order** by default. Override with the hook's `pick: first` option.
-- When a regex matches **zero sections**, the hook acts as if the section doesn't exist (`Fail` for `section_check`, etc.) — except at task creation, where the validator allows zero matches on regex paths (Pass N hasn't been written yet).
+- Regex segments match **direct** H<parent+1> children only — not descendants further down.
+- **The index `[N]` is part of the path syntax**, not a separate hook option. Positive N indexes from the start (zero-based); negative N from the end (`[-1]` is the last match).
+- **A bare regex without `[N]` must match exactly one section** at runtime. Multiple matches → `Fail("regex matched N sections; specify an index")`. Zero matches → `Fail("regex matched no sections")`.
+- **An out-of-range index** at runtime (e.g. `[5]` when only 2 sections match) → `Fail("regex match index N out of range; got K matches")`.
+- **Exception**: at task creation, the validator allows zero matches on any regex segment — useful for sections that grow over time like `## Reviews` (the validator can't predict how many Pass N entries the reviewer will produce).
 
 **Literal segments must match exactly one section.** Zero matches or multiple matches are authoring errors caught by the validator (see [Validation](../concepts/validation.md)).
 
@@ -125,7 +130,7 @@ Lists like `- [ ]` and `- [x]` are parsed as task list items:
 
 HTML comments (`<!-- ... -->`) inside a section are ignored when checking — so explanatory comments in the template don't count as content and don't break checkbox enumeration.
 
-`section_check { expect: all_checked }` passes only when every item in the section is checked. If the section contains zero list items, the check passes vacuously (consider this when designing your sections — an empty checklist counts as "approved").
+`section_check { expect: all_checked }` passes only when every item in the section is checked. **An empty section (zero list items) is a `Fail`** — it almost always means the agent didn't write what it was supposed to. If you really want "this section is allowed to be empty," don't put a `section_check` on it.
 
 ## The Pass-N review pattern
 
@@ -154,11 +159,11 @@ The hook keys on the **latest** pass:
 
 ```yaml
 - section_check:
-    section: "Reviews > /^Pass \\d+$/"
+    section: "Reviews > /^Pass \\d+$/[-1]"
     expect: all_checked
     on_fail:
       redirect_to: code
-      message_from_section: "Reviews > /^Pass \\d+$/"
+      message_from_section: "Reviews > /^Pass \\d+$/[-1]"
 ```
 
 If the latest pass has any unchecked box, the whole section (boxes + notes) becomes the redirect message back to the developer. They see exactly what's not approved and what the reviewer wrote.

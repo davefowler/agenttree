@@ -19,25 +19,28 @@ Hooks reference sections in the task file via a path of `>`-separated segments:
 **Segments are one of two forms:**
 
 - **Literal**: exact heading text. Whitespace inside the name is collapsed (matching `"Review  Plan"` against `## Review Plan`). Case-sensitive.
-- **Regex**: wrapped in `/…/`. Matches H<parent+1> children whose visible heading text matches the pattern. Go regex syntax (`regexp` package, RE2).
+- **Regex**: wrapped in `/…/`, optionally followed by an array index `[N]`. Matches H<parent+1> direct children whose visible heading text matches the pattern. Go regex syntax (`regexp` package, RE2).
 
 **Examples:**
 
 ```yaml
-section: "Implementation plan"            # literal H2
-section: "Code > Notes"                   # literal H2 > literal H3
-section: "Reviews > /^Pass \\d+$/"        # literal H2 > regex H3
+section: "Implementation plan"              # literal H2
+section: "Code > Notes"                     # literal H2 > literal H3
+section: "Reviews > /^Pass \\d+$/[-1]"      # literal H2 > regex H3, last match
+section: "Logs > /^attempt-/[0]"            # literal H2 > regex H3, first match
 ```
 
 **Matching rules:**
 
 - **Literal segments must match exactly one section.** Zero matches → `Fail("section not found")`. Multiple matches → `Fail("ambiguous section path")`. Duplicate headings under the same parent are a task-file authoring error and the validator catches them up front.
-- **Regex segments may match zero, one, or many.** When the regex matches multiple, the hook picks **the last in document order** by default. (Append-only files mean "last in document order" = "most recently appended.")
-- **`pick:` modifier** overrides selection when a regex matches multiple. Values: `last` (default), `first`. We do not support `all` in v0.1 — if you need fan-out, write multiple hooks.
-- **Regex segments may not contain `>`** (which is the segment separator). Use character classes (`[>]`) if you genuinely need it. In practice heading text won't.
+- **Regex segments match direct H<parent+1> children only** — not descendants any deeper. `## Reviews > /^Pass \d+$/` matches H3s directly under `## Reviews`, never H4s nested inside an H3.
+- **A bare regex segment (no `[N]`) must match exactly one section** at runtime. Multiple matches → `Fail("regex matched N sections; specify an index")`. Zero matches → `Fail("regex matched no sections")`. **Exception**: at task-creation time, the validator allows zero matches on bare regex segments (e.g. `## Reviews` has no Pass N yet).
+- **An indexed regex segment `/pattern/[N]`** picks the N-th match. Positive N is zero-indexed from the start; negative N counts from the end (`[-1]` is the last match, `[-2]` second-to-last). Out of range at runtime → `Fail("regex match index N out of range; got K matches")`.
+- **No `pick:` modifier**, no `pick: first` / `pick: last`. The index is part of the path.
+- **Regex segments may not contain `>`** (the segment separator). Use a character class (`[>]`) if you genuinely need it. In practice heading text won't.
 - **Regex flags**: no `/.../i` suffix. Use inline `(?i)` per RE2.
 
-**Why regex over the original `[-1]` proposal:** less bespoke syntax to teach, no new mental model, generalizes (regex can express `"Pass 3 and later"` if we ever care), and standard tools (grep, jq, etc.) already use the convention.
+**Why explicit `[N]` indexing over implicit "pick last":** the YAML reads as a complete specification — no need to know hook defaults. Allows arbitrary indexing without adding more modifier fields later. Matches Python/JavaScript array semantics so it's mentally cheap.
 
 ### 2. `section_check` on a section with zero checkboxes → `Fail`
 
@@ -100,7 +103,7 @@ Cost matters when reviews trigger on every `code` redirect. The reviewer prompt 
 
 ### 5. Tests use a mock `claude` binary
 
-Ship a `stagent-fakeclaude` binary as part of the test harness. The runner accepts a `--claude-bin <path>` flag (and honors `$STAGENT_CLAUDE_BIN`); tests point it at the mock.
+Ship a `fraude` binary as part of the test harness. The runner accepts a `--claude-bin <path>` flag (and honors `$STAGENT_CLAUDE_BIN`); tests point it at the mock.
 
 **The mock honors the same flags as real Claude:**
 
@@ -121,7 +124,7 @@ A response entry can specify a custom exit code, a delay before exiting (to simu
 
 - Tests are deterministic, fast, offline. No API key, no token cost, no flakes.
 - The mock IS production-shaped — it writes JSONLs to the same path, honors session UUIDs, supports resume. So `--resume` flows are testable end-to-end without the real model.
-- The mock lives at `cmd/stagent-fakeclaude/` and is built alongside the main binary in CI.
+- The mock lives at `cmd/fraude/` and is built alongside the main binary in CI.
 
 Real-Claude integration tests against the live `claude` binary are deferred (see Tabled item D below) — useful for smoke-testing real prompts but not for the main test suite.
 
@@ -213,6 +216,163 @@ stagent goto <task> <stage> --force [-m "..."]
 ```
 
 `--force` bypasses the budget AND appends `budget_override: true` to the `stage.entered` event payload. The event log records that a human consciously overrode the budget, so audit reviews can find it later.
+
+### 10. v0.1 scaffold ships the slim flow as default
+
+`scaffold/.stagent.yaml` ships with the **v0.1-compatible flow** as `default`:
+
+```yaml
+flows:
+  default:
+    - setup
+    - code
+    - cleanup
+```
+
+The full v0.2+ flow is included as a clearly-marked comment block, ready to uncomment once the missing pieces ship:
+
+```yaml
+  # ─── Uncomment in v0.2 (requires human stages + tick hooks) ───
+  # full:
+  #   - setup
+  #   - code
+  #   - pr               # script stage with tick hooks (CI wait)
+  #   - review           # agent stage with section-regex check
+  #   - human_review     # human stage
+  #   - cleanup
+```
+
+Rationale: a fresh `stagent init` against v0.1 must produce a config the v0.1 runner can actually run. Shipping the full flow against a runner that doesn't yet support `human` stages would fail at the first `human_review`. Once v0.2 ships, the scaffold flips: `default` becomes the full flow, slim moves to commented form (or to a separate `quick` flow).
+
+### 11. `setup` handles "branch already exists"
+
+The setup stage's worktree-creation hook tries `git worktree add <path> -b <branch> origin/main`. If that fails because the branch already exists, the hook retries without `-b`:
+
+```
+git worktree add <path> -b <branch> origin/main   # try first
+# on failure with "branch already exists":
+git worktree add <path> <branch>                   # reuse existing branch
+# on second failure:
+# Fail("cannot create or reuse worktree for branch <branch>: <git error>")
+```
+
+Reusing an existing branch is the most common second-launch case (user ran `stagent abort` then re-created the task with the same slug; daemon crashed mid-flow and left the branch around). If the branch points at a divergent commit, the developer's `code` enter hook (`git rebase origin/main`) handles it — or fails loudly with rebase conflicts, which surface as a normal `stage.failed`.
+
+We do NOT auto-force-remove existing worktrees or branches. That's destructive and unintended deletion would be a worse failure mode than "stagent says it can't reuse this; resolve manually."
+
+### 12. Go module structure
+
+```
+github.com/davefowler/stagent/
+├── cmd/
+│   ├── stagent/                # main binary; CLI entry points
+│   │   ├── main.go
+│   │   ├── cmd_init.go         # subcommand: stagent init
+│   │   ├── cmd_new.go          # subcommand: stagent new
+│   │   ├── cmd_run.go          # subcommand: stagent run
+│   │   ├── cmd_status.go       # ... one file per subcommand
+│   │   └── ...
+│   └── fraude/                 # mock-claude binary for tests
+│       └── main.go
+├── internal/
+│   ├── config/                 # yaml load, parse, validate
+│   │   ├── config.go
+│   │   ├── load.go
+│   │   └── validate.go
+│   ├── events/                 # schema, append, replay, projections
+│   │   ├── schema.go           # SQL DDL + migrations
+│   │   ├── append.go           # Append(ctx, Event) → emit
+│   │   ├── replay.go           # ReadAfter(cursor) → []Event
+│   │   ├── projections.go      # View queries: tasks, sessions, stage_progress
+│   │   └── types.go            # Event, EventType, payload structs
+│   ├── runner/                 # heartbeat + task workers
+│   │   ├── runner.go           # top-level: PID file, signal handling
+│   │   ├── heartbeat.go        # tick loop
+│   │   ├── worker.go           # per-task goroutine
+│   │   ├── claude.go           # `claude -p` subprocess wrangling
+│   │   └── recovery.go         # orphan-session reaping on start
+│   ├── hooks/                  # interface + concrete hooks
+│   │   ├── hook.go             # interface + Verdict types + HookCtx
+│   │   ├── registry.go         # name → constructor map
+│   │   ├── run_shell.go
+│   │   ├── section_check.go
+│   │   ├── min_words.go
+│   │   └── validate_task_sections.go
+│   └── sections/               # markdown section-path parser + matcher
+│       ├── path.go             # parse "H2 > /regex/[N]" into AST
+│       ├── match.go            # match AST against a markdown document
+│       └── checkboxes.go       # checkbox enumeration helpers
+├── notes/                      # implementation notes (this folder)
+├── docs/                       # MkDocs site
+├── scaffold/                   # files `stagent init` copies
+├── go.mod
+├── go.sum
+├── mkdocs.yml
+├── README.md
+└── .gitignore
+```
+
+**Notes:**
+
+- `internal/` is the Go convention for "implementation private to this module." Packages under `internal/` can only be imported by code in the same module tree (the Go toolchain enforces this), so external users can't accidentally depend on stagent's internals.
+- One package per directory; Go requires this. Each package starts with one or two files and grows as needed — don't pre-create files.
+- Tests live alongside the code they test (`config_test.go` next to `config.go`), per Go convention. No separate `tests/` folder.
+- Integration tests that need the runner+fraude binaries pair go in `internal/runner/integration_test.go` (build-tagged with `//go:build integration` if needed).
+- `cmd/fraude` is built alongside `cmd/stagent` in CI; `go install github.com/davefowler/stagent/cmd/fraude@latest` works if anyone wants it standalone.
+
+### 13. Library choices
+
+Lock these so the implementer doesn't burn cycles on package research:
+
+| Concern | Library | Why |
+|---|---|---|
+| YAML parsing | `gopkg.in/yaml.v3` | Standard. Handles tagged unions cleanly. |
+| SQLite driver | `modernc.org/sqlite` | Pure Go, no CGo — easier cross-compile, no platform fuss. |
+| CLI framework | `github.com/spf13/cobra` | Standard for multi-subcommand CLIs. Handles flags, help, completion. |
+| UUIDs | `github.com/google/uuid` | Standard. v4 random UUIDs are what we want. |
+| Markdown parsing | `github.com/yuin/goldmark` | The standard Go markdown library; CommonMark-compliant AST. Used by the section-path matcher. |
+| Logging | `log/slog` (stdlib) | Structured, in the standard library since 1.21. No third-party logger. |
+| Assertions in tests | stdlib | No `testify`. Go convention is to write the comparison; helpers in `internal/testutil/` if it gets painful. |
+
+### 14. Go version: 1.22+
+
+`go 1.22` in `go.mod`. Gives us:
+
+- `slog` (1.21) for structured logging.
+- `for range int` (1.22) — minor convenience.
+- `slices` and `maps` packages from stdlib.
+
+Don't go below 1.22. Don't preemptively bump above 1.22 until we need a specific feature.
+
+### 15. `stagent init` ships a complete default setup
+
+`stagent init` is not "create one file." It copies the entire `scaffold/` directory tree into the user's project, preserving structure:
+
+```
+<project>/
+├── .stagent.yaml                                  # default config (decision 10)
+├── .stagent/
+│   ├── prompts/
+│   │   ├── roles/
+│   │   │   ├── developer.md                       # role system prompt
+│   │   │   └── reviewer.md                        # ditto
+│   │   └── stages/
+│   │       ├── code.md                            # stage user prompt
+│   │       └── review.md                          # ditto (shipped even though v0.1 default flow doesn't use it yet — saves a re-init when v0.2 lands)
+│   └── templates/
+│       └── task.md                                # task spec template
+├── tasks/                                         # empty; first task lands here
+└── .gitignore                                     # appended with stagent runtime paths
+```
+
+**Idempotency.** `init` walks the scaffold tree and for each target path:
+
+- If it doesn't exist: create from scaffold. Print `created: <path>`.
+- If it exists: leave untouched. Print `skipped: <path> (exists)`.
+
+No prompts, no diffs, no merging. Users who want to re-scaffold a single file delete it first, then re-run `init`.
+
+**`.gitignore` handling**: `init` appends the three runtime-state lines if they're missing; if `.gitignore` already contains them, no-op. The pattern is "ensure the lines exist," not "overwrite the file."
 
 ---
 
@@ -314,3 +474,6 @@ Add a line per substantive change so the implementing agent can see what got rev
 - *2026-05-17* — Initial commit. Decisions 1-9 locked; A-H tabled.
 - *2026-05-17* — Decision 5 flipped to **mock Claude** (was: real Claude). Mock-claude binary moves from tabled to locked as a v0.1 deliverable; real-Claude smoke tests become a tabled item (D).
 - *2026-05-17* — Added decision 9 (dep-state checks are separate from validation; ship in v0.2 via existing `script` + `tick` primitive).
+- *2026-05-18* — Decision 1 grammar updated: `/regex/[N]` array-indexing syntax replaces the `pick:` modifier. `[-1]` is "last match" by Python/JavaScript convention; arbitrary indices supported.
+- *2026-05-18* — Mock binary renamed `stagent-fakeclaude` → `fraude`. Lives at `cmd/fraude/`.
+- *2026-05-18* — Added decisions 10 (v0.1 scaffold ships slim flow as default), 11 (setup handles branch-already-exists by reusing), 12 (Go module structure), 13 (library choices: yaml.v3, modernc/sqlite, cobra, goldmark, google/uuid, stdlib slog), 14 (Go 1.22+), 15 (`stagent init` ships the complete scaffold tree; idempotent).

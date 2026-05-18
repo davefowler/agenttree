@@ -153,11 +153,11 @@ review:
   hooks:
     exit:
       - section_check:
-          section: "Reviews > /^Pass \\d+$/"
+          section: "Reviews > /^Pass \\d+$/[-1]"
           expect: all_checked
           on_fail:
             redirect_to: code
-            message_from_section: "Reviews > /^Pass \\d+$/"
+            message_from_section: "Reviews > /^Pass \\d+$/[-1]"
 ```
 
 When the reviewer exits with at least one unticked box in the latest `### Pass N` subsection, `section_check` returns `Redirect(code, <text of Pass section>)`. The runner:
